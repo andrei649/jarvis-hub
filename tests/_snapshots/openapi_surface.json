@@ -490,6 +490,7 @@
   "POST /api/a2a/card": "a2a_set_card_api_a2a_card_post",
   "POST /api/a2a/inbox/{task_id}/decide": "a2a_decide_api_a2a_inbox__task_id__decide_post",
   "POST /api/a2a/peers": "a2a_add_peer_api_a2a_peers_post",
+  "POST /api/a2a/peers/{peer_id}/policy": "a2a_set_peer_policy_api_a2a_peers__peer_id__policy_post",
   "POST /api/a2a/task": "a2a_receive_task_api_a2a_task_post",
   "POST /api/acp/sessions": "acp_open_session_api_acp_sessions_post",
   "POST /api/acp/sessions/{session_id}/lease": "acp_renew_session_api_acp_sessions__session_id__lease_post",

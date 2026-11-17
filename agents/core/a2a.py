@@ -20,6 +20,18 @@ fail-closed by design:
   can call it. Calling is ``agents/core/a2a_outbound.py`` (the adopted Hermes client tools,
   governed); this module only keeps and validates the addresses.
 
+**A hostile or runaway peer (H563).** An authenticated peer still meets, in order: the
+owner's allow switch (a credential is not permission — :meth:`A2ARegistry.set_peer_policy`
+suspends a peer without revoking it), a per-peer rate limit (:data:`RATE_LIMIT` a minute,
+counted only after the signature verified, so a stranger cannot spend a peer's budget) and
+a per-conversation turn cap (a peer's tasks naming one ``context_id``; default
+:data:`DEFAULT_TURN_CAP`, the owner may raise it per peer up to :data:`MAX_TURN_CAP`), which
+stops two agents ping-ponging forever. Refusals are :class:`A2ARefused` with a fixed reason.
+The task text the inbox shows is defanged and framed with an untrusted-provenance banner by
+the adopted Hermes filter (``plugins/platforms/a2a/security.wrap_inbound``): injection markers
+become ``[filtered]`` and every message, a ``/command`` included, is labelled as a remote
+peer's. The routes write one line per exchange into the signed, hash-chained audit log.
+
 File-backed (JSON under ``memory_logs/a2a.json``), pure-Python, offline-testable.
 """
 
@@ -31,6 +43,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -50,6 +63,55 @@ INBOUND_APPROVED = "approved"
 INBOUND_REJECTED = "rejected"
 
 _MAX_INBOX = 500  # bound the on-disk inbox
+#: Inbound tasks one peer may send a minute (Hermes: 60 per identity).
+RATE_LIMIT = 60
+RATE_WINDOW_SECONDS = 60.0
+#: Tasks one peer may send in one conversation (``context_id``) before it is refused,
+#: and the most the owner may allow (Hermes: a cap of 5, a hard ceiling of 20).
+DEFAULT_TURN_CAP = 5
+MAX_TURN_CAP = 20
+#: The most of a task's text kept for the inbox view.
+MAX_VIEW_CHARS = 4000
+_CONTEXT_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
+
+
+class A2ARefused(PermissionError):
+    """An authenticated peer's task refused by policy; ``reason`` is a fixed word and
+    ``status`` the HTTP status the route answers with."""
+
+    def __init__(self, reason: str, status: int) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.status = status
+
+
+def context_of(payload: Any) -> str | None:
+    """The conversation a task belongs to (``context_id`` / ``contextId``, at the top or in
+    ``task``), or None. Anything that is not a short plain identifier counts as none."""
+    for holder in (payload, payload.get("task") if isinstance(payload, dict) else None):
+        if isinstance(holder, dict):
+            for key in ("context_id", "contextId"):
+                value = holder.get(key)
+                if isinstance(value, str) and _CONTEXT_RE.fullmatch(value):
+                    return value
+    return None
+
+
+def inbound_view(peer_id: str, task: Any) -> str:
+    """What the owner (and anything that ever reads the inbox) sees of a peer's task: its
+    text defanged and framed as a remote peer's untrusted input (adopted Hermes filter)."""
+    from agents.vendor.hermes.plugins.platforms.a2a.security import wrap_inbound
+
+    if isinstance(task, str):
+        text = task
+    elif isinstance(task, dict) and isinstance(task.get("text") or task.get("message"), str):
+        text = task.get("text") or task.get("message")
+    else:
+        try:
+            text = json.dumps(task, ensure_ascii=False, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            text = ""
+    return wrap_inbound(peer_id, text[:MAX_VIEW_CHARS])
 _MAX_CONTRACT_BODY_BYTES = 64_000
 A2A_INBOUND_CONTRACT_KIND = "a2a.inbound"
 
@@ -250,6 +312,8 @@ class A2ARegistry(JsonStore):
 
     def __init__(self, path: str | Path = DEFAULT_PATH, identity_secret: Optional[str] = None) -> None:
         super().__init__(path)
+        #: peer_id -> monotonic times of its recent verified requests (H563 rate limit).
+        self._recent: dict[str, list[float]] = {}
         self._identity_secret = identity_secret or os.environ.get("JARVIS_A2A_KEY", "").strip() or None
 
     def _serialize(self):
@@ -310,7 +374,9 @@ class A2ARegistry(JsonStore):
         rows = []
         for p in sorted(self._peers.values(), key=lambda r: r.get("added_at", 0), reverse=True):
             row = {"peer_id": p["peer_id"], "name": p.get("name", p["peer_id"]),
-                   "secret_hint": (p["secret"][:4] + "…"), "added_at": p.get("added_at")}
+                   "secret_hint": (p["secret"][:4] + "…"), "added_at": p.get("added_at"),
+                   "allowed": p.get("allowed", True) is not False,
+                   "turn_cap": _turn_cap(p)}
             if isinstance(p.get("outbound"), dict):
                 row["outbound"] = dict(p["outbound"])
             rows.append(row)
@@ -377,6 +443,38 @@ class A2ARegistry(JsonStore):
                 out.append({"peer_id": p["peer_id"], "name": p.get("name", p["peer_id"]), **ob})
         return out
 
+    def set_peer_policy(self, peer_id: str, *, allowed: Optional[bool] = None,
+                        turn_cap: Optional[int] = None) -> dict:
+        """The owner's switches for an authenticated peer (H563): ``allowed`` (a suspended
+        peer keeps its credential and is refused with 403) and ``turn_cap`` (1 to
+        :data:`MAX_TURN_CAP` tasks per conversation)."""
+        rec = self._peers.get(peer_id)
+        if rec is None:
+            raise KeyError("unknown peer")
+        if turn_cap is not None:
+            if type(turn_cap) is not int or not 1 <= turn_cap <= MAX_TURN_CAP:
+                raise ValueError("invalid_turn_cap")
+            rec["turn_cap"] = turn_cap
+        if allowed is not None:
+            rec["allowed"] = bool(allowed)
+        with self._lock:
+            self._save()
+        return {"peer_id": peer_id, "allowed": rec.get("allowed", True) is not False, "turn_cap": _turn_cap(rec)}
+
+    def _admit(self, peer_id: str) -> None:
+        """The allow switch and the rate limit, for a peer whose signature verified."""
+        rec = self._peers.get(peer_id) or {}
+        if rec.get("allowed", True) is False:
+            raise A2ARefused("peer_not_allowed", 403)
+        now = time.monotonic()
+        with self._lock:
+            recent = [t for t in self._recent.get(peer_id, []) if now - t < RATE_WINDOW_SECONDS]
+            if len(recent) >= RATE_LIMIT:
+                self._recent[peer_id] = recent
+                raise A2ARefused("rate_limited", 429)
+            recent.append(now)
+            self._recent[peer_id] = recent
+
     def verify_peer(self, peer_id: str, raw_body: Union[bytes, str], signature: str) -> bool:
         """Constant-time HMAC check that *raw_body* came from the allowlisted peer."""
         rec = self._peers.get(peer_id)
@@ -402,6 +500,7 @@ class A2ARegistry(JsonStore):
             raise PermissionError("unknown peer")
         if not self.verify_peer(peer_id, raw_body, signature):
             raise PermissionError("invalid signature")
+        self._admit(peer_id)
         try:
             payload = json.loads(raw_body if isinstance(raw_body, str) else raw_body.decode("utf-8"))
         except (ValueError, TypeError, AttributeError) as exc:
@@ -410,17 +509,26 @@ class A2ARegistry(JsonStore):
         if denied:
             raise PermissionError(f"contract denied: {denied}")
 
+        context = context_of(payload)
+        task = payload.get("task") if isinstance(payload, dict) and "task" in payload else payload
+        view = inbound_view(peer_id, task)
         task_id = secrets.token_urlsafe(8)
         record = {
             "id": task_id,
             "peer_id": peer_id,
             "status": INBOUND_PENDING,
-            "task": payload.get("task") if isinstance(payload, dict) and "task" in payload else payload,
+            "task": task,
+            "view": view,
+            "context_id": context,
             "received_at": time.time(),
         }
-        self._inbox.append(record)
-        del self._inbox[:-_MAX_INBOX]                     # keep the inbox bounded
         with self._lock:
+            if context is not None:
+                turns = sum(1 for r in self._inbox if r.get("peer_id") == peer_id and r.get("context_id") == context)
+                if turns >= _turn_cap(self._peers.get(peer_id) or {}):
+                    raise A2ARefused("turn_cap", 429)
+            self._inbox.append(record)
+            del self._inbox[:-_MAX_INBOX]                     # keep the inbox bounded
             self._save()
         return {"id": task_id, "status": INBOUND_PENDING, "accepted": True}
 
@@ -440,6 +548,11 @@ class A2ARegistry(JsonStore):
                     self._save()
                 return dict(rec)
         raise ValueError(f"task {task_id} not found")
+
+
+def _turn_cap(rec: dict) -> int:
+    cap = rec.get("turn_cap")
+    return cap if type(cap) is int and 1 <= cap <= MAX_TURN_CAP else DEFAULT_TURN_CAP
 
 
 _REGISTRY: Optional[A2ARegistry] = None

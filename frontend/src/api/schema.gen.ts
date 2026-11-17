@@ -1208,6 +1208,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/a2a/peers/{peer_id}/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A2A Set Peer Policy
+         * @description Suspend or allow an authenticated peer, and set its per-conversation turn cap (H563).
+         */
+        post: operations["a2a_set_peer_policy_api_a2a_peers__peer_id__policy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/a2a/peers/{peer_id}/outbound": {
         parameters: {
             query?: never;
@@ -17082,6 +17102,17 @@ export interface components {
              */
             name: string;
         };
+        /**
+         * A2APeerPolicyBody
+         * @description The owner's switches for a peer (H563): suspend it without revoking its credential,
+         *     and how many tasks it may send in one conversation (1-20).
+         */
+        A2APeerPolicyBody: {
+            /** Allowed */
+            allowed?: boolean | null;
+            /** Turn Cap */
+            turn_cap?: number | null;
+        };
         /** AcpMcpBody */
         AcpMcpBody: {
             /** Name */
@@ -22964,6 +22995,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    a2a_set_peer_policy_api_a2a_peers__peer_id__policy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["A2APeerPolicyBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

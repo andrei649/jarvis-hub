@@ -496,6 +496,7 @@
   "POST /api/a2a/card": "admin",
   "POST /api/a2a/inbox/{task_id}/decide": "admin",
   "POST /api/a2a/peers": "admin",
+  "POST /api/a2a/peers/{peer_id}/policy": "admin",
   "POST /api/a2a/task": "open",
   "POST /api/acp/sessions": "admin",
   "POST /api/acp/sessions/{session_id}/lease": "admin",

@@ -46,13 +46,13 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [media](docs/HERMES_CAPABILITIES.md#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 20 | 0 | 0 | 0 | 101 | seed din dovezi |
 | [editor-acp](docs/HERMES_CAPABILITIES.md#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 5 | 0 | 1 | 0 | 5 | seed din dovezi |
 | [mcp](docs/HERMES_CAPABILITIES.md#area-mcp) — MCP client and server | own/run | 13 | 3 | 10 | 0 | 0 | 0 | 19 | seed din dovezi |
-| [agent-interop](docs/HERMES_CAPABILITIES.md#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 4 | 0 | 1 | 0 | 4 | **subțire**, seed din dovezi |
+| [agent-interop](docs/HERMES_CAPABILITIES.md#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 4 | 0 | 1 | 0 | 5 | seed din dovezi |
 | [extensions](docs/HERMES_CAPABILITIES.md#area-extensions) — Extensions, hooks and deployment packaging | own/adopt | 9 | 1 | 6 | 0 | 2 | 0 | 30 | seed din dovezi |
 | [feature-pages](docs/HERMES_CAPABILITIES.md#area-feature-pages) — Upstream feature pages (cross-cutting) | own/adopt/run | 48 | 7 | 37 | 0 | 4 | 0 | 175 | seed din dovezi |
 | [user-journeys](docs/HERMES_CAPABILITIES.md#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 6 | 24 | 0 | 3 | 0 | 68 | seed din dovezi |
 | [upstream-delta](docs/HERMES_CAPABILITIES.md#area-upstream-delta) — Upstream delta v2026.8.27 to v2026.8.31 (cross-cutting) | own/adopt/run | 42 | 23 | 18 | 0 | 1 | 0 | 153 | seed din dovezi |
 
-Suite subțiri: agent-interop.
+Suite subțiri: niciuna.
 
 ## Actualizare
 
