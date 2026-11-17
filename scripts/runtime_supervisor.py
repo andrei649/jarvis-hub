@@ -21,7 +21,11 @@ doing nothing until it is stopped, so a container's restart policy has nothing t
 and the service reads as down in the run-log, as an s6-supervised Hermes service does —
 or, with ``--exit-when-disabled`` (what the systemd unit passes), exits 125 itself, which
 the unit treats as a clean stop (``SuccessExitStatus=125``) and never restarts
-(``RestartPreventExitStatus``).
+(``RestartPreventExitStatus``). The run-log summary the morning brief reads
+(``agents.core.observability.runtime_log``) then reports ``disabled: true`` and ``stale: true``.
+To turn it back on, set ``JARVIS_RUNTIME_COORDINATOR=1`` (or remove the line) and restart
+the service or container: ``systemctl restart jarvis-runtime`` /
+``docker compose restart runtime-coordinator``.
 
 This is what ``deploy/systemd/jarvis-runtime.service`` and the
 ``runtime-coordinator`` docker-compose service both run. Layering systemd/
