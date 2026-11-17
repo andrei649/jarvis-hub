@@ -267,6 +267,33 @@ def test_the_install_version_is_bound_to_the_package_hash(tmp_path):
     assert _version_bound(generated, "0.1.0") and not _version_bound(generated, "1.2.0")
 
 
+def test_pathological_source_is_refused_not_raised(tmp_path):
+    nested = "x = " + "(" * 5000 + "1" + ")" * 5000 + "\n" + SOURCE
+    authored = read_directory(author(tmp_path, source=nested))
+    with pytest.raises(SubmissionError) as refused:
+        submission.check_source(authored)
+    assert refused.value.reason == "source_rejected"
+
+
+@pytest.mark.asyncio
+async def test_a_replaced_generic_tool_is_unregistered_and_the_generic_runner_refuses_the_extension(tmp_path, hub):
+    from agents.core.acquisition.acquired_runner import AcquiredSandboxRunner
+    from agents.core.acquisition.package_store import PackageStoreError
+
+    async def stale(_args):
+        return {}
+
+    hub.tool_rpc.register_tool("boats", stale)          # a generated package's old tool
+    assert hub.tool_rpc.allows("boats")
+    await submission.submit(hub.acquisition, read_directory(author(tmp_path)), orch=hub.orch, runner=hub.runner)
+    assert (await irreversible.execute(_task(hub), orch=hub.orch))["status"] == "installed"
+    assert not hub.tool_rpc.allows("boats")
+    generic = AcquiredSandboxRunner(packages=hub.packages, profile=hub.broker.profile,
+                                    runtime_root=tmp_path / "generic-runs", enabled=lambda: True)
+    with pytest.raises(PackageStoreError, match="extension runtime"):
+        await generic.run("boats", {"text": "x"})
+
+
 def test_the_install_card_kind_is_an_irreversible_kind():
     assert "extensions.install" in irreversible.kinds()
 

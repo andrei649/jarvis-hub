@@ -239,6 +239,9 @@ def check_source(authored: AuthoredExtension) -> None:
     except GenerationError as exc:
         # The generator's messages are static strings, never candidate text.
         raise SubmissionError("source_rejected", str(exc)) from None
+    except (RecursionError, ValueError, MemoryError):
+        # Pathological nesting or a NUL byte: refused, never a 500.
+        raise SubmissionError("source_rejected", "source cannot be parsed") from None
     candidates = ("register", *(HANDLERS[name] for name in authored.manifest.capabilities))
     for name in candidates:
         try:

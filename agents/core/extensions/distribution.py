@@ -25,6 +25,7 @@ sandbox verification and the ``skill.install`` approval card.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import stat
@@ -38,6 +39,8 @@ from .manifest import (
     _unique_object,
     parse_manifest,
 )
+
+logger = logging.getLogger("jarvis.extensions.distribution")
 
 ENTRY_POINT_GROUP = "nerva.extensions"
 MAX_DISTRIBUTIONS = 4096
@@ -114,6 +117,8 @@ def installed_declarations(*, distributions=None) -> dict:
             dist_name = str(dist.metadata["Name"] or "")[:128]
             dist_version = str(dist.version or "")[:64]
         except Exception:  # noqa: BLE001 - one broken distribution never hides the rest
+            # Unrelated broken metadata is not an extension error: skip it, visibly in the log.
+            logger.debug("skipping a distribution whose metadata cannot be read")
             continue
         for entry in entry_points:
             if len(rows) >= MAX_EXTENSIONS:

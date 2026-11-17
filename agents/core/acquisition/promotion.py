@@ -579,6 +579,10 @@ class PromotionBroker:
             self.journal.advance(proposal_id, "installed")
             self.marketplace.index_acquired_package(installed.catalog_metadata())
             self._fail("installed")
+            if record.package.model_route == OWNER_SUBMITTED_ROUTE and self.tool_rpc.allows(installed.name):
+                # H566: an extension that replaces a generated package of the same name
+                # takes that generic tool off the surface; its own tools need consent.
+                await self.tool_rpc.unregister_tool(installed.name, cancel_inflight=True)
             self._register(installed.name)
             self.journal.advance(proposal_id, "registered")
             self._fail("registered")

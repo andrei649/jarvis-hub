@@ -4,6 +4,28 @@
 
 ### What changed for you — 2026-11-17
 
+**Extensions: install one somebody else wrote, safely**
+- `nerva extensions install ./folder` takes an author's extension (a descriptor, `main.py`
+  and its tests), runs its tests and checks in the sealed sandbox that it registers exactly
+  what it declares, then puts an install card in front of you. Nothing is installed until you
+  accept that card, and nothing becomes callable until you also consent and activate it.
+- Python packages can declare an extension; `nerva extensions doctor --installed` checks
+  them without ever importing their code, and `nerva extensions install --installed ID`
+  submits one the same way.
+- `nerva extensions pack export|install` pins a set of extensions by the exact hashes of
+  their files and reproduces it elsewhere: one card per extension, never a bulk yes, and a
+  pack whose files changed is refused before anything is sent.
+- `nerva extensions consent` now shows what you are agreeing to — each capability with its
+  risk in one sentence, and what changed since you last agreed — and asks before recording.
+
+**Running Nerva in a container**
+- The hub no longer runs as root inside the image. Set `PUID`/`PGID` (or
+  `NERVA_UID`/`NERVA_GID`) and files it writes to a bind mount are yours.
+- `JARVIS_RUNTIME_COORDINATOR=0` switches the background coordinator off; it shows as down
+  instead of restarting forever.
+- `docker-compose.windows.yml` runs Nerva on Docker Desktop for Windows without host
+  networking, reachable only from your own machine and only with a token.
+
 **Nerva in your editor: earlier threads come back**
 - An editor can list the Nerva threads it opened, open one again with its earlier messages
   shown (or without them), or continue one in a new thread. A thread stays with the folder it

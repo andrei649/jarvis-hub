@@ -70,6 +70,11 @@ class AcquiredSandboxRunner:
                 or record.manifest.get("runtime_config_hash") != self.profile.config_hash
             ):
                 raise PackageStoreError("acquired runtime attestation mismatch")
+            if record.manifest.get("model_route") == "owner-submitted":
+                # H566: an owner-submitted extension runs only through the extension
+                # runtime (consent + isolated activation), never as a generic acquired
+                # capability — even if a stale tool registration still names it.
+                raise PackageStoreError("owner-submitted extensions run only through the extension runtime")
             source_bytes = self._signed_member(record, "main.py")
         except PackageStoreError:
             with self._suppress_outcome_error():
