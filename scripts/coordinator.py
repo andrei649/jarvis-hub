@@ -17,6 +17,11 @@ from a killed coordinator is ``scripts/runtime_supervisor.py``'s job, not this
 script's — a process cannot un-kill itself.
 
 Env:
+  JARVIS_RUNTIME_COORDINATOR    0 = this service is switched off (default on). The process
+                                 then exits at once with SERVICE_DISABLED_EXIT (125) and
+                                 the supervisor records it as down instead of respawning it
+                                 (H573: Hermes' s6 "exit 125 so a disabled service reads as
+                                 down rather than crash-looping")
   JARVIS_RUNTIME_CYCLE_SECONDS  autonomy-coordinator tick interval (default 20,
                                  floor 15 — AutonomyCoordinator.loop() enforces
                                  the floor itself)
@@ -270,12 +275,32 @@ def configure_logging() -> None:
     install_redaction()
 
 
+#: H573: the exit status of a coordinator that is switched off (JARVIS_RUNTIME_COORDINATOR=0).
+#: The supervisor never respawns it (scripts/runtime_supervisor.py SERVICE_DISABLED_EXIT,
+#: inlined there; a test pins the two equal), so a disabled service reads as down, not as
+#: a crash loop.
+SERVICE_DISABLED_EXIT = 125
+
+
+def coordinator_disabled() -> bool:
+    """Whether the owner switched this service off, read after the hub's .env files load."""
+    from agents.core.env_config import env_flag
+    from agents.core.env_provenance import load_hub_env
+
+    load_hub_env()
+    return not env_flag("JARVIS_RUNTIME_COORDINATOR", True)
+
+
 def main() -> None:
     apply_safe_mode_switch()
     configure_logging()
     from agents.core.env_alias import ConfigurationRefused
 
     try:
+        if coordinator_disabled():
+            print("runtime coordinator: switched off (JARVIS_RUNTIME_COORDINATOR=0); exiting with "
+                  f"{SERVICE_DISABLED_EXIT} so the supervisor records it as down", file=sys.stderr)
+            raise SystemExit(SERVICE_DISABLED_EXIT)
         asyncio.run(run())
     except ConfigurationRefused as refused:
         # RB-2: the refusal's own status — 78 (the supervisor does not respawn on it) for one

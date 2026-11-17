@@ -2498,7 +2498,9 @@
         "tests/test_h079_extension_restart_composed.py",
         "tests/test_h079_extension_restart_cli.py",
         "tests/test_extension_manifest_catalog.py",
-        "tests/test_h570_capability_consent.py"
+        "tests/test_h570_capability_consent.py",
+        "tests/test_h573_container_user_and_disabled_service.py",
+        "tests/test_runtime_supervisor.py"
       ]
     },
     {

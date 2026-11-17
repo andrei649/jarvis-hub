@@ -2451,6 +2451,19 @@
    "required_when": "",
    "doc": ""
   },
+  "NERVA_RUNTIME_COORDINATOR": {
+   "aliases": [
+    "JARVIS_RUNTIME_COORDINATOR"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Default on. 0 switches the headless coordinator (scripts/coordinator.py) off: it exits at once with status 125, and scripts/runtime_supervisor.py records one disabled event in the run-log instead of respawning it.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
   "NERVA_RUNTIME_CYCLE_SECONDS": {
    "aliases": [
     "JARVIS_RUNTIME_CYCLE_SECONDS"

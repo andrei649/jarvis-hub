@@ -14,6 +14,15 @@ reads: its own events then stay in the default file (H273's Known limits).
 A coordinator that exits with ``RESTORE_YIELD_EXIT`` (75) left so that a staged restore
 can run (H010): it is respawned at once, without backoff (see the constant).
 
+A coordinator that exits with ``SERVICE_DISABLED_EXIT`` (125) is switched off
+(``JARVIS_RUNTIME_COORDINATOR=0``, H573). It is never respawned: the supervisor writes one
+``disabled`` event to the run-log and one line to stderr, then either **holds** — stays up
+doing nothing until it is stopped, so a container's restart policy has nothing to restart
+and the service reads as down in the run-log, as an s6-supervised Hermes service does —
+or, with ``--exit-when-disabled`` (what the systemd unit passes), exits 125 itself, which
+the unit treats as a clean stop (``SuccessExitStatus=125``) and never restarts
+(``RestartPreventExitStatus``).
+
 This is what ``deploy/systemd/jarvis-runtime.service`` and the
 ``runtime-coordinator`` docker-compose service both run. Layering systemd/
 docker's own ``restart`` policy on top of this respawn loop is intentional
@@ -21,7 +30,7 @@ defense in depth: if the supervisor itself dies, the OS-level restart is the
 backstop.
 
 Usage:
-    python scripts/runtime_supervisor.py [--safe-mode]
+    python scripts/runtime_supervisor.py [--safe-mode] [--exit-when-disabled]
     (SIGTERM/SIGINT stop it — and the current child — cleanly; ``--safe-mode`` sets
     JARVIS_SAFE_MODE=1, which the coordinator inherits — H275)
 
@@ -67,6 +76,10 @@ YIELD_MIN_UPTIME_SECONDS = 1.0
 
 
 SAFE_MODE_SWITCH = "--safe-mode"
+EXIT_WHEN_DISABLED_SWITCH = "--exit-when-disabled"
+#: H573: a switched-off coordinator's exit status (scripts/coordinator.py
+#: SERVICE_DISABLED_EXIT, inlined like RESTORE_YIELD_EXIT; a test pins the two equal).
+SERVICE_DISABLED_EXIT = 125
 
 
 def apply_safe_mode_switch(argv=None) -> bool:
@@ -191,6 +204,18 @@ def main() -> int:
                 _append_supervisor_event("stopped", pid=child.pid, exit_code=exit_code)
                 return 0
             uptime = time.monotonic() - started_at
+            if exit_code == SERVICE_DISABLED_EXIT:
+                # H573: switched off is not a crash. Record "down" once and never respawn.
+                _append_supervisor_event("disabled", pid=child.pid, exit_code=exit_code)
+                print("runtime supervisor: the coordinator is switched off "
+                      "(JARVIS_RUNTIME_COORDINATOR=0); it reads as down and is not respawned.",
+                      file=sys.stderr)
+                if EXIT_WHEN_DISABLED_SWITCH in sys.argv[1:]:
+                    return SERVICE_DISABLED_EXIT
+                while not stopping:
+                    time.sleep(0.5)
+                _append_supervisor_event("stopped", pid=child.pid, exit_code=exit_code)
+                return 0
             if exit_code == CONFIG_REFUSED_EXIT:
                 # RB-2: the coordinator refused its configuration (one variable set under
                 # both spellings in the process environment) and said why on stderr.
