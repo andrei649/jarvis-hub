@@ -557,7 +557,7 @@ class MCPTool:
         #: findings of the tool-definition scan (non-empty = quarantined, never offered).
         self.definition_digest = definition_digest(description, input_schema, annotations)
         description, cleaned_schema, annotations, self.findings = inspect_tool(
-            description, input_schema, annotations)
+            description, input_schema, annotations, name=None if utility else name)
         self.description = description
         #: What the server sent, kept for diagnostics only — never offered to a model.
         self.raw_input_schema = input_schema
@@ -938,15 +938,23 @@ class MCPServer:
         headers = {**self.secret_headers, **self.headers}
         return config_findings(argv, env=env, cwd=self.cwd, headers=headers)
 
+    def quarantine_reasons(self, tool: "MCPTool") -> list[str]:
+        """H555 — why *tool* is withheld (empty = offered). A flagged definition stays
+        quarantined unless the owner released that exact definition; a released tool whose
+        definition changed since is quarantined again (``definition_changed``), flagged or not."""
+        accepted = self.accepted_definitions.get(tool.name)
+        if accepted is not None and accepted != tool.definition_digest:
+            return ["definition_changed", *tool.findings]
+        if tool.findings and accepted != tool.definition_digest:
+            return list(tool.findings)
+        return []
+
     def quarantined(self, tool: "MCPTool") -> bool:
-        """H555 — a tool whose definition the scan flagged is withheld from the model and
-        refused at call time, unless the owner released that exact definition."""
-        if not tool.findings:
-            return False
-        return self.accepted_definitions.get(tool.name) != tool.definition_digest
+        return bool(self.quarantine_reasons(tool))
 
     def quarantined_tools(self) -> list[dict]:
-        return [{"name": t.name, "findings": list(t.findings), "digest": t.definition_digest}
+        return [{"name": t.name, "findings": self.quarantine_reasons(t),
+                 "digest": t.definition_digest}
                 for t in self.all_tools() if self.quarantined(t)]
 
     def _command_argv(self) -> list[str] | None:
@@ -1144,9 +1152,14 @@ class MCPServer:
         if not self.tool_visible(name):
             return {"error": "tool_filtered", "tool": name, "server": self.name, **DO_NOT_RETRY}
         listed = next((t for t in self.tools if t.name == name), None) or self.utility(name)
-        if listed is not None and self.quarantined(listed):
+        if listed is None:
+            # Only a tool the server listed (and the definition scan saw) may be called:
+            # an unlisted name cannot go around the quarantine (review nit).
+            return {"error": "trust_denied", "tool": name, "server": self.name,
+                    "trust": self.trust, "reason": "unlisted_tool", **DO_NOT_RETRY}
+        if self.quarantined(listed):
             return {"error": "tool_quarantined", "tool": name, "server": self.name,
-                    "findings": list(listed.findings), **DO_NOT_RETRY}
+                    "findings": self.quarantine_reasons(listed), **DO_NOT_RETRY}
         denied = self._trust_denial(name)
         if denied is not None:
             return denied

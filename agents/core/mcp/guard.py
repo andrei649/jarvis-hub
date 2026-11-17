@@ -410,7 +410,7 @@ _DESCRIPTION_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
         re.IGNORECASE | re.MULTILINE)),
     ("concealment", re.compile(
         r"\b(do\s*n[o']t|never|without)\s+(tell(ing)?|mention(ing)?|inform(ing)?|reveal(ing)?|"
-        r"show(ing)?|disclos(e|ing)|notify(ing)?|ask(ing)?|alert(ing)?)\b[^.\n]{0,60}"
+        r"show(ing)?|disclos(e|ing)|notify(ing)?|ask(ing)?|alert(ing)?)\b[^\n]{0,80}?"
         r"\b(user|owner|human|operator)\b|\b(secretly|covertly|silently\s+(send|upload|post|"
         r"copy|forward|exfiltrate))\b|\bhide\s+(this|it)\s+from\b", re.IGNORECASE)),
     ("tool_override", re.compile(
@@ -432,11 +432,13 @@ _DESCRIPTION_PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
         r"\bfrom\s+(os|subprocess|socket|ctypes|pty)\s+import\b|"
         r"\brequire\s*\(\s*['\"](child_process|net|fs|vm)['\"]\s*\)", re.IGNORECASE)),
     ("credential_path", re.compile(
-        r"~/\.ssh\b|\.ssh/(id_\w+|authorized_keys)|\bid_(rsa|ed25519|ecdsa|dsa)\b|"
+        r"~/\.ssh\b|\.ssh/(id_\w+|authorized_keys)|\bssh\s+id\s+(rsa|ed25519|ecdsa|dsa)\b|"
+        r"\bid_(rsa|ed25519|ecdsa|dsa)\b|"
         r"\.aws/credentials|\.netrc\b|\.git-credentials|/etc/(passwd|shadow)\b|"
         r"\.kube/config|\.docker/config\.json|\.npmrc\b|\.pypirc\b", re.IGNORECASE)),
+    # Not cut at a '.': a path such as ~/.ssh/id_rsa sits between the verb and the target.
     ("exfiltration", re.compile(
-        r"\b(send|post|upload|forward|transmit|exfiltrate|copy)\b[^.\n]{0,80}\bto\s+"
+        r"\b(send|post|upload|forward|transmit|exfiltrate|copy|leak)\b[^\n]{0,160}?\bto\s+"
         r"(https?://|ftp://|\w[\w.-]*\.\w{2,}/|\d{1,3}(\.\d{1,3}){3})", re.IGNORECASE)),
 )
 
@@ -446,20 +448,57 @@ DESCRIPTION_FINDINGS = ("injection",) + tuple(code for code, _ in _DESCRIPTION_P
 #: Scan bound: a description or schema text past this is cut for the scan (the model sees
 #: at most :data:`agents.core.mcp.model_bridge.MAX_DESCRIPTION_CHARS` of a description).
 MAX_SCAN_CHARS = 64_000
+#: Strings collected from one definition for the scan (every leaf counts against it).
+MAX_SCAN_STRINGS = 4_096
 _TEXT_KEYS = frozenset({"description", "title", "$comment", "markdownDescription"})
 _IDENTIFIER_KEYS = frozenset({"enum", "const", "default", "examples", "required"})
+_NAME_MAP_KEYS = frozenset({"properties", "patternProperties", "$defs", "definitions",
+                            "dependentSchemas", "dependentRequired"})
+
+#: Latin look-alikes from Cyrillic, Greek and Armenian (a confusables *skeleton*, not the
+#: whole Unicode table): enough that "Ignоre" with a Cyrillic о reads as "Ignore".
+_HOMOGLYPHS = str.maketrans({
+    "а": "a", "в": "b", "е": "e", "ё": "e", "к": "k", "м": "m", "н": "h", "о": "o", "р": "p",
+    "с": "c", "т": "t", "у": "y", "х": "x", "і": "i", "ї": "i", "ј": "j", "ѕ": "s", "ԁ": "d",
+    "ԛ": "q", "ԝ": "w", "һ": "h", "ӏ": "l", "ɡ": "g", "ɑ": "a", "ɩ": "i", "ʏ": "y",
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C",
+    "Т": "T", "У": "Y", "Х": "X", "І": "I", "Ј": "J", "Ѕ": "S", "Ԁ": "D", "Ԛ": "Q", "Ԝ": "W",
+    "α": "a", "ο": "o", "ρ": "p", "ι": "i", "κ": "k", "ν": "v", "υ": "u", "χ": "x", "ε": "e",
+    "τ": "t", "ω": "w", "γ": "y", "η": "n",
+    "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N",
+    "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+    "օ": "o", "ս": "u", "ց": "g", "հ": "h", "ո": "n", "ա": "w", "ք": "q",
+    "ı": "i", "ȷ": "j", "ℓ": "l",
+})
+_SEPARATORS = re.compile(r"[_\-./]+|(?<=[a-z])(?=[A-Z])")
+
+
+def _skeleton(text: str) -> str:
+    """NFKC, combining marks removed, look-alike letters mapped to Latin."""
+    import unicodedata
+
+    folded = unicodedata.normalize("NFKC", text)
+    decomposed = unicodedata.normalize("NFD", folded)
+    bare = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    return unicodedata.normalize("NFC", bare).translate(_HOMOGLYPHS)
 
 
 def scan_text(text: str) -> list[str]:
-    """The finding families present in *text* (empty = clean). Scans the cleaned text and
-    the invisible-stripped copy, so a zero-width character inside a phrase does not hide it."""
+    """The finding families present in *text* (empty = clean).
+
+    Scans the text, its invisible-stripped copy, its confusables skeleton (NFKC,
+    combining marks removed, Cyrillic/Greek/Armenian look-alikes mapped to Latin) and a
+    copy with identifier separators (``_``, ``-``, ``.``, ``/``, camelCase) turned into
+    spaces, so ``ignore_all_previous_instructions`` reads as the phrase it spells."""
     if not isinstance(text, str) or not text.strip():
         return []
     text = text[:MAX_SCAN_CHARS]
-    variants = [text]
-    stripped = strip_format_chars(text)
-    if stripped != text:
-        variants.append(stripped)
+    variants: list[str] = []
+    for base in (text, strip_format_chars(text)):
+        skeleton = _skeleton(base)
+        for candidate in (base, skeleton, _SEPARATORS.sub(" ", skeleton)):
+            if candidate not in variants:
+                variants.append(candidate)
     found: list[str] = []
     if any(detect_injection_normalized(v) for v in variants):
         found.append("injection")
@@ -470,30 +509,38 @@ def scan_text(text: str) -> list[str]:
 
 
 def _schema_texts(schema: Any, out: list[str], depth: int = 0) -> bool:
-    """Collect the schema's human-text strings into *out*; True when an identifier (a
-    property name, an enum / const / default value, a required entry) carries a character
-    :func:`clean_text` would remove."""
-    if depth > 64:
+    """Collect every string the model will read in the schema into *out* — each string
+    leaf (descriptions and titles, but also ``enum`` / ``const`` / ``default`` /
+    ``examples`` / ``pattern`` values, nested at any depth) and every property name.
+    True when an identifier (a key, a property name, an enum / const / default / examples /
+    required value) carries a character :func:`clean_text` would remove."""
+    if depth > 64 or len(out) > MAX_SCAN_STRINGS:
         return False
     dirty = False
     if isinstance(schema, dict):
         for key, value in schema.items():
             if isinstance(key, str) and clean_text(key) != key:
                 dirty = True
-            if key in _TEXT_KEYS and isinstance(value, str):
-                out.append(value)
-            elif key in _IDENTIFIER_KEYS:
-                dirty = dirty or any(clean_text(s) != s for s in _strings(value))
-            elif key == "properties" and isinstance(value, dict):
+            if key in _IDENTIFIER_KEYS:
+                strings = list(_strings(value))
+                out.extend(strings)
+                dirty = dirty or any(clean_text(s) != s for s in strings)
+            elif key in _NAME_MAP_KEYS and isinstance(value, dict):
                 for prop, sub in value.items():
-                    if isinstance(prop, str) and clean_text(prop) != prop:
-                        dirty = True
+                    if isinstance(prop, str):
+                        out.append(prop)
+                        if clean_text(prop) != prop:
+                            dirty = True
                     dirty = _schema_texts(sub, out, depth + 1) or dirty
+            elif isinstance(value, str):
+                out.append(value)
             else:
                 dirty = _schema_texts(value, out, depth + 1) or dirty
     elif isinstance(schema, list):
         for item in schema:
             dirty = _schema_texts(item, out, depth + 1) or dirty
+    elif isinstance(schema, str):
+        out.append(schema)
     return dirty
 
 
@@ -527,28 +574,33 @@ def definition_digest(description: Any, input_schema: Any, annotations: Any) -> 
 
 
 def inspect_tool(description: Any, input_schema: Any, annotations: Any = None,
-                 ) -> tuple[str, Any, dict, list[str]]:
+                 name: Any = None) -> tuple[str, Any, dict, list[str]]:
     """``(clean description, clean schema, clean annotations, findings)`` for one listed
-    tool. Never raises: an unreadable definition comes back empty with no findings, and
-    the schema normalizer downstream refuses what it cannot repair."""
+    tool. The tool's name, its description, every string of its schema (values and
+    property names) and every string of its annotations are scanned. Never raises: an
+    unreadable definition comes back empty with no findings, and the schema normalizer
+    downstream refuses what it cannot repair."""
     desc = clean_text(description) if isinstance(description, str) else ""
     texts: list[str] = [desc]
     findings: list[str] = []
+    if isinstance(name, str):
+        texts.append(name)
+        if clean_text(name) != name:
+            findings.append("invisible_identifier")
     try:
-        if _schema_texts(input_schema, texts):
+        if _schema_texts(input_schema, texts) and "invisible_identifier" not in findings:
             findings.append("invisible_identifier")
         schema = _clean_schema_texts(input_schema)
     except RecursionError:
         schema = {}
     notes = clean_deep(annotations) if isinstance(annotations, dict) else {}
-    title = notes.get("title") if isinstance(notes, dict) else None
-    if isinstance(title, str):
-        texts.append(title)
+    if isinstance(notes, dict):
+        texts.extend(list(_strings(notes))[:MAX_SCAN_STRINGS])
     # The raw text too: a pattern spelled with invisible characters inside it is caught on
     # the stripped copy scan_text makes, and the cleaned copy catches the rest.
     if isinstance(description, str) and description != desc:
         texts.append(description)
-    for text in texts:
+    for text in texts[:MAX_SCAN_STRINGS]:
         for code in scan_text(text):
             if code not in findings:
                 findings.append(code)
