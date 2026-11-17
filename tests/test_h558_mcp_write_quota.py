@@ -103,7 +103,8 @@ async def test_mutating_route_tool_is_rate_limited_per_client():
 async def test_oauth_subjects_have_their_own_budgets():
     writes = []
     server, name, _auditor = _server(writes)
-    server.mutating_route_tools[name].identity_check = lambda token: True
+    server.mutating_route_tools[name].identity_check = \
+        lambda token: isinstance(token, VerifiedMCPIdentity)
     one, two = VerifiedMCPIdentity("alice"), VerifiedMCPIdentity("bob")
     for _ in range(2):
         assert (await server.call_tool(name, {"text": "x"}, identity=one))["isError"] is False
@@ -144,3 +145,103 @@ async def test_approval_answers_are_rate_limited_too():
     # Reads are not limited.
     listed = await server.call_tool("approvals_list", {}, identity="owner-tok", owner=True)
     assert listed["isError"] is False and json.loads(listed["content"][0]["text"])
+
+
+# ── review fixes: shared quotas, charging after identity, one bucket per principal ──
+
+
+async def test_a_refused_identity_spends_nothing():
+    writes = []
+    server, name, _auditor = _server(writes)
+    for _ in range(5):
+        out = await server.call_tool(name, {"text": "x"}, identity="wrong")
+        assert out["isError"] is True and "identity" in out["content"][0]["text"]
+    assert (await server.call_tool(name, {"text": "x"}, identity="tok-a"))["isError"] is False
+
+
+async def test_rotating_headers_share_one_bucket_when_no_credential_is_required():
+    writes = []
+    server, name, _auditor = _server(writes)
+    server.mutating_route_tools[name].identity_check = lambda token: True   # unset-token posture
+    assert (await server.call_tool(name, {"text": "x"}, identity="a"))["isError"] is False
+    assert (await server.call_tool(name, {"text": "x"}, identity="b"))["isError"] is False
+    third = await server.call_tool(name, {"text": "x"}, identity="c")
+    assert third["isError"] is True and third["content"][0]["text"].startswith("rate limited")
+    assert len(writes) == 2
+
+
+async def test_ask_requests_are_limited_on_their_own_quota():
+    ran = []
+
+    async def runner(agent_id, text):
+        ran.append(text)
+        return "ok"
+
+    server = JarvisMCPServer(runner, {"jarvis": "J"},
+                             ask_quota=WriteQuota(per_minute=2, per_hour=10, global_per_minute=10))
+    for header in ("x", "y"):
+        assert (await server.call_tool("ask_jarvis", {"text": "hi"}, identity=header))["isError"] is False
+    out = await server.call_tool("ask_jarvis", {"text": "hi"}, identity="z")
+    assert out["isError"] is True and "agent requests" in out["content"][0]["text"]
+    assert len(ran) == 2
+    # Its own quota: the write budget is untouched.
+    assert server.write_quota.admit("anonymous") is None
+
+
+def test_write_quota_survives_across_rpc_requests(monkeypatch):
+    """Review repro r4: the hub rebuilds the server per request; the quota must not."""
+    import types
+
+    import agents.web as web
+
+    stub = types.SimpleNamespace(agents={}, get_setting=lambda key, default=None: default,
+                                 audit=None)
+    monkeypatch.setattr(web, "orch", stub, raising=False)
+    first = web._build_mcp_server()
+    second = web._build_mcp_server()
+    assert first.write_quota is second.write_quota and first.ask_quota is second.ask_quota
+    quota = WriteQuota(per_minute=3, per_hour=100, global_per_minute=100)
+    monkeypatch.setitem(__import__("agents.core.mcp.write_quota", fromlist=["_SHARED"])._SHARED,
+                        "write", quota)
+    first, second = web._build_mcp_server(), web._build_mcp_server()
+    for _ in range(first.write_quota.per_minute):
+        assert first.write_quota.admit("caller") is None
+    assert second.write_quota.admit("caller") is not None
+
+
+def test_rpc_route_limits_the_third_owner_write(monkeypatch):
+    """Through POST /api/mcp/server/rpc (what the stdio bridge forwards to): the server
+    is rebuilt per request, and the third approval answer in the minute is refused."""
+    from fastapi.testclient import TestClient
+
+    import agents.web as web
+    from agents.core.mcp import write_quota as wq
+
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "h558-admin")
+    monkeypatch.setattr(web, "USER_TOKEN", "h558-user")
+    monkeypatch.setenv("JARVIS_MCP_ROUTE_TOOLS", "1")
+    monkeypatch.setenv("JARVIS_MCP_MUTATING_TOOLS", "1")
+    monkeypatch.setitem(wq._SHARED, "write", WriteQuota(per_minute=2, per_hour=100,
+                                                        global_per_minute=100))
+    with TestClient(web.app) as client:
+        original = web.orch.get_setting
+
+        def get_setting(key, default=None):
+            if key == "mcp.server_enabled":
+                return True
+            if key == "mcp.oauth_required":
+                return False
+            return original(key, default)
+
+        monkeypatch.setattr(web.orch, "get_setting", get_setting)
+        texts = []
+        for _ in range(3):
+            reply = client.post("/api/mcp/server/rpc", headers={"X-Admin-Token": "h558-admin"},
+                                json={"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                      "params": {"name": APPROVAL_RESPOND,
+                                                 "arguments": {"card_id": 987654321,
+                                                               "decision": "deny"}}})
+            assert reply.status_code == 200, reply.text
+            texts.append(reply.json()["result"]["content"][0]["text"])
+    assert "not pending" in texts[0] and "not pending" in texts[1]
+    assert texts[2].startswith("rate limited")

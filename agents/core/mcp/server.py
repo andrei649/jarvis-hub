@@ -97,10 +97,10 @@ def _caller_key(identity: object | None) -> str:
     return hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()[:16]
 
 
-def _rate_limited(wait: float) -> str:
+def _rate_limited(wait: float, what: str = "writes", done: str = "nothing was written") -> str:
     import math
 
-    return (f"rate limited: too many MCP writes from this client; nothing was written. "
+    return (f"rate limited: too many MCP {what} from this client; {done}. "
             f"Retry in {max(1, math.ceil(wait))} s")
 
 
@@ -119,6 +119,8 @@ class JarvisMCPServer:
         mutating_route_tools: Optional[list[MutatingRouteTool]] = None,
         agent_request_guard: Optional[AgentRequestGuard] = None,
         inbox_tools: Optional[InboxTools] = None,
+        write_quota: object | None = None,
+        ask_quota: object | None = None,
     ) -> None:
         """
         Parameters
@@ -168,7 +170,11 @@ class JarvisMCPServer:
         #: H558 — per-client rate limits on every write this server exposes.
         from agents.core.mcp.write_quota import WriteQuota
 
-        self.write_quota = WriteQuota()
+        # The hub passes the process-wide quotas (write_quota.shared_quota): this server is
+        # rebuilt per HTTP request, so an instance-owned quota would never accumulate.
+        self.write_quota = write_quota if write_quota is not None else WriteQuota()
+        self.ask_quota = ask_quota if ask_quota is not None else WriteQuota(
+            per_minute=20, per_hour=200, global_per_minute=60)
         if inbox_tools is not None:
             from agents.core.mcp.inbox_tools import INBOX_TOOL_NAMES
 
@@ -237,11 +243,13 @@ class JarvisMCPServer:
         if self.inbox_tools is not None and self.inbox_tools.handles(name):
             from agents.core.mcp.inbox_tools import APPROVAL_RESPOND, current_transport_owner
 
-            if name == APPROVAL_RESPOND:
-                caller = _caller_key(identity)
-                wait = self.write_quota.admit(caller)
+            is_owner = owner is True or current_transport_owner()
+            if name == APPROVAL_RESPOND and is_owner:
+                # Charged only once the transport vouched for the owner: one principal,
+                # one bucket. A non-owner is refused by the tool without spending anything.
+                wait = self.write_quota.admit("owner")
                 if wait is not None:
-                    self.inbox_tools._refused(caller, name, "refused-rate")
+                    self.inbox_tools._refused(_caller_key(identity), name, "refused-rate")
                     return self._tool_error(_rate_limited(wait))
             return await self._call_inbox_tool(
                 name, arguments, owner=owner is True or current_transport_owner(),
@@ -263,6 +271,14 @@ class JarvisMCPServer:
                 return self._tool_error("agent request guard unavailable")
             if refusal:
                 return self._tool_error(str(refusal))
+        # H558 (review m4): an ask_* call runs a whole orchestrator turn, so it is limited
+        # too, on its own quota. Keyed on a verified OAuth subject only: a bare header is
+        # not verified on this path, so every other caller shares one bucket.
+        ask_key = (_caller_key(identity) if isinstance(identity, VerifiedMCPIdentity)
+                   else "anonymous")
+        wait = self.ask_quota.admit(ask_key)
+        if wait is not None:
+            return self._tool_error(_rate_limited(wait, "agent requests", "nothing was run"))
         # The marker is scoped to this awaited runner call and cannot be forged by
         # calling Orchestrator.handle_input(channel="mcp") directly. Lifecycle
         # control checks it again immediately before kernel authorization.
@@ -307,11 +323,17 @@ class JarvisMCPServer:
 
         mt = self.mutating_route_tools.get(name)
         if mt is not None:
-            wait = self.write_quota.admit(_caller_key(identity))
-            if wait is not None:
-                # H558: nothing is written; the refusal is audited like the others.
-                mt._audit(arguments, outcome="refused-rate")
-                return self._tool_error(_rate_limited(wait))
+            # H558: charged only after the identity gate accepts the caller (a refused
+            # identity is refused inside call() and spends nothing). When the gate needs
+            # no credential, every caller is one principal: one bucket, so rotating a
+            # header cannot mint budgets.
+            if mt._identity_ok(identity):
+                key = "anonymous" if mt._identity_ok(None) else _caller_key(identity)
+                wait = self.write_quota.admit(key)
+                if wait is not None:
+                    # Nothing is written; the refusal is audited like the others.
+                    mt._audit(arguments, outcome="refused-rate")
+                    return self._tool_error(_rate_limited(wait))
             try:
                 # Per-identity gate runs inside call(); audits the refusal too.
                 raw = await mt.call(arguments, token=identity)
