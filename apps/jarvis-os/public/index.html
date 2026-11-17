@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ANDREI OS — J.A.R.V.I.S. Second Brain & 3D Workshop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body data-brain="opus-5.5">
+  <!-- =========================================================
+       VIEW 1: MAIN 3D SECOND BRAIN / KNOWLEDGE GALAXY
+       ========================================================= -->
+  <div id="galaxy-viewport">
+    <canvas id="galaxy-canvas"></canvas>
+
+    <!-- Top Center Navigation Pills -->
+    <div id="galaxy-top-bar" class="glass-pill-bar">
+      <button id="btn-fit-galaxy" class="top-pill-btn" title="Fit & re-center galaxy">
+        <span class="pill-icon">⟲</span> Fit
+      </button>
+      <button id="btn-tour-galaxy" class="top-pill-btn icon-only" title="Guided Knowledge Fly-Through">
+        <span>🚀</span>
+      </button>
+      <button id="btn-crown-hubs" class="top-pill-btn icon-only" title="Highlight Major Hub Clusters">
+        <span>👑</span>
+      </button>
+    </div>
+
+    <!-- Clean Left Sidebar: ANDREI OS (Visual Settings Moved to ⚙️ Settings) -->
+    <aside id="left-sidebar" class="glass-panel">
+      <div class="sidebar-scroll">
+        <div class="sidebar-header">
+          <div class="brand-row">
+            <h1 id="brand-title">ANDREI OS</h1>
+            <button id="sidebar-settings-btn" class="sidebar-gear-btn" title="Settings — AI Connections, Second Brain & Visual Customizations">
+              ⚙️
+            </button>
+          </div>
+          <div class="vault-source-row">
+            <span class="vault-live-dot"></span>
+            <span id="vault-source-badge">Andrei OS Obsidian + Nerva</span>
+          </div>
+          <div class="stats-subtitle" id="galaxy-stats-subtitle">Indexing real vault...</div>
+          <div class="sidebar-links-row">
+            <button id="back-to-2d-btn" class="link-emerald">← back to 2D</button>
+            <span class="telemetry-sep">·</span>
+            <button id="quick-inbox-btn" class="link-emerald">+ Inbox note</button>
+          </div>
+        </div>
+
+        <div class="search-wrap">
+          <input
+            type="text"
+            id="brain-search"
+            placeholder="Search Andrei OS brain..."
+            autocomplete="off"
+          />
+        </div>
+
+        <!-- INSPECTOR -->
+        <div class="sidebar-section">
+          <div class="section-title">INSPECTOR</div>
+          <div id="inspector-card" class="inspector-box">
+            <p class="inspector-placeholder">
+              Click any node to focus it and read the real Markdown note from your vault. Shift-click a second node to trace the shortest semantic path.
+            </p>
+          </div>
+        </div>
+
+        <!-- TOP HUBS -->
+        <div class="sidebar-section">
+          <div class="section-title">TOP HUBS</div>
+          <div id="top-hubs-list" class="hubs-box"></div>
+        </div>
+
+        <div class="hotkey-hints">
+          <div>drag = orbit · scroll = zoom · click = focus</div>
+          <div>shift-click = path · l = isolate · esc = clear</div>
+        </div>
+      </div>
+
+      <button id="sidebar-collapse-btn" title="Collapse sidebar">‹</button>
+    </aside>
+
+    <!-- Top Right Filter Legend -->
+    <div id="filter-card" class="glass-panel">
+      <div class="section-title">FILTER</div>
+      <div id="filter-list"></div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       VIEW 2 & 3: 3D WORKSHOP OVERLAY (ROBOT BODY & FLOOR PLAN 3D)
+       ========================================================= -->
+  <div id="workshop-overlay" class="hidden">
+    <div id="workshop-canvas-wrap"></div>
+    <!-- SVG + HTML Leader-Line Callout Layer for Exploded View & Room Labels -->
+    <div id="exploded-callout-layer" class="hidden">
+      <svg id="exploded-svg" width="100%" height="100%"></svg>
+      <div id="exploded-labels"></div>
+    </div>
+
+    <!-- Top Left Title & Model Telemetry -->
+    <div id="workshop-header-left">
+      <div id="workshop-title">Jarvis Reactor Companion</div>
+      <div id="workshop-telemetry" class="glass-pill-mini">
+        <span class="dot red-dot"></span>
+        <span class="dot green-dot"></span>
+        <span id="workshop-model-name">Claude Fable 5.2</span>
+        <span class="telemetry-sep">·</span>
+        <span id="workshop-timer">0:00</span>
+        <span class="telemetry-sep">·</span>
+        <span id="workshop-tokens">0.0K tokens</span>
+      </div>
+    </div>
+
+    <!-- Top Center Mode Bar (Robot Controls OR House 3D / Miniature / Save) -->
+    <div id="workshop-top-bar" class="glass-pill-bar"></div>
+
+    <!-- Top Right Close Button + Optional "YOUR PICTURE" Floor Plan Card -->
+    <div id="workshop-top-right">
+      <button id="workshop-close-btn" class="white-close-btn">Close</button>
+
+      <div id="your-picture-card" class="glass-panel hidden">
+        <div class="your-pic-header">
+          <span>YOUR PICTURE</span>
+          <label for="floorplan-upload-input" class="upload-link" title="Upload your own 2D floor plan">Replace</label>
+          <input type="file" id="floorplan-upload-input" accept="image/*" class="hidden" />
+        </div>
+        <div class="your-pic-thumb-wrap">
+          <img id="your-picture-img" src="assets/pool-home-plan.svg" alt="2D Floor Plan Blueprint" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Left BUILDING / BUILT / CHANGING Status Card -->
+    <div id="build-status-card" class="glass-panel">
+      <div class="build-card-header">
+        <span id="build-card-state">BUILDING</span>
+        <button id="build-card-hide-btn" class="mini-pill-btn">Hide</button>
+      </div>
+      <div id="build-card-body">
+        <div class="thinking-badge-row">
+          <span id="build-thinking-dot" class="status-dot amber"></span>
+          <span id="build-thinking-label">FABLE IS THINKING</span>
+        </div>
+        <p id="build-thinking-text">
+          Writing Three.js scene geometry, configuring PBR materials and exploded assembly vectors...
+        </p>
+        <ul id="build-checklist" class="build-checklist"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       VIEW 4: COMPUTER USE / META ADS AUTONOMOUS DRIVER
+       ========================================================= -->
+  <div id="computer-use-overlay" class="hidden">
+    <div class="cu-topbar">
+      <div class="cu-browser-pill">
+        <span class="sharing-dot"></span>
+        <span id="cu-sharing-status">JARVIS Computer Use · Driving Active Workspace (localhost:4719)</span>
+      </div>
+      <div class="cu-actions">
+        <button id="cu-run-demo-btn" class="cu-action-btn primary">▶ Run Autonomous Leads Campaign</button>
+        <button id="cu-share-tab-btn" class="cu-action-btn">🖥️ Share Real Browser Tab</button>
+        <button id="cu-close-btn" class="white-close-btn">Close</button>
+      </div>
+    </div>
+
+    <!-- Live Tab Screen-Share Video (when user shares a real tab) -->
+    <div id="cu-live-screen-wrap" class="hidden">
+      <video id="cu-live-video" autoplay playsinline muted></video>
+      <button id="cu-stop-share-btn" class="cu-action-btn">Return to Meta Ads Sandbox</button>
+    </div>
+
+    <!-- Realistic Interactive Meta Ads Manager Workspace -->
+    <div id="meta-ads-workspace">
+      <div class="meta-left-rail">
+        <div class="meta-logo">∞</div>
+        <div class="meta-rail-icon active" title="Campaigns">📊</div>
+        <div class="meta-rail-icon" title="Audiences">👥</div>
+        <div class="meta-rail-icon" title="Billing">💳</div>
+        <div class="meta-rail-icon" title="Events Manager">⚡</div>
+        <div class="meta-rail-icon" title="Settings">⚙️</div>
+      </div>
+
+      <div class="meta-main">
+        <div class="meta-header">
+          <div class="meta-header-left">
+            <h2>Campaigns</h2>
+            <div class="meta-account-select">Andrei OS · AI Workshop (1015803197...) ▾</div>
+            <div class="meta-score-badge"><span class="score-ring">100</span> Opportunity score</div>
+          </div>
+          <div class="meta-header-right">
+            <span class="meta-updated" id="meta-updated-label">Updated just now</span>
+            <button id="meta-discard-btn" class="meta-btn">Discard drafts</button>
+            <button id="meta-publish-btn" class="meta-btn blue" disabled>Review and publish (0)</button>
+          </div>
+        </div>
+
+        <div class="meta-filter-pills">
+          <span class="m-pill active">📁 All ads</span>
+          <span class="m-pill">Had delivery</span>
+          <span class="m-pill">Actions</span>
+          <span class="m-pill">Active ads</span>
+          <span class="m-pill">ROAS reporting</span>
+        </div>
+
+        <div class="meta-tabs-row">
+          <div class="m-tab active">Campaigns <span class="m-badge" id="meta-selected-badge">3 total</span></div>
+          <div class="m-tab">Ad sets</div>
+          <div class="m-tab">Ads</div>
+          <div class="meta-date-pill">📅 Last 30 days: Oct 15, 2026 – Nov 14, 2026 ▾</div>
+        </div>
+
+        <div class="meta-toolbar">
+          <button id="meta-create-btn" class="meta-create-green">+ Create</button>
+          <button class="meta-btn">Duplicate</button>
+          <button class="meta-btn">✏️ Edit</button>
+          <button class="meta-btn">🧪 A/B test</button>
+          <span class="meta-driver-log" id="meta-driver-log">Idle — instruct JARVIS to launch a campaign</span>
+        </div>
+
+        <div class="meta-table-wrap">
+          <table class="meta-table">
+            <thead>
+              <tr>
+                <th>Off / On</th>
+                <th>Campaign</th>
+                <th>Delivery</th>
+                <th>Objective</th>
+                <th>Daily Budget</th>
+                <th>Results</th>
+                <th>Reach</th>
+                <th>Cost per Result</th>
+              </tr>
+            </thead>
+            <tbody id="meta-campaigns-tbody"></tbody>
+          </table>
+        </div>
+
+        <!-- Campaign Creation Modal driven by JARVIS -->
+        <div id="meta-create-modal" class="meta-modal hidden">
+          <div class="meta-modal-card">
+            <div class="meta-modal-header">
+              <h3>Create New Campaign — Advantage+ Setup</h3>
+              <button id="meta-modal-close" class="meta-btn">✕</button>
+            </div>
+            <div class="meta-modal-body">
+              <div class="meta-field">
+                <label>Buying Objective</label>
+                <div class="meta-objectives" id="meta-objectives">
+                  <div class="obj-item" data-obj="Awareness">📢 Awareness</div>
+                  <div class="obj-item" data-obj="Traffic">🔗 Traffic</div>
+                  <div class="obj-item active" data-obj="Leads" id="obj-leads">🎯 Leads (Skool Sign-ups)</div>
+                  <div class="obj-item" data-obj="Sales">🛒 Sales</div>
+                </div>
+              </div>
+              <div class="meta-field">
+                <label>Campaign Name</label>
+                <input type="text" id="meta-camp-name" value="" placeholder="e.g. AIW | Skool Community Leads | Nov 2026" />
+              </div>
+              <div class="meta-field-row">
+                <div class="meta-field">
+                  <label>Advantage+ Daily Budget ($ USD)</label>
+                  <input type="number" id="meta-camp-budget" value="50" />
+                </div>
+                <div class="meta-field">
+                  <label>Conversion Location</label>
+                  <input type="text" id="meta-camp-dest" value="Website — skool.com/aiworkshop-lite" />
+                </div>
+              </div>
+            </div>
+            <div class="meta-modal-footer">
+              <button id="meta-save-draft-btn" class="meta-btn blue">Save Campaign Draft</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Autonomous AI Cursor -->
+      <div id="ai-driver-cursor" class="hidden">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+          <path d="M4 3L20 11L12.5 13.5L9.5 21L4 3Z" fill="#06B6D4" stroke="#FFFFFF" stroke-width="1.8"/>
+        </svg>
+        <span id="ai-cursor-tag">J.A.R.V.I.S.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       PERSISTENT RIGHT-SIDE J.A.R.V.I.S. CIRCULAR HUD & SUBSYSTEMS
+       ========================================================= -->
+  <div id="jarvis-hud-dock">
+    <div id="jarvis-ring-container" title="Click to talk to J.A.R.V.I.S.">
+      <canvas id="jarvis-hud-canvas" width="440" height="440"></canvas>
+      <div class="jarvis-center-label">J.A.R.V.I.S.</div>
+    </div>
+
+    <!-- Status + Brain Switcher Row -->
+    <div class="jarvis-badges-row">
+      <div id="jarvis-status-pill" class="hud-pill status-online">
+        <span class="status-dot"></span>
+        <span id="jarvis-status-text">ONLINE</span>
+      </div>
+
+      <div class="brain-dropdown-wrap">
+        <button id="brain-switcher-btn" class="hud-pill brain-pill">
+          <span class="status-dot brain-dot"></span>
+          <span id="brain-label-text">OPUS 5.5</span>
+          <span class="chevron">▾</span>
+        </button>
+        <div id="brain-dropdown-menu" class="glass-panel hidden">
+          <button class="brain-option" data-brain="fable-5.2">
+            <span class="opt-dot purple"></span>
+            <div>
+              <div class="opt-name">Claude Fable 5.2</div>
+              <div class="opt-desc">3D Workshop · Spatial CAD · Deep Reasoning</div>
+            </div>
+          </button>
+          <button class="brain-option active" data-brain="opus-5.5">
+            <span class="opt-dot emerald"></span>
+            <div>
+              <div class="opt-name">Claude Opus 5.5</div>
+              <div class="opt-desc">Second Brain · Fast Ops · General Butler</div>
+            </div>
+          </button>
+          <div class="brain-menu-footer">
+            <span id="hud-engine-pill">Engine: Checking...</span>
+            <button id="brain-menu-settings-link" class="link-emerald" style="margin-top:0;">⚙️ AI Hub</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visualizer Mode Row -->
+    <div class="jarvis-vis-modes">
+      <button class="vis-btn active" data-vis="ring">RING</button>
+      <button class="vis-btn" data-vis="cube">CUBE</button>
+      <button class="vis-btn" data-vis="face">FACE</button>
+    </div>
+
+    <div id="jarvis-live-hearing" class="hidden">● listening...</div>
+
+    <!-- Lower Right Subsystem Toggles (EYES / HOLO / FOCUS / REFLEX) -->
+    <div id="jarvis-subsystems">
+      <button class="sys-toggle-row" id="sys-eyes-btn" data-state="off">
+        <span class="sys-name">EYES</span>
+        <span class="sys-val">off</span>
+      </button>
+      <button class="sys-toggle-row" id="sys-holo-btn" data-state="off">
+        <span class="sys-name">HOLO</span>
+        <span class="sys-val">off</span>
+      </button>
+      <button class="sys-toggle-row" id="sys-focus-btn" data-state="off">
+        <span class="sys-name">FOCUS</span>
+        <span class="sys-val">off</span>
+      </button>
+      <button class="sys-toggle-row" id="sys-reflex-btn" data-state="hidden">
+        <span class="sys-name">REFLEX</span>
+        <span class="sys-val">hidden</span>
+      </button>
+    </div>
+
+    <!-- Optional Webcam Preview when EYES is ON -->
+    <div id="eyes-preview-box" class="glass-panel hidden">
+      <video id="eyes-webcam-video" autoplay playsinline muted></video>
+      <div class="eyes-caption">OPTICAL SENSOR ACTIVE</div>
+    </div>
+
+    <!-- Reflex / Tool Execution Log Drawer when REFLEX is ACTIVE -->
+    <div id="reflex-drawer" class="glass-panel hidden">
+      <div class="section-title">AGENT REFLEX & TOOL LOG</div>
+      <div id="reflex-log-list"></div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       PERSISTENT BOTTOM PROMPT BAR & ACTION DOCK BUTTONS
+       ========================================================= -->
+  <div id="bottom-hud-bar">
+    <div id="jarvis-subtitle-toast" class="hidden"></div>
+
+    <div class="bottom-bar-inner">
+      <form id="jarvis-prompt-form" class="prompt-pill glass-panel">
+        <input
+          type="text"
+          id="jarvis-prompt-input"
+          placeholder='Ask about your Second Brain, projects, Bonobo · or "build your 3D body"...'
+          autocomplete="off"
+        />
+      </form>
+
+      <div class="dock-buttons">
+        <button id="dock-voice-btn" class="dock-icon-btn active" title="Toggle JARVIS Spoken Voice (TTS)">
+          🔊
+        </button>
+        <button id="dock-robot-btn" class="dock-icon-btn" title="3D Workshop — Build Jarvis Reactor Companion">
+          🛠️
+        </button>
+        <button id="dock-computer-btn" class="dock-icon-btn" title="Computer Use — Meta Ads Autonomous Driver">
+          🖥️
+        </button>
+        <button id="dock-house-btn" class="dock-icon-btn" title="2D Floor Plan → 3D Architectural Studio & Miniature">
+          🏠
+        </button>
+        <button id="dock-demos-btn" class="dock-icon-btn" title="Command Deck — Second Brain & 3D Studio Prompts">
+          💡
+        </button>
+        <button id="dock-settings-btn" class="dock-icon-btn" title="Settings — AI Connections, Second Brain Vaults & Visual Customizations">
+          ⚙️
+        </button>
+        <button id="dock-mic-btn" class="dock-icon-btn mic-btn" title="Tap to Speak to JARVIS">
+          🎙️
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       COMMAND DECK MODAL (💡)
+       ========================================================= -->
+  <div id="quick-modal" class="modal-backdrop hidden">
+    <div class="quick-modal-card glass-panel">
+      <div class="quick-modal-header">
+        <div>
+          <h2>J.A.R.V.I.S. Command Deck</h2>
+          <p>Ask open-ended questions grounded in your Andrei OS Second Brain, or launch any 3D Workshop / Computer Use workflow.</p>
+        </div>
+        <button id="quick-modal-close" class="mini-pill-btn">✕</button>
+      </div>
+
+      <div class="quick-grid">
+        <div class="quick-col">
+          <div class="section-title">1. ANDREI OS — REAL SECOND BRAIN</div>
+          <button class="demo-cmd-btn" data-cmd="What are my active projects in Andrei OS?">
+            <span>🗂️</span> "What are my active projects in Andrei OS?"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Tell me about my Bonobo workstation and home infrastructure">
+            <span>🖥️</span> "Tell me about my Bonobo workstation & infrastructure"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Trace the path between Nerva si Jarvis Hub and Bonobo">
+            <span>✨</span> "Trace path between Nerva si Jarvis Hub & Bonobo"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Jarvis, switch your brain to Fable 5.2">
+            <span>🧠</span> "Jarvis, switch your brain to Fable 5.2"
+          </button>
+
+          <div class="section-title" style="margin-top:14px;">2. 3D ROBOT BODY & EXPLODED VIEW</div>
+          <button class="demo-cmd-btn" data-cmd="Jarvis, build yourself a 3D body">
+            <span>🤖</span> "Jarvis, build yourself a 3D body"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Make the reactor housing anodized red, keep the ring emerald green">
+            <span>🔴</span> "Make the reactor housing anodized red, keep ring emerald"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Give me an exploded view of your chassis">
+            <span>💥</span> "Give me an exploded view of your chassis"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Put yourself back together">
+            <span>🔩</span> "Put yourself back together"
+          </button>
+        </div>
+
+        <div class="quick-col">
+          <div class="section-title">3. 2D FLOOR PLAN → 3D & MINIATURE</div>
+          <button class="demo-cmd-btn" data-cmd="Turn the Pool Home floor plan into a 3D model">
+            <span>📐</span> "Turn the Pool Home floor plan into a 3D model"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Remove the front stairs, center the front door, and park cars in the garage">
+            <span>🚗</span> "Remove front stairs, center front door & add garage cars"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Enlarge the living room by 2 meters">
+            <span>📏</span> "Enlarge the living room by 2 meters"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Add palm trees and flowers behind the pool">
+            <span>🌴</span> "Add palm trees and flowers behind the pool"
+          </button>
+          <button class="demo-cmd-btn" data-cmd="Show me the photorealistic miniature render">
+            <span>🏜️</span> "Show me the photorealistic miniature render"
+          </button>
+
+          <div class="section-title" style="margin-top:14px;">4. COMPUTER USE (META ADS)</div>
+          <button class="demo-cmd-btn" data-cmd="Open Meta Ads Manager and create a new leads campaign for AI Workshop Skool">
+            <span>🎯</span> "Create a new Meta Ads leads campaign"
+          </button>
+        </div>
+      </div>
+
+      <div class="deck-footer-bar">
+        <span>Configure Anthropic Subscription, Multi-Platform AI Hub, Vaults & Visuals in Settings:</span>
+        <button id="deck-open-settings-btn" class="cu-action-btn primary">⚙️ Open Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       DEDICATED SETTINGS MODAL (⚙️): AI HUB · SECOND BRAIN · VISUALS
+       ========================================================= -->
+  <div id="settings-modal" class="modal-backdrop hidden">
+    <div class="settings-modal-card glass-panel">
+      <div class="quick-modal-header">
+        <div>
+          <h2>⚙️ System Settings — AI Hub, Second Brain & Visuals</h2>
+          <p>Connect your Anthropic subscription or multi-platform AI providers, manage real knowledge vaults, and customize 3D visuals.</p>
+        </div>
+        <button id="settings-modal-close" class="mini-pill-btn">✕</button>
+      </div>
+
+      <!-- Settings Navigation Tabs -->
+      <div class="settings-tabs-bar">
+        <button class="settings-tab-btn active" data-stab="ai" data-standalone-only>🔌 AI Connections</button>
+        <button class="settings-tab-btn" data-stab="brain">🧠 Second Brain Vaults</button>
+        <button class="settings-tab-btn" data-stab="visuals">🎨 Visual Customizations</button>
+      </div>
+
+      <!-- TAB 1: UNIFIED AI PLATFORM CONNECTIONS -->
+      <div class="settings-tab-pane active" id="stab-ai">
+        <div class="ai-routing-banner">
+          <div>
+            <div class="section-title" style="margin-bottom:3px;">ACTIVE ROUTING ORCHESTRATOR</div>
+            <div class="routing-live-line">
+              Live Responder: <strong id="settings-active-engine">Detecting...</strong>
+            </div>
+          </div>
+          <select id="cfg-preferred-provider" class="settings-select">
+            <option value="auto">Auto (Anthropic Sub → Cloud APIs → Local Ollama)</option>
+            <option value="claude_subscription">Anthropic Subscription (Claude CLI Only + Local Fallback)</option>
+            <option value="ollama">Local Ollama Only (100% On-Device Private)</option>
+            <option value="anthropic">Anthropic Console API Key</option>
+            <option value="openai">OpenAI / ChatGPT API Key</option>
+            <option value="gemini">Google Gemini API Key</option>
+            <option value="openrouter">OpenRouter / Bonobo LM Studio Endpoint</option>
+          </select>
+        </div>
+
+        <!-- Featured Demo Card: Anthropic Subscription -->
+        <div class="provider-featured-card">
+          <div class="provider-card-top">
+            <div>
+              <div class="provider-title">
+                <span>🟣 Anthropic Subscription (Claude Pro / Max via Claude Code CLI)</span>
+                <span id="claude-sub-badge" class="conn-pill pending">Checking...</span>
+              </div>
+              <p class="provider-desc">
+                Recommended for demo & daily use — routes JARVIS chat & RAG through your existing Anthropic subscription (`claude -p --model fable|sonnet`) with zero per-token API charges.
+              </p>
+            </div>
+            <div class="provider-actions-col">
+              <button id="btn-claude-oauth" class="cu-action-btn primary">🔑 Sign in with Claude Subscription</button>
+              <button id="btn-refresh-ai-status" class="mini-pill-btn">↻ Refresh Status</button>
+            </div>
+          </div>
+          <div id="claude-oauth-hint" class="oauth-hint hidden"></div>
+        </div>
+
+        <!-- Multi-Platform Connectors Grid -->
+        <div class="section-title" style="margin-top:14px;">UNIFIED MULTI-PLATFORM CONNECTORS (ALL-IN-ONE HUB)</div>
+        <div class="providers-grid">
+          <!-- Local Ollama -->
+          <div class="provider-card">
+            <div class="provider-card-header">
+              <span>🦙 Local Ollama Runtime</span>
+              <span id="ollama-status-badge" class="conn-pill">Checking...</span>
+            </div>
+            <div class="field-stack">
+              <input type="text" id="cfg-ollama-url" placeholder="http://127.0.0.1:11434" />
+              <select id="cfg-ollama-model" class="settings-select">
+                <option value="qwen3.5:4b">qwen3.5:4b (Installed Local)</option>
+                <option value="qwen3.5:0.8b">qwen3.5:0.8b (Ultra-Fast Local)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Anthropic API -->
+          <div class="provider-card">
+            <div class="provider-card-header">
+              <span>🅰️ Anthropic Console API</span>
+              <span id="badge-anthropic" class="conn-pill">Optional</span>
+            </div>
+            <div class="field-stack">
+              <input type="password" id="cfg-anthropic" placeholder="Anthropic API Key (sk-ant-...)" />
+              <span class="field-note">Direct Messages API (`claude-opus-4` / `claude-sonnet-4`)</span>
+            </div>
+          </div>
+
+          <!-- OpenAI / ChatGPT -->
+          <div class="provider-card">
+            <div class="provider-card-header">
+              <span>🟢 OpenAI / ChatGPT API</span>
+              <span id="badge-openai" class="conn-pill">Optional</span>
+            </div>
+            <div class="field-stack">
+              <input type="password" id="cfg-openai" placeholder="OpenAI API Key (sk-...)" />
+              <span class="field-note">Routes via `gpt-4o` structured JSON mode</span>
+            </div>
+          </div>
+
+          <!-- Google Gemini -->
+          <div class="provider-card">
+            <div class="provider-card-header">
+              <span>🔵 Google Gemini API</span>
+              <span id="badge-gemini" class="conn-pill">Optional</span>
+            </div>
+            <div class="field-stack">
+              <input type="password" id="cfg-gemini" placeholder="Gemini API Key (AIza...)" />
+              <span class="field-note">Routes via `gemini-2.5-flash` low-latency JSON</span>
+            </div>
+          </div>
+
+          <!-- OpenRouter / Bonobo / LM Studio -->
+          <div class="provider-card">
+            <div class="provider-card-header">
+              <span>⚡ OpenRouter / Bonobo RTX 5090</span>
+              <span id="badge-openrouter" class="conn-pill">Optional</span>
+            </div>
+            <div class="field-stack">
+              <input type="text" id="cfg-openrouter-url" placeholder="https://openrouter.ai/api/v1/chat/completions" />
+              <div class="two-col-inputs">
+                <input type="text" id="cfg-openrouter-model" placeholder="Model ID (e.g. google/gemma-4-31b-a4b)" />
+                <input type="password" id="cfg-openrouter-key" placeholder="API Key (if required)" />
+              </div>
+            </div>
+          </div>
+
+          <!-- ElevenLabs Voice -->
+          <div class="provider-card">
+            <div class="provider-card-header">
+              <span>🎙️ Voice Synthesis (TTS)</span>
+              <span id="badge-elevenlabs" class="conn-pill connected">macOS Daniel Active</span>
+            </div>
+            <div class="field-stack">
+              <input type="password" id="cfg-elevenlabs" placeholder="Optional ElevenLabs API Key (xi-api-key)" />
+              <input type="text" id="cfg-elevenlabs-voice" placeholder="Voice ID (default: onwK4e9ZLuTAKqWW03F9)" />
+            </div>
+          </div>
+        </div>
+
+        <div class="api-save-row">
+          <span id="cfg-status-msg">Changes save locally to your private workspace config.</span>
+          <button id="cfg-save-btn" class="cu-action-btn primary">Save AI Connections</button>
+        </div>
+      </div>
+
+      <!-- TAB 2: SECOND BRAIN VAULT SOURCES & CAPTURE -->
+      <div class="settings-tab-pane" id="stab-brain">
+        <div class="ai-routing-banner">
+          <div>
+            <div class="section-title" style="margin-bottom:3px;">ACTIVE SECOND BRAIN DATASET</div>
+            <div class="routing-live-line">
+              Switch between your real Obsidian + Nerva knowledge base and the 550-node video demo.
+            </div>
+          </div>
+          <select id="cfg-vault-mode" class="settings-select" data-standalone-only>
+            <option value="andrei_plus_nerva">Andrei OS Obsidian + Nerva / Jarvis Hub (Recommended)</option>
+            <option value="andrei_os">Andrei OS Obsidian Only (132 Notes)</option>
+            <option value="demo_550">Video Showcase Demo Brain (Zubair 550 Nodes)</option>
+          </select>
+        </div>
+
+        <div class="section-title" style="margin-top:12px;">DISCOVERED SECOND BRAIN REPOSITORIES ON THIS MAC & DRIVE</div>
+        <div id="discovered-sources-list" class="sources-list"></div>
+
+        <div class="providers-grid" style="margin-top:12px;">
+          <div class="provider-card">
+            <div class="provider-card-header">
+              <span>📂 Primary Obsidian Vault Path</span>
+            </div>
+            <div class="field-stack">
+              <input type="text" id="cfg-vault-path" value="" placeholder="auto-detected: ~/Documents/Andrei OS Obsidian" />
+              <span class="field-note">Indexes `.md`, `.canvas`, YAML frontmatter, and `[[wiki-links]]`</span>
+            </div>
+          </div>
+          <div class="provider-card">
+            <div class="provider-card-header">
+              <span>🤖 Nerva / Jarvis Hub Repo Path</span>
+            </div>
+            <div class="field-stack">
+              <input type="text" id="cfg-nerva-path" value="" placeholder="auto-detected: enclosing jarvis-hub repo" />
+              <span class="field-note">Bridges Nerva architecture & 17-agent cabinet docs into `02 Proiecte`</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="api-save-row" style="margin-bottom:16px;">
+          <span id="vault-status-msg">All 132 Obsidian notes & 530 wiki-links indexed locally.</span>
+          <button id="btn-save-vault" class="cu-action-btn primary">↻ Apply & Re-index Brain</button>
+        </div>
+
+        <div class="capture-box">
+          <div class="section-title">BUILD ON TOP — QUICK CAPTURE TO `08 INBOX`</div>
+          <div class="field-stack">
+            <input type="text" id="inbox-note-title" placeholder="New note title (saved directly as Markdown in 08 Inbox/)" />
+            <textarea id="inbox-note-body" rows="3" placeholder="Write note content... Use [[Acasa]] or [[Nerva si Jarvis Hub]] to auto-connect in the 3D galaxy."></textarea>
+          </div>
+          <div class="api-save-row">
+            <span id="inbox-capture-msg">Writes non-destructively to `Andrei OS Obsidian/08 Inbox/`.</span>
+            <button id="btn-capture-inbox" class="cu-action-btn primary">+ Save Note to Vault</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: VISUAL CUSTOMIZATIONS & HUD DECLUTTER (HIDDEN OFF HOMESCREEN) -->
+      <div class="settings-tab-pane" id="stab-visuals">
+        <div class="providers-grid">
+          <!-- FORCES -->
+          <div class="provider-card">
+            <div class="section-title">3D GALAXY FORCES</div>
+            <label class="slider-row">
+              <span>Cluster Repel</span>
+              <input type="range" id="force-repel" min="40" max="180" value="100" />
+            </label>
+            <label class="slider-row">
+              <span>Link Length</span>
+              <input type="range" id="force-link-length" min="40" max="180" value="100" />
+            </label>
+          </div>
+
+          <!-- DISPLAY -->
+          <div class="provider-card">
+            <div class="section-title">GALAXY RENDER LAYERS</div>
+            <label class="check-row">
+              <span>Hub labels</span>
+              <input type="checkbox" id="toggle-hub-labels" checked />
+              <span class="custom-check"></span>
+            </label>
+            <label class="check-row">
+              <span>Particle flow along links</span>
+              <input type="checkbox" id="toggle-particle-flow" checked />
+              <span class="custom-check"></span>
+            </label>
+            <label class="check-row">
+              <span>Auto-rotate orbit</span>
+              <input type="checkbox" id="toggle-auto-rotate" checked />
+              <span class="custom-check"></span>
+            </label>
+            <label class="check-row">
+              <span>Deep-space starfield</span>
+              <input type="checkbox" id="toggle-starfield" checked />
+              <span class="custom-check"></span>
+            </label>
+          </div>
+
+          <!-- THEME & PROJECTION -->
+          <div class="provider-card">
+            <div class="section-title">COLOR THEME & PROJECTION</div>
+            <div class="theme-swatches" id="theme-swatches">
+              <button class="swatch-btn active" data-theme="emerald" title="Emerald & Coral">
+                <span style="background: linear-gradient(135deg, #10b981 50%, #f43f5e 50%)"></span>
+              </button>
+              <button class="swatch-btn" data-theme="violet" title="Violet & Cyan">
+                <span style="background: linear-gradient(135deg, #a855f7 50%, #06b6d4 50%)"></span>
+              </button>
+              <button class="swatch-btn" data-theme="lime" title="Lime & Indigo">
+                <span style="background: linear-gradient(135deg, #4ade80 50%, #6366f1 50%)"></span>
+              </button>
+              <button class="swatch-btn" data-theme="cyber" title="Sky & Electric Blue">
+                <span style="background: linear-gradient(135deg, #38bdf8 50%, #1d4ed8 50%)"></span>
+              </button>
+            </div>
+            <div class="projection-pills">
+              <button id="mode-3d-btn" class="proj-btn active">3D Orbit</button>
+              <button id="mode-flat-btn" class="proj-btn">Flat Map</button>
+            </div>
+          </div>
+
+          <!-- HOMESCREEN & HUD VISIBILITY -->
+          <div class="provider-card">
+            <div class="section-title">HOMESCREEN & HUD VISIBILITY</div>
+            <label class="check-row">
+              <span>Show top-right Filter legend</span>
+              <input type="checkbox" id="toggle-filter-legend" checked />
+              <span class="custom-check"></span>
+            </label>
+            <label class="check-row">
+              <span>Show HUD subsystems (EYES / HOLO / FOCUS / REFLEX)</span>
+              <input type="checkbox" id="toggle-hud-subsystems" checked />
+              <span class="custom-check"></span>
+            </label>
+            <label class="check-row">
+              <span>Show RING / CUBE / FACE mode buttons</span>
+              <input type="checkbox" id="toggle-vis-modes" checked />
+              <span class="custom-check"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

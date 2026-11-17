@@ -2297,6 +2297,7 @@ from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
 from agents.core.routers.capture import router as _capture_router  # noqa: E402
+from agents.core.routers.jarvis_os import router as _jarvis_os_router  # noqa: E402
 from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
 from agents.core.routers.design_manifest import router as _design_manifest_router  # noqa: E402
 from agents.core.routers.vault import router as _vault_router  # noqa: E402
@@ -2373,6 +2374,7 @@ from agents.core.routers.artifact_store import router as _artifact_store_router
 app.include_router(_artifact_store_router)
 app.include_router(_browser_router)
 app.include_router(_capture_router)
+app.include_router(_jarvis_os_router)
 app.include_router(_rooms_router)
 app.include_router(_notes_router)
 app.include_router(_osint_router)

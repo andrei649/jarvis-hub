@@ -4,10 +4,18 @@
 PYTHON ?= python3
 PID_FILE := logs/runtime_supervisor.pid
 
-.PHONY: test runtime-up runtime-down runtime-status
+JARVIS_PORT ?= 4719
+
+.PHONY: test runtime-up runtime-down runtime-status jarvis-os
 
 test:
 	$(PYTHON) -m pytest tests/ -q
+
+# ANDREI OS / J.A.R.V.I.S. Second Brain & 3D Workshop (apps/jarvis-os) —
+# zero-dependency stdlib server on http://localhost:4719. Foreground; Ctrl+C stops it.
+# Windows without make: apps\jarvis-os\START.bat, or `npm run jarvis-os`.
+jarvis-os:
+	JARVIS_PORT=$(JARVIS_PORT) $(PYTHON) apps/jarvis-os/server.py
 
 # Starts the runtime supervisor (coordinator + heartbeat + night shift) in the
 # background and records its PID. It respawns scripts/coordinator.py itself on

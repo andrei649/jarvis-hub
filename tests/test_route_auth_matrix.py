@@ -103,6 +103,10 @@ PUBLIC_READS = {
     "GET /v1",
     "GET /v2",
     "GET /v2/{path:path}",
+    # ANDREI OS interface shell + its static assets (apps/jarvis-os/public); the vault
+    # routes behind it (/api/os/*) are user-guarded.
+    "GET /os",
+    "GET /os/{path:path}",
     "GET /admin",            # page shell only; every admin API behind it is admin-guarded
     "GET /favicon.ico",
     "GET /sw.js",
