@@ -34,6 +34,15 @@ it closes that signature; a different error creates a new incident. The existing
 three-consecutive-failure pause remains. Acknowledgement does not resume a job or
 approve an action. Use `jobs resume JOB_ID` to resume after addressing the cause.
 
+Each incident carries a `failure_type` — `rate_limit`, `timeout`, `auth`,
+`delivery`, `config`, `script`, `agent` or `unknown` — and moves
+`detected → alerted → closed`. The owner is alerted (an `E_JOB_PAUSED` problem)
+the first time a signature pauses its job; the incident then reads `alerted`, and
+the same failure pausing the job again records the pause reason without another
+alert. `closed` (acknowledged) is terminal for that signature; only a different
+error opens a new incident that may alert. An alert that could not be written is
+released back to `detected`.
+
 To rearm a completed one-shot, edit its schedule to a different future time.
 Then `jobs run JOB_ID` can execute that newly armed slot immediately. The manual
 and scheduled paths share the reservation, so a racing timer cannot execute it

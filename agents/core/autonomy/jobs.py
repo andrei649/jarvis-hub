@@ -2053,24 +2053,40 @@ class JobRunner:
         return run
 
     def _incident(self, job: Job, error: str, failures: int) -> None:
-        """One acknowledgeable incident when a job pauses itself — not one ping per failure."""
-        try:
-            from agents.core.autonomy.error_logger import persist_problem
-            from agents.core.errors import ErrorCategory, ErrorLog, ErrorSeverity
+        """One acknowledgeable incident when a job pauses itself — not one ping per failure.
 
-            persist_problem(
-                ErrorLog(
-                    code="E_JOB_PAUSED",
-                    message=f"job '{job.name}' paused itself after {failures} consecutive failures: {error}",
-                    category=ErrorCategory.INTERNAL,
-                    severity=ErrorSeverity.ERROR,
-                    component=f"job:{job.id}",
-                    timestamp=self._now(),
-                    meta={"job_id": job.id, "failures": failures},
-                )
-            )
+        H452: the alert is claimed on the incident first (detected -> alerted), so one
+        signature alerts the owner once; a signature already alerted or acknowledged
+        (closed is terminal) pauses the job with its recorded reason but alerts no more.
+        An alert that cannot be persisted releases the claim for a later attempt.
+        """
+        incident = None
+        try:
+            incident = self.store.incidents.claim_alert(job.id)
         except Exception:
-            logger.warning("job incident could not be persisted", exc_info=True)
+            logger.warning("job incident alert could not be claimed", exc_info=True)
+        if incident is not None:
+            try:
+                from agents.core.autonomy.error_logger import persist_problem
+                from agents.core.errors import ErrorCategory, ErrorLog, ErrorSeverity
+
+                persist_problem(
+                    ErrorLog(
+                        code="E_JOB_PAUSED",
+                        message=(f"job '{job.name}' paused itself after {failures} consecutive "
+                                 f"{incident['failure_type']} failures: {error}"),
+                        category=ErrorCategory.INTERNAL,
+                        severity=ErrorSeverity.ERROR,
+                        component=f"job:{job.id}",
+                        timestamp=self._now(),
+                        meta={"job_id": job.id, "failures": failures, "incident_id": incident["id"],
+                              "failure_type": incident["failure_type"]},
+                    )
+                )
+            except Exception:
+                logger.warning("job incident could not be persisted", exc_info=True)
+                with contextlib.suppress(Exception):
+                    self.store.incidents.release_alert(incident["id"])
         logger.error("job '%s' paused itself after %d consecutive failures: %s", job.name, failures, error)
 
     # actions ----------------------------------------------------------------

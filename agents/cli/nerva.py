@@ -5387,6 +5387,7 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
         else:
             for row in reply.get("incidents") or []:
                 ctx.say(f"#{row.get('id')}  {_log_display(row.get('state'), 20)}  "
+                        f"{_log_display(row.get('failure_type') or 'unknown', 20)}  "
                         f"{_log_display(row.get('job_id'), 80)}  {_log_display(row.get('safe_error'), 160)}")
             if not reply.get("incidents"):
                 ctx.say("no incidents")
