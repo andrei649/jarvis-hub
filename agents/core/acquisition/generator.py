@@ -69,6 +69,18 @@ _FORBIDDEN_ATTRIBUTES = frozenset(
 )
 _OUTPUT_KEYS = frozenset({"name", "entrypoint", "code", "test"})
 STDLIB_ALLOWLIST = tuple(sorted(_ALLOWED_MODULES))
+#: H566: the provenance of an extension a third-party author wrote and the owner submitted
+#: (agents.core.extensions.submission). It passes the same static checks, quarantine,
+#: sandbox verification, receipt and permanent owner approval as strict-local output; the
+#: route only records who wrote the bytes.
+OWNER_SUBMITTED_ROUTE = "owner-submitted"
+ACCEPTED_MODEL_ROUTES = frozenset({"strict-local", OWNER_SUBMITTED_ROUTE})
+
+
+def authored_goal(name: str, version: str) -> str:
+    """The goal an owner-submitted extension package is generated for. Its hash is a
+    package member, so the version an install uses is bound to the package hash."""
+    return f"nerva extension {name} {version}"
 
 
 class GenerationError(RuntimeError):
@@ -367,6 +379,9 @@ class StrictLocalGenerator:
 
 
 __all__ = [
+    "ACCEPTED_MODEL_ROUTES",
+    "OWNER_SUBMITTED_ROUTE",
+    "authored_goal",
     "CapabilityContract",
     "ContractCase",
     "GeneratedPackage",

@@ -1575,6 +1575,27 @@ the stage at boot, before any store opens. How the hub restarts depends on where
 discarded at `expires_at` (`JARVIS_RESTORE_STAGE_TTL_HOURS`, default 24) unless the hub was
 restarted with `python serve.py` (or the service / `nerva.exe`) before then.
 
+### `JARVIS_RUNTIME_COORDINATOR` (H573)
+
+Default on. `0` switches the headless coordinator (`scripts/coordinator.py`) off: it exits
+at once with status `125`, and `scripts/runtime_supervisor.py` records one `disabled` event
+in the run-log instead of respawning it. In a container the supervisor then holds (stays up,
+doing nothing, until it is stopped), so the compose restart policy has nothing to restart;
+the systemd unit passes `--exit-when-disabled`, so the supervisor exits `125`, which the unit
+treats as a clean stop (`SuccessExitStatus=125`) and never restarts. This is Hermes' s6
+"exit 125 so a disabled service reads as down rather than crash-looping". The run-log
+summary then reports `disabled: true` and `stale: true`. To turn it back on, set
+`JARVIS_RUNTIME_COORDINATOR=1` (or remove it) and restart the service or container
+(`systemctl restart jarvis-runtime`, `docker compose restart runtime-coordinator`).
+
+The container user ids are not `JARVIS_` settings: `deploy/docker/entrypoint.sh` reads
+`NERVA_UID` / `NERVA_GID`, or `PUID` / `PGID` (default 1000), remaps the image's `nerva`
+user to them, hands it the data root (`NERVA_HOME` or `JARVIS_HOME`) and `/app/logs`, and
+drops root with `setpriv` (uid, gid, groups, inheritable and bounding capabilities, no new
+privileges) before the hub starts, then refuses to start if the process is still root.
+Ids must be whole numbers from 1 to 2147483647 (0 and `(uid_t)-1` would be root), and a
+data root of `/`, `/app` or a relative or dotted path is refused.
+
 ## Wave 2026-10-17 — Nerva Workspace (B2B pilot)
 
 Ten variables, all read through `agents/core/env_config.py` by
@@ -2095,6 +2116,7 @@ the compose file's own line.**
 | `docker-compose.yml` (hub) | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
 | `docker-compose.yml` (runtime) | `JARVIS_HOME` |
 | `docker-compose.quickstart.yml` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `docker-compose.windows.yml` | `JARVIS_HOST` (`0.0.0.0` inside the container, published on the host's 127.0.0.1 only; the hub then refuses to start without a token), `JARVIS_PORT`, `JARVIS_HOME` |
 | `deploy/systemd/jarvis-hub.service` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_SHUTDOWN_TIMEOUT`, `JARVIS_HOME` |
 | `deploy/systemd/jarvis-runtime.service` | `JARVIS_HOME`, `JARVIS_RUNTIME_LOG`, `JARVIS_RUNTIME_STATE` |
 | `deploy/windows/install-service.ps1` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_SHUTDOWN_TIMEOUT`, `JARVIS_HOME` (script parameters) |

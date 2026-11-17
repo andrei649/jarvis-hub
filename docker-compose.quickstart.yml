@@ -15,6 +15,8 @@
 #     Linux: works out of the box. Docker Desktop (macOS/Windows) 4.34+: enable
 #     "Enable host networking" in Settings → Resources → Network first.
 #   * the data root is a named volume (JARVIS_HOME=/data), never the image.
+#   * the hub runs as the unprivileged `nerva` user, remapped at start to NERVA_UID /
+#     NERVA_GID or PUID / PGID from .env (default 1000) — deploy/docker/entrypoint.sh.
 #   * cloud keys are never baked in; put them (opt-in) in a local `.env` next to
 #     this file — `env_file` is optional and the file is not required to exist.
 #
@@ -30,6 +32,8 @@ services:
         COPY requirements-beta.lock .
         RUN pip install --no-cache-dir --require-hashes -r requirements-beta.lock
         COPY . .
+        RUN useradd --uid 1000 --user-group --no-create-home --home-dir /data --shell /usr/sbin/nologin nerva
+        ENTRYPOINT ["sh", "/app/deploy/docker/entrypoint.sh"]
         CMD ["python", "serve.py"]
     network_mode: host
     # RB-2: these three are pinned here, under the JARVIS_ spelling. In compose `environment:`

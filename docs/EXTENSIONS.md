@@ -85,6 +85,27 @@ dependents. `validate_registration` is what S2's activation compares the isolate
 registration against — validating a descriptor still registers nothing and authorizes
 no dispatch, so a clean `doctor` run is not permission.
 
+## Declarations in installed Python distributions
+
+A Python distribution can declare an extension through the `nerva.extensions`
+entry-point group, which Nerva reads from installed metadata **without importing it**:
+
+```toml
+[project.entry-points."nerva.extensions"]
+boats = "nerva_boats:extension"     # the descriptor is nerva_boats/extension.json
+```
+
+```console
+nerva extensions doctor --installed --json
+```
+
+The doctor reads `entry_points.txt`, `RECORD` and that one JSON file. The descriptor
+must be listed in the distribution's `RECORD`, must be a regular file (a symlink is
+refused), must be at most 64 KiB, and its `id` must equal the entry-point name. A bad
+entry is reported with its reason and skipped on its own. `EntryPoint.load()` is never
+called. A declaration found this way grants nothing and makes nothing callable: code
+runs only as a signed acquired package.
+
 ## Inspect acquired packages
 
 ```console
@@ -137,10 +158,38 @@ Docker and Windows acceptance remain separate checks.
 
 ```console
 nerva extensions doctor boats.json          # what does it declare, and is it well formed
-nerva extensions consent boats.json         # agree to exactly that
+nerva extensions consent boats.json --preview   # the consent screen; records nothing
+nerva extensions consent boats.json         # the screen, then "Agree to exactly this? [y/N]"
 nerva extensions activate boats.json        # prove it in the sandbox; its tools go live
 nerva extensions consent boats.json --revoke
 ```
+
+### The consent screen and the capability registry (H570)
+
+Every capability a descriptor may declare has one entry in
+`agents/core/extensions/capabilities.py` (`CAPABILITY_REGISTRY`): a title, the risk
+sentence the owner reads, and the host mechanism that enforces it. A test pins the
+registry to the parser's vocabulary, so a capability without a risk sentence cannot
+ship. The guardian approval events carry an extra sentence because they carry masked
+excerpts of the command under review.
+
+| capability | the owner reads |
+|---|---|
+| `tools` | the assistant may call the extension's code with arguments from the conversation; it runs sealed (no network, host files or credentials) and its output reaches the model fenced as untrusted data |
+| `commands` | the owner can run the extension's code by typing its slash commands; owner-only, never replacing a core command, replies sanitized |
+| `events.observe` | the extension is started once per delivered event with fixed summary fields; nothing it answers is read |
+
+Hermes' `tools.override`, `llm.*` and `gateway.platform_actions` capabilities have no
+Nerva counterpart because the parser refuses the surfaces they would unlock: an
+extension cannot override a core tool, a core command or a model call.
+
+`nerva extensions consent` first asks the hub for the screen (`"preview": true` on the
+same route records nothing), prints every capability with its risk sentence, the exact
+tools, commands and events, and — when the owner agreed to a different surface before —
+each added and removed declaration. Only then does it ask `Agree to exactly this?`.
+Without a terminal it refuses with `confirmation_required` unless `--yes` is given:
+a pipe never agrees. The risk sentences come from the local checkout; only the state
+and the diff come from the hub, and each diff item is shape-checked before printing.
 
 Consent is recorded as the **SHA-256 of the declared surface** — capabilities, tools,
 commands and events — not as a boolean against the extension id. Agreeing to "the
@@ -184,6 +233,77 @@ a fresh `register()` before calling, so a tool the extension no longer declares 
 refused (exit 97, reported as `tool_not_declared`) even if the host's view were stale.
 Anything the extension prints is swallowed; only the result envelope is read, so an
 extension cannot forge a result by printing one.
+
+## Install an author's extension (H566)
+
+An author ships a folder with three files — `extension.json` (the descriptor),
+`main.py` (`register()` plus `call`, `command` and/or `on_event` for what it declares)
+and `test_extension.py` (a unittest module that calls a handler and asserts). Or a
+Python distribution ships the same three files beside the descriptor it declares under
+`nerva.extensions`, listed in its `RECORD`.
+
+```console
+nerva extensions install ./boats            # or: nerva extensions install --installed boats
+nerva approvals accept 42                   # the card the install printed
+nerva extensions consent boats/extension.json
+nerva extensions activate boats/extension.json
+```
+
+`install` reads the files locally and sends them as text (`POST
+/api/plugins/extensions/install`, admin; the hub never reads a path from a request).
+The hub then runs the acquisition pipeline, unchanged, refusing at the first step that
+fails:
+
+1. **static checks** — the generator's own rules: stdlib allowlist, no file, process,
+   network, dynamic import or `__` introspection, no `SystemExit`/`exit`/`quit`, no secret
+   or personal data, a real `register` and one handler per declared capability, a test
+   that asserts; and an id that is not a name the hub owns (any registered tool that is
+   not an acquired package's, the tool-search bridge names, the core commands — read from
+   the live registries, checked again when the card is applied);
+2. **quarantine** — an encrypted record whose package hash binds the source, the tests,
+   the descriptor and the version the package will install as;
+3. **sandbox verification** — in the acquisition profile's sealed container: the
+   author's tests, then a system-owned contract that `register()` returns exactly the
+   declared surface (it must exit 0 *and* print a marker with a nonce chosen for that
+   run), then the same contract with `register` replaced, which must fail;
+4. **proposal** — the verified receipt crosses the `skill.install` kernel gate;
+5. **the card** — an `extensions.install` card at the irreversible tier showing each
+   capability's risk sentence, the tools/commands/events, the sha256 of `main.py` and of
+   the tests, the owner-asserted provenance, and everything the install removes (the
+   package it replaces and any generic acquired tool of that name).
+
+Nothing is installed until a person accepts that exact card: a machine decider, an
+edited card, a payload that moved, a replayed card and a card for an unknown proposal
+are refused. A newer card for the same extension supersedes older waiting ones, a card
+is refused if the installed package changed since it was computed (no silent
+downgrade), and a card that is no longer waiting expires with its proposal. Acceptance
+records the permanent owner decision and runs the existing
+install (receipt re-check, signing, rollback archive). The package installs as the
+descriptor's version and with provenance `owner-submitted`, which is never registered
+as a generic acquired tool: **installing grants nothing**, and the extension's surface
+appears only after `consent` and `activate`.
+
+## Reproduce a set of extensions: packs (H571)
+
+```console
+nerva extensions pack export nerva-pack.json ./boats ./tides
+nerva extensions pack install nerva-pack.json
+```
+
+A pack (`pack_version` 1, at most 1 MiB and 64 entries) pins each extension to its
+exact version and the sha256 of its `main.py`, its tests, its canonical descriptor
+(`version` and `requires` included) and its declared surface. A
+pin is 64 lowercase hex characters; there are no ranges, tags or "latest". Each entry
+names a folder beside the pack (relative, no `..`, not a symlink) or an installed
+distribution. A pack carries nothing but pins: `consent`, `granted_capabilities`,
+`capabilities_consent` and config seeds are refused by name — extensions have no host
+configuration, and an agreement cannot travel in a file.
+
+`pack install` verifies every entry against its pins first; any mismatch refuses the
+whole pack before anything is sent. It then submits each extension separately, in
+dependency order (`requires.extensions`), so a pack of N extensions is N install
+cards, each accepted on its own and each still needing its own consent. Nerva fetches
+no remote code: a pack reproduces a set across machines from the bytes it is given.
 
 ## Isolation, and what is not proven here
 

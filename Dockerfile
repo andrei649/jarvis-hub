@@ -17,10 +17,15 @@
 #   * dependencies install from the hash-pinned lockfile, so an image built today
 #     and one built next year contain the same code;
 #   * no cloud key is ever an ARG or an ENV here. They arrive at run time or not
-#     at all — a secret in a build argument is a secret in the image history.
+#     at all — a secret in a build argument is a secret in the image history;
+#   * the hub never runs as root (H573). deploy/docker/entrypoint.sh starts as root
+#     only to remap the `nerva` user to NERVA_UID/NERVA_GID (or PUID/PGID, the NAS
+#     spelling; default 1000), hand it the data root, and drop every privilege with
+#     setpriv before exec — so files written to a bind mount are the host user's.
 #
 # Build:  docker build -t nerva .
 # Run:    docker run --network host -v nerva_data:/data nerva
+#         docker run --network host -e PUID=$(id -u) -e PGID=$(id -g) -v "$PWD/data:/data" nerva
 FROM python:3.12-slim
 
 # Fail fast and unbuffered: a container whose logs arrive after it dies is a
@@ -43,6 +48,9 @@ RUN pip install --no-cache-dir --require-hashes -r requirements-beta.lock
 
 COPY . .
 
+# The unprivileged user the hub runs as; the entrypoint remaps its ids at start.
+RUN useradd --uid 1000 --user-group --no-create-home --home-dir /data --shell /usr/sbin/nologin nerva
+
 # The data root is a volume. Declared here so a `docker run` without -v still
 # keeps state out of the writable layer rather than silently losing it on rm.
 VOLUME ["/data"]
@@ -50,4 +58,5 @@ VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3).status == 200 else 1)"
 
+ENTRYPOINT ["sh", "/app/deploy/docker/entrypoint.sh"]
 CMD ["python", "serve.py"]

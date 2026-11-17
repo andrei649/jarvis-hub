@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 
-from .generator import CapabilityContract, GeneratedPackage
+from .generator import ACCEPTED_MODEL_ROUTES, CapabilityContract, GeneratedPackage
 
 
 def canonical_hash(payload: object) -> str:
@@ -139,7 +139,7 @@ def receipt_matches_package(
         package.source_hash == source_hash
         and package.test_hash == test_hash
         and package.package_hash == package_hash
-        and package.model_route == "strict-local"
+        and package.model_route in ACCEPTED_MODEL_ROUTES
         and all(payload.get(key) == value for key, value in expected.items())
         and receipt.generated_test_exit == 0
         and receipt.contract_exit == 0

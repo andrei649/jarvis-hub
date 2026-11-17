@@ -2,7 +2,157 @@
 
 ## [Unreleased]
 
+### What changed for you — 2026-11-17
+
+**Extensions: install one somebody else wrote, safely**
+- `nerva extensions install ./folder` takes an author's extension (a descriptor, `main.py`
+  and its tests), runs its tests and checks in the sealed sandbox that it registers exactly
+  what it declares, then puts an install card in front of you. Nothing is installed until you
+  accept that card, and nothing becomes callable until you also consent and activate it.
+- Python packages can declare an extension; `nerva extensions doctor --installed` checks
+  them without ever importing their code, and `nerva extensions install --installed ID`
+  submits one the same way.
+- `nerva extensions pack export|install` pins a set of extensions by the exact hashes of
+  their files and reproduces it elsewhere: one card per extension, never a bulk yes, and a
+  pack whose files changed is refused before anything is sent.
+- `nerva extensions consent` now shows what you are agreeing to — each capability with its
+  risk in one sentence, and what changed since you last agreed — and asks before recording.
+- Fixed before release (security review): an extension can no longer be named after a core
+  tool or command, and installing one never removes a core tool; a newer install card
+  replaces older ones and an outdated card cannot downgrade an extension; cards you never
+  answered no longer block later installs; packs also pin each extension's requirements.
+
+**Running Nerva in a container**
+- The hub no longer runs as root inside the image. Set `PUID`/`PGID` (or
+  `NERVA_UID`/`NERVA_GID`, 1 to 2147483647) and files it writes to a bind mount are yours;
+  the container refuses to start if it would still be root.
+- `JARVIS_RUNTIME_COORDINATOR=0` switches the background coordinator off; it shows as down
+  instead of restarting forever.
+- `docker-compose.windows.yml` runs Nerva on Docker Desktop for Windows without host
+  networking, reachable only from your own machine and only with a token.
+
+**Nerva in your editor: earlier threads come back**
+- An editor can list the Nerva threads it opened, open one again with its earlier messages
+  shown (or without them), or continue one in a new thread. A thread stays with the folder it
+  was made for, and two editors can never hold the same one.
+- Windows editors talking to Nerva inside WSL can use their own paths (`C:\…`); they are
+  translated and then kept inside the session folder as before.
+- The editor is told how many tokens each answer used, when Nerva measured it.
+- `nerva acp --version`.
+- Fixed before release (security review): a continued thread is an editor thread for good (it
+  can be renewed, closed and given MCP servers, and reloading it keeps its history); the HUD
+  cannot continue an editor thread outside its folder; an editor whose thread lapsed and was
+  reopened elsewhere can no longer renew or close it; an unreadable thread list is set aside,
+  never overwritten; a `\\wsl$` path is used only for the distro Nerva runs in.
+
+**Other agents: a runaway or hostile peer is held back**
+- You can suspend an agent peer without deleting its key (HUD, Mesh peers). A peer may send
+  60 tasks a minute and at most 5 in one conversation (you can allow up to 20; tasks that name
+  no conversation count as one, until you decide them), so two agents cannot ping-pong
+  forever. A peer may keep at most 100 tasks waiting, and never pushes another peer's waiting
+  tasks out of the inbox.
+- A captured task cannot be sent again: each signed request is accepted once, and a peer can
+  sign a timestamp and a one-time value so a request older than five minutes is refused.
+- Tasks in the A2A inbox are shown with hidden instructions and invisible characters
+  neutralised, labelled as coming from a remote agent and closed by a marker the peer cannot
+  fake; the raw task is shown only on request. Every task, refusal and decision is a line on
+  the audit log, without the task's text.
+- Apps using Nerva's OpenAI-compatible API can ask to see tool progress while an answer is
+  streamed (`stream_options.include_tool_progress`).
+
+**MCP servers: safer to add, steadier to run**
+- A server whose launch command downloads and runs code, writes a login or startup file
+  (SSH keys, cron, shell profiles, systemd, launch agents) or injects a library is refused
+  when you add or install it, when a saved list is reloaded, and again before it starts.
+- A tool whose description or settings hide instructions for the model (or invisible
+  characters) is held back from the model and listed as quarantined in the server list
+  (`GET /api/admin/mcp`); you can release one exact description by its digest in the
+  saved server entry. Very long tool results are
+  saved to a private file and the model reads a preview.
+- Each server can have its own timeouts, keepalive, idle stop and restart period, a private
+  certificate authority or a client certificate (certificate checks are never turned off),
+  and can say it handles parallel calls. An idle server stops and comes back on its next
+  use; a server and the launcher that started it stop together, and servers left running
+  by a crash are cleaned up at the next start.
+- Remote (HTTP) servers can now ask for a completion or for your input, under the same
+  per-server settings, approval cards and daily budget as local ones; the budget is kept
+  across restarts.
+- Other apps writing through Nerva's MCP server are rate limited per client, and so are their
+  requests to Nerva's agents; a refused call writes nothing and is on the audit log. Refused
+  MCP calls tell the model not to retry.
+- Fixed before release (security review): the MCP write limit is now really enforced across
+  requests; launch commands hidden behind `env`, `timeout`, `uv run`, `npx`, `busybox` and
+  similar wrappers are checked too; instructions hidden in a tool's option lists, defaults or
+  look-alike letters are caught; a server process that ignores a stop request is killed with
+  its launcher; a private client key others can read is refused.
+
+**Configuration from the terminal, with fewer surprises**
+- `nerva config set` no longer replaces a whole group of settings with a single value by
+  accident: it asks you to add `--force` when you really mean it.
+- A mistyped setting name gets a suggestion: "did you mean llm.tool_loop_max_iterations?".
+- A change made with `nerva config set`, `unset` or `edit` is now on the audit log, worded
+  as a change made from the HUD is (secrets are never written there).
+- `nerva config env` lists every environment variable Nerva reads, whether it is set and
+  where from (never its value), its default and what it is for. A `.env` line Nerva does not
+  read (a typo, or a line from an older version) is flagged, with the name you probably
+  meant; `nerva doctor` flags it too.
+- `nerva config get NAME --explain` shows where a value comes from: the shipped default,
+  your saved setting, an environment variable it names, an administrator's pin or the
+  selected posture, with the one in effect marked. It works for environment variables
+  (which file or the shell sets it, never its value) and agents (`agents.jarvis.model`).
+- Fixed before release: a `nerva config` change and the running hub can no longer write
+  settings at the same moment; tokens inside a setting (an MCP server's headers) are hidden
+  when a value is shown; `--explain` never shows what an environment variable holds; a
+  settings store too old to migrate is left exactly as it is. `nerva config retired` lists
+  (hidden) and, with `--purge --yes`, deletes values a migration had to keep aside.
+- After an upgrade, `nerva config check` tells you which settings and environment variables
+  are new since your previous version. The settings store now records its schema version;
+  a future rename or removal of a setting carries your value across, or keeps it aside and
+  says so, instead of silently losing it.
+
 ### What changed for you — 2026-11-12
+
+**Jobs missed while Nerva was off run once when it comes back**
+- If the computer was off or asleep when a scheduled job was due, Nerva now runs the most
+  recent missed time once when it starts again, as long as it is still recent: within
+  half the job's interval, between 5 minutes and 6 hours (6 hours for a one-time job).
+  Older misses are listed in the job's history as "missed while the hub was down" instead
+  of all running at once. Paused jobs, the emergency stop and quiet hours still apply,
+  and jobs that run every 15 minutes or more often just wait for their next time. At most
+  20 jobs are caught up at one start, and a clock that is set wrong (ahead) catches
+  nothing up.
+
+**A scheduled job cannot be turned against you or against Nerva itself**
+- A job whose prompt hides instructions ("ignore previous instructions"), invisible
+  characters, or commands that leak secrets (sending an API key with `curl`, reading
+  `~/.env`, appending to `authorized_keys`) is refused when you create or edit it. Prose
+  that only mentions these things ("summarize the IAM credentials report") is fine.
+- If an existing job is refused when it runs (for example after this update, or because
+  it was written straight into the job database), it is paused with the reason and you
+  get one notice; it does not count as a failure.
+- Text a job pulls in when it runs (its last output, another job's output, a script's
+  output, a watched page) is cleaned of invisible characters. If it contains an
+  "ignore your instructions" line, the model is told it is quoted data, and the job keeps
+  running: a page someone else controls cannot stop your job.
+- A job that would stop, restart, update or uninstall Nerva (`systemctl restart
+  jarvis-hub`, killing the hub process, `nerva update apply`, `nerva service uninstall`,
+  the uninstall script, the restart route), in its prompt or its script, is refused, and so
+  is a job whose command Nerva cannot read (a program piped into a shell, a script written
+  and then run, a service named by a variable). A scheduled script may not run other script
+  files: put everything it needs in the one file. A job's own model turn cannot run such a
+  command, type it on the desktop, or rewrite Nerva's `.env` or service files either.
+  Restarting other things ("restart the router") is not affected.
+- A job can no longer be pointed at another server with your stored model key: an
+  endpoint or key written into its settings stops the run, and a pinned provider is
+  checked against your signed provider choice every time it fires.
+
+**Job failures say what kind they are, and alert you once per pause**
+- Each job incident now carries a type — rate limit, timeout, sign-in, delivery,
+  configuration, script, model or unknown — in `nerva jobs incidents` and the incidents API.
+- When a job pauses itself after repeated failures you are alerted once; the same failure
+  while it stays paused does not alert again. Resuming the job starts afresh, so it can
+  alert you again if it fails the same way. If the alert cannot be written, it is retried
+  the next time instead of being lost.
 
 **Nerva does not answer itself or the same message twice**
 - When WhatsApp, Signal, Matrix, Teams or Google Chat send the same message again (a retry),

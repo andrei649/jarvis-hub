@@ -2090,6 +2090,10 @@ export function MeshPeersPanel() {
           <span style={{ ...mono, color: 'var(--ink-2)' }}>{p.name || p.peer_id}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {p.secret_hint && <Tag>{p.secret_hint}</Tag>}
+            {/* H563: a credential is not permission — suspend a peer without revoking it */}
+            <button className="tool-btn" title={p.allowed === false ? 'suspended: allow again' : 'suspend this peer'}
+              onClick={() => actA('/api/a2a/peers/' + encodeURIComponent(p.peer_id) + '/policy', { allowed: p.allowed === false }, reload)}>
+              {p.allowed === false ? 'allow' : 'suspend'}</button>
             <button className="tool-btn" title="remove" onClick={() => apiDelete('/api/a2a/peers/' + encodeURIComponent(p.peer_id), { admin: true }).then(reload).catch(() => {})}>✕</button>
           </span>
         </Row>
@@ -2210,7 +2214,8 @@ export function A2AInboxPanel() {
   };
   return <Card title="A2A APPROVAL INBOX" live={asLive(d)} sub={items.length} onReload={reload}>
     <State e={e} loading={loading} n={items.length} />
-    {items.slice(0, 10).map((it, i) => <Row key={i}><span style={mono}>{it.peer || it.from || '?'}</span><span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(it.task || it.summary || '').slice(0, 40)}</span>
+    {/* H563: the peer's text as the hub defanged and framed it (banner dropped here) */}
+    {items.slice(0, 10).map((it, i) => <Row key={i}><span style={mono}>{it.peer_id || it.peer || '?'}</span><span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(it.view || '').split('\n\n').slice(1).join(' ').slice(0, 40)}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
         {/* PNL-106: the API body is {approve} — {approved} 422'd invisibly */}
         <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approve: true }, reload)}>✓</button>

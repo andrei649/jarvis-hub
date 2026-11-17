@@ -71,6 +71,39 @@ def doctor_paths(paths) -> dict:
             result["errors"].append({"index": index, "reason": reason})
     if result["errors"]:
         return result
+    return _doctor_manifests(manifests, result)
+
+
+def doctor_installed(*, distributions=None) -> dict:
+    """H570 — the same report for descriptors installed Python distributions declare
+    through the ``nerva.extensions`` entry-point group, read from metadata only.
+
+    Nothing is imported: :mod:`.distribution` reads ``entry_points.txt``, ``RECORD``
+    and one bounded JSON file per entry. A bad entry is reported and skipped on its own.
+    """
+    from .distribution import installed_declarations
+
+    result = {"ok": False, "mode": "inspection_only", "extensions": [], "errors": [], "order": []}
+    found = installed_declarations(distributions=distributions)
+    result["errors"] = [dict(row) for row in found["errors"]]
+    manifests = [row["manifest"] for row in found["extensions"]]
+    origin = {row["manifest"].id: {"distribution": row["distribution"],
+                                   "distribution_version": row["distribution_version"],
+                                   "descriptor": row["member"]} for row in found["extensions"]}
+    if not manifests:
+        result["ok"] = not result["errors"]
+        return result
+    errors = result["errors"]
+    result = _doctor_manifests(manifests, result)
+    for row in result["extensions"]:
+        row["source"] = "installed_distribution"
+        row.update(origin.get(row["id"], {}))
+    result["errors"] = errors + [error for error in result["errors"] if error not in errors]
+    result["ok"] = result["ok"] and not result["errors"]
+    return result
+
+
+def _doctor_manifests(manifests, result) -> dict:
     try:
         catalog = validate_catalog(manifests)
     except ManifestError as exc:

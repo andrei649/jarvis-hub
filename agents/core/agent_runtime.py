@@ -1902,6 +1902,15 @@ class AgentToolRuntime:
                 call, agent_id=agent_id, reason="hook_blocked", event_sink=event_sink,
                 extra={"notice": hooked}, spent=spent,
             )
+        # H457: inside a scheduled job's own turn, a command that would stop or restart
+        # this hub is refused outright (the unattended lane must not respawn-loop the box).
+        from .autonomy.jobs_guard import job_turn_refusal
+        lifecycle = job_turn_refusal(call.name, call.arguments)
+        if lifecycle is not None:
+            return await self._local_failure(
+                call, agent_id=agent_id, reason="job_lifecycle_blocked", event_sink=event_sink,
+                extra={"notice": lifecycle}, spent=spent,
+            )
 
         if gated:
             async with approval_lock:

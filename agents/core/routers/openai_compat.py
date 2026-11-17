@@ -38,6 +38,7 @@ import asyncio
 import copy
 import json
 import logging
+import threading
 import time
 from typing import Any
 
@@ -305,6 +306,9 @@ async def openai_chat_completions(request: Request):
         text, known, digest = await _turn_input(request, key, convo, session_id)
         stream_options = body.get("stream_options")
         include_usage = isinstance(stream_options, dict) and stream_options.get("include_usage") is True
+        # H560: tool progress as typed ``nerva.tool.progress`` frames, only when asked
+        # (a strict client may not expect a typed frame in a chat-completions stream).
+        tool_progress = isinstance(stream_options, dict) and stream_options.get("include_tool_progress") is True
         if stream:
             refusal = idempotency.check_header(request)
             if refusal is not None:
@@ -313,7 +317,8 @@ async def openai_chat_completions(request: Request):
             slot.take()
             return _SlotStreamingResponse(
                 slot, _chat_stream(orch, key, slot, text, session_id=session_id, agent=agent, model=model,
-                                   known=known, include_usage=include_usage, digest=digest),
+                                   known=known, include_usage=include_usage, digest=digest,
+                                   tool_progress=tool_progress),
                 media_type="text/event-stream", headers=_SSE_HEADERS)
         started = await asyncio.to_thread(idempotency.begin, request, f"openai_api:{key.key_id}", raw)
         if started.refusal is not None:
@@ -366,9 +371,19 @@ async def openai_chat_completions(request: Request):
     return JSONResponse(completion, headers=_NO_STORE)
 
 
+#: Tool-progress frames one streamed completion may carry (a runaway loop is not a firehose).
+MAX_TOOL_PROGRESS_EVENTS = 512
+
+
 async def _chat_stream(orch, key: ApiKey, slot: _Slot, text: str, *, session_id: str, agent: str | None,
-                       model: str, known: bool, include_usage: bool, digest: str | None):
-    """``chat.completion.chunk`` frames; the turn runs in a task that a disconnect cancels."""
+                       model: str, known: bool, include_usage: bool, digest: str | None,
+                       tool_progress: bool = False):
+    """``chat.completion.chunk`` frames; the turn runs in a task that a disconnect cancels.
+
+    With ``tool_progress`` (``stream_options.include_tool_progress``) each tool event of the
+    turn is also sent as a typed ``nerva.tool.progress`` frame (Hermes: ``hermes.tool.progress``)
+    carrying only the tool, the call id, the event and its status — the fields the HUD's tool
+    trail shows (``observability.tool_events.LIVE_FIELDS``), never arguments or results."""
     completion_id = protocol.new_id("chatcmpl-")
     created = int(time.time())
     queue: asyncio.Queue = asyncio.Queue()
@@ -379,10 +394,29 @@ async def _chat_stream(orch, key: ApiKey, slot: _Slot, text: str, *, session_id:
     async def on_token(_token: str) -> None:
         return None
 
+    loop = asyncio.get_running_loop()
+    progress_sent = {"n": 0}
+    progress_lock = threading.Lock()   # tool events can arrive from several worker threads
+
+    def on_tool(row: dict) -> None:
+        # Called on the loop or from a tool's worker thread; never blocks.
+        with progress_lock:
+            if progress_sent["n"] >= MAX_TOOL_PROGRESS_EVENTS:
+                return
+            progress_sent["n"] += 1
+        try:
+            if asyncio.get_running_loop() is loop:
+                queue.put_nowait(("tool", row))
+                return
+        except RuntimeError:
+            pass
+        loop.call_soon_threadsafe(queue.put_nowait, ("tool", row))
+
     async def runner() -> None:
         try:
             outcome = await run_turn(orch, key, text, session_id=session_id, agent_override=agent,
-                                     known_session=known, on_token=on_token)
+                                     known_session=known, on_token=on_token,
+                                     on_tool=on_tool if tool_progress else None)
         except (TurnBusy, NoModel, TurnIncomplete) as exc:
             await queue.put(("error", exc))
             return
@@ -401,6 +435,11 @@ async def _chat_stream(orch, key: ApiKey, slot: _Slot, text: str, *, session_id:
                                                     delta={"role": "assistant", "content": ""}))
         while True:
             kind, data = await queue.get()
+            if kind == "tool":
+                frame = protocol.tool_progress(data)
+                if frame is not None:
+                    yield protocol.sse_event(protocol.TOOL_PROGRESS_EVENT, frame)
+                continue
             if kind == "end":
                 if data.text:
                     yield protocol.sse_data(protocol.chat_chunk(completion_id, model, created=created,

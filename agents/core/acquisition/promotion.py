@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -16,12 +17,39 @@ from pathlib import Path
 from agents.core.paths import data_path
 from agents.core.secrets import SecretStore, SecretStoreError
 
+from .generator import OWNER_SUBMITTED_ROUTE, authored_goal
 from .models import RequestStatus
 from .package_store import PackageStoreError
 from .quarantine import QuarantineError, QuarantinePackageRejected
 from .receipt import VerificationReceipt, receipt_is_current, receipt_matches_package
 
 logger = logging.getLogger("jarvis.acquisition.promotion")
+
+
+def _version_bound(package, version: str) -> bool:
+    """Generated packages install as 0.1.0; an owner-submitted extension only as the
+    version its package hash binds (its goal hash is ``authored_goal(name, version)``)."""
+    if not isinstance(version, str):
+        return False
+    if package.model_route == OWNER_SUBMITTED_ROUTE:
+        expected = hashlib.sha256(authored_goal(package.name, version).encode("utf-8")).hexdigest()
+        return package.goal_hash == expected
+    return version == "0.1.0"
+
+
+ACQUIRED_CAPABILITY_PREFIX = "tool:acquired."
+
+
+def is_acquired_tool(tool_rpc, name: str) -> bool:
+    """Whether *name* is registered as an acquired package's generic tool, and only that."""
+    reader = getattr(tool_rpc, "registered_capabilities", None)
+    if not callable(reader):
+        return False
+    try:
+        capability = reader().get(name)
+    except Exception:  # noqa: BLE001 - cannot tell: never unregister
+        return False
+    return isinstance(capability, str) and capability.startswith(ACQUIRED_CAPABILITY_PREFIX)
 
 
 class PromotionError(RuntimeError):
@@ -151,6 +179,10 @@ class PromotionProposal:
     created_at: float
     decided_at: float | None = None
     decided_by: str | None = None
+    # H566: the version the package installs as. Generated packages always install as
+    # 0.1.0; an owner-submitted extension installs as its manifest's version, which its
+    # package hash binds (generator.authored_goal).
+    version: str = "0.1.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,7 +280,7 @@ class PromotionStore(_EncryptedRows):
                 raise PromotionError("promotion proposal capacity reached")
         return self._rows
 
-    def create(self, *, package, receipt: VerificationReceipt) -> PromotionProposal:
+    def create(self, *, package, receipt: VerificationReceipt, version: str = "0.1.0") -> PromotionProposal:
         with self._lock:
             rows = self._load()
             existing = next(
@@ -277,6 +309,7 @@ class PromotionStore(_EncryptedRows):
                 approval_mode="permanent",
                 status="pending",
                 created_at=float(self.clock()),
+                version=version,
             )
             self._commit([*rows, proposal])
             self._emit(
@@ -290,6 +323,18 @@ class PromotionStore(_EncryptedRows):
     def get(self, proposal_id: str) -> PromotionProposal | None:
         with self._lock:
             return next((row for row in self._load() if row.proposal_id == proposal_id), None)
+
+    def discard(self, proposal_id: str) -> bool:
+        """Drop a proposal nobody can approve any more (its card was superseded, rejected or
+        expired). Only a pending or rejected row; an approved or installed one is history."""
+        with self._lock:
+            rows = self._load()
+            kept = [row for row in rows
+                    if not (row.proposal_id == proposal_id and row.status in {"pending", "rejected"})]
+            if len(kept) == len(rows):
+                return False
+            self._commit(kept)
+            return True
 
     def decide(self, proposal_id: str, *, approved: bool, actor: str) -> PromotionProposal:
         with self._lock:
@@ -450,7 +495,7 @@ class PromotionBroker:
         self.failpoint = failpoint
         self._event_sink = event_sink
 
-    def propose(self, artifact_id: str, *, contract) -> PromotionProposal:
+    def propose(self, artifact_id: str, *, contract, version: str = "0.1.0") -> PromotionProposal:
         self._require_enabled()
         try:
             record = self.quarantine.get_record(artifact_id)
@@ -464,6 +509,8 @@ class PromotionBroker:
             raise PromotionError("verification receipt is invalid") from exc
         if not receipt_is_current(receipt, record.package, contract, self.profile):
             raise PromotionError("verification receipt or package integrity is tampered")
+        if not _version_bound(record.package, version):
+            raise PromotionError("install version is not bound to the package")
         payload = {
             "kind": "skill.install",
             "name": record.package.name,
@@ -480,7 +527,7 @@ class PromotionBroker:
         if decision == "deny":
             raise PromotionError("skill.install denied by action kernel")
         # Even an accidental kernel GRANT cannot bypass this permanent approval floor.
-        proposal = self.proposals.create(package=record.package, receipt=receipt)
+        proposal = self.proposals.create(package=record.package, receipt=receipt, version=version)
         request = self.requests.get(record.package.request_id)
         if request is not None and request.status == RequestStatus.QUARANTINED:
             self.requests.transition(
@@ -534,6 +581,7 @@ class PromotionBroker:
             or not receipt_matches_package(receipt, record.package)
             or receipt.runtime_image != self.profile.image
             or receipt.runtime_config_hash != self.profile.config_hash
+            or not _version_bound(record.package, proposal.version)
         ):
             raise PromotionError("approval receipt recheck detected tamper")
 
@@ -551,13 +599,20 @@ class PromotionBroker:
                 installed = self.packages.install(
                     package=record.package,
                     receipt=receipt,
-                    version="0.1.0",
+                    version=proposal.version,
                 )
             except PackageStoreError as exc:
                 raise PromotionError(str(exc)) from exc
             self.journal.advance(proposal_id, "installed")
             self.marketplace.index_acquired_package(installed.catalog_metadata())
             self._fail("installed")
+            if (record.package.model_route == OWNER_SUBMITTED_ROUTE
+                    and is_acquired_tool(self.tool_rpc, installed.name)):
+                # H566: an extension that replaces a generated package of the same name
+                # takes that package's generic tool off the surface (its own tools need
+                # consent). Only an acquired tool: a core tool of that name is never
+                # touched, and submission refuses such a name before any card exists.
+                await self.tool_rpc.unregister_tool(installed.name, cancel_inflight=True)
             self._register(installed.name)
             self.journal.advance(proposal_id, "registered")
             self._fail("registered")
@@ -673,6 +728,12 @@ class PromotionBroker:
 
     def _register(self, name: str) -> None:
         if self.tool_rpc.allows(name):
+            return
+        current = self.packages.get(name)
+        if current is not None and current.manifest.get("model_route") == OWNER_SUBMITTED_ROUTE:
+            # H566: an owner-submitted extension is never a generic acquired tool. Its tools
+            # reach the surface only through consent and isolated activation
+            # (agents.core.extensions.runtime), exactly as declared.
             return
         from agents.core.capability_manifests import RollbackContract
 

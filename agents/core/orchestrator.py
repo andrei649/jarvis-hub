@@ -594,7 +594,7 @@ async def _begin_project_context(orch) -> None:
             editor_cwd = acp_sessions.cwd_for(session)
             if editor_cwd is not None:
                 record = {"path": str(editor_cwd)}
-            elif str(session).startswith(acp_sessions.PREFIX):
+            elif acp_sessions.is_editor_conversation(session):
                 # G11 review M3: an editor conversation the hub no longer holds never runs
                 # unbound (prepare_session refuses it first; this is the floor).
                 from .session_continuation import EDITOR_SESSION_CLOSED, ContinuationRefused
@@ -901,11 +901,14 @@ class Orchestrator:
         self.mcp = MCPManager()
         # H553 — server-initiated sampling/elicitation answer through the owner's approval
         # queue, the local model rail and the kill switch, each read when a request arrives.
-        from .mcp.host_requests import MCPHost
+        from .mcp.host_requests import MCPHost, SamplingBudget
+        from .paths import data_path as _data_path
         self.mcp.attach_host(MCPHost(
             approvals=lambda: getattr(self, "action_approvals", None),
             router=lambda: getattr(self, "llm_router", None),
             kill_switch=lambda: getattr(self, "kill_switch", None),
+            # The day's sampling usage survives a restart (H553).
+            budget=SamplingBudget(persist_path=_data_path("mcp_sampling_budget.json")),
         ))
         self.channel_manager = ChannelManager()  # CLN-2: owns the channel registry + I/O
         self.checkpoints = CheckpointManager()

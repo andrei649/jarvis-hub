@@ -822,6 +822,7 @@ def init_db(force: bool = False):
 
 def _init_db_fenced(force: bool = False):
     _require_readable_store()
+    fresh = force or not DB_PATH.exists()
     conn = get_conn()
     # Replacing the old pair triggers and creating the shared choice epoch is a
     # single schema migration. A crash must never expose a store without the
@@ -839,6 +840,7 @@ def _init_db_fenced(force: bool = False):
     
     # Run INSERT OR IGNORE for all default settings to guarantee new updates are seeded dynamically
     inserted = 0
+    seeded: list[str] = []
     for row in DEFAULTS:
         if (preserve_skill_switches and row["category"] == "skills"
                 and row["key"] in {"disabled", "channel_disabled"}):
@@ -849,18 +851,34 @@ def _init_db_fenced(force: bool = False):
         )
         if cursor.rowcount > 0:
             inserted += 1
+            seeded.append(f"{row['category']}.{row['key']}")
             
     if inserted > 0:
         logger.info(f"Seeded {inserted} new default settings (total {len(DEFAULTS)})")
 
-    _migrate_retired_claude_default(conn)
-    _migrate_changed_defaults(conn)
+    # H258 — the version stamp, the rename/reshape/retire ladder and the post-migration
+    # report (new settings, new environment variables), in the same transaction. Review
+    # M5: the verdict comes first — a store the ladder refuses (too old, or stamped by a
+    # newer build) gets no value migration at all, only the declared rows it lacks.
+    from agents.core import settings_ladder
+
+    if settings_ladder.store_verdict(conn)[1] is None:
+        _migrate_retired_claude_default(conn)
+        _migrate_changed_defaults(conn)
+
+    settings_ladder.run(conn, spec=_SPEC, validate=_ladder_validate, seeded=seeded, fresh=fresh)
     _refresh_labels(conn)
     conn.commit()
     conn.close()
     _require_readable_store()
     if force:
         _changed(None, None)
+
+
+def _ladder_validate(cat: str, data: dict[str, Any]) -> list[str]:
+    """H258 — a ladder step's carried value judged as a write of it would be (no
+    environment references expanded: the value is the owner's as stored)."""
+    return validate_category(cat, data, references=False)
 
 
 def _refresh_labels(conn: sqlite3.Connection) -> int:
@@ -1866,6 +1884,22 @@ _CHOICE_KINDS = frozenset({"toggle", "select", "number", "slider"})
 _CREDENTIAL_NAME = re.compile(r"(token|secret|password|passwd|client_id|api_key|apikey)$")
 
 
+#: The view rule for a secret (``nerva config`` and ``--explain`` agree): its kind, the
+#: encrypted keys, a credential-like name unless the kind is a plain choice.
+_VIEW_SECRET_KINDS = frozenset({"secret", "password"})
+_VIEW_SECRET_HINTS = ("token", "secret", "password", "api_key", "apikey", "private")
+_VIEW_PLAIN_KINDS = frozenset({"number", "toggle", "select", "slider"})
+
+
+def secret_for_view(category: str, key: str, kind: str = "") -> bool:
+    """Whether a view masks this setting whole."""
+    low = str(key).lower()
+    if kind in _VIEW_SECRET_KINDS or key in SECRET_KEYS:
+        return True
+    return kind not in _VIEW_PLAIN_KINDS and (
+        any(hint in low for hint in _VIEW_SECRET_HINTS) or is_secret_setting(category, key))
+
+
 def is_secret_setting(category: str, key: str) -> bool:
     """A setting whose value is a credential: encrypted at rest, or named like one."""
     return key in SECRET_KEYS or bool(_CREDENTIAL_NAME.search(key))
@@ -1913,6 +1947,39 @@ def _looks_like_credential(value: Any) -> bool:
         return SecretRedactionFilter().redact_text(text) != text
     except Exception:  # noqa: BLE001 (no scanner: leave it out rather than risk it)
         return True
+
+
+#: What a view shows instead of a credential.
+MASK = "••••••"
+#: A key inside a json value whose value is a credential (``headers.Authorization``,
+#: ``env.GITHUB_TOKEN``, ``api_key``) — and the containers whose every value is treated as
+#: one (an MCP server's ``headers`` and ``env``).
+_CREDENTIAL_LEAF_NAME = re.compile(
+    r"(token|secret|password|passwd|api_?key|authorization|cookie|credential|private_?key|bearer)", re.I)
+_CREDENTIAL_CONTAINERS = frozenset({"headers", "env", "environment"})
+
+
+def masked_leaves(value: Any) -> Any:
+    """H257 review M2 — *value* (a copy) with every credential-shaped leaf replaced by
+    :data:`MASK`: a leaf under a credential-named key or inside ``headers``/``env``, and
+    any string the export's credential scan (``_looks_like_credential``) recognises. For
+    a view: ``config set``'s echo, ``config get``/``list`` and ``--explain``."""
+    def walk(node: Any, hot: bool) -> Any:
+        if isinstance(node, dict):
+            return {k: walk(v, hot or str(k).lower() in _CREDENTIAL_CONTAINERS
+                            or bool(_CREDENTIAL_LEAF_NAME.search(str(k))))
+                    for k, v in node.items()}
+        if isinstance(node, (list, tuple)):
+            return [walk(v, hot) for v in node]
+        if node is None or node == "" or isinstance(node, bool):
+            return node
+        if hot:
+            return MASK
+        if isinstance(node, str) and _looks_like_credential(node):
+            return MASK
+        return node
+
+    return walk(value, False)
 
 
 def _stored_values(conn: sqlite3.Connection) -> dict[tuple[str, str], Any]:

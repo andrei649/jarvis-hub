@@ -1208,6 +1208,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/a2a/peers/{peer_id}/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A2A Set Peer Policy
+         * @description Suspend or allow an authenticated peer, and set its per-conversation turn cap (H563).
+         */
+        post: operations["a2a_set_peer_policy_api_a2a_peers__peer_id__policy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/a2a/peers/{peer_id}/outbound": {
         parameters: {
             query?: never;
@@ -1256,7 +1276,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A2A Inbox */
+        /**
+         * A2A Inbox
+         * @description The inbox with each task's cleaned, framed ``view``; the peer's raw ``task`` only
+         *     with ``?raw=true`` (H563 review m6).
+         */
         get: operations["a2a_inbox_api_a2a_inbox_get"];
         put?: never;
         post?: never;
@@ -11746,11 +11770,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Acp List Sessions
+         * @description The editor conversations, newest first, a page of 50 (``session/list``).
+         */
+        get: operations["acp_list_sessions_api_acp_sessions_get"];
         put?: never;
         /**
          * Acp Open Session
-         * @description Open a conversation for an editor folder (``session/new``).
+         * @description Open a conversation for an editor folder (``session/new``), bind an earlier one again
+         *     (``load``: ``session/load`` / ``session/resume``) or continue one in a new conversation
+         *     (``fork``: ``session/fork``).
          */
         post: operations["acp_open_session_api_acp_sessions_post"];
         delete?: never;
@@ -11772,6 +11802,7 @@ export interface paths {
          * Acp Renew Session
          * @description `nerva acp` renews its sessions' lease while the editor is connected; a session
          *     whose lease runs out is reaped (its MCP servers removed) and refused from then on.
+         *     Only the editor holding the binding renews it (``X-ACP-Holder``).
          */
         post: operations["acp_renew_session_api_acp_sessions__session_id__lease_post"];
         delete?: never;
@@ -11791,7 +11822,8 @@ export interface paths {
         put?: never;
         /**
          * Acp Add Session Mcp
-         * @description Register an editor-supplied MCP server for this conversation only (H545).
+         * @description Register an editor-supplied MCP server for this conversation only (H545), for the
+         *     editor holding the binding (``X-ACP-Holder``).
          */
         post: operations["acp_add_session_mcp_api_acp_sessions__session_id__mcp_post"];
         delete?: never;
@@ -11812,7 +11844,9 @@ export interface paths {
         post?: never;
         /**
          * Acp Close Session
-         * @description The editor closed the session: remove its MCP servers, forget its folder.
+         * @description The editor closed the session: remove its MCP servers, forget its folder. Only the
+         *     editor holding the binding closes it (``X-ACP-Holder``); a session no longer held is a
+         *     no-op.
          */
         delete: operations["acp_close_session_api_acp_sessions__session_id__delete"];
         options?: never;
@@ -13221,6 +13255,29 @@ export interface paths {
          * @description Record or withdraw the owner's consent to exactly these declarations.
          */
         post: operations["extension_consent_api_plugins_extensions_consent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/plugins/extensions/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extension Install
+         * @description Verify an authored extension in the sandbox and queue the owner's install card.
+         *
+         *     Nothing is installed here: a person must accept the ``extensions.install`` card, and
+         *     the installed package still needs consent and activation before anything is callable.
+         */
+        post: operations["extension_install_api_plugins_extensions_install_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17076,6 +17133,17 @@ export interface components {
              */
             name: string;
         };
+        /**
+         * A2APeerPolicyBody
+         * @description The owner's switches for a peer (H563): suspend it without revoking its credential,
+         *     and how many tasks it may send in one conversation (1-20).
+         */
+        A2APeerPolicyBody: {
+            /** Allowed */
+            allowed?: boolean | null;
+            /** Turn Cap */
+            turn_cap?: number | null;
+        };
         /** AcpMcpBody */
         AcpMcpBody: {
             /** Name */
@@ -17093,6 +17161,10 @@ export interface components {
         AcpSessionBody: {
             /** Cwd */
             cwd: string;
+            /** Load */
+            load?: string | null;
+            /** Fork */
+            fork?: string | null;
         };
         /** AcquisitionCaseBody */
         AcquisitionCaseBody: {
@@ -18346,6 +18418,32 @@ export interface components {
              * @default false
              */
             revoke: boolean;
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
+        };
+        /**
+         * ExtensionInstallBody
+         * @description H566: a third-party author's extension, read by the owner's CLI and sent as text.
+         *
+         *     The hub never reads a path from a request: the descriptor and the two files arrive
+         *     in the body, bounded, and go through the acquisition pipeline to an approval card.
+         */
+        ExtensionInstallBody: {
+            /** Manifest */
+            manifest: {
+                [key: string]: unknown;
+            };
+            /** Source */
+            source: string;
+            /** Test */
+            test: string;
+            /** Provenance */
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** FeedbackBody */
         FeedbackBody: {
@@ -18843,6 +18941,24 @@ export interface components {
             oauth?: {
                 [key: string]: string;
             } | null;
+            /** Timeout */
+            timeout?: number | null;
+            /** Connect Timeout */
+            connect_timeout?: number | null;
+            /** Keepalive Interval */
+            keepalive_interval?: number | null;
+            /** Idle Timeout Seconds */
+            idle_timeout_seconds?: number | null;
+            /** Max Lifetime Seconds */
+            max_lifetime_seconds?: number | null;
+            /** Supports Parallel Tool Calls */
+            supports_parallel_tool_calls?: boolean | null;
+            /** Ssl Verify */
+            ssl_verify?: boolean | string | null;
+            /** Client Cert */
+            client_cert?: string | string[] | null;
+            /** Client Key */
+            client_key?: string | null;
         };
         /** MapBody */
         MapBody: {
@@ -22957,6 +23073,41 @@ export interface operations {
             };
         };
     };
+    a2a_set_peer_policy_api_a2a_peers__peer_id__policy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["A2APeerPolicyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     a2a_set_peer_outbound_api_a2a_peers__peer_id__outbound_put: {
         parameters: {
             query?: never;
@@ -23060,6 +23211,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string | null;
+                raw?: boolean;
             };
             header?: never;
             path?: never;
@@ -39185,6 +39337,38 @@ export interface operations {
             };
         };
     };
+    acp_list_sessions_api_acp_sessions_get: {
+        parameters: {
+            query?: {
+                cwd?: string | null;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     acp_open_session_api_acp_sessions_post: {
         parameters: {
             query?: never;
@@ -39221,7 +39405,9 @@ export interface operations {
     acp_renew_session_api_acp_sessions__session_id__lease_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-ACP-Holder"?: string | null;
+            };
             path: {
                 session_id: string;
             };
@@ -39252,7 +39438,9 @@ export interface operations {
     acp_add_session_mcp_api_acp_sessions__session_id__mcp_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-ACP-Holder"?: string | null;
+            };
             path: {
                 session_id: string;
             };
@@ -39287,7 +39475,9 @@ export interface operations {
     acp_close_session_api_acp_sessions__session_id__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-ACP-Holder"?: string | null;
+            };
             path: {
                 session_id: string;
             };
@@ -41230,6 +41420,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ExtensionConsentBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extension_install_api_plugins_extensions_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtensionInstallBody"];
             };
         };
         responses: {

@@ -545,7 +545,7 @@ _CLIENT_GLOBS = (
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
     "/chat/interrupt": "H224: Ctrl+C in `nerva chat -i` stops the caller's own running /chat turn",
-    "/api/acp/sessions":"G11: `nerva acp` opens a conversation for an editor folder (ACP session/new)",
+    "/api/acp/sessions":"G11/H542: `nerva acp` opens, loads, forks (POST) and lists (GET) editor conversations (ACP session/new, load, resume, fork, list)",
     "/api/acp/sessions/{session_id}": "G11: `nerva acp` closes an editor session and its MCP servers",
     "/api/acp/sessions/{session_id}/lease": "G11 review: `nerva acp` renews its sessions' lease while the editor is connected",
     "/api/acp/sessions/{session_id}/mcp": (
@@ -634,6 +634,7 @@ MACHINE_FACING: dict[str, str] = {
     # posts the validated document. A HUD form would be typing JSON into a textarea.
     "/api/plugins/extensions/consent": "owner consent to a local descriptor, via `nerva extensions consent`",
     "/api/plugins/extensions/activate": "owner activation of a local descriptor, via `nerva extensions activate`",
+    "/api/plugins/extensions/install": "owner submission of a local author folder or pack, via `nerva extensions install|pack install`",
     "/api/oauth/auth-url": "OAuth dance, driven by the provider/browser",
     "/api/oauth/callback": "OAuth redirect target",
     "/api/oauth/mcp/callback": "MCP sign-in redirect target: the browser returns here from the server's "

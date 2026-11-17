@@ -37,8 +37,11 @@ _write_lock = threading.Lock()
 _line_counts: dict[str, int] = {}
 
 
-def persist_problem(error_log: ErrorLog) -> None:
+def persist_problem(error_log: ErrorLog) -> bool:
     """Serialize and append an ErrorLog to the local problems file.
+
+    Returns True when the record was written, False when the append failed (H452: a
+    caller that claimed an alert releases the claim on False).
 
     Append-only in the common case (errors arrive in bursts, exactly when the
     system is already hot); the whole file is rewritten only occasionally to
@@ -77,7 +80,7 @@ def persist_problem(error_log: ErrorLog) -> None:
                 f.write(json.dumps(data) + "\n")
             count += 1
         except OSError:
-            return
+            return False
 
         if count > 2 * _PROBLEM_CAP:
             try:
@@ -92,6 +95,7 @@ def persist_problem(error_log: ErrorLog) -> None:
                 pass
 
         _line_counts[problems_path] = count
+    return True
 
 
 def summarize_problems(problems_path: Optional[str] = None, *, hours: float = 48) -> list[dict]:
