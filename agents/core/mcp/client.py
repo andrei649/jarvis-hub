@@ -70,6 +70,7 @@ from agents.core.automation_contracts import (
 )
 from agents.core.env_alias import canonical
 from agents.core.env_config import env_flag, env_list, resolve_spellings
+from agents.core.mcp.guard import config_findings, definition_digest, inspect_tool
 from agents.core.mcp.host_requests import (
     ElicitationConfig,
     MCPHost,
@@ -132,6 +133,14 @@ STDIO_ENV_ALLOW_FLAG = "JARVIS_MCP_STDIO_ALLOWED_ENV"
 #: an unannotated, unlisted or mutating tool is refused by name before any request leaves.
 #: ``full`` lets every tool through to the contract and kernel checks that already govern
 #: it. The hint is the server's own claim, so it can only ever *narrow* what a tier allows.
+#: H554 — merged into every refusal a retry cannot change, so the model is told not to try
+#: again (Hermes's denial text says the same).
+DO_NOT_RETRY = {
+    "retry": False,
+    "message": "This call was refused by the owner's MCP policy. Do not retry it; tell the "
+               "owner what you wanted to do instead.",
+}
+
 TRUST_READ_ONLY = "read-only"
 TRUST_FULL = "full"
 TRUST_TIERS: tuple[str, ...] = (TRUST_READ_ONLY, TRUST_FULL)
@@ -387,7 +396,7 @@ def _permanent_refusal(reason: str | None) -> bool:
     text = str(reason or "")
     return text in {"unsafe_command", "missing_command", "oauth_required", "secret_missing",
                     "token_origin_mismatch"} or text.startswith(
-        ("unsupported_transport", "transport_disabled"))
+        ("unsupported_transport", "transport_disabled", "config_refused", "tls_config"))
 
 
 #: H552 — the longest JSON-RPC line read off a stdio server: a 50 MiB resource as base64
@@ -445,12 +454,19 @@ class MCPTool:
         self.name = name
         #: H552 — one of the four resource/prompt tools this client adds, not the server's own.
         self.utility = bool(utility)
+        #: H555 — the digest of the definition exactly as the server listed it (what an
+        #: owner's release in ``accepted_definitions`` names), then the cleaned copy:
+        #: invisible characters out of the description and the schema's texts, and the
+        #: findings of the tool-definition scan (non-empty = quarantined, never offered).
+        self.definition_digest = definition_digest(description, input_schema, annotations)
+        description, cleaned_schema, annotations, self.findings = inspect_tool(
+            description, input_schema, annotations)
         self.description = description
         #: What the server sent, kept for diagnostics only — never offered to a model.
         self.raw_input_schema = input_schema
         #: The provider-agnostic repair (H557): applied here, at registration, so every
         #: dialect serializer downstream ships the same safe schema.
-        self.input_schema = normalize_mcp_input_schema(input_schema)
+        self.input_schema = normalize_mcp_input_schema(cleaned_schema)
         self.server = server
         #: The server's own claims about the tool (``readOnlyHint``, ``destructiveHint``, …).
         self.annotations: dict = dict(annotations) if isinstance(annotations, dict) else {}
@@ -495,6 +511,7 @@ class MCPServer:
         secret_headers: dict[str, str] | None = None,
         oauth: dict | None = None,
         origin: dict | None = None,
+        accepted_definitions: dict | None = None,
     ):
         """
         ``transport`` is normalised (``"HTTP"`` → ``streamable-http``); an unknown
@@ -542,6 +559,9 @@ class MCPServer:
         self.secret_headers = {str(k): str(v) for k, v in dict(secret_headers or {}).items()}
         self.oauth = dict(oauth or {})
         self.origin = dict(origin or {})
+        #: H555 — the owner's releases of quarantined tool definitions: tool name → the
+        #: sha256 of the exact definition released (a changed definition is quarantined again).
+        self.accepted_definitions: dict[str, str] = clean_accepted_definitions(accepted_definitions)
         #: G11 (H545) — the editor conversation this server was handed for, or None for a
         #: configured server. A scoped server's tools are offered to that conversation's
         #: turns only, and it is never written to the saved server list (:meth:`MCPManager.to_config`).
@@ -664,6 +684,12 @@ class MCPServer:
                 logger.warning("MCP stdio command rejected as unsafe: %s", self.name)
                 self.last_error = "unsafe_command"
                 return False
+            # H555 — the saved entry is checked again at spawn, however it reached storage.
+            refused = self.config_findings()
+            if refused:
+                logger.warning("MCP server %s refused at spawn: %s", self.name, ", ".join(refused))
+                self.last_error = f"config_refused:{refused[0]}"
+                return False
             # Terminate any prior process first, or a server that connects but
             # registers no tools gets a fresh subprocess spawned (and the old one
             # orphaned) on every reconnect attempt.
@@ -719,6 +745,11 @@ class MCPServer:
         if reason:
             self.last_error = reason
             return False
+        refused = self.config_findings()
+        if refused:
+            logger.warning("MCP server %s refused at connect: %s", self.name, ", ".join(refused))
+            self.last_error = f"config_refused:{refused[0]}"
+            return False
         if self._http is not None:
             await self._teardown()
         self.tools = []
@@ -761,6 +792,26 @@ class MCPServer:
         if self.transport == TRANSPORT_STREAMABLE_HTTP:
             return self._http is not None and self._http.initialized and bool(self.tools or self.utility_tools)
         return self._proc is not None and self._proc.returncode is None
+
+    def config_findings(self) -> list[str]:
+        """H555 — the launch shapes that refuse this server (empty = clean): checked when it
+        is saved and again before every spawn. Secret values are not read for it; their
+        names are (a loader variable is refused by name)."""
+        argv = self._command_argv() if self.transport == TRANSPORT_STDIO else None
+        env = {**dict.fromkeys(self.secret_env, ""), **self.env}
+        headers = {**self.secret_headers, **self.headers}
+        return config_findings(argv, env=env, cwd=self.cwd, headers=headers)
+
+    def quarantined(self, tool: "MCPTool") -> bool:
+        """H555 — a tool whose definition the scan flagged is withheld from the model and
+        refused at call time, unless the owner released that exact definition."""
+        if not tool.findings:
+            return False
+        return self.accepted_definitions.get(tool.name) != tool.definition_digest
+
+    def quarantined_tools(self) -> list[dict]:
+        return [{"name": t.name, "findings": list(t.findings), "digest": t.definition_digest}
+                for t in self.all_tools() if self.quarantined(t)]
 
     def _command_argv(self) -> list[str] | None:
         command = (self.command or "").strip()
@@ -955,7 +1006,11 @@ class MCPServer:
         if not isinstance(arguments, dict):
             return {"error": "bad_args", "tool": name, "server": self.name}
         if not self.tool_visible(name):
-            return {"error": "tool_filtered", "tool": name, "server": self.name}
+            return {"error": "tool_filtered", "tool": name, "server": self.name, **DO_NOT_RETRY}
+        listed = next((t for t in self.tools if t.name == name), None) or self.utility(name)
+        if listed is not None and self.quarantined(listed):
+            return {"error": "tool_quarantined", "tool": name, "server": self.name,
+                    "findings": list(listed.findings), **DO_NOT_RETRY}
         denied = self._trust_denial(name)
         if denied is not None:
             return denied
@@ -975,7 +1030,8 @@ class MCPServer:
             # instruction the owner never sees (Hermes absorption 4a).
             # H552 — bounded (blocks, total text) and stripped off the event loop; image,
             # audio and embedded binary blocks go to disk and the model gets a path.
-            return await cache_result_blocks(self.name, await bound_tool_result(resp["result"]))
+            return await cache_result_blocks(self.name, await bound_tool_result(resp["result"],
+                                                                                server=self.name))
         return resp
 
     async def _call_utility(self, op: str, arguments: dict) -> dict:
@@ -1002,6 +1058,7 @@ class MCPServer:
             "server": self.name,
             "trust": self.trust,
             "reason": "unlisted_tool" if tool is None else "readOnlyHint_required",
+            **DO_NOT_RETRY,
         }
 
     def _tool_call_blocked(self, name: str, arguments: dict) -> dict | None:
@@ -1022,7 +1079,7 @@ class MCPServer:
             return {"error": "contract_error", "tool": name, "server": self.name}
         reason = contract_denial(decision)
         if reason:
-            return {"error": reason, "tool": name, "server": self.name}
+            return {"error": reason, "tool": name, "server": self.name, **DO_NOT_RETRY}
         return None
 
     async def _send(self, msg: dict) -> dict:
@@ -1247,6 +1304,8 @@ def _saved_row(srv: MCPServer) -> dict:
         **({"secret_headers": dict(srv.secret_headers)} if srv.secret_headers else {}),
         **({"oauth": dict(srv.oauth)} if srv.oauth else {}),
         **({"origin": dict(srv.origin)} if srv.origin else {}),
+        **({"accepted_definitions": dict(srv.accepted_definitions)}
+           if srv.accepted_definitions else {}),
     }
 
 
@@ -1355,6 +1414,9 @@ class MCPManager:
                 continue
             if srv._trust_denial(tool.name) is not None:
                 # The owner's trust tier would refuse every call: never offer it.
+                continue
+            if srv.quarantined(tool):
+                # H555: its description or schema matched the definition scan.
                 continue
             rows.append({
                 "name": name,
@@ -1975,4 +2037,18 @@ def _g9_fields(cfg: dict) -> dict:
     oauth = cfg.get("oauth")
     if isinstance(oauth, dict):
         out["oauth"] = {k: v for k, v in oauth.items() if isinstance(k, str) and isinstance(v, (str, int))}
+    accepted = clean_accepted_definitions(cfg.get("accepted_definitions"))
+    if accepted:
+        out["accepted_definitions"] = accepted
     return out
+
+
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def clean_accepted_definitions(raw: object) -> dict[str, str]:
+    """H555 — ``{tool name: sha256 hex}`` entries only (at most 256); anything else is dropped."""
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v for k, v in list(raw.items())[:256]
+            if isinstance(k, str) and 0 < len(k) <= 200 and isinstance(v, str) and _DIGEST_RE.match(v)}

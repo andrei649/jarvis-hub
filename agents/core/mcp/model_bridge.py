@@ -141,7 +141,12 @@ class MCPModelBridge:
                 # A refusal (manager, trust tier, call filter) or a JSON-RPC error — not
                 # a tool result; the model reads one bounded reason, not the payload.
                 error = result["error"]
-                raise MCPBridgeError(error if isinstance(error, str) else "mcp_error")
+                reason = error if isinstance(error, str) else "mcp_error"
+                if result.get("retry") is False:
+                    # H554: a policy refusal a retry cannot change says so, in the line the
+                    # model reads (bounded by the loop at 240 characters).
+                    reason = f"{reason[:60]}: refused by the owner's MCP policy; do not retry this call"
+                raise MCPBridgeError(reason)
             return result
 
         return handler

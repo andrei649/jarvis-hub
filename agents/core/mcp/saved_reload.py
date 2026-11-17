@@ -23,7 +23,7 @@ class SavedReloadPlan:
 _FIELDS = frozenset({
     "name", "transport", "command", "url", "cwd", "trust", "tools_allow",
     "tools_deny", "sampling", "elicitation", "auth", "env", "secret_env",
-    "secret_headers", "oauth", "origin", "headers",
+    "secret_headers", "oauth", "origin", "headers", "accepted_definitions",
 })
 
 
@@ -104,6 +104,13 @@ def candidates(configs: object) -> tuple[dict[str, object], bytes]:
             raise SavedReloadRefused("saved_config_invalid")
         if transport == "stdio" and server._command_argv() is None:
             raise SavedReloadRefused("saved_config_invalid")
+        accepted = row.get("accepted_definitions")
+        if accepted is not None and (type(accepted) is not dict
+                                     or server.accepted_definitions != accepted):
+            raise SavedReloadRefused("saved_config_invalid")
+        if server.config_findings():
+            # H555: a launch shape the validator refuses never reaches the live manager.
+            raise SavedReloadRefused("saved_config_refused")
         result[name] = server
     return result, encoded
 

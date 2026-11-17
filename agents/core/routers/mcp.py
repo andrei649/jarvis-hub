@@ -132,6 +132,11 @@ async def admin_mcp_list():
             ],
             # H552 — the resource/prompt tools this server's capabilities admit.
             "resource_tools": [t.name for t in getattr(srv, "utility_tools", [])],
+            # H555 — tools withheld because their definition matched the scan (name,
+            # findings, and the digest an owner names to release that exact definition),
+            # and the launch shapes that refuse this server's spawn.
+            "quarantined_tools": _safe_call(getattr(srv, "quarantined_tools", None)) or [],
+            "config_findings": _safe_call(getattr(srv, "config_findings", None)) or [],
             # H556 — connection health (state, retries, last error, next retry) and the
             # H553 sampling/elicitation counters; H553 — the owner's settings for both.
             "health": _health_of(srv),
@@ -339,6 +344,12 @@ async def admin_mcp_add(req: MCPServerConfig):
         auth=auth if transport == "streamable-http" else None,
         oauth=oauth_pins or None,
     )
+    refused = srv.config_findings()
+    if refused:
+        # H555: a launch shape the validator refuses is never saved (and never spawned).
+        return JSONResponse({"error": "config_refused", "findings": refused,
+                             "message": "this server configuration matches a refused shape"},
+                            status_code=400)
     if oauth_secret:
         import asyncio
 
@@ -710,6 +721,12 @@ async def admin_mcp_catalog_install(body: CatalogInstall):
         auth=plan["auth"], secret_env=plan["secret_env"], secret_headers=plan["secret_headers"],
         oauth=plan["oauth"], origin=origin,
     )
+    refused = srv.config_findings()
+    if refused:
+        # H555: the same validator as the add path, before any secret is stored.
+        return JSONResponse({"error": "config_refused", "findings": refused,
+                             "message": "this server configuration matches a refused shape"},
+                            status_code=400)
     try:
         stored = await asyncio.to_thread(store_secrets, plan["name"], values)
     except Exception:
