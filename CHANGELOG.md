@@ -17,10 +17,15 @@
   pack whose files changed is refused before anything is sent.
 - `nerva extensions consent` now shows what you are agreeing to — each capability with its
   risk in one sentence, and what changed since you last agreed — and asks before recording.
+- Fixed before release (security review): an extension can no longer be named after a core
+  tool or command, and installing one never removes a core tool; a newer install card
+  replaces older ones and an outdated card cannot downgrade an extension; cards you never
+  answered no longer block later installs; packs also pin each extension's requirements.
 
 **Running Nerva in a container**
 - The hub no longer runs as root inside the image. Set `PUID`/`PGID` (or
-  `NERVA_UID`/`NERVA_GID`) and files it writes to a bind mount are yours.
+  `NERVA_UID`/`NERVA_GID`, 1 to 2147483647) and files it writes to a bind mount are yours;
+  the container refuses to start if it would still be root.
 - `JARVIS_RUNTIME_COORDINATOR=0` switches the background coordinator off; it shows as down
   instead of restarting forever.
 - `docker-compose.windows.yml` runs Nerva on Docker Desktop for Windows without host
