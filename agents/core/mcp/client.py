@@ -70,6 +70,7 @@ from agents.core.automation_contracts import (
 )
 from agents.core.env_alias import canonical
 from agents.core.env_config import env_flag, env_list, resolve_spellings
+from agents.core.mcp import process_guard
 from agents.core.mcp.guard import config_findings, definition_digest, inspect_tool
 from agents.core.mcp.host_requests import (
     ElicitationConfig,
@@ -89,10 +90,11 @@ from agents.core.mcp.http_transport import (
     StreamableHttpTransport,
     http_client_enabled,
     normalize_transport,
+    tls_context,
     transport_allowed,
     validate_mcp_url,
 )
-from agents.core.mcp.resilience import ReconnectPolicy, ServerHealth, halted
+from agents.core.mcp.resilience import STATE_RECYCLED, ReconnectPolicy, ServerHealth, halted
 from agents.core.mcp.resources import (
     UTILITY_OPS,
     ResourceError,
@@ -154,6 +156,101 @@ _TRUST_ALIASES = {
 def normalize_trust(raw: object) -> str | None:
     """Canonical trust tier for *raw*, or None when it names no tier."""
     return _TRUST_ALIASES.get(str(raw or "").strip().lower())
+
+
+# ── H547 / H556: the per-server operational keys ────────────────────────────
+
+#: Numeric keys: (floor, ceiling). A value under the floor is raised to it (Hermes floors
+#: ``keepalive_interval`` at 5 s the same way); over the ceiling is refused.
+NUMERIC_OPTIONS: dict[str, tuple[float, float]] = {
+    "timeout": (1.0, 3600.0),                  # per request; default 10 s
+    "connect_timeout": (1.0, 600.0),           # spawn/handshake; default 30 s
+    "keepalive_interval": (5.0, 86400.0),      # stdio ping; default the manager's 60 s
+    "idle_timeout_seconds": (30.0, 30 * 86400.0),   # stdio: stop after this long unused
+    "max_lifetime_seconds": (60.0, 365 * 86400.0),  # stdio: restart after this long up
+}
+OPTION_KEYS = frozenset(NUMERIC_OPTIONS) | {"supports_parallel_tool_calls", "ssl_verify",
+                                           "client_cert", "client_key"}
+_MAX_PATH_CHARS = 4096
+
+
+def _clean_path(value: object) -> str | None:
+    """An absolute path (``~`` allowed) without NUL or newline, else None."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or len(text) > _MAX_PATH_CHARS or any(ch in text for ch in "\x00\r\n"):
+        return None
+    return text if os.path.isabs(os.path.expanduser(text)) else None
+
+
+def operational_options(cfg: object, *, strict: bool = False) -> tuple[dict, str | None]:
+    """``(options, refusal)`` from a server entry's operational keys.
+
+    *strict* (the add and reload paths) refuses the first malformed key by name; otherwise
+    (loading the saved list at start) a malformed key is dropped with a warning and the
+    server keeps working on the defaults.
+
+    TLS: ``ssl_verify`` is ``true`` (default) or the absolute path of a CA bundle the
+    server's certificate is checked against (in addition to the default store and the
+    owner's anchor). ``false`` is refused: Nerva never turns certificate verification
+    off (agents/core/tls_trust.py); a private CA is trusted instead. ``client_cert`` is a
+    path, or a list of one (cert and key in one PEM) or two (cert, key) paths;
+    ``client_key`` is the key's path when ``client_cert`` is a string. A key protected by a
+    password is not accepted (no secret goes in this config).
+    """
+    out: dict = {}
+    if not isinstance(cfg, dict):
+        return out, None
+    problems: list[str] = []
+    for key, (floor, ceiling) in NUMERIC_OPTIONS.items():
+        value = cfg.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value \
+                or value <= 0 or value > ceiling:
+            problems.append(key)
+            continue
+        out[key] = float(max(floor, value))
+    parallel = cfg.get("supports_parallel_tool_calls")
+    if parallel is not None:
+        if isinstance(parallel, bool):
+            out["supports_parallel_tool_calls"] = parallel
+        else:
+            problems.append("supports_parallel_tool_calls")
+    verify = cfg.get("ssl_verify")
+    if verify is not None and verify is not True:
+        path = _clean_path(verify)
+        if path is None:
+            problems.append("ssl_verify")
+        else:
+            out["ssl_verify"] = path
+    cert, key = cfg.get("client_cert"), cfg.get("client_key")
+    if cert is not None:
+        if isinstance(cert, list) and len(cert) in (1, 2) and key is None \
+                and all(_clean_path(c) for c in cert):
+            out["client_cert"] = [_clean_path(c) for c in cert]
+        elif isinstance(cert, str) and _clean_path(cert) and (key is None or _clean_path(key)):
+            out["client_cert"] = [_clean_path(cert)] + ([_clean_path(key)] if key is not None else [])
+        else:
+            problems.append("client_cert")
+    elif key is not None:
+        problems.append("client_key")
+    if problems:
+        if strict:
+            return {}, f"invalid_option:{problems[0]}"
+        logger.warning("MCP server %s: ignoring malformed %s", cfg.get("name"), ", ".join(problems))
+    return out, None
+
+
+def tls_options_refusal(transport: str, cfg: dict) -> str | None:
+    """TLS keys only mean something for an HTTP server; on stdio they are refused."""
+    if transport == TRANSPORT_STREAMABLE_HTTP:
+        return None
+    for key in ("ssl_verify", "client_cert", "client_key"):
+        if cfg.get(key) is not None and cfg.get(key) is not True:
+            return f"invalid_option:{key}"
+    return None
 
 
 MAX_TOOL_PATTERNS = 64
@@ -512,6 +609,7 @@ class MCPServer:
         oauth: dict | None = None,
         origin: dict | None = None,
         accepted_definitions: dict | None = None,
+        options: dict | None = None,
     ):
         """
         ``transport`` is normalised (``"HTTP"`` → ``streamable-http``); an unknown
@@ -581,6 +679,18 @@ class MCPServer:
         self.health = ServerHealth()
         self.connect_timeout = 30.0
         self.request_timeout = 10.0
+        #: H547 / H556 — the owner's operational keys (:func:`operational_options`), kept
+        #: as given so they are saved back unchanged.
+        self.options: dict = operational_options(options or {})[0]
+        self.request_timeout = self.options.get("timeout", self.request_timeout)
+        self.connect_timeout = self.options.get("connect_timeout", self.connect_timeout)
+        self.keepalive_interval: float | None = self.options.get("keepalive_interval")
+        self.idle_timeout: float | None = self.options.get("idle_timeout_seconds")
+        self.max_lifetime: float | None = self.options.get("max_lifetime_seconds")
+        self.supports_parallel_tool_calls = self.options.get("supports_parallel_tool_calls") is True
+        #: Wall-clock time of the current stdio spawn and of its last request (H556).
+        self._spawned_at: float | None = None
+        self._last_io: float = 0.0
         #: The owner (or autoconnect) wants this server up: the supervisor reconnects it.
         self.wanted = False
         self._stderr_task: asyncio.Task | None = None
@@ -700,6 +810,7 @@ class MCPServer:
             # from the model as ambiguous (H557).
             self.tools = []
             self.utility_tools = []
+            group = process_guard.spawn_kwargs()
             self._proc = await asyncio.create_subprocess_exec(
                 *argv,
                 stdin=asyncio.subprocess.PIPE,
@@ -708,7 +819,14 @@ class MCPServer:
                 cwd=self.cwd or None,
                 env=self._merged_env(),
                 limit=STDIO_IDLE_LINE_LIMIT,
+                **group,
             )
+            # H556 — its own process group, recorded so a hub that dies hard does not leave
+            # the group running into the next start (process_guard.reap_orphans).
+            self._proc._mcp_group = bool(group)
+            if group and isinstance(getattr(self._proc, "pid", None), int):
+                process_guard.record(self._proc.pid, self.name)
+            self._spawned_at = self._last_io = time.time()
             self._start_stderr_drain()
             await self._initialize()
             logger.info(f"MCP server connected: {self.name} ({len(self.tools)} tools, "
@@ -760,8 +878,20 @@ class MCPServer:
         if refusal:
             self.last_error = refusal
             return False
+        # H547 — the owner's per-server timeout and TLS material (CA bundle, client cert),
+        # passed only when set so the default path is unchanged.
+        extra: dict = {}
+        if "timeout" in self.options:
+            extra["timeout"] = self.request_timeout
+        if self.options.get("ssl_verify") or self.options.get("client_cert"):
+            try:
+                extra["verify"] = await asyncio.to_thread(
+                    tls_context, self.options.get("ssl_verify"), self.options.get("client_cert"))
+            except MCPTransportError as exc:
+                self.last_error = f"tls_config:{exc.detail}"
+                return False
         try:
-            self._http = self._http_factory(self.url, headers, name=self.name)
+            self._http = self._http_factory(self.url, headers, name=self.name, **extra)
             result = await self._http.initialize()
             if result:
                 # No server-to-client channel is read on this transport, so nothing is
@@ -1141,6 +1271,7 @@ class MCPServer:
                 await self._teardown()
                 return {"error": {"code": -32000, "message": "unsolicited_output"}}
             _set_line_limit(reader, line_limit)
+            self._last_io = time.time()
             try:
                 self._next_id += 1
                 req_id = self._next_id
@@ -1200,6 +1331,7 @@ class MCPServer:
                 logger.warning(f"MCP error ({self.name}): {e}")
                 return {}
             finally:
+                self._last_io = time.time()
                 # Back to the idle limit: an idle server can park at most ~2 MiB here.
                 if self._proc is not None:
                     _set_line_limit(self._proc.stdout, STDIO_IDLE_LINE_LIMIT)
@@ -1239,7 +1371,10 @@ class MCPServer:
 
     async def ping(self) -> bool:
         """Keepalive (H556): False when the server did not answer within the deadline."""
+        last_io = self._last_io
         resp = await self._send({"jsonrpc": "2.0", "method": "ping", "params": {}, "id": 0})
+        # A keepalive is not use: it must not hold off the idle recycling (H556).
+        self._last_io = last_io
         return bool(resp) and "result" in resp
 
     async def _teardown(self) -> None:
@@ -1249,16 +1384,10 @@ class MCPServer:
             self._stderr_task = None
         if self._proc:
             proc, self._proc = self._proc, None
-            try:
-                if proc.returncode is None:
-                    proc.terminate()
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=5.0)
-                except TimeoutError:
-                    proc.kill()
-                    await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except (TimeoutError, ProcessLookupError, AttributeError):
-                pass
+            self._spawned_at = None
+            with suppress(TimeoutError, ProcessLookupError, AttributeError):
+                # H556 — the whole group (a launcher such as npx and the server it started).
+                await process_guard.terminate_group(proc)
             # Close the pipes too: a reader paused by a full buffer never sees EOF, and
             # its transport would otherwise outlive the process.
             transport = getattr(proc, "_transport", None)
@@ -1306,6 +1435,8 @@ def _saved_row(srv: MCPServer) -> dict:
         **({"origin": dict(srv.origin)} if srv.origin else {}),
         **({"accepted_definitions": dict(srv.accepted_definitions)}
            if srv.accepted_definitions else {}),
+        **{key: (list(value) if isinstance(value, list) else value)
+           for key, value in sorted(srv.options.items())},
     }
 
 
@@ -1424,6 +1555,9 @@ class MCPManager:
                 "input_schema": tool.input_schema,
                 "gated": not tool.read_only,
                 "untrusted_output": True,
+                # H547 — the owner said this server takes concurrent calls; only its
+                # read-only tools may then run beside others in one model turn.
+                "parallel_safe": bool(srv.supports_parallel_tool_calls and tool.read_only),
                 "server": srv.name,
                 "tool": tool.name,
                 "qualified_name": tool.qualified_name,
@@ -1825,8 +1959,25 @@ class MCPManager:
             if not srv.wanted or self._halted(srv.name):
                 continue
             if srv.is_connected():
+                if srv.transport == TRANSPORT_STDIO and not srv._io_lock.locked():
+                    # H547 / H556 — stdio recycling: a server past its lifetime is restarted
+                    # now; one unused for its idle timeout is stopped and comes back on its
+                    # next call. Never mid-request (the I/O lock is free).
+                    if srv.max_lifetime and srv._spawned_at is not None \
+                            and now - srv._spawned_at >= srv.max_lifetime:
+                        await srv._teardown()
+                        srv.health.recycled("lifetime")
+                        due.append(srv)
+                        done[srv.name] = "recycled_lifetime"
+                        continue
+                    if srv.idle_timeout and srv._last_io and now - srv._last_io >= srv.idle_timeout:
+                        await srv._teardown()
+                        srv.health.recycled("idle")
+                        done[srv.name] = "recycled_idle"
+                        continue
+                interval = srv.keepalive_interval or self.keepalive_interval
                 if (srv.transport == TRANSPORT_STDIO and not srv._io_lock.locked()
-                        and now - self._last_ping.get(srv.name, 0.0) >= self.keepalive_interval):
+                        and now - self._last_ping.get(srv.name, 0.0) >= interval):
                     self._last_ping[srv.name] = now
                     if await srv.ping():
                         done[srv.name] = "ping_ok"
@@ -1835,6 +1986,8 @@ class MCPManager:
                         await srv._teardown()
                         done[srv.name] = "ping_failed"
                 continue
+            if srv.health.state == STATE_RECYCLED:
+                continue            # idle-stopped: its next call reconnects it
             srv.health.lost("transport_lost", now=now)
             if srv.health.retry_due(now):
                 due.append(srv)
@@ -1869,9 +2022,16 @@ class MCPManager:
         loop = asyncio.get_running_loop()
 
         async def run() -> None:
+            try:
+                # H556 — server groups a previous run left behind when it died hard.
+                await asyncio.to_thread(process_guard.reap_orphans)
+            except Exception:
+                logger.warning("MCP orphan sweep failed", exc_info=True)
             if autoconnect:
                 try:
-                    await self.connect_all()
+                    # One process connects the saved servers at a time (shared data dir).
+                    async with process_guard.discovery_lock():
+                        await self.connect_all()
                 except Exception:
                     logger.warning("MCP background connect failed", exc_info=True)
             await self._supervise(interval)
@@ -2040,6 +2200,9 @@ def _g9_fields(cfg: dict) -> dict:
     accepted = clean_accepted_definitions(cfg.get("accepted_definitions"))
     if accepted:
         out["accepted_definitions"] = accepted
+    options, _refused = operational_options(cfg)
+    if options:
+        out["options"] = options
     return out
 
 

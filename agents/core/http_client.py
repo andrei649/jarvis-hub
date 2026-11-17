@@ -18,6 +18,7 @@ Usage:
 
 import asyncio
 import logging
+import ssl
 import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -246,8 +247,16 @@ class PluginHTTPClient:
         *,
         resolver: Callable[..., tuple[list[str], Optional[str]]] | None = None,
         transport_factory: Callable[[PinnedTarget], httpx.AsyncBaseTransport] | None = None,
+        verify: Optional[ssl.SSLContext] = None,
     ):
         self.plugin_name = plugin_name
+        #: An ``ssl.SSLContext`` that replaces the default trust store for this client's
+        #: pinned dials (H547: a per-server CA bundle or client certificate). Only a
+        #: context is accepted, never ``False``: the caller builds it from the default
+        #: store, so it verifies.
+        if verify is not None and not isinstance(verify, ssl.SSLContext):
+            raise TypeError("verify must be an ssl.SSLContext")
+        self._verify_override = verify
         self.timeouts = timeouts or PluginTimeouts()
         self.circuit_breaker = circuit_breaker or get_circuit_breaker(
             f"http_client:{plugin_name}"
@@ -476,7 +485,9 @@ class PluginHTTPClient:
                 event_hooks={"request": [self._sanitize_cross_origin_request]},
                 # An injected transport decides its own TLS (that is what makes the
                 # SSRF tests hermetic); only a real dial consults the trust store.
-                **({} if transport is not None else {"verify": tls_verify()}),
+                **({} if transport is not None else {
+                    "verify": self._verify_override if self._verify_override is not None
+                    else tls_verify()}),
                 transport=transport,
             )
             self._pinned_clients[target.pool_key] = client

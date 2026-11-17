@@ -58,7 +58,7 @@ class MCPBridgeError(RuntimeError):
 def _fingerprint(row: dict[str, Any]) -> str:
     return json.dumps(
         [bool(row.get("gated")), row.get("description") or "", row.get("input_schema"),
-         row.get("qualified_name"), row.get("session_scope")],
+         row.get("qualified_name"), row.get("session_scope"), row.get("parallel_safe") is True],
         sort_keys=True, default=str,
     )
 
@@ -180,7 +180,9 @@ class MCPModelBridge:
                         input_schema=row.get("input_schema"),
                         capability_id=CAPABILITY_PREFIX + name,
                         untrusted_output=True,
-                        parallel_safe=False,
+                        # H547: only an ungated tool of a server the owner marked
+                        # supports_parallel_tool_calls; otherwise never parallel.
+                        parallel_safe=bool(row.get("parallel_safe") is True and not gated),
                         # H325 — "ungated" rests on the server's own readOnlyHint, which
                         # the MCP spec calls untrusted: the registry does not repeat it
                         # as "no mutation". A gated one keeps the gated contract.

@@ -18843,6 +18843,24 @@ export interface components {
             oauth?: {
                 [key: string]: string;
             } | null;
+            /** Timeout */
+            timeout?: number | null;
+            /** Connect Timeout */
+            connect_timeout?: number | null;
+            /** Keepalive Interval */
+            keepalive_interval?: number | null;
+            /** Idle Timeout Seconds */
+            idle_timeout_seconds?: number | null;
+            /** Max Lifetime Seconds */
+            max_lifetime_seconds?: number | null;
+            /** Supports Parallel Tool Calls */
+            supports_parallel_tool_calls?: boolean | null;
+            /** Ssl Verify */
+            ssl_verify?: boolean | string | null;
+            /** Client Cert */
+            client_cert?: string | string[] | null;
+            /** Client Key */
+            client_key?: string | null;
         };
         /** MapBody */
         MapBody: {

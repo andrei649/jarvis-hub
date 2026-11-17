@@ -2416,7 +2416,8 @@
         "tests/test_mcp_trust.py",
         "tests/test_h084_mcp_saved_command.py",
         "tests/test_h084_mcp_saved_reconcile.py",
-        "tests/test_h555_mcp_guard.py"
+        "tests/test_h555_mcp_guard.py",
+        "tests/test_h547_h556_mcp_operations.py"
       ]
     },
     {

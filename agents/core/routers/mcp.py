@@ -137,6 +137,9 @@ async def admin_mcp_list():
             # and the launch shapes that refuse this server's spawn.
             "quarantined_tools": _safe_call(getattr(srv, "quarantined_tools", None)) or [],
             "config_findings": _safe_call(getattr(srv, "config_findings", None)) or [],
+            # H547 / H556 — the operational keys in force (timeouts, keepalive, recycling,
+            # parallel calls, CA bundle and client-certificate paths; never a secret).
+            "options": _safe_call(lambda s=srv: dict(s.options)) or {},
             # H556 — connection health (state, retries, last error, next retry) and the
             # H553 sampling/elicitation counters; H553 — the owner's settings for both.
             "health": _health_of(srv),
@@ -209,6 +212,21 @@ class MCPServerConfig(BaseModel):
     #: ``client_id``, ``scope`` and ``client_secret`` only. The secret goes to the encrypted
     #: store (``mcp.secret.<name>.OAUTH_CLIENT_SECRET``); the config keeps a reference.
     oauth: Optional[dict[str, str]] = None
+    #: H547 / H556 — operational keys (``core.mcp.client.operational_options``): seconds
+    #: per request and for the connect, the stdio keepalive (floored at 5), stdio idle and
+    #: lifetime recycling, and whether the server takes concurrent calls.
+    timeout: Optional[float] = None
+    connect_timeout: Optional[float] = None
+    keepalive_interval: Optional[float] = None
+    idle_timeout_seconds: Optional[float] = None
+    max_lifetime_seconds: Optional[float] = None
+    supports_parallel_tool_calls: Optional[bool] = None
+    #: H547 — HTTP only: ``true`` or a CA bundle path (``false`` is refused: verification
+    #: is never turned off), and a client certificate for mTLS (a path or a list of one or
+    #: two paths; ``client_key`` with a string ``client_cert``).
+    ssl_verify: Optional[bool | str] = None
+    client_cert: Optional[str | list[str]] = None
+    client_key: Optional[str] = None
 
 
 class ElicitationAnswer(BaseModel):
@@ -327,8 +345,17 @@ async def admin_mcp_add(req: MCPServerConfig):
         return JSONResponse({"error": "invalid_oauth",
                              "message": "oauth takes client_id, scope and client_secret, for an HTTP server"},
                             status_code=400)
+    from core.mcp.client import OPTION_KEYS, operational_options, tls_options_refusal
+
+    raw_options = {key: getattr(req, key, None) for key in sorted(OPTION_KEYS)}
+    options, bad_option = operational_options(raw_options, strict=True)
+    bad_option = bad_option or tls_options_refusal(transport, raw_options)
+    if bad_option:
+        return JSONResponse({"error": "invalid_option", "option": bad_option.split(":", 1)[-1]},
+                            status_code=400)
     srv = MCPServer(
         name=req.name,
+        options=options,
         # Persist the NORMALISED value, not req.transport. The gate above lower-cases
         # and strips only for its own comparison, so "  STDIO  " passed it and then
         # stored a spelling connect() does not dispatch on — re-creating the

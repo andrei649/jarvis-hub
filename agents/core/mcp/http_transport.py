@@ -38,6 +38,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import ssl
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
@@ -141,6 +143,54 @@ class MCPTransportError(RuntimeError):
         super().__init__(f"{reason}: {detail}" if detail else reason)
         self.reason = reason
         self.detail = detail
+
+
+def tls_context(ca_path: str | None = None, cert_chain: list[str] | None = None) -> ssl.SSLContext:
+    """H547 — a verifying TLS context for one server: the default trust store, certifi,
+    the owner's anchor (``JARVIS_CA_BUNDLE``), plus this server's CA bundle (a file or a
+    directory) and its client certificate (``[cert]`` or ``[cert, key]``) for mTLS.
+
+    Verification is never turned off here: the context starts from
+    ``ssl.create_default_context()`` (hostname check on, ``CERT_REQUIRED``) and only adds.
+    A missing or unreadable file raises :class:`MCPTransportError` ``tls_config`` with the
+    kind of problem, never the file's content.
+    """
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+
+        ctx.load_verify_locations(cafile=certifi.where())
+    except Exception:  # pragma: no cover - certifi ships with httpx
+        logger.debug("certifi anchors unavailable; system store only")
+    from agents.core.tls_trust import _source
+
+    _name, anchor = _source()
+    if anchor and os.path.isfile(anchor):
+        try:
+            ctx.load_verify_locations(cafile=anchor)
+        except (OSError, ssl.SSLError, ValueError):
+            logger.warning("the owner's CA anchor could not be loaded for an MCP server")
+    if ca_path:
+        path = os.path.expanduser(ca_path)
+        try:
+            if os.path.isdir(path):
+                ctx.load_verify_locations(capath=path)
+            else:
+                ctx.load_verify_locations(cafile=path)
+        except FileNotFoundError as exc:
+            raise MCPTransportError("tls_config", "ca_bundle_missing") from exc
+        except (OSError, ssl.SSLError, ValueError) as exc:
+            raise MCPTransportError("tls_config", "ca_bundle_unreadable") from exc
+    if cert_chain:
+        cert = os.path.expanduser(cert_chain[0])
+        key = os.path.expanduser(cert_chain[1]) if len(cert_chain) > 1 else None
+        try:
+            ctx.load_cert_chain(certfile=cert, keyfile=key, password=lambda: b"")
+        except FileNotFoundError as exc:
+            raise MCPTransportError("tls_config", "client_cert_missing") from exc
+        except (OSError, ssl.SSLError, ValueError) as exc:
+            raise MCPTransportError("tls_config", "client_cert_unreadable") from exc
+    return ctx
 
 
 class MCPUnauthorized(MCPTransportError):
@@ -247,6 +297,7 @@ class StreamableHttpTransport:
         http_client: PluginHTTPClient | None = None,
         transport_factory: Callable | None = None,
         resolver: Callable | None = None,
+        verify: ssl.SSLContext | None = None,
     ) -> None:
         reason = validate_mcp_url(url)
         if reason:
@@ -268,6 +319,7 @@ class StreamableHttpTransport:
             timeouts=PluginTimeouts(connect=5.0, read=self.timeout, total=self.timeout + 5.0),
             resolver=resolver,
             transport_factory=transport_factory,
+            verify=verify,
         )
 
     # ── headers ──────────────────────────────────────────────────────────────
