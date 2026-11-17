@@ -18395,6 +18395,11 @@ export interface components {
              * @default false
              */
             revoke: boolean;
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
         };
         /** FeedbackBody */
         FeedbackBody: {

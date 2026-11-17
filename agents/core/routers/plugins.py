@@ -185,6 +185,9 @@ class ExtensionConsentBody(BaseModel):
 
     manifest: dict
     revoke: bool = False
+    # H570: read the consent screen (risk sentences and the diff against what was
+    # agreed before) without recording anything.
+    preview: bool = False
 
 
 class ExtensionActivateBody(BaseModel):
@@ -238,6 +241,14 @@ async def extension_consent(body: ExtensionConsentBody):
     if refusal is not None:
         return refusal
     store = ExtensionConsentStore()
+    if body.preview:
+        if body.revoke:
+            return nocache_json({"ok": False, "reason": "preview_with_revoke"}, status_code=422)
+        from agents.core.extensions.capabilities import consent_screen
+
+        decision = store.check(manifest).as_dict()
+        return nocache_json({"ok": True, "preview": True, "revoked": False, **decision,
+                             "screen": consent_screen(manifest, decision)})
     if body.revoke:
         # Withdrawing consent also takes the tools off the surface, if a runtime
         # is composed: a grant the owner took back must not stay callable.

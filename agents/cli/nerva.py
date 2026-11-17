@@ -253,13 +253,19 @@ def build_parser() -> argparse.ArgumentParser:
     extensions = verbs.add_parser("extensions", help="inspect declarative extensions without executing them")
     extension_verbs = extensions.add_subparsers(dest="action", required=True, metavar="action")
     extension_doctor = extension_verbs.add_parser("doctor", help="validate named JSON descriptors and dependency metadata (offline)")
-    extension_doctor.add_argument("paths", nargs="+", metavar="MANIFEST")
+    extension_doctor.add_argument("paths", nargs="*", metavar="MANIFEST")
+    extension_doctor.add_argument("--installed", action="store_true",
+                                  help="check descriptors installed distributions declare (nerva.extensions entry points; never imported)")
     extension_doctor.add_argument("--json", action="store_true")
     extension_list = extension_verbs.add_parser("list", help="inspect already-composed acquired packages (user)")
     extension_list.add_argument("--json", action="store_true")
     extension_consent = extension_verbs.add_parser("consent", help="agree to exactly what a descriptor declares, or withdraw it (owner)")
     extension_consent.add_argument("path", metavar="MANIFEST")
     extension_consent.add_argument("--revoke", action="store_true", help="withdraw consent and take its tools off the surface")
+    extension_consent.add_argument("--preview", action="store_true",
+                                   help="show the consent screen (risks and what changed) and record nothing")
+    extension_consent.add_argument("--yes", action="store_true",
+                                   help="agree after the screen without the interactive question")
     extension_consent.add_argument("--json", action="store_true")
     extension_activate = extension_verbs.add_parser("activate", help="prove a consented descriptor in the sandbox and expose its tools and commands (owner)")
     extension_activate.add_argument("path", metavar="MANIFEST")
@@ -1353,6 +1359,66 @@ def _extension_descriptor(path, ctx):
     return body
 
 
+_CONSENT_DIFF_ITEM = re.compile(r"(?:capability|tool|command|command_requires_args|event):[a-z][a-z0-9_.]{0,160}")
+
+
+def _extension_consent_screen(ns: argparse.Namespace, ctx: Context, body: dict):
+    """H570 — show what the owner is agreeing to before anything is recorded.
+
+    The risk sentences come from this checkout's registry and the declarations from
+    the descriptor validated here; only the state and the diff come from the hub, and
+    each diff item is shape-checked before it is printed. Returns True to go on, or an
+    exit code. Without a terminal the owner must say ``--yes``: a pipe never agrees.
+    """
+    from agents.core.extensions.capabilities import consent_screen, render_screen
+    from agents.core.extensions.manifest import parse_manifest
+
+    report = ctx.client().post("/api/plugins/extensions/consent",
+                               {"manifest": body, "revoke": False, "preview": True})
+    if not isinstance(report, dict) or report.get("ok") is not True or report.get("preview") is not True:
+        reason = report.get("reason") if isinstance(report, dict) else None
+        if not isinstance(reason, str) or re.fullmatch(r"[a-z_]{1,64}", reason) is None:
+            reason = "malformed_response"
+        ctx.err.write(f"consent preview refused: {reason}\n")
+        return EXIT_FAILED
+    state = report.get("consent")
+    diff = {key: report.get(key) for key in ("added_declarations", "removed_declarations")}
+    digest = report.get("declared_digest")
+    if (state not in {"granted", "not_granted", "changed"}
+            or not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            or any(not isinstance(value, list) or len(value) > 512
+                   or any(not isinstance(item, str) or _CONSENT_DIFF_ITEM.fullmatch(item) is None
+                          for item in value) for value in diff.values())):
+        ctx.err.write("consent preview returned a malformed response\n")
+        return EXIT_FAILED
+    screen = consent_screen(parse_manifest(body), {"consent": state, "declared_digest": digest, **diff})
+    if ns.preview:
+        if ns.json:
+            ctx.dump({"ok": True, "preview": True, "screen": screen})
+        else:
+            for line in render_screen(screen):
+                ctx.say(line)
+        return EXIT_OK
+    if not ns.json:
+        for line in render_screen(screen):
+            ctx.say(line)
+    if ns.yes:
+        return True
+    isatty = getattr(ctx.inp, "isatty", None)
+    if not callable(isatty) or not isatty():
+        ctx.err.write("confirmation_required: read the screen (--preview) and rerun with --yes\n")
+        return EXIT_FAILED
+    ctx.out.write("Agree to exactly this? [y/N] ")
+    flush = getattr(ctx.out, "flush", None)
+    if callable(flush):
+        flush()
+    answer = (ctx.inp.readline() or "").strip().lower()
+    if answer not in {"y", "yes"}:
+        ctx.say("Nothing recorded.")
+        return EXIT_FAILED
+    return True
+
+
 def _valid_extension_names(value: Any) -> bool:
     """Validate the bounded manifest command-name shape used by signed extensions."""
     return (isinstance(value, list) and len(value) <= MAX_DECLARATIONS
@@ -1418,14 +1484,21 @@ def _restart_restore_warning(action: str, present: bool, state: str | None) -> s
 
 def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
     if ns.action == "doctor":
-        from agents.core.extensions.doctor import doctor_paths
+        from agents.core.extensions.doctor import doctor_installed, doctor_paths
 
-        report = doctor_paths(ns.paths)
+        if ns.installed == bool(ns.paths):
+            ctx.err.write("name descriptor files or pass --installed (not both)\n")
+            return EXIT_FAILED
+        report = doctor_installed() if ns.installed else doctor_paths(ns.paths)
         success = report["ok"]
     elif ns.action in {"consent", "activate"}:
         body = _extension_descriptor(ns.path, ctx)
         if body is None:
             return EXIT_FAILED
+        if ns.action == "consent" and not ns.revoke:
+            agreed = _extension_consent_screen(ns, ctx, body)
+            if agreed is not True:
+                return agreed
         if ns.action == "consent":
             report = ctx.client().post("/api/plugins/extensions/consent",
                                        {"manifest": body, "revoke": bool(ns.revoke)})

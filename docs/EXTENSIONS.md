@@ -85,6 +85,27 @@ dependents. `validate_registration` is what S2's activation compares the isolate
 registration against — validating a descriptor still registers nothing and authorizes
 no dispatch, so a clean `doctor` run is not permission.
 
+## Declarations in installed Python distributions
+
+A Python distribution can declare an extension through the `nerva.extensions`
+entry-point group, which Nerva reads from installed metadata **without importing it**:
+
+```toml
+[project.entry-points."nerva.extensions"]
+boats = "nerva_boats:extension"     # the descriptor is nerva_boats/extension.json
+```
+
+```console
+nerva extensions doctor --installed --json
+```
+
+The doctor reads `entry_points.txt`, `RECORD` and that one JSON file. The descriptor
+must be listed in the distribution's `RECORD`, must be a regular file (a symlink is
+refused), must be at most 64 KiB, and its `id` must equal the entry-point name. A bad
+entry is reported with its reason and skipped on its own. `EntryPoint.load()` is never
+called. A declaration found this way grants nothing and makes nothing callable: code
+runs only as a signed acquired package.
+
 ## Inspect acquired packages
 
 ```console
@@ -137,10 +158,38 @@ Docker and Windows acceptance remain separate checks.
 
 ```console
 nerva extensions doctor boats.json          # what does it declare, and is it well formed
-nerva extensions consent boats.json         # agree to exactly that
+nerva extensions consent boats.json --preview   # the consent screen; records nothing
+nerva extensions consent boats.json         # the screen, then "Agree to exactly this? [y/N]"
 nerva extensions activate boats.json        # prove it in the sandbox; its tools go live
 nerva extensions consent boats.json --revoke
 ```
+
+### The consent screen and the capability registry (H570)
+
+Every capability a descriptor may declare has one entry in
+`agents/core/extensions/capabilities.py` (`CAPABILITY_REGISTRY`): a title, the risk
+sentence the owner reads, and the host mechanism that enforces it. A test pins the
+registry to the parser's vocabulary, so a capability without a risk sentence cannot
+ship. The guardian approval events carry an extra sentence because they carry masked
+excerpts of the command under review.
+
+| capability | the owner reads |
+|---|---|
+| `tools` | the assistant may call the extension's code with arguments from the conversation; it runs sealed (no network, host files or credentials) and its output reaches the model fenced as untrusted data |
+| `commands` | the owner can run the extension's code by typing its slash commands; owner-only, never replacing a core command, replies sanitized |
+| `events.observe` | the extension is started once per delivered event with fixed summary fields; nothing it answers is read |
+
+Hermes' `tools.override`, `llm.*` and `gateway.platform_actions` capabilities have no
+Nerva counterpart because the parser refuses the surfaces they would unlock: an
+extension cannot override a core tool, a core command or a model call.
+
+`nerva extensions consent` first asks the hub for the screen (`"preview": true` on the
+same route records nothing), prints every capability with its risk sentence, the exact
+tools, commands and events, and — when the owner agreed to a different surface before —
+each added and removed declaration. Only then does it ask `Agree to exactly this?`.
+Without a terminal it refuses with `confirmation_required` unless `--yes` is given:
+a pipe never agrees. The risk sentences come from the local checkout; only the state
+and the diff come from the hub, and each diff item is shape-checked before printing.
 
 Consent is recorded as the **SHA-256 of the declared surface** — capabilities, tools,
 commands and events — not as a boolean against the extension id. Agreeing to "the

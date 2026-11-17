@@ -261,12 +261,15 @@ def test_cli_consent_sends_the_validated_descriptor_not_the_raw_file(tmp_path):
     posted = []
 
     def post(route, body):
+        if body.get("preview"):
+            # H570: the consent screen is read first and records nothing.
+            return {"ok": True, "preview": True, "consent": "not_granted", "declared_digest": "a" * 64, "added_declarations": [], "removed_declarations": []}
         posted.append((route, body))
         return {"ok": True, "revoked": False, "consent": "granted", "declared_digest": "a" * 64}
 
     context = Context(environ={}, out=io.StringIO(), err=io.StringIO(),
                       client_factory=lambda _: SimpleNamespace(post=post))
-    assert main(["extensions", "consent", str(path)], context=context) == 0
+    assert main(["extensions", "consent", str(path), "--yes"], context=context) == 0
     route, body = posted[0]
     assert route == "/api/plugins/extensions/consent"
     assert body == {"manifest": DESCRIPTOR_S2, "revoke": False}

@@ -2497,7 +2497,8 @@
         "tests/test_h079_extension_restart_routes.py",
         "tests/test_h079_extension_restart_composed.py",
         "tests/test_h079_extension_restart_cli.py",
-        "tests/test_extension_manifest_catalog.py"
+        "tests/test_extension_manifest_catalog.py",
+        "tests/test_h570_capability_consent.py"
       ]
     },
     {
