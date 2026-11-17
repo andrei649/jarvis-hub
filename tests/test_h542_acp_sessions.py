@@ -242,7 +242,9 @@ async def test_router_load_list_and_fork_keep_the_folder_binding(tmp_path, monke
 
         forked = json.loads((await router.acp_open_session(body(cwd=str(project), fork=sid))).body)
         child = forked["session_id"]
-        assert child != sid and not child.startswith(acp_sessions.PREFIX) and forked["forked_from"] == sid
+        # H542 review M1/M3: a fork has an acp_ id of its own, so it is an editor
+        # conversation by its id and the lease/close/MCP routes take it.
+        assert child != sid and child.startswith(acp_sessions.PREFIX) and forked["forked_from"] == sid
         await prepare_session(orch, child)
         assert [t["content"] for t in await orch.memory.get_history(child)] == ["fix the bug", "fixed"]
         assert acp_sessions.cwd_for(child) == project.resolve()
@@ -301,10 +303,18 @@ def test_index_bounds_and_a_corrupt_index_is_not_trusted(tmp_path, monkeypatch):
         acp_sessions._reset_for_tests()
         assert acp_sessions.listing() == ([], None)
         assert acp_sessions.known("x") is None
+        # H542 review M3: an unreadable index is copied aside and never overwritten; new
+        # rows are kept in memory only, and editor status never depends on the index.
         acp_sessions.index_path().write_text("not json")
         acp_sessions._reset_for_tests()
+        acp_sessions.remember("acp_" + "7" * 24, tmp_path)
+        assert acp_sessions.index_path().read_text() == "not json"
+        assert list(acp_sessions.index_path().parent.glob("editor_sessions.json.unreadable-*"))
+        assert acp_sessions.known("acp_" + "7" * 24) is not None
         assert acp_sessions.is_editor_conversation("session_abc") is False
         assert acp_sessions.is_editor_conversation("acp_" + "1" * 24) is True    # the prefix rule stays
+        assert acp_sessions.forget("acp_" + "7" * 24) is True
+        assert acp_sessions.index_path().read_text() == "not json"
     finally:
         acp_sessions._reset_for_tests()
 
@@ -315,7 +325,18 @@ def test_index_bounds_and_a_corrupt_index_is_not_trusted(tmp_path, monkeypatch):
 def test_windows_paths_translate_only_under_wsl_and_stay_confined(tmp_path, monkeypatch):
     from agents.core.acp import paths
 
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
     assert translate("C:\\src\\app", wsl=True) == "/mnt/c/src/app"
+    # Review nits: a bare `c:` or a drive-relative `c:name` may be a relative Linux name.
+    assert translate("c:", wsl=True) == "c:" and translate("c:notes", wsl=True) == "c:notes"
+    # Review m2: another distro's share is refused, never read as this distro's path.
+    with pytest.raises(AcpPathError) as other:
+        translate("\\\\wsl$\\Debian\\etc", wsl=True)
+    assert other.value.reason == "other_wsl_distro"
+    monkeypatch.delenv("WSL_DISTRO_NAME")
+    with pytest.raises(AcpPathError):
+        translate("\\\\wsl$\\Ubuntu\\etc", wsl=True)                      # this distro unknown
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
     assert translate("/D:/src/app", wsl=True) == "/mnt/d/src/app"            # a file:///D:/… URI's path
     assert translate("\\\\wsl$\\Ubuntu\\home\\me", wsl=True) == "/home/me"
     assert translate("//wsl.localhost/Ubuntu/home/me", wsl=True) == "/home/me"
@@ -337,3 +358,170 @@ def test_nerva_acp_version_prints_and_exits():
     out, err = io.StringIO(), io.StringIO()
     code = nerva.main(["acp", "--version"], context=nerva.Context(environ={}, out=out, err=err))
     assert code == 0 and out.getvalue().startswith("nerva acp ") and "Agent Client Protocol 1" in out.getvalue()
+
+
+# ── security review (H542 M1-M4, m1) ─────────────────────────────────────────
+
+
+async def _editor_with_history(orch, router):
+    from agents.core.session_continuation import prepare_session
+
+    opened = json.loads((await router.acp_open_session(router.AcpSessionBody(cwd=str(orch._project)))).body)
+    sid = opened["session_id"]
+    await prepare_session(orch, sid)
+    await orch.memory.add_turn(sid, "user", "fix the bug")
+    await orch.memory.add_turn(sid, "assistant", "fixed")
+    return sid
+
+
+async def _fork(orch, router, sid):
+    return json.loads((await router.acp_open_session(
+        router.AcpSessionBody(cwd=str(orch._project), fork=sid))).body)
+
+
+async def test_review_m1_a_fork_is_renewed_closed_and_given_mcp_servers(tmp_path, monkeypatch):
+    orch, roots, router, acp_sessions = await _hub(tmp_path, monkeypatch)
+    orch._project = roots / "project"
+
+    class Manager:
+        def __init__(self):
+            self.servers = {}
+
+        def register(self, srv):
+            self.servers[srv.name] = srv
+
+        async def connect_server(self, name):
+            return True
+
+        async def remove_server(self, name):
+            return self.servers.pop(name, None) is not None
+
+    orch.mcp = Manager()
+    try:
+        sid = await _editor_with_history(orch, router)
+        forked = await _fork(orch, router, sid)
+        child, holder = forked["session_id"], forked["holder"]
+        renewed = await router.acp_renew_session(child, holder=holder)
+        assert renewed.status_code == 200, json.loads(renewed.body)
+        added = await router.acp_add_session_mcp(child, router.AcpMcpBody(name="docs", command="docs-server"),
+                                                 holder=holder)
+        assert added.status_code == 200 and json.loads(added.body)["connected"] is True
+        closed = await router.acp_close_session(child, holder=holder)
+        assert closed.status_code == 200 and json.loads(closed.body)["removed"] and orch.mcp.servers == {}
+    finally:
+        orch.checkpoints.close()
+        acp_sessions._reset_for_tests()
+
+
+async def test_review_m1_index_eviction_never_demotes_a_fork(tmp_path, monkeypatch):
+    orch, roots, router, acp_sessions = await _hub(tmp_path, monkeypatch)
+    orch._project = roots / "project"
+    monkeypatch.setattr(acp_sessions, "MAX_INDEX", 3)
+    try:
+        sid = await _editor_with_history(orch, router)
+        child = (await _fork(orch, router, sid))["session_id"]
+        assert acp_sessions.is_editor_conversation(child)
+        idx = json.loads(acp_sessions.index_path().read_text())
+        idx["sessions"][child]["created"] = "2000-01-01T00:00:00+00:00"   # the oldest row
+        acp_sessions.index_path().write_text(json.dumps(idx))
+        acp_sessions._reset_for_tests()
+        for i in range(4):
+            acp_sessions.remember(f"acp_{i:024x}", orch._project)
+        assert acp_sessions.known(child) is None                          # dropped from the list
+        assert acp_sessions.is_editor_conversation(child), "evicted fork is now a HUD conversation"
+    finally:
+        orch.checkpoints.close()
+        acp_sessions._reset_for_tests()
+
+
+async def test_review_m3_a_corrupt_index_is_not_overwritten(tmp_path, monkeypatch):
+    orch, roots, router, acp_sessions = await _hub(tmp_path, monkeypatch)
+    orch._project = roots / "project"
+    try:
+        sid = await _editor_with_history(orch, router)
+        child = (await _fork(orch, router, sid))["session_id"]
+        path = acp_sessions.index_path()
+        path.write_text(path.read_text() + "\x00garbage")
+        acp_sessions._reset_for_tests()
+        acp_sessions.remember("acp_" + "9" * 24, orch._project)
+        assert child in path.read_text(), "corrupt index overwritten; the fork's row is lost"
+        assert acp_sessions.is_editor_conversation(child)
+    finally:
+        orch.checkpoints.close()
+        acp_sessions._reset_for_tests()
+
+
+async def test_review_m4_a_hud_continuation_of_an_editor_conversation_is_refused(tmp_path, monkeypatch):
+    import uuid
+
+    from agents.core.session_continuation import ContinuationRefused, create_continuation
+
+    orch, roots, router, acp_sessions = await _hub(tmp_path, monkeypatch)
+    orch._project = roots / "project"
+    try:
+        sid = await _editor_with_history(orch, router)
+        with pytest.raises(ContinuationRefused) as refused:
+            await create_continuation(orch, sid, str(uuid.uuid4()))
+        assert refused.value.reason == "editor_session_source" and refused.value.status == 409
+        with pytest.raises(ContinuationRefused):                          # nor into a HUD-shaped id
+            await create_continuation(orch, sid, str(uuid.uuid4()), child_id="session_" + "a" * 32)
+    finally:
+        orch.checkpoints.close()
+        acp_sessions._reset_for_tests()
+
+
+async def test_review_m2_a_reloaded_fork_keeps_its_history(tmp_path, monkeypatch):
+    from agents.core.memory import persistence
+    from agents.core.session_continuation import prepare_session
+
+    orch, roots, router, acp_sessions = await _hub(tmp_path, monkeypatch)
+    orch._project = roots / "project"
+    try:
+        sid = await _editor_with_history(orch, router)
+        child = (await _fork(orch, router, sid))["session_id"]
+        assert not (persistence.memory_dir() / f"{child}.json").exists()   # its history is the seed
+        acp_sessions._reset_for_tests()
+        orch.memory.conversation.sessions.pop(child, None)
+        reply = await router.acp_open_session(router.AcpSessionBody(cwd=str(orch._project), load=child))
+        assert reply.status_code == 200, json.loads(reply.body)
+        assert child not in orch.memory.conversation.sessions             # not made again empty
+        await prepare_session(orch, child)
+        assert [t["content"] for t in await orch.memory.get_history(child)] == ["fix the bug", "fixed"]
+    finally:
+        orch.checkpoints.close()
+        acp_sessions._reset_for_tests()
+
+
+async def test_review_m1_a_stale_editor_cannot_renew_or_close_after_another_loaded(tmp_path, monkeypatch):
+    orch, roots, router, acp_sessions = await _hub(tmp_path, monkeypatch)
+    orch._project = roots / "project"
+    body = router.AcpSessionBody
+    try:
+        first = json.loads((await router.acp_open_session(body(cwd=str(orch._project)))).body)
+        sid, stale = first["session_id"], first["holder"]
+        acp_sessions.pop(sid)                                              # its lease ran out
+        second = json.loads((await router.acp_open_session(body(cwd=str(orch._project), load=sid))).body)
+        assert second["holder"] != stale
+        assert (await router.acp_renew_session(sid, holder=stale)).status_code == 409
+        assert (await router.acp_close_session(sid, holder=stale)).status_code == 409
+        assert acp_sessions.get(sid) is not None                            # still the second editor's
+        assert (await router.acp_renew_session(sid, holder=second["holder"])).status_code == 200
+    finally:
+        orch.checkpoints.close()
+        acp_sessions._reset_for_tests()
+
+
+async def test_review_deleting_an_editor_conversation_drops_its_row(tmp_path, monkeypatch):
+    from agents.core.acp import sessions as acp_sessions
+
+    orch, roots, router, _ = await _hub(tmp_path, monkeypatch)
+    orch._project = roots / "project"
+    try:
+        sid = json.loads((await router.acp_open_session(
+            router.AcpSessionBody(cwd=str(orch._project)))).body)["session_id"]
+        assert acp_sessions.known(sid) is not None
+        assert acp_sessions.forget(sid) is True and acp_sessions.known(sid) is None
+        assert sid not in acp_sessions.index_path().read_text()
+    finally:
+        orch.checkpoints.close()
+        acp_sessions._reset_for_tests()

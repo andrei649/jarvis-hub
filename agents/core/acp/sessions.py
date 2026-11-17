@@ -26,17 +26,25 @@ survives a restart is a small owner-only index of the conversations editors open
 (:func:`remember`, ``<memory dir>/acp/editor_sessions.json``): the id, the folder it is
 bound to, when it was made and the conversation it was forked from. ``session/list``
 reads it, and ``session/load`` / ``session/resume`` / ``session/fork`` may only name a
-conversation in it, for the same folder. A conversation in the index is an editor
-conversation for good (:func:`is_editor_conversation`): without a live binding it is
-refused, never run without its folder — including a fork, whose id is an ordinary
-continuation id rather than ``acp_…``.
+conversation in it, for the same folder. Whether a conversation is an editor one never
+depends on the index: every editor conversation, a fork included, has an ``acp_`` id
+(:func:`is_editor_conversation`), so a dropped row or a lost index cannot turn one into a
+HUD conversation in the wider file scope. An index that cannot be read is never
+overwritten: it is copied aside, left in place, and this process records new rows in
+memory only until the owner repairs it (H542 review M3).
+
+**One holder (H542 review m1).** Binding a conversation hands back a holder token; the
+lease, close and MCP routes require it, so an editor that lost the conversation to another
+one (which loaded it) can no longer renew, close or add servers to it.
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import secrets
+import shutil
 import threading
 import time
 from dataclasses import dataclass, field
@@ -67,6 +75,8 @@ class AcpSession:
     created: float
     seen: float
     mcp: list[str] = field(default_factory=list)
+    #: The binding's holder token (only the editor that bound it renews or closes it).
+    holder: str = field(default_factory=lambda: secrets.token_urlsafe(24))
 
 
 _LOCK = threading.Lock()
@@ -77,9 +87,12 @@ def new_session_id() -> str:
     return PREFIX + secrets.token_hex(12)
 
 
-def register(session_id: str, cwd: Path, *, exclusive: bool = False) -> AcpSession:
-    """Bind *session_id* to *cwd*. With *exclusive*, a session already held is refused
-    (KeyError) instead of re-bound, so two editors never hold one conversation."""
+def register(session_id: str, cwd: Path, *, exclusive: bool = True) -> AcpSession:
+    """Bind *session_id* to *cwd*. A session already held is refused (KeyError) instead of
+    re-bound, so two editors never hold one conversation; the record's ``holder`` is the
+    token the binding editor presents from then on."""
+    if not isinstance(session_id, str) or not session_id.startswith(PREFIX):
+        raise ValueError("an editor conversation has an acp_ id")
     now = time.monotonic()
     with _LOCK:
         if exclusive and session_id in _SESSIONS:
@@ -101,6 +114,16 @@ def get(session_id: object) -> AcpSession | None:
 def count() -> int:
     with _LOCK:
         return len(_SESSIONS)
+
+
+def holds(session_id: object, holder: object) -> bool:
+    """*holder* is the token of the live binding of *session_id* (constant time)."""
+    if not isinstance(session_id, str) or not isinstance(holder, str) or not holder:
+        return False
+    with _LOCK:
+        record = _SESSIONS.get(session_id)
+        expected = record.holder if record is not None else ""
+    return bool(expected) and hmac.compare_digest(expected.encode(), holder.encode())
 
 
 def renew(session_id: object) -> bool:
@@ -189,6 +212,8 @@ async def close(session_id: str, manager) -> list[str]:
 _INDEX_LOCK = threading.Lock()
 #: (path, entries) of the index as last read or written by this process.
 _INDEX_CACHE: tuple[Path, dict[str, dict]] | None = None
+#: The index path this process found unreadable: never written while it is.
+_INDEX_BROKEN: Path | None = None
 
 
 def index_path() -> Path:
@@ -220,9 +245,24 @@ def _read_index_locked() -> dict[str, dict]:
     except FileNotFoundError:
         pass
     except (OSError, ValueError):
-        logger.warning("editor session index unreadable; editor conversations start a new list")
+        _quarantine(path)
     _INDEX_CACHE = (path, entries)
     return entries
+
+
+def _quarantine(path: Path) -> None:
+    """An unreadable index is copied aside and left in place, never overwritten: new rows
+    stay in this process's memory until the owner repairs or removes the file."""
+    global _INDEX_BROKEN
+    _INDEX_BROKEN = path
+    aside = path.with_name(f"{path.name}.unreadable-{int(time.time())}")
+    try:
+        if not aside.exists():
+            shutil.copy2(path, aside)
+    except OSError:
+        pass
+    logger.warning("editor session index %s is unreadable: copied aside, not overwritten; new editor "
+                   "conversations are listed in memory only until it is repaired", path)
 
 
 def remember(session_id: str, cwd: Path, *, parent: str | None = None) -> None:
@@ -238,9 +278,29 @@ def remember(session_id: str, cwd: Path, *, parent: str | None = None) -> None:
             for sid in sorted(entries, key=lambda k: entries[k]["created"])[:len(entries) - MAX_INDEX]:
                 entries.pop(sid, None)
         path = index_path()
+        _INDEX_CACHE = (path, entries)
+        if path == _INDEX_BROKEN:
+            return                         # fail closed: never overwrite an unreadable index
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         atomic_write_json(path, {"schema": 1, "sessions": entries})
+
+
+def forget(session_id: object) -> bool:
+    """Drop a deleted conversation's row from the index (``DELETE /sessions/{id}``)."""
+    from agents.core.persistence.json_store import atomic_write_json
+
+    global _INDEX_CACHE
+    if not isinstance(session_id, str):
+        return False
+    with _INDEX_LOCK:
+        entries = dict(_read_index_locked())
+        if entries.pop(session_id, None) is None:
+            return False
+        path = index_path()
         _INDEX_CACHE = (path, entries)
+        if path != _INDEX_BROKEN:
+            atomic_write_json(path, {"schema": 1, "sessions": entries})
+        return True
 
 
 def known(session_id: object) -> dict | None:
@@ -253,8 +313,9 @@ def known(session_id: object) -> dict | None:
 
 
 def is_editor_conversation(session_id: object) -> bool:
-    """*session_id* names a conversation an editor opened (it is bound to a folder)."""
-    return isinstance(session_id, str) and (session_id.startswith(PREFIX) or known(session_id) is not None)
+    """*session_id* names a conversation an editor opened or forked (it is bound to a
+    folder). The id alone decides, never the index."""
+    return isinstance(session_id, str) and session_id.startswith(PREFIX)
 
 
 def listing(cwd: Path | None = None, *, offset: int = 0, limit: int = PAGE_SIZE) -> tuple[list[dict], int | None]:
@@ -275,13 +336,14 @@ def listing(cwd: Path | None = None, *, offset: int = 0, limit: int = PAGE_SIZE)
 
 
 def _reset_for_tests() -> None:
-    global _INDEX_CACHE
+    global _INDEX_CACHE, _INDEX_BROKEN
     with _LOCK:
         _SESSIONS.clear()
     with _INDEX_LOCK:
         _INDEX_CACHE = None
+        _INDEX_BROKEN = None
 
 
 __all__ = ["AcpSession", "LEASE_SECONDS", "PAGE_SIZE", "PREFIX", "REAP_INTERVAL_SECONDS", "add_server", "close",
-           "count", "cwd_for", "expired", "get", "index_path", "is_editor_conversation", "known", "listing",
+           "count", "cwd_for", "expired", "forget", "get", "holds", "index_path", "is_editor_conversation", "known", "listing",
            "new_session_id", "pop", "register", "remember", "renew", "server_name"]

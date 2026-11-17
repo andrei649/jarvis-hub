@@ -37,8 +37,16 @@ class AcpPathError(ValueError):
         self.reason = reason
 
 
-_DRIVE = re.compile(r"/?([A-Za-z]):(?:[\\/](.*))?\Z", re.S)
-_WSL_SHARE = re.compile(r"(?:\\\\|//)wsl(?:\$|\.localhost)[\\/][^\\/]+(?:[\\/](.*))?\Z", re.S | re.I)
+#: A drive path: the drive letter, a separator, the rest. ``c:`` alone and the drive-relative
+#: ``c:name`` are not translated (they may be a relative name on the Linux side).
+_DRIVE = re.compile(r"/?([A-Za-z]):[\\/](.*)\Z", re.S)
+_WSL_SHARE = re.compile(r"(?:\\\\|//)wsl(?:\$|\.localhost)[\\/]([^\\/]+)(?:[\\/](.*))?\Z", re.S | re.I)
+
+
+def _this_distro() -> str:
+    from agents.core.env_config import env_str
+
+    return env_str("WSL_DISTRO_NAME", "").strip()
 
 
 @functools.lru_cache(maxsize=1)
@@ -56,13 +64,18 @@ def translate(raw: str, *, wsl: bool | None = None) -> str:
 
     ``C:\\x\\y`` and ``/C:/y`` (a ``file:///C:/y`` URI's path) become ``/mnt/c/x/y``;
     ``\\\\wsl$\\<distro>\\home\\me`` and ``\\\\wsl.localhost\\<distro>\\…`` become
-    ``/home/me``. Nothing is translated outside WSL. The result is still only a spelling:
-    the caller resolves and confines it to the session folder like any other path."""
+    ``/home/me`` — only when ``<distro>`` is this one (``WSL_DISTRO_NAME``); another
+    distro's share is refused (``other_wsl_distro``), never read as this distro's path. Nothing
+    is translated outside WSL. The result is still only a spelling: the caller resolves and
+    confines it to the session folder like any other path."""
     if not (running_under_wsl() if wsl is None else wsl):
         return raw
     share = _WSL_SHARE.fullmatch(raw)
     if share:
-        return "/" + (share.group(1) or "").replace("\\", "/")
+        here = _this_distro()
+        if not here or share.group(1).lower() != here.lower():
+            raise AcpPathError("other_wsl_distro")
+        return "/" + (share.group(2) or "").replace("\\", "/")
     drive = _DRIVE.fullmatch(raw)
     if drive:
         rest = (drive.group(2) or "").replace("\\", "/")

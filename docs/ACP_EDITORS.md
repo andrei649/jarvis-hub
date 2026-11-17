@@ -33,13 +33,22 @@ stdin/stdout. Rows: G11 / H542, H543, H544, H545, H056.
   without it (`session/resume`), or continue one in a new conversation (`session/fork`, the
   hub's own continuation, so the copy keeps its source's lineage and standing). Each only for
   **the folder the conversation was made for** (`cwd_mismatch` otherwise), and a conversation
-  another editor holds open cannot be loaded (`session_in_use`). A forked conversation stays an
-  editor conversation: with no editor holding it, it is refused like any other. Editor MCP
-  servers given on load, resume or fork are asked about at the first prompt, as on
-  `session/new`.
+  another editor holds open cannot be loaded (`session_in_use`). Each binding gets a holder
+  token that `nerva acp` sends with its lease renewals, MCP servers and close
+  (`X-ACP-Holder`): an editor whose session lapsed and was loaded by another can no longer renew
+  or close it (`not_holder`). A fork gets an `acp_…` id of its own, so it is an editor
+  conversation whatever happens to the list: with no editor holding it, it is refused like any
+  other, and it is renewed, closed and given MCP servers like any other. A HUD continuation
+  (`/sessions/continue`) of an editor conversation is refused (`editor_session_source`): its
+  history never moves into the HUD's wider file scope. If the list file cannot be read it is
+  copied aside and never overwritten; new conversations are then listed only until the hub
+  restarts. Deleting a conversation removes its row. Editor MCP servers given on load, resume
+  or fork are asked about at the first prompt, as on `session/new`.
 - **Windows editors on WSL.** When `nerva acp` runs inside WSL, Windows paths from the editor
   (`C:\src\app`, `file:///C:/src/app`, `\\wsl$\Ubuntu\home\me\app`) are translated to the
   Linux side (`/mnt/c/src/app`, `/home/me/app`) and then confined exactly like any other path.
+  A `\\wsl$` share is translated only for the distro `nerva acp` runs in (`WSL_DISTRO_NAME`);
+  another distro's share is refused. A bare `c:` or `c:name` is left as it is.
 - **Usage.** A prompt's answer carries the turn's measured token counts (`usage`) when the hub
   measured them; no model, provider or price is sent.
 - **Live rendering.** Answers stream as message chunks; each tool call appears as a card with
