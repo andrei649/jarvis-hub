@@ -1025,7 +1025,7 @@ def _answered(reply):
     return isinstance(reply, str) and reply.endswith("answer") and "skill bundle" not in reply
 
 
-async def _say(orch, text, *, admin=True, channel="web", stream=False):
+async def _say(orch, text, *, admin=True, channel="web", stream=False, agent_override=None):
     """One turn as /chat (or the channel gateway) runs it: the principal bound, a notice
     collector open, the session pinned."""
     from agents.core.commands import Principal
@@ -1038,9 +1038,9 @@ async def _say(orch, text, *, admin=True, channel="web", stream=False):
     notices, notices_token = open_turn_notices()
     try:
         if stream:
-            reply = await orch.handle_input_stream(text, channel=channel, session_id="s")
+            reply = await orch.handle_input_stream(text, channel=channel, session_id="s", agent_override=agent_override)
         else:
-            reply = await orch.handle_input(text, channel=channel, session_id="s")
+            reply = await orch.handle_input(text, channel=channel, session_id="s", agent_override=agent_override)
     finally:
         reset_turn_notices(notices_token)
         reset_turn_principal(principal)

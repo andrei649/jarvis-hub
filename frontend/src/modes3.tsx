@@ -29,7 +29,7 @@ function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, l
           <div><div className="chat-title">{t.directLine} · NERVA</div><div className="chat-sub">{t.focusHintChat}</div></div>
           <span className="chat-live"><span className="sdot active"></span>local</span>
         </div>
-        <Conversation messages={messages} thinking={thinking} onStop={onStop} onProv={onProv} lang={lang} t={t}/>
+        <Conversation messages={messages} thinking={thinking} onStop={onStop} onProv={onProv} exportAllowed={selectedTurn} lang={lang} t={t}/>
         <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t} agent={agent} sessionId={sessionId} selectedTurn={selectedTurn} outcome={outcome} power={power}/>
       </div>
     </div>

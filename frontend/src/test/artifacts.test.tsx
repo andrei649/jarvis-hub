@@ -45,6 +45,7 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
   it('fetches /api/canvas and renders every existing canvas type with agent + time', async () => {
     mockCanvas(ELS);
     const { container } = render(<ArtifactsPanel refreshKey={0} lang="en" />);
+    expect(screen.getByRole('link', { name: 'Open 3D workshop' }).getAttribute('href')).toBe('/os/?studio=robot');
 
     expect(await screen.findByText('plain text body')).toBeTruthy();       // text
     expect(screen.getByText('Heading line')).toBeTruthy();                 // markdown heading

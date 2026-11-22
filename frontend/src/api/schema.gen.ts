@@ -1632,6 +1632,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/canvas/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Canvas Export
+         * @description Download the supplied reply or table without storing its contents.
+         */
+        post: operations["canvas_export_api_canvas_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/canvas": {
         parameters: {
             query?: never;
@@ -2082,6 +2102,156 @@ export interface paths {
          *     all-clear.
          */
         get: operations["capture_export_api_capture_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Os Status */
+        get: operations["os_status_api_os_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/brain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Os Brain */
+        get: operations["os_brain_api_os_brain_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/brain/note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Os Brain Note */
+        get: operations["os_brain_note_api_os_brain_note_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/brain/retrieve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Os Brain Retrieve
+         * @description The vault notes that match a question, shaped as `/chat` attachments.
+         *
+         *     The page sends them beside the owner's message, so the orchestrator receives vault
+         *     text as fenced content and never as the owner's own words. `focus` is the title the
+         *     galaxy should fly to, and only when the best match is named in the question.
+         */
+        get: operations["os_brain_retrieve_api_os_brain_retrieve_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/brain/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Os Brain Capture
+         * @description Write a new note into the configured vault inbox.
+         */
+        post: operations["os_brain_capture_api_os_brain_capture_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/workshop/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Os Workshop Edit
+         * @description Turn one instruction into bounded parameters; the browser applies them.
+         */
+        post: operations["os_workshop_edit_api_os_workshop_edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/workshop/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Os Workshop Projects */
+        get: operations["os_workshop_projects_api_os_workshop_projects_get"];
+        put?: never;
+        /** Os Workshop Project Save */
+        post: operations["os_workshop_project_save_api_os_workshop_projects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/workshop/project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Os Workshop Project */
+        get: operations["os_workshop_project_api_os_workshop_project_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11228,7 +11398,11 @@ export interface paths {
          */
         get: operations["dashboard_today_entries_api_dashboard_today_entries_get"];
         put?: never;
-        post?: never;
+        /**
+         * Dashboard Today Entry Create
+         * @description Save one owner supplied fact in the curated agent notes or user profile.
+         */
+        post: operations["dashboard_today_entry_create_api_dashboard_today_entries_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17503,6 +17677,21 @@ export interface components {
              */
             pinned: boolean;
         };
+        /** CaptureBody */
+        CaptureBody: {
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+            /** Links */
+            links?: string[];
+        };
         /** CaptureIngestBody */
         CaptureIngestBody: {
             /** Surface */
@@ -17632,6 +17821,8 @@ export interface components {
             reply: string;
             /** Session Id */
             session_id?: string | null;
+            /** Model Calls */
+            model_calls?: components["schemas"]["ModelCall"][] | null;
             /** Usage */
             usage?: {
                 [key: string]: unknown;
@@ -19042,6 +19233,13 @@ export interface components {
              */
             model: string;
         };
+        /** ModelCall */
+        ModelCall: {
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+        };
         /** ModelPullBody */
         ModelPullBody: {
             /** Model */
@@ -19553,6 +19751,13 @@ export interface components {
              * @default false
              */
             reclaim_first: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** RecoverRunBody */
+        RecoverRunBody: {
+            /** Expected Run Id */
+            expected_run_id: number;
             /** Reason */
             reason?: string | null;
         };
@@ -20280,6 +20485,16 @@ export interface components {
              */
             as_of: string;
         };
+        /** TimelineEntryCreate */
+        TimelineEntryCreate: {
+            /**
+             * Store
+             * @enum {string}
+             */
+            store: "memory" | "user";
+            /** Value */
+            value: string;
+        };
         /**
          * TimelineEntryEdit
          * @description The new text of a learned entry: a fact's value (at most 2000 characters; a ring
@@ -20842,6 +21057,25 @@ export interface components {
             steps: {
                 [key: string]: unknown;
             }[];
+        };
+        /** WorkshopEditBody */
+        WorkshopEditBody: {
+            /**
+             * View
+             * @enum {string}
+             */
+            view: "robot" | "house";
+            /** Instruction */
+            instruction: string;
+        };
+        /** WorkshopProjectBody */
+        WorkshopProjectBody: {
+            /** Title */
+            title: string;
+            /** Project */
+            project: {
+                [key: string]: unknown;
+            };
         };
         /** WriteBackBody */
         WriteBackBody: {
@@ -23460,7 +23694,9 @@ export interface operations {
     };
     command_catalog_api_commands_get: {
         parameters: {
-            query?: never;
+            query?: {
+                agent?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -23474,6 +23710,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CommandCatalog"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -23505,6 +23750,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    canvas_export_api_canvas_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Format
+                     * @constant
+                     */
+                    format: "docx";
+                    /** Text */
+                    text: string;
+                } | {
+                    /**
+                     * Format
+                     * @constant
+                     */
+                    format: "xlsx";
+                    /** Rows */
+                    rows: string[][];
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
                 };
             };
         };
@@ -24204,6 +24490,269 @@ export interface operations {
         parameters: {
             query?: {
                 surface?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    os_status_api_os_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    os_brain_api_os_brain_get: {
+        parameters: {
+            query?: {
+                reindex?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    os_brain_note_api_os_brain_note_get: {
+        parameters: {
+            query?: {
+                relPath?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    os_brain_retrieve_api_os_brain_retrieve_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    os_brain_capture_api_os_brain_capture_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaptureBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    os_workshop_edit_api_os_workshop_edit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkshopEditBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    os_workshop_projects_api_os_workshop_projects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    os_workshop_project_save_api_os_workshop_projects_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkshopProjectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    os_workshop_project_api_os_workshop_project_get: {
+        parameters: {
+            query?: {
+                path?: string;
             };
             header?: never;
             path?: never;
@@ -31688,7 +32237,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReasonBody"];
+                "application/json": components["schemas"]["RecoverRunBody"];
             };
         };
         responses: {
@@ -38332,6 +38881,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_today_entry_create_api_dashboard_today_entries_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TimelineEntryCreate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

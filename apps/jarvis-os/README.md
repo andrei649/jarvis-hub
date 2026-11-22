@@ -8,8 +8,8 @@ This app lives in the `jarvis-hub` repository at `apps/jarvis-os/` and runs two 
 
 **Inside the Nerva hub** — start the hub (`python serve.py`) and open
 **http://127.0.0.1:8080/os/**. The hub serves `public/` itself and the page talks to the hub: chat
-goes through the hub's orchestrator (`/chat`), with the matching vault notes attached as fenced
-content; speech uses the hub's `/tts`; the vault graph comes from `/api/os/*`. The provider
+goes through the hub's orchestrator (`/chat`). Select **Include matching notes** to attach
+excerpts to the next message. Speech uses the hub's `/tts` and the graph comes from `/api/os/*`. The provider
 settings below do not apply there, so the AI Connections tab is hidden. Set
 `JARVIS_OS_VAULT_PATH` if the vault is not at `~/Documents/Andrei OS Obsidian`.
 
@@ -63,6 +63,50 @@ settings do not apply there.
 
 ## Paths, secrets and the vault
 
+In the hub HUD, open **Chat**, type a question and select **Vault**. Review the excerpts,
+check the ones to include and send. The hub checks the selection against the current vault
+before sending. The conversation lists the sources attached to that turn.
+
+For a scoped vault, put the following settings in the hub checkout's private `.env`.
+Use the absolute path to your own vault and its existing inbox. The example also reads
+a compact project register. Its rows appear in the graph and in searches with a
+source reference ending in the project ID.
+
+```dotenv
+JARVIS_OS_VAULT_PATH="C:/path/to/My Vault"
+JARVIS_OS_VAULT_INCLUDE="Journal/Inbox;Projects/index.json"
+JARVIS_OS_VAULT_INBOX="Journal/Inbox"
+JARVIS_OS_PROJECT_INDEX=1
+JARVIS_OS_REPOSITORY_DOCS=0
+```
+
+Include and exclude paths are relative to the vault and separated by semicolons.
+`NERVA_OS_VAULT_EXCLUDE` takes precedence over included paths. The index reader
+uses the validated `project-index/v1` file directly. Set `JARVIS_OS_PROJECT_INDEX_PATH`,
+`JARVIS_OS_PROJECT_REGISTER_DIR` and `JARVIS_OS_PROJECT_INDEX_SCHEMA` in the private
+`.env` if an existing index uses different vault-relative locations or a different schema tag.
+The index path must also be in `JARVIS_OS_VAULT_INCLUDE`. For a register
+row with an existing note, **Open in Obsidian** opens that note in
+your registered vault. The register supplies the searchable project summary.
+Including the register alone does not add project note bodies to search.
+The compact JSON shape is `{"schema":"project-index/v1","items":[{"id":"PRJ-123","n":"Garden.md","pas":"Plant seeds"}]}`;
+`n` names a Markdown file in the register directory, and `pas` is an optional next step.
+[Obsidian URI reference](https://obsidian.md/help/uri)
+
+In chat, open **Vault** and search using your draft. Check an excerpt to attach
+it. For a readable note, **Choose passage** shows up to the first 6,000 characters.
+Highlight up to 1,500 characters, choose **Use selected passage**, and review the
+text before sending. The hub rechecks the source when you send. A source link
+alone opens the note in Obsidian without attaching any text.
+
+Each capture creates a new file in the configured inbox. The default folder for a legacy vault is
+`08 Inbox`. Markdown with a private, restricted or unrecognized privacy value is
+hidden from the graph, direct reads, and retrieval. Unreadable or ambiguous headers
+are skipped. For standalone mode, set `vaultPath`, `vaultInclude`, `vaultExclude`,
+`vaultInbox`, `projectIndex`, `projectIndexPath`, `projectRegisterDir`,
+`projectIndexSchema` and `vaultMode` in the private `apps/jarvis-os/config.json`.
+Use `"andrei_os"` to display only the vault.
+
 - **Vault** — auto-detected in this order: `apps/jarvis-os/vault/Andrei OS Obsidian`,
   `~/Documents/Andrei OS Obsidian`, then a sibling `Andrei OS Obsidian` folder. With no vault on
   disk, `/api/brain` answers in `demo_550` mode.
@@ -88,11 +132,37 @@ settings do not apply there.
 - **The note route is an allowlist.** `/api/brain/note` serves only Markdown that the graph
   itself indexed: never `config.json`, `.env`, or a `*.local.md`.
 - **Capture never overwrites and never leaves the inbox.** A duplicate title becomes
-  `<title> (2).md`; an `08 Inbox` that is a link is refused before anything is written.
+  `<title> (2).md`. The capture refuses linked inbox directories before writing.
 - **Only this page may call the API.** The standalone server sends no CORS headers and refuses
   requests whose `Origin` or `Host` is not its own.
 
 ## Frontend notes
+
+Open **Artifacts → Open 3D workshop** in the hub, or visit `/os/?studio=house`
+for the house. **Edit with AI** sends a material or layout request to the hub’s
+local model. For example, ask it to set the robot shell to `#7359ae` or widen
+the kitchen by 1.25 metres. The result changes the scene in the open tab.
+
+Open **Projects**, name the scene and save a version to keep editing later.
+Each save creates a Markdown note in the configured Obsidian inbox, with a
+readable summary, editable scene settings and camera position. The project link
+reopens that version. Uploaded reference pictures stay in the current tab.
+In the HUD, **Artifacts → Saved 3D projects** opens a version or brings it into
+chat for review. To hand it to a task, open its comments, select **Link a saved
+3D project**, review the draft, then post.
+
+**Blender / Godot (.glb)** downloads the visible model with named parts,
+materials and embedded textures. The miniature also includes its desert scenery.
+In Blender choose **File → Import → glTF 2.0**, select the download, then save
+the project as a `.blend` file. For Godot, drop the same file into the project's
+FileSystem dock and add the imported scene to a level. The workshop also accepts
+“Export this model for Godot”. [Godot asset import](https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html)
+
+For a 1:100 house floor plan, download the SVG or choose **Illustrator script
+(.jsx)**. You can also ask the workshop to “Export my floor plan for
+Illustrator”. In Illustrator, choose **File → Scripts → Other Script**, open
+the downloaded JSX, then use **Save As** to keep the new drawing as an `.ai`
+file. Rooms, walls, pools and labels remain editable. [Running scripts in Illustrator](https://helpx.adobe.com/illustrator/desktop/automate-visualize-data/automate-actions/install-and-run-scripts.html)
 
 - `public/js/templates.js` builds every piece of HTML that contains text the page does not own
   (note titles, paths, model names, a model's action parameters) and escapes all of it.
@@ -104,15 +174,18 @@ settings do not apply there.
 
 ## API
 
-Standalone routes. In the hub the vault routes are `/api/os/status`, `/api/os/brain`,
-`/api/os/brain/note`, `/api/os/brain/retrieve` and `POST /api/os/brain/capture`.
+Standalone routes are listed below. The hub exposes the vault through `/api/os/status`,
+`/api/os/brain`, `/api/os/brain/note`, `/api/os/brain/retrieve` and
+`POST /api/os/brain/capture`. Workshop edits use `POST /api/os/workshop/edit`.
 
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/status` | GET | Providers, active engine, resolved `vaultPath` / `nervaPath` (`?refresh=1` re-probes) |
 | `/api/brain` | GET | The knowledge graph: nodes, edges, categories, top hubs (`?reindex=1` rebuilds) |
-| `/api/brain/note` | GET | Full body of one note (`?relPath=...`) |
-| `/api/brain/capture` | POST | Write a new note into the vault's `08 Inbox/` |
+| `/api/brain/note` | GET | First 6,000 characters of an indexed Markdown note (`?relPath=...`) |
+| `/api/brain/capture` | POST | Write a new note into the configured vault inbox |
+| `/api/workshop/projects` | GET, POST | List saved versions or save a new version in the vault inbox. Hub prefix is `/api/os`. |
+| `/api/workshop/project?path=…` | GET | Read one saved version and its summary. Hub prefix is `/api/os`. |
 | `/api/config` | POST | Save settings to `config.json` |
 | `/api/claude/login` | POST | Start the Claude Code CLI subscription sign-in |
 | `/api/chat` | POST | Vault-grounded chat through the provider chain |
@@ -122,7 +195,7 @@ Standalone routes. In the hub the vault routes are `/api/os/status`, `/api/os/br
 
 1. **Real Second Brain ("Andrei OS Obsidian" + "Nerva / Jarvis Hub")**
    - Automatically indexes `~/Documents/Andrei OS Obsidian` (Markdown notes, YAML frontmatter, `.canvas` visual maps, and `[[wiki-links]]` across `00 Acasa` through `90 Atasamente`) plus the docs of the enclosing `jarvis-hub` repository.
-   - Click any orb to read the real note in `INSPECTOR`, **Shift-click** a second orb to trace the shortest semantic path, or save new notes straight to `08 Inbox/`.
+   - Click a note to read it in `INSPECTOR`, **Shift-click** another node to trace the shortest link path, or save a note to the configured inbox.
    - Switch anytime in **⚙️ Settings → Second Brain Vaults** between `Andrei OS + Nerva`, `Andrei OS Only`, and the `550-node Video Showcase Demo`.
 
 2. **Unified Multi-Platform AI Hub (`⚙️ Settings → AI Connections`)**
@@ -133,7 +206,7 @@ Standalone routes. In the hub the vault routes are `/api/os/status`, `/api/os/br
 3. **Clean Homescreen + Dedicated `⚙️ Settings` Drawer**
    - Keeps the main galaxy homescreen focused on Search, Inspector, and Top Hubs while housing all **3D Galaxy Forces**, **Render Layers**, **Color Themes**, and **HUD Visibility Toggles** inside **⚙️ Settings → Visual Customizations**.
 
-4. **3D Workshop (Robot Chassis, 2D Floor Plan → 3D Villa & Miniature) & Computer Use**
+4. **3D Workshop (Robot Chassis, Pool Home & Miniature) & Computer Use**
    - Voice/text-driven `Jarvis Reactor Companion` with PBR materials and **Exploded View** callouts.
-   - `Pool Home Plan` 2D-to-3D architectural studio with live remodeling and golden-hour **Miniature** diorama renderer.
+   - The Pool Home studio lets you remodel the bundled house and switch to its miniature diorama. Choosing a floor-plan image updates the visual reference beside the scene.
    - Autonomous **Meta Ads Manager** Computer Use driver + live browser tab screen-sharing.

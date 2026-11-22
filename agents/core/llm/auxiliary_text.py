@@ -173,16 +173,21 @@ def local_json_schema_supported(router, task: str) -> bool:
     return json_schema_supported(router.local_backend, resolve_auxiliary_model(task, active_model))
 
 
-def prepare_local_auxiliary(router, task: str):
-    """Bind one local route for an operation; guard every awaited attempt afresh."""
+def prepare_local_auxiliary(router, task: str, *, private_direct: bool = False):
+    """Bind one local route; private calls also bind the final HTTP request."""
     if not isinstance(task, str) or task not in _TASKS:
         raise AuxiliaryConfigError("unknown auxiliary task")
+    private_direct = private_direct or task == "review"
     exclude_job_pins = _TASKS[task][2]
     if exclude_job_pins and current_selection() is not None:
         raise SelectionError("job model pins exclude auxiliary calls")
     active_model = None if task == "session_title" else getattr(router, "active_model", None)
     model = resolve_auxiliary_model(task, active_model)
     backend = router.local_backend
+    wire_model = model
+    if private_direct and type(backend) is OllamaBackend:
+        from .physical_local import ollama_local_selector
+        wire_model = ollama_local_selector(model)
 
     async def generate(*, system: str, prompt: str, max_tokens: int,
                        temperature: float, summary_idle: float | None = None,
@@ -193,8 +198,8 @@ def prepare_local_auxiliary(router, task: str):
         if task in {"session_title", "query_rewrite", "soul_description"} and "qwen3" in model.lower():
             prompt = f"{prompt}\n/no_think"
         request_check = (_direct_local_request_check(
-            router, backend, model, prompt, system, max_tokens, temperature)
-                         if task == "soul_description" else None)
+            router, backend, wire_model, prompt, system, max_tokens, temperature)
+                         if task == "soul_description" or private_direct else None)
         from agents.core.turn_usage import model_usage_scope
         with auxiliary_request_scope(router, backend, model, role=task,
                                      request_check=request_check), model_usage_scope(model=model, route="local"):
@@ -210,7 +215,7 @@ def prepare_local_auxiliary(router, task: str):
                 )
             # H414: a one-shot caller's stream hook rides the same guarded scope — the
             # whole-call guard covers a streamed request exactly as a whole one.
-            kwargs = {"model": model, "prompt": prompt, "system": system,
+            kwargs = {"model": wire_model, "prompt": prompt, "system": system,
                       "max_tokens": max_tokens, "temperature": temperature}
             if on_token is not None:
                 kwargs["on_token"] = on_token
@@ -283,6 +288,7 @@ async def run_oneshot(
     router, prompt: str, *, purpose: str, system: str | None = None,
     max_tokens: int = DEFAULT_ONESHOT_TOKENS, temperature: float = 0.2,
     on_token: Callable[[str], Awaitable[None] | None] | None = None,
+    private_direct: bool = False,
 ) -> str:
     """One stateless side call on the auxiliary rail (Hermes' ``run_oneshot``).
 
@@ -294,10 +300,14 @@ async def run_oneshot(
     short ``purpose`` label, a capped output budget, bounded prompt and system text —
     and a per-purpose usage ledger (``oneshot_usage``). It never reads or writes a
     session turn: history reaches the model only if the caller puts it in *prompt*.
-    ``on_token`` streams the answer through the same guarded scope.
+    ``on_token`` streams the answer through the same guarded scope. ``private_direct``
+    requires the approved loopback adapter and checks the final unstreamed request;
+    Ollama uses its atomic ``:local`` selector so remote aliases cannot answer.
     """
     if not isinstance(purpose, str) or _PURPOSE.fullmatch(purpose) is None:
         raise AuxiliaryConfigError("one-shot purpose must be a short lowercase label")
+    if type(private_direct) is not bool or private_direct and on_token is not None:
+        raise AuxiliaryConfigError("private direct one-shot must be an unstreamed boolean selection")
     prompt = _bounded_text(prompt, name="prompt", required=True)
     system = _bounded_text(system, name="system", required=False)
     if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= MAX_ONESHOT_TOKENS:
@@ -307,7 +317,7 @@ async def run_oneshot(
     prompt_chars = len(prompt) + len(system)
     model = None
     try:
-        generate = prepare_local_auxiliary(router, "oneshot")
+        generate = prepare_local_auxiliary(router, "oneshot", private_direct=private_direct)
         model = resolve_auxiliary_model("oneshot", getattr(router, "active_model", None))
         answer = await generate(system=system, prompt=prompt, max_tokens=max_tokens,
                                 temperature=temperature, on_token=on_token)

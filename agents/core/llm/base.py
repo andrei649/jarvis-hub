@@ -23,6 +23,7 @@ from .auxiliary_recovery import (
 )
 from .egress import llm_async_client
 from .host_protocol import HostProtocolRefused
+from .physical_local import ollama_wire_model, physical_local_ollama
 from .reasoning_effort import ReasoningEffortRefused
 from .repetition_guard import RepetitionStreamGuard, is_repetition_dominated, is_truncated_finish
 from .request_context import required_job_reasoning
@@ -53,6 +54,10 @@ CLOUD_AUTO_MAX_TOKENS = 8192
 LOCAL_SELECTION_UNAVAILABLE_REPLY = (
     "⚠️ No local language model is available. "
     "Start LM Studio or Ollama and try again."
+)
+CLOUD_SELECTION_UNAVAILABLE_REPLY = (
+    "⚠️ Athena requires a cloud route. "
+    "Choose an available cloud provider or switch to Frigga for a local answer."
 )
 
 
@@ -209,6 +214,7 @@ THINKING_EXHAUSTED_REPLY = (
 #: generation but wrong for a caller that must tell a failed call from an answer that
 #: happens to be a JSON array or a "[1]" list: that caller asks here.
 BACKEND_FAILURE_PREFIXES = (
+    CLOUD_SELECTION_UNAVAILABLE_REPLY,
     "⚠️ No local language model is available.",
     "⚠️ I can't reach the local ",
     "⚠️ The local ",
@@ -1043,13 +1049,14 @@ class OllamaBackend(LLMBackend):
         """Close the HTTP client's connection pool (BUG-7)."""
         await self.client.aclose()
 
+    @physical_local_ollama
     async def warm_up(self, model: str) -> bool:
         """Preload via Ollama's load path (empty prompt loads weights without
         generating) and pin the model resident with keep_alive=-1 so it doesn't
         unload between turns. Best-effort, never raises."""
         try:
             resp = await self.client.post("/api/generate", json={
-                "model": model,
+                "model": ollama_wire_model(model),
                 "prompt": "",
                 "keep_alive": -1,
                 "stream": False,
@@ -1061,6 +1068,7 @@ class OllamaBackend(LLMBackend):
 
     supports_json_schema = True
 
+    @physical_local_ollama
     async def generate(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
@@ -1068,7 +1076,7 @@ class OllamaBackend(LLMBackend):
     ) -> str:
         _require_no_job_reasoning()
         payload = {
-            "model": model,
+            "model": ollama_wire_model(model),
             "prompt": prompt,
             "system": system,
             "stream": False,
@@ -1110,6 +1118,7 @@ class OllamaBackend(LLMBackend):
                 raise JsonSchemaRejected("Ollama refused the JSON schema") from e
             return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
 
+    @physical_local_ollama
     async def generate_tool_turn(
         self,
         model: str,
@@ -1121,7 +1130,7 @@ class OllamaBackend(LLMBackend):
         """One tool-enabled turn over /api/chat; calls cross `parse_openai_tool_calls`."""
         _require_no_job_reasoning()
         payload: dict[str, Any] = {
-            "model": model,
+            "model": ollama_wire_model(model),
             "messages": ollama_messages(messages),
             "stream": False,
             "options": {
@@ -1158,6 +1167,7 @@ class OllamaBackend(LLMBackend):
                 content=local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
             )
 
+    @physical_local_ollama
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
@@ -1166,7 +1176,7 @@ class OllamaBackend(LLMBackend):
     ) -> str:
         _require_no_job_reasoning()
         payload = {
-            "model": model,
+            "model": ollama_wire_model(model),
             "prompt": prompt,
             "system": system,
             "stream": True,

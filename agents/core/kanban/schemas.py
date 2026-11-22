@@ -332,7 +332,9 @@ KANBAN_COMMENT_SCHEMA = _schema(
 KANBAN_ATTACH_SCHEMA = _schema(
     "kanban_attach",
     (
-        "Attach a file to a task by passing its bytes inline (base64). "
+        "Attach a file to a task from inline base64 bytes or generate a local "
+        "Word/Excel file from Office data. Pass exactly one of content_base64 "
+        "or office. "
         "Use for genuine file artifacts the next worker or a human should "
         "be able to download — generated reports, images, exports. The "
         "file is stored as a real attachment (not a comment link) under "
@@ -347,12 +349,27 @@ KANBAN_ATTACH_SCHEMA = _schema(
         )),
         "content_base64": {
             "type": "string",
-            "description": "The file contents, base64-encoded. Max 25 MB decoded.",
+            "description": "The file contents, base64-encoded. Max 25 MB decoded; omit when using office.",
+        },
+        "office": {
+            "type": "object",
+            "description": "Generate locally: {format:'docx',text:'...'} or {format:'xlsx',rows:[['...']]}. No paths or URLs.",
+            "oneOf": [
+                {"properties": {"format": {"type": "string", "enum": ["docx"]},
+                                "text": {"type": "string"}},
+                 "required": ["format", "text"], "additionalProperties": False},
+                {"properties": {"format": {"type": "string", "enum": ["xlsx"]},
+                                "rows": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}}},
+                 "required": ["format", "rows"], "additionalProperties": False},
+            ],
         },
         "content_type": _prop("string", "Optional MIME type (e.g. 'application/pdf')."),
     },
-    ["filename", "content_base64"],
+    ["filename"],
 )
+KANBAN_ATTACH_SCHEMA["parameters"]["oneOf"] = [
+    {"required": ["content_base64"]}, {"required": ["office"]},
+]
 
 KANBAN_ATTACH_URL_SCHEMA = _schema(
     "kanban_attach_url",

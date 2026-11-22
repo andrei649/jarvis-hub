@@ -78,7 +78,7 @@ export const addComment = (slug: string, id: string, body: string) => apiPost(sc
 export const addLink = (slug: string, parent_id: string, child_id: string) => apiPost<{ok: boolean; gated: boolean}>(scopedPath('/links', slug), { parent_id, child_id }, { admin: true });
 export const removeLink = (slug: string, parent_id: string, child_id: string) => apiDelete<{ok: boolean}>(unlinkPath(slug, parent_id, child_id), { admin: true });
 export const reassignTask = (slug: string, id: string, body: { profile?: string | null; reclaim_first?: boolean; reason?: string | null }) => apiPost<{ok: boolean; task_id: string; assignee: string | null}>(scopedPath(`/tasks/${encodeURIComponent(id)}/reassign`, slug), body, { admin: true });
-export const reclaimTask = (slug: string, id: string, reason?: string) => apiPost<{ok?: boolean}>(scopedPath(`/tasks/${encodeURIComponent(id)}/reclaim`, slug), reason ? { reason } : {}, { admin: true });
+export const reclaimTask = (slug: string, id: string, expectedRunId: number, reason?: string) => apiPost<{ok?: boolean; status?: string}>(scopedPath(`/tasks/${encodeURIComponent(id)}/reclaim`, slug), { expected_run_id: expectedRunId, ...(reason ? { reason } : {}) }, { admin: true });
 export const specifyTask = (slug: string, id: string) => apiPost<{ok?: boolean}>(scopedPath(`/tasks/${encodeURIComponent(id)}/specify`, slug), {}, { admin: true });
 export const decomposeTask = (slug: string, id: string) => apiPost<{ok?: boolean; children?: string[]}>(scopedPath(`/tasks/${encodeURIComponent(id)}/decompose`, slug), {}, { admin: true });
 export const estimateDraft = (title: string, body?: string) => apiPost<TaskEstimate>(root + '/estimate', { title, ...(body ? { body } : {}) }, { admin: true });

@@ -83,3 +83,68 @@ for (const width of WIDTHS) {
     }
   });
 }
+
+for (const width of [320, 390]) {
+  test(`vault passage and Send fit after resizing to ${width}px`, async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'Chrome phone-width layout');
+    const name = 'Project index summary #PRJ-642';
+    const passage = 'The verification code is IRIS-9C0C-C28D.';
+    await page.route('**/api/os/brain/retrieve*', route => route.fulfill({ json: {
+      ok: true, attachments: [{ name, text: 'Compact project summary.' }],
+      sources: { [name]: { vault: 'Test Vault', file: 'Projects/Lumen Passage.md', readable: true } },
+    } }));
+    await page.route('**/api/os/brain/note*', route => route.fulfill({ json: {
+      ok: true, title: 'Lumen Passage', body: 'Orientation notes.\r\n'.repeat(100) + passage,
+    } }));
+    await page.route('**/memory', route => route.fulfill({ json: {
+      session: 'layout-vault-session', turns: [],
+    } }));
+    await page.setViewportSize({ width: 1460, height: 1020 });
+    await page.goto('/v2/');
+    await page.waitForFunction(() => sessionStorage.getItem('nerva.chat.session_id') === 'layout-vault-session');
+    const input = page.locator('.inputbar [data-composer]');
+    await input.fill('For project PRJ-642, what is the Final calibration code?');
+    await page.getByRole('button', { name: 'Find vault notes' }).click();
+    const row = page.locator('.vault-review-note').filter({ hasText: name });
+    await expect(row.getByRole('button', { name: 'Choose passage' })).toBeVisible();
+    await page.setViewportSize({ width, height: 844 });
+    await row.getByRole('button', { name: 'Choose passage' }).click();
+    await row.getByRole('textbox', { name: /Select text from this note/ }).evaluate((field, text) => {
+      const box = field as HTMLTextAreaElement;
+      const start = box.value.indexOf(text);
+      box.focus();
+      box.setSelectionRange(start, start + text.length);
+    }, passage);
+    await row.getByRole('button', { name: 'Use selected passage' }).click();
+    const preview = row.locator('.vault-passage-preview');
+    await expect(preview).toContainText(passage);
+    await preview.scrollIntoViewIfNeeded();
+    const send = page.locator('.inputbar .transmit');
+    const fit = await page.evaluate(() => {
+      const send = document.querySelector('.inputbar .transmit') as HTMLElement;
+      const preview = document.querySelector('.vault-passage-preview') as HTMLElement;
+      const review = document.querySelector('.vault-review') as HTMLElement;
+      const s = send.getBoundingClientRect();
+      const p = preview.getBoundingClientRect();
+      const r = review.getBoundingClientRect();
+      const hit = document.elementFromPoint(s.x + s.width / 2, s.y + s.height / 2);
+      return {
+        sendRight: s.right, sendBottom: s.bottom, sendHit: hit === send || send.contains(hit),
+        sendBox: [s.x, s.y, s.right, s.bottom], hitTitle: (hit as HTMLElement | null)?.title,
+        previewInside: p.top >= r.top && p.bottom <= r.bottom,
+        documentWidth: document.documentElement.scrollWidth,
+      };
+    });
+    expect(fit.sendRight).toBeLessThanOrEqual(width);
+    expect(fit.sendBottom).toBeLessThanOrEqual(844);
+    expect(fit.sendHit, JSON.stringify(fit)).toBe(true);
+    expect(fit.previewInside).toBe(true);
+    expect(fit.documentWidth).toBeLessThanOrEqual(width);
+    await send.click({ trial: true });
+    await input.focus();
+    for (let i = 0; i < 4 && !(await send.evaluate(el => el === document.activeElement)); i++) {
+      await page.keyboard.press('Tab');
+    }
+    await expect(send).toBeFocused();
+  });
+}

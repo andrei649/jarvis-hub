@@ -52,7 +52,7 @@ def route(handler):
     router._local_model = "selected-local"
     orch = Orchestrator.__new__(Orchestrator)
     orch.llm_router = router
-    orch.get_setting = lambda _key, default=None: default
+    orch.get_setting = lambda key, default=None: 512 if key == "learning.review_max_tokens" else default
     return orch, router, backend
 
 
@@ -275,9 +275,10 @@ async def test_child_task_during_real_review_cannot_repair_ordinary_generate():
 
     orch, router, backend = route(handler)
     try:
-        assert await invoke("review", orch, router) == "review recovered"
-        assert len(review_sent) == 2
-        assert len(ordinary_sent) == 1
+        with pytest.raises(data_handling.DataHandlingRefused, match="prompt changed"):
+            await invoke("review", orch, router)
+        assert len(review_sent) == 1
+        assert len(ordinary_sent) == 0
         assert is_degraded_reply(ordinary_result[0])
     finally:
         await backend.client.aclose()

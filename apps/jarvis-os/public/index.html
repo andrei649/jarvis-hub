@@ -49,7 +49,7 @@
           </div>
           <div class="vault-source-row">
             <span class="vault-live-dot"></span>
-            <span id="vault-source-badge">Andrei OS Obsidian + Nerva</span>
+            <span id="vault-source-badge">Loading vault…</span>
           </div>
           <div class="stats-subtitle" id="galaxy-stats-subtitle">Indexing real vault...</div>
           <div class="sidebar-links-row">
@@ -117,16 +117,32 @@
       <div id="workshop-telemetry" class="glass-pill-mini">
         <span class="dot red-dot"></span>
         <span class="dot green-dot"></span>
-        <span id="workshop-model-name">Claude Fable 5.2</span>
+        <span>3D workshop</span>
         <span class="telemetry-sep">·</span>
         <span id="workshop-timer">0:00</span>
-        <span class="telemetry-sep">·</span>
-        <span id="workshop-tokens">0.0K tokens</span>
       </div>
     </div>
 
     <!-- Top Center Mode Bar (Robot Controls OR House 3D / Miniature / Save) -->
     <div id="workshop-top-bar" class="glass-pill-bar"></div>
+
+    <section id="workshop-projects" class="glass-panel hidden" role="dialog" aria-modal="true" aria-labelledby="workshop-projects-heading" tabindex="-1">
+      <div class="workshop-projects-heading">
+        <h2 id="workshop-projects-heading">Projects</h2>
+        <button id="workshop-projects-close" type="button" aria-label="Close projects">×</button>
+      </div>
+      <p>Save the editable model and view to your Obsidian inbox. Reference images are excluded.</p>
+      <form id="workshop-projects-form">
+        <label for="workshop-project-title">Version name</label>
+        <div class="workshop-projects-form-row">
+          <input id="workshop-project-title" name="title" type="text" maxlength="120" required autocomplete="off" />
+          <button id="workshop-project-save" type="submit">Save version</button>
+        </div>
+      </form>
+      <p id="workshop-projects-status" role="status" aria-live="polite"></p>
+      <button id="workshop-project-refresh" type="button">Refresh versions</button>
+      <div id="workshop-projects-list" role="list" aria-label="Saved versions"></div>
+    </section>
 
     <!-- Top Right Close Button + Optional "YOUR PICTURE" Floor Plan Card -->
     <div id="workshop-top-right">
@@ -134,8 +150,8 @@
 
       <div id="your-picture-card" class="glass-panel hidden">
         <div class="your-pic-header">
-          <span>YOUR PICTURE</span>
-          <label for="floorplan-upload-input" class="upload-link" title="Upload your own 2D floor plan">Replace</label>
+          <span>Plan reference</span>
+          <label for="floorplan-upload-input" class="upload-link" title="Choose a reference picture for the workshop">Replace</label>
           <input type="file" id="floorplan-upload-input" accept="image/*" class="hidden" />
         </div>
         <div class="your-pic-thumb-wrap">
@@ -153,7 +169,7 @@
       <div id="build-card-body">
         <div class="thinking-badge-row">
           <span id="build-thinking-dot" class="status-dot amber"></span>
-          <span id="build-thinking-label">FABLE IS THINKING</span>
+          <span id="build-thinking-label">Building scene</span>
         </div>
         <p id="build-thinking-text">
           Writing Three.js scene geometry, configuring PBR materials and exploded assembly vectors...
@@ -316,7 +332,8 @@
         <span id="jarvis-status-text">ONLINE</span>
       </div>
 
-      <div class="brain-dropdown-wrap">
+      <a id="hub-chat-link" class="hud-pill" hidden target="_blank" rel="noreferrer" title="Choose an agent in hub chat">Hub chat ↗</a>
+      <div class="brain-dropdown-wrap" data-standalone-only>
         <button id="brain-switcher-btn" class="hud-pill brain-pill">
           <span class="status-dot brain-dot"></span>
           <span id="brain-label-text">OPUS 5.5</span>
@@ -392,6 +409,10 @@
        ========================================================= -->
   <div id="bottom-hud-bar">
     <div id="jarvis-subtitle-toast" class="hidden"></div>
+    <label id="vault-grounding-choice" hidden>
+      <input id="vault-grounding" type="checkbox" autocomplete="off"/>
+      Include matching notes with my next AI message
+    </label>
 
     <div class="bottom-bar-inner">
       <form id="jarvis-prompt-form" class="prompt-pill glass-panel">
@@ -413,7 +434,7 @@
         <button id="dock-computer-btn" class="dock-icon-btn" title="Computer Use — Meta Ads Autonomous Driver">
           🖥️
         </button>
-        <button id="dock-house-btn" class="dock-icon-btn" title="2D Floor Plan → 3D Architectural Studio & Miniature">
+        <button id="dock-house-btn" class="dock-icon-btn" title="Open the Pool Home workshop and miniature">
           🏠
         </button>
         <button id="dock-demos-btn" class="dock-icon-btn" title="Command Deck — Second Brain & 3D Studio Prompts">
@@ -454,7 +475,7 @@
           <button class="demo-cmd-btn" data-cmd="Trace the path between Nerva si Jarvis Hub and Bonobo">
             <span>✨</span> "Trace path between Nerva si Jarvis Hub & Bonobo"
           </button>
-          <button class="demo-cmd-btn" data-cmd="Jarvis, switch your brain to Fable 5.2">
+          <button class="demo-cmd-btn" data-cmd="Jarvis, switch your brain to Fable 5.2" data-standalone-only>
             <span>🧠</span> "Jarvis, switch your brain to Fable 5.2"
           </button>
 
@@ -671,7 +692,7 @@
           </div>
           <select id="cfg-vault-mode" class="settings-select" data-standalone-only>
             <option value="andrei_plus_nerva">Andrei OS Obsidian + Nerva / Jarvis Hub (Recommended)</option>
-            <option value="andrei_os">Andrei OS Obsidian Only (132 Notes)</option>
+            <option value="andrei_os">Obsidian vault only</option>
             <option value="demo_550">Video Showcase Demo Brain (Zubair 550 Nodes)</option>
           </select>
         </div>
@@ -701,18 +722,18 @@
         </div>
 
         <div class="api-save-row" style="margin-bottom:16px;">
-          <span id="vault-status-msg">All 132 Obsidian notes & 530 wiki-links indexed locally.</span>
+          <span id="vault-status-msg" role="status">Checking the vault…</span>
           <button id="btn-save-vault" class="cu-action-btn primary">↻ Apply & Re-index Brain</button>
         </div>
 
         <div class="capture-box">
-          <div class="section-title">BUILD ON TOP — QUICK CAPTURE TO `08 INBOX`</div>
+          <div class="section-title">Capture a note</div>
           <div class="field-stack">
-            <input type="text" id="inbox-note-title" placeholder="New note title (saved directly as Markdown in 08 Inbox/)" />
-            <textarea id="inbox-note-body" rows="3" placeholder="Write note content... Use [[Acasa]] or [[Nerva si Jarvis Hub]] to auto-connect in the 3D galaxy."></textarea>
+            <input type="text" id="inbox-note-title" aria-label="Note title" placeholder="Note title" />
+            <textarea id="inbox-note-body" aria-label="Note content" rows="3" placeholder="Write a note. Link another note with [[its name]]."></textarea>
           </div>
           <div class="api-save-row">
-            <span id="inbox-capture-msg">Writes non-destructively to `Andrei OS Obsidian/08 Inbox/`.</span>
+            <span id="inbox-capture-msg" role="status">Saves a new Markdown file in the vault inbox.</span>
             <button id="btn-capture-inbox" class="cu-action-btn primary">+ Save Note to Vault</button>
           </div>
         </div>

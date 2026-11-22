@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from agents.core.paths import data_root
+from agents.core.turn_usage import validated_model_calls
 
 from .persistence import RewindPersistenceError, list_sessions, load_memory_snapshot, save_memory
 
@@ -52,11 +53,11 @@ _memory_dir = memory_dir   # internal alias, kept so use sites read tersely
 
 
 class Turn:
-    __slots__ = ("role", "content", "agent_id", "timestamp", "token_count", "tools", "media", "foreign_origin")
+    __slots__ = ("role", "content", "agent_id", "timestamp", "token_count", "tools", "media", "foreign_origin", "model_calls")
 
     def __init__(self, role: str, content: str, agent_id: str = None, token_count: int = 0,
                  tools: list[str] | None = None, media: dict | None = None,
-                 foreign_origin: str | None = None):
+                 foreign_origin: str | None = None, model_calls: list[dict] | None = None):
         if foreign_origin is not None and foreign_origin not in {"claude", "codex"}:
             raise ValueError("invalid foreign origin")
         self.role = role
@@ -68,6 +69,7 @@ class Turn:
         self.tools = _tool_names(tools)
         self.media = validated_media(media) if media is not None else None
         self.foreign_origin = foreign_origin
+        self.model_calls = validated_model_calls(model_calls) if role == "assistant" and foreign_origin is None else None
 
     def to_dict(self):
         out = {
@@ -83,6 +85,8 @@ class Turn:
             out["media"] = dict(self.media)
         if self.foreign_origin is not None:
             out["foreign_origin"] = self.foreign_origin
+        if self.model_calls:
+            out["model_calls"] = [dict(row) for row in self.model_calls]
         return out
 
 
@@ -169,7 +173,8 @@ class ConversationMemory:
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
                                 tools=t.get("tools"), media=restored_media(t.get("media")),
-                                foreign_origin=t.get("foreign_origin"))
+                                foreign_origin=t.get("foreign_origin"),
+                                model_calls=t.get("model_calls") if "foreign_history" not in snapshot else None)
                     turn.timestamp = t.get("timestamp") or turn.timestamp
                     self.sessions[sid].append(turn)
                 self.current_session_id = sid
@@ -225,7 +230,8 @@ class ConversationMemory:
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
                                 tools=t.get("tools"), media=restored_media(t.get("media")),
-                                foreign_origin=t.get("foreign_origin"))
+                                foreign_origin=t.get("foreign_origin"),
+                                model_calls=t.get("model_calls") if "foreign_history" not in snapshot else None)
                     turn.timestamp = t.get("timestamp") or turn.timestamp
                     self.sessions[session_id].append(turn)
                 logger.info(f"Resumed session {session_id} ({len(turns_data)} turns)")
@@ -247,7 +253,8 @@ class ConversationMemory:
         for value in rows:
             turn = Turn(value["role"], value["content"], value.get("agent_id"),
                         value.get("token_count", 0), tools=value.get("tools"),
-                        media=restored_media(value.get("media")), foreign_origin=value.get("foreign_origin"))
+                        media=restored_media(value.get("media")), foreign_origin=value.get("foreign_origin"),
+                        model_calls=value.get("model_calls") if marker is None else None)
             turn.timestamp = value.get("timestamp") or turn.timestamp
             restored.append(turn)
         self.invalidate_active_images(session_id)
@@ -260,7 +267,7 @@ class ConversationMemory:
 
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
                        tools: list[str] | None = None, media: dict | None = None,
-                       channel: str | None = None):
+                       channel: str | None = None, model_calls: list[dict] | None = None):
         guard = self.write_guard
         if guard is not None:
             # H443: before the turn joins the history, outside the lock (the guard may
@@ -275,7 +282,8 @@ class ConversationMemory:
             prior_revision = self.revisions.get(session_id, 0)
             was_dirty = session_id in self._dirty
             turn = Turn(role, content, agent_id, token_count=len(content) // 4,
-                        tools=tools, media=media)
+                        tools=tools, media=media,
+                        model_calls=model_calls if session_id not in self.foreign_origins else None)
             self.sessions[session_id].append(turn)
             if len(self.sessions[session_id]) > self.max_turns:
                 self.sessions[session_id].pop(0)

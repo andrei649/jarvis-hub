@@ -1456,6 +1456,11 @@ class TurnOutcome(TypedDict):
     recall: NotRequired[list[TurnRecall]]   # one per provider that prefetched, in display order
 
 
+class ModelCall(TypedDict):
+    provider: str
+    model: str
+
+
 class ChatResponse(BaseModel):
     reply: str
 
@@ -1467,6 +1472,8 @@ class ChatResponse(BaseModel):
         return final_text(value)
 
     session_id: str | None = None
+    model_calls: list[ModelCall] | None = Field(default=None, min_length=1, max_length=8,
+                                                exclude_if=lambda value: value is None)
     usage: dict | None = None
     runtime_stops: list[str] = []
     # The turn's reply is prose ("…this action requires approval"), which names
@@ -1821,6 +1828,7 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
             context_refs.reset_attached(attached_token)
             session_titles.reset_own_words(words_token)
         return ChatResponse(reply=reply, session_id=orch.session_id if isinstance(orch.session_id, str) else None,
+                            model_calls=collector.reply_model_calls(orch.session_id),
                             pending_approvals=queued_approvals, warming=warming, notices=turn_notices,
                             outcome=_selected_turn_outcome(orch, measured_outcome, usage=collector.snapshot(),
                                                            session_id=orch.session_id), usage=collector.snapshot(),
@@ -1960,7 +1968,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             await queue.put(("end", (text, session if isinstance(session, str) else None,
                                      _selected_turn_outcome(orch, measured, usage=collector.snapshot(),
                                                             session_id=session), collector.snapshot(),
-                                     stops.snapshot(), transition_sink.finish(session))))
+                                     stops.snapshot(), transition_sink.finish(session),
+                                     collector.reply_model_calls(session))))
 
         try:
             if refused is not None:
@@ -2055,9 +2064,11 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 if not acknowledged.done():
                     acknowledged.set_result(True)
             elif kind == "end":
-                full, actual_session, outcome, usage, stops, transition = data
+                full, actual_session, outcome, usage, stops, transition, model_calls = data
                 turn_notices[:] = safe_notices(turn_notices)
                 extra = {"session_transition": transition} if transition is not None else {}
+                if model_calls:
+                    extra["model_calls"] = model_calls
                 yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': outcome, 'usage': usage, 'runtime_stops': stops, **extra})}\n\n"
                 break
             elif kind == "error":

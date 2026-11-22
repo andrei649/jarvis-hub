@@ -683,7 +683,7 @@ input { font-family: inherit; }
      a11y focus ring below (`:focus-visible`, outline-offset:2px = 4px outside the border box)
      was being cut off every focusable panel body. Verified by sampling the painted pixels. */
   .workzone.cockpit, .workzone.wide {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: minmax(0, 1fr) !important;
     overflow-y: auto;
     padding-left: 4px;
     padding-right: 4px;
@@ -699,6 +699,15 @@ input { font-family: inherit; }
   .hud-root { overflow: hidden; }
   .topbar { grid-template-columns: minmax(0,1fr) auto !important; }
   .clock { display: none; }
+}
+@media (max-width: 500px) {
+  .topbar { grid-template-columns: minmax(0, 1fr) !important; gap:8px; padding:8px 14px; }
+  .topbar .brand .badges { display:none; }
+  .topbar > .badges { min-width:0; flex-wrap:wrap; justify-content:flex-start; gap:6px; }
+  .topbar > .badges .tool-btn { white-space:nowrap; }
+  /* Leave the fixed World and Console controls their own strip below the composer. */
+  .workzone.cockpit .inputbar, .chat-col .inputbar { padding-bottom:56px; }
+  .workzone.cockpit .inputbar .transmit, .chat-col .inputbar .transmit { margin-inline:auto; }
 }
 /* visible keyboard focus (a11y) — the prototype relied on hover only */
 :where(button, input, a, [tabindex], .rail-btn, .agent-row, .pal-item):focus-visible {

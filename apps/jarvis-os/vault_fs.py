@@ -417,21 +417,25 @@ class VaultFs:
             if owned:
                 self._api.close(parent)
 
-    def walk(self, want=lambda name: True, cap=lambda name: 0):
+    def walk(self, want=lambda name: True, cap=lambda name: 0,
+             allow_dir=lambda parts: True, allow_file=lambda parts: True):
         """Yield `(parts, entry, data)` for every wanted plain file, folders in sorted order.
 
         Dot-names are skipped. Links, reparse points and multiply-linked files are not
         followed and not yielded; they are recorded in `skipped`. `cap(name)` is how many
         bytes of that file to read (0 reads nothing).
         """
-        yield from self._walk(self._root, (), want, cap)
+        yield from self._walk(self._root, (), want, cap, allow_dir, allow_file)
 
-    def _walk(self, handle: int, prefix: tuple, want, cap):
+    def _walk(self, handle: int, prefix: tuple, want, cap, allow_dir, allow_file):
         folders = []
         for name in sorted(self._api.list_names(handle)):
             if name.startswith("."):
                 continue
             parts = prefix + (name,)
+            # Decide from the listed name before opening a file or descending a folder.
+            if not allow_dir(parts) and not allow_file(parts):
+                continue
             try:
                 check_name(name)
                 child, entry = self._api.open_child(handle, name)
@@ -442,9 +446,10 @@ class VaultFs:
                 continue                      # vanished or unreadable between list and open
             try:
                 if entry.is_dir:
-                    folders.append(name)
+                    if allow_dir(parts):
+                        folders.append(name)
                     continue
-                if not want(name):
+                if not allow_file(parts) or not want(name):
                     continue
                 try:
                     self._check_links(entry)
@@ -465,13 +470,13 @@ class VaultFs:
                 continue
             try:
                 if entry.is_dir:
-                    yield from self._walk(child, prefix + (name,), want, cap)
+                    yield from self._walk(child, prefix + (name,), want, cap, allow_dir, allow_file)
             finally:
                 self._api.close(child)
 
     # -- writes ----------------------------------------------------
 
-    def create_exclusive(self, dir_parts, name: str, data: bytes) -> None:
+    def create_exclusive(self, dir_parts, name: str, data: bytes, *, create_dirs: bool = True) -> None:
         """Create `name` inside the folder `dir_parts`; `FileExistsError` if it is taken.
 
         The folder is made if missing. It and every ancestor must be real folders inside
@@ -479,7 +484,10 @@ class VaultFs:
         written, and the file is created relative to the verified folder's handle.
         """
         check_name(name)
-        folder = self.open_dir(tuple(dir_parts), create=True)
+        try:
+            folder = self.open_dir(tuple(dir_parts), create=create_dirs)
+        except FileNotFoundError as exc:
+            raise UnsafePath("inbox folder does not exist") from exc
         try:
             handle = self._api.create_file(folder, name)
             try:

@@ -1,4 +1,4 @@
-import { internalLink } from './base-path';
+import { appUrl, internalLink } from './base-path';
 /* HUD v2 · ARTIFACTS — saved-response workspace over the governed Agent Canvas
    (H12.18 backend). The cockpit gets a third center tab that lists Canvas
    elements from GET /api/canvas and lets the owner pin/unpin/delete them, plus
@@ -16,6 +16,8 @@ import { BinaryArtifacts } from './panels/binary-artifacts';
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, apiDelete } from './api/client';
 import { Markdown } from './markdown';
+import { OfficeExportButton } from './office-export';
+import { WorkshopProjects, type WorkshopRef } from './workshop-projects';
 
 /* Canvas bounds Markdown bodies to 4,000 chars (agents/core/canvas.py). Send no
    more than the backend keeps, and disclose visibly when the copy was cut. */
@@ -178,7 +180,8 @@ function fmtWhen(ts) {
   try { return new Date(n * 1000).toLocaleString(); } catch { return '—'; }
 }
 
-function ArtifactCard({ el, L, onPin, onDelete }) {
+function ArtifactCard({ el, L, onPin, onDelete, lang, exportAllowed }) {
+  const p = el.payload || {};
   return (
     <div className="art-card" data-type={el.type}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -190,6 +193,10 @@ function ArtifactCard({ el, L, onPin, onDelete }) {
       </div>
       <div className="art-body"><ArtifactBody el={el} L={L} /></div>
       <div className="art-actions">
+        {exportAllowed && el.type === 'markdown' && typeof p.body === 'string' && p.body &&
+          <OfficeExportButton data={{ format: 'docx', text: Array.from(p.body).slice(0, MARKDOWN_LIMIT).join('') }} lang={lang} />}
+        {exportAllowed && el.type === 'table' && Array.isArray(p.columns) && p.columns.length > 0 &&
+          <OfficeExportButton data={{ format: 'xlsx', rows: [p.columns.map(String), ...(Array.isArray(p.rows) ? p.rows : []).map(row => Array.isArray(row) ? row.map(String) : [])] }} lang={lang} />}
         <button className="tool-btn" onClick={() => onPin(el)}>{el.pinned ? L.unpin : L.pin}</button>
         <button className="tool-btn danger" onClick={() => onDelete(el)}>{L.del}</button>
       </div>
@@ -198,7 +205,9 @@ function ArtifactCard({ el, L, onPin, onDelete }) {
 }
 
 /* ── the Artifacts center-tab panel ──────────────────────────────────────── */
-function ArtifactsPanel({ refreshKey = 0, lang }: { refreshKey?: number; lang?: string }) {
+function ArtifactsPanel({ refreshKey = 0, lang, exportAllowed = true, onDiscussProject }: {
+  refreshKey?: number; lang?: string; exportAllowed?: boolean; onDiscussProject?: (project: WorkshopRef) => void;
+}) {
   const L = labels(lang);
   const [els, setEls] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -235,8 +244,13 @@ function ArtifactsPanel({ refreshKey = 0, lang }: { refreshKey?: number; lang?: 
         <span className="art-count">
           {els !== null && !loading && !loadErr ? `${els.length} artifact${els.length === 1 ? '' : 's'}` : ''}
         </span>
+        <a className="tool-btn" href={appUrl('/os/?studio=robot')} target="_blank" rel="noreferrer">
+          {lang === 'ro' ? 'Deschide atelierul 3D' : 'Open 3D workshop'}
+        </a>
         <button className="tool-btn" onClick={load} title="refresh artifacts">↻ {L.refresh}</button>
       </div>
+      {exportAllowed && <WorkshopProjects lang={lang} actionLabel={lang === 'ro' ? 'Discută în chat' : 'Discuss in chat'}
+        onChoose={onDiscussProject}/>}
       <BinaryArtifacts />
       {actionErr && <div className="art-note err" role="alert">{actionErr}</div>}
       {loading ? (
@@ -249,7 +263,7 @@ function ArtifactsPanel({ refreshKey = 0, lang }: { refreshKey?: number; lang?: 
         <div className="art-note">{L.empty}</div>
       ) : (
         <div className="art-list">
-          {els.map((el) => <ArtifactCard key={el.id} el={el} L={L} onPin={togglePin} onDelete={remove} />)}
+          {els.map((el) => <ArtifactCard key={el.id} el={el} L={L} onPin={togglePin} onDelete={remove} lang={lang} exportAllowed={exportAllowed} />)}
         </div>
       )}
     </div>

@@ -21,7 +21,6 @@ import pytest
 from agents.core import settings_db
 from agents.core.commands import _REFINE_REFUSALS
 from agents.core.learning import background_review as br
-from agents.core.llm.providers import get_profile
 from tests.test_h465c_refine_review import _LLM, _reviewer
 from tests.test_h465d_refine_review import CUT_AFTER_INNER
 
@@ -96,25 +95,24 @@ def test_a_refine_cut_off_logs_no_line_and_the_per_turn_pass_logs_one(caplog):
     assert lines() == 1
 
 
-@pytest.mark.parametrize("stored, sent", [(-1, 512), (40_000, 512), ("abc", 512), (None, 512), (1024, 1024)])
-def test_the_orchestrators_review_call_reads_the_cap_within_its_bounds(stored, sent):
+@pytest.mark.parametrize("stored, sent", [(-1, 1024), (40_000, 1024), ("abc", 1024),
+                                           (None, 1024), (512, 512), (1024, 1024)])
+def test_the_orchestrators_review_call_reads_the_cap_within_its_bounds(monkeypatch, stored, sent):
     from agents.core.orchestrator import Orchestrator
+    from agents.core.llm import auxiliary_text
 
     calls = []
 
-    class Backend:
-        profile = get_profile("lm-studio")
-        base_url = "http://127.0.0.1:1234"
-
-        async def generate(self, **kwargs):
-            calls.append(kwargs)
-            return GOOD
+    async def generate(_router, task, **kwargs):
+        calls.append((task, kwargs))
+        return GOOD
 
     orch = Orchestrator.__new__(Orchestrator)
-    orch.llm_router = SimpleNamespace(local_backend=Backend(), active_model="local-model")
+    orch.llm_router = SimpleNamespace(active_model="local-model")
     orch.get_setting = lambda key, default=None: stored if key == "learning.review_max_tokens" else default
+    monkeypatch.setattr(auxiliary_text, "generate_local_auxiliary", generate)
     assert asyncio.run(orch._review_llm("prompt")) == GOOD
-    assert calls[0]["max_tokens"] == sent and calls[0]["model"] == "local-model"
+    assert calls[0][0] == "review" and calls[0][1]["max_tokens"] == sent
 
 
 @pytest.mark.parametrize("first", ["should_run", "run_on_demand"])

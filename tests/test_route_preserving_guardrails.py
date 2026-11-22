@@ -2,12 +2,13 @@
 
 import inspect
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
 import agents.core.orchestrator as orchestrator_module
 from agents.core.agent import Agent
-from agents.core.llm.base import LLMBackend
+from agents.core.llm.base import CLOUD_SELECTION_UNAVAILABLE_REPLY, LLMBackend
 from agents.core.llm.hybrid_router import (
     HybridRouter,
     LocalBackendUnavailableError,
@@ -387,6 +388,7 @@ async def test_boot_without_backend_then_redetect_guards_first_request(
     orchestrator.capabilities = None
     orchestrator.plugin_manager = SimpleNamespace(build=lambda owner: None)
     orchestrator.autonomy_queue = StopAutonomySetup()
+    orchestrator._select_startup_session = AsyncMock()
     orchestrator.skills = SimpleNamespace(discover=lambda: None, skills={})
     orchestrator.checkpoints = SimpleNamespace(
         initialize=lambda: None,
@@ -465,6 +467,24 @@ async def test_local_unavailable_paths_share_stable_reply_and_zero_cloud_calls(
     assert local.calls == []
     assert gemini.calls == []
     assert claude.calls == []
+
+
+@pytest.mark.asyncio
+async def test_cloud_only_failure_reaches_normal_and_streamed_chat(monkeypatch):
+    local = RecordingBackend("local answer")
+    gemini = RecordingBackend("gemini answer", provider="gemini")
+    claude = RecordingBackend("claude answer", provider="anthropic")
+    agent = build_agent("athena", local=local, gemini=gemini, claude=claude)
+    router = agent.llm_router
+    router._cloud_available = router._claude_available = False
+    agent.guardrails = GuardrailsEngine(backend=local)
+    assert await agent.process("synthetic", {"session_id": "normal"}) == CLOUD_SELECTION_UNAVAILABLE_REPLY
+    emitted = []
+    orch = streamed_orchestrator_for(agent, router, agent.guardrails, monkeypatch)
+    reply = await orch.handle_input_stream("synthetic", channel="web", on_token=emitted.append, session_id="stream")
+    assert reply == CLOUD_SELECTION_UNAVAILABLE_REPLY
+    assert emitted == [reply]
+    assert not (local.calls or gemini.calls or claude.calls)
 
 
 @pytest.mark.asyncio

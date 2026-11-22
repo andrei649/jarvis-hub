@@ -1,4 +1,7 @@
 import {ComposerImages,useComposerImages} from './composer-images';
+import { useVaultNotes, VaultNoteReview } from './composer-vault';
+import { ComposerSkills } from './composer-skills';
+import type { WorkshopRef } from './workshop-projects';
 import { ContextRefHints, acceptRef, useContextRefs } from './context-refs';
 /* HUD v2 · COCKPIT — conversation + cognition trace + input */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -8,6 +11,7 @@ import { playTts } from './api/actions';
 import { SaveArtifactButton } from './artifacts';
 import { VoiceOrb } from './orb';
 import { Markdown } from './markdown';
+import { OfficeExportButton } from './office-export';
 import { TurnApprovals, TurnTools } from './turn-tools';
 import { MicLeases } from './mic-leases';
 import { StatusStrip, type TurnOutcome } from './turn-outcome';
@@ -32,7 +36,7 @@ function TtsButton({ text, lang }) {
   );
 }
 
-function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lang, t }: any) {
+function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exportAllowed = false, lang, t }: any) {
   const endRef = useRef(null);
   useEffect(()=>{ if(endRef.current) endRef.current.scrollTop = endRef.current.scrollHeight; }, [messages, thinking]);
   // Explicit save-to-artifacts (never auto): only completed, non-system, non-empty
@@ -41,6 +45,8 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
   // (the cockpit does; ChatMode doesn't).
   const canSave = (m, i) => !!onArtifactSaved && !!m.text && m.who !== 'system'
     && !(thinking && i === messages.length - 1);
+  const canExport = (m, i) => exportAllowed && m.role === 'agent' && !!m.text && m.who !== 'system'
+    && (!m._turnId || m._complete) && !(thinking && !m._turnId && i === messages.length - 1);
   /* The transcript is `overflow-y:auto` (styles.css `.convo`), so it is a scrollable
      region — and a scrollable region a keyboard user cannot enter is a WCAG 2.1.1
      failure. It has no focusable children of its own: the ⧉/🔊 controls live on AGENT
@@ -73,7 +79,8 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
       {messages.map((m,i)=> m.role==='user'
         ? (
           <div className="msg user" key={i}>
-            <div className="bubble">{m.text}{m.imageNames&&<div style={{fontSize:11,opacity:.7}}>Images: {m.imageNames.join(', ')}</div>}</div>
+            <div className="bubble">{m.text}{m.imageNames&&<div style={{fontSize:11,opacity:.7}}>Images: {m.imageNames.join(', ')}</div>}
+              {m.vaultNames && <ul aria-label="Attached vault notes">{m.vaultNames.map(name => <li key={name}>{name}</li>)}</ul>}</div>
           </div>
         ) : m.role==='vision' ? (
           <div className="msg agent" key={i}>
@@ -91,18 +98,19 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
               {m.text && m.who!=='system' && (
                 <span style={{marginLeft:'auto',display:'inline-flex',alignItems:'center',gap:5}}>
                   {canSave(m, i) && <SaveArtifactButton message={m} onSaved={onArtifactSaved} lang={lang} />}
+                  {canExport(m, i) && <OfficeExportButton data={{ format: 'docx', text: m.text }} lang={lang} />}
                   <TtsButton text={m.text} lang={lang} />
                 </span>
               )}
             </div>
             <TurnTools tools={m.tools} />
-            <div className="bubble"><Bubble text={m.text} /></div>
+            <div className="bubble"><Bubble text={m.text} tableExport={canExport(m, i)} lang={lang} /></div>
             <TurnApprovals ids={m.approvals} />
-            {m.prov && (
-              <div className="prov-chip" onClick={()=>onProv(m.prov)}>
+            {Array.isArray(m.prov?.models) && m.prov.models.length > 0 && (
+              <button type="button" className="prov-chip" style={{background:'transparent',textAlign:'left',maxWidth:'100%',overflowWrap:'anywhere'}} onClick={()=>onProv(m.prov)}>
                 <Icon d={ICONS.shield} size={12}/>
-                <span><b>{m.prov.agents.length}</b> agents · <b>{m.prov.plugins.length}</b> plugins · {m.prov.local===true?'local':m.prov.local===false?'cloud':'locality —'} · conf <b>{m.prov.conf}</b></span>
-              </div>
+                <span>Models called: {m.prov.models.map(({provider,model})=>`${provider} / ${model}`).join(' · ')}</span>
+              </button>
             )}
           </div>
         )
@@ -131,8 +139,9 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
    and any other link stay text; a single newline is a line break. Memoised on the
    text, so a streamed token re-parses only the bubble it lands in. The owner's own
    turns are shown as typed. */
-const Bubble = React.memo(function Bubble({ text }: { text: string }) {
-  return <Markdown text={text} className="md md-inline" breaks />;
+const Bubble = React.memo(function Bubble({ text, tableExport = false, lang }: { text: string; tableExport?: boolean; lang?: string }) {
+  return <Markdown text={text} className="md md-inline" breaks
+    tableExport={tableExport ? rows => <OfficeExportButton data={{ format: 'xlsx', rows }} lang={lang} /> : undefined} />;
 });
 
 /* ---- Cognition trace ---- */
@@ -225,17 +234,35 @@ function Seg({ cur, opts, on }) {
 }
 
 /* input bar — text + voice (mic toggles the useVoice loop; ⚙ opens voice settings) */
-function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, agent='jarvis', sessionId='', selectedTurn=false, outcome, power }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; agent?: string; sessionId?: string; selectedTurn?: boolean; outcome?: TurnOutcome | null; power?: PowerState }) {
+function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, agent='jarvis', sessionId='', selectedTurn=false, outcome, power, projectForChat, onProjectReviewed }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; agent?: string; sessionId?: string; selectedTurn?: boolean; outcome?: TurnOutcome | null; power?: PowerState; projectForChat?: WorkshopRef | null; onProjectReviewed?: () => void }) {
   const [val,setVal]=useState('');
+  const [sentCount,setSentCount]=useState(0);
   const [cfgOpen,setCfgOpen]=useState(false);
   const draft=useComposerImages(val.trim(),agent,sessionId,selectedTurn);
+  const vault = useVaultNotes(val.trim(), agent, sessionId, selectedTurn && !draft.enabled);
+  const composerInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!projectForChat || !selectedTurn || draft.enabled || val.trim().startsWith('/')) return;
+    vault.reviewProject(projectForChat.path);
+    composerInput.current?.focus();
+    onProjectReviewed?.();
+  }, [projectForChat, selectedTurn, draft.enabled, val.trim().startsWith('/')]);
   const fileInput=useRef<HTMLInputElement>(null);
   const refs=useContextRefs(val);   // H579: @file: completion
   const submit=()=>{
+    if (vault.busy) return;
+    if (vault.selected.length) {
+      void vault.lookup(notes => {
+        if (onSubmit(val.trim(), undefined, notes) === false) return false;
+        setVal(''); setSentCount(n=>n+1);
+        return true;
+      });
+      return;
+    }
     if(draft.enabled){const vision=draft.submission();if(!vision)return;
       if(onSubmit(val.trim()||'Describe these images.',vision)===false)return;
-      draft.clear();setVal('');return;}
-    if(!val.trim())return;if(onSubmit(val.trim())===false)return;setVal('');
+      draft.clear();setVal('');setSentCount(n=>n+1);return;}
+    if(!val.trim())return;if(onSubmit(val.trim())===false)return;vault.clear();setVal('');setSentCount(n=>n+1);
   };
   const showPill = voice && (voice.active || voice.error);
   const label = voice && voice.error ? voice.error
@@ -250,6 +277,10 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
   return (
     <div style={{position:'relative',display:'flex',flexDirection:'column',minHeight:0,flexShrink:1}} onPaste={draft.onPaste} onDrop={draft.onDrop} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}>
       <ComposerImages draft={draft}/>
+      {projectForChat && (draft.enabled || val.trim().startsWith('/')) &&
+        <p role="status">Finish or clear this draft to review the saved project in a text message.
+          <button type="button" className="tool-btn" onClick={onProjectReviewed}>Dismiss</button></p>}
+      <VaultNoteReview draft={vault}/>
       {showPill && (
         <div style={{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',marginBottom:6,borderRadius:8,fontFamily:'var(--font-mono)',fontSize:11,letterSpacing:'.04em',background:'rgba(0,0,0,.18)',border:'1px solid var(--panel-line)',color:voice.error?'var(--amber)':'var(--accent-light)'}}>
           {!voice.error && <VoiceOrb status={voice.status} level={voice.level||0} motion={motion} density="compact" showLabel={false} className="vorb-inline" />}
@@ -282,18 +313,25 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" style={{display:'none'}} onChange={event=>{draft.addFiles(Array.from(event.target.files||[]));event.target.value='';}}/>
       <div className="inputbar">
         <button className="mic" aria-label="Choose images" title="Attach images" onClick={()=>fileInput.current?.click()}>▧</button>
+        {selectedTurn && !draft.enabled && <button className="vault-trigger" type="button"
+          aria-label="Find vault notes" title="Find Obsidian notes for this message" aria-expanded={vault.open}
+          disabled={!val.trim() || val.trim().startsWith('/')} onClick={() => vault.open ? vault.clear() : void vault.lookup()}>
+          <Icon d={ICONS.memory} size={16}/> Vault
+        </button>}
+        {selectedTurn && !draft.enabled && <ComposerSkills key={`${agent}:${sessionId}:${sentCount}`} agent={agent} draft={val}
+          onInsert={command => { setVal(command + ' ' + val); composerInput.current?.focus(); }}/>}
         <span className="pre">▸</span>
         <span className="chan">{t.channel}</span>
         <div className="field" style={{position:'relative'}}>
           <ContextRefHints items={refs} onPick={ref=>setVal(acceptRef(val,ref))}/>
-          <input data-composer="1" data-anchor="composer" value={val} onChange={e=>setVal(e.target.value)} placeholder={voice && voice.active ? (cfg && cfg.mode==='ptt' ? 'listening — speak now' : 'listening — just speak (or type)') : t.placeholder}
+          <input ref={composerInput} data-composer="1" data-anchor="composer" value={val} onChange={e=>setVal(e.target.value)} placeholder={voice && voice.active ? (cfg && cfg.mode==='ptt' ? 'listening — speak now' : 'listening — just speak (or type)') : t.placeholder}
             onKeyDown={e=>{ if(e.key==='Tab'&&refs.length){e.preventDefault();setVal(acceptRef(val,refs[0].ref));return;} if(e.key==='Enter') submit(); }}/>
           <button className={'mic'+(mic?' on':'')} onClick={()=>setMic && setMic()}
             title={micMuted ? 'mic muted — unmute NERVA' : (voice && voice.supported===false ? 'voice not supported in this browser' : (cfg && cfg.mode==='ptt' ? 'push-to-talk' : 'hands-free voice'))}
             style={micMuted?{opacity:.4}:undefined}><Icon d={ICONS.mic} size={15}/></button>
           {cfg && onCfg && <button className="mic" onClick={()=>setCfgOpen(o=>!o)} title="voice settings" style={{color:cfgOpen?'var(--accent-light)':'var(--ink-2)',fontSize:13,lineHeight:1}}>⚙</button>}
         </div>
-        <button className="transmit" disabled={draft.enabled&&!draft.ready} onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
+        <button className="transmit" disabled={vault.busy || (draft.enabled&&!draft.ready)} onClick={submit}><Icon d={ICONS.send} size={13}/>{t.transmit}</button>
       </div>
       <StatusStrip outcome={outcome} power={power} />
     </div>

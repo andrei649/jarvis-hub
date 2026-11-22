@@ -11,8 +11,8 @@ from typing import Optional
 
 from .conversation_clock import CLOCK_UNSET, CompactionClockRefused
 from .env_config import env_int
-from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
+from .llm.physical_local import hard_local_agent_call, hard_local_synthesis
 from .security import bind_guardrails
 from .security.quarantine import (
     collapse_whitespace,
@@ -908,14 +908,16 @@ class Agent:
                 if getattr(pipeline, "messages", None):
                     self._note_archive_recall("unavailable")
 
+        skill_hint = ""
+        if context.get("_can_propose_skill_marker") is True:
+            skill_hint = ("If this task produced a reusable procedure, end your response with "
+                          "'[learn: task description | step1,step2,step3 | command_name]' "
+                          "to propose it for review. ")
         return (
             f"{skills_block}{agent_block}{rag_block}"
             f"User said: {text}\n"
             f"Respond as {self.name}.\n\n"
-            f"IMPORTANT: If this is a complex multi-step task you solved elegantly, "
-            f"end your response with '[learn: task description | step1,step2,step3 | command_name]' "
-            f"to save it as a reusable skill. "
-            f"You can also hand off to another agent with '[handoff:agent_id]'."
+            f"{skill_hint}You can also hand off to another agent with '[handoff:agent_id]'."
         )
 
     @staticmethod
@@ -958,6 +960,7 @@ class Agent:
 
         return record
 
+    @hard_local_agent_call
     async def generate_response(self, backend, model, prompt, system, max_tokens,
                                 temperature, on_token=None, wall_seconds=None,
                                 usage_sink=None, session_id=None, effective_window=None,
@@ -1277,10 +1280,10 @@ class Agent:
                 res = (prepared.backend, prepared.model, prepared.route)
             else:
                 res = self.llm_router.select_backend(self.id, prompt)
-        except LocalBackendUnavailableError:
+        except LocalBackendUnavailableError as exc:
             from .turn_outcome import record_agent_observation
             record_agent_observation(self.id, 'unavailable')
-            return LOCAL_SELECTION_UNAVAILABLE_REPLY
+            return exc.public_reply
         route_name = ""
         if isinstance(res, tuple) and len(res) == 3:
             backend, routed_model, route_name = res
@@ -1419,6 +1422,7 @@ class Agent:
             return set()
         return {a for a, resp in responses.items() if a in LOCAL_ONLY_AGENTS and resp}
 
+    @hard_local_synthesis
     async def synthesize(self, responses: dict[str, str], intent, in_character: bool = False) -> str:
         jarvis_only = all(k == "jarvis" for k in responses)
         if jarvis_only:

@@ -16,6 +16,7 @@ import tempfile
 import threading
 import weakref
 from collections import OrderedDict
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -915,6 +916,7 @@ class SkillLoader:
         self._staging_discovery = False
         # What a creation in progress must put back in the usage sidecar if it fails.
         self._creation_undo = None
+        self._generation_lock = threading.Lock()
         self._approval_store = approval_store or SkillApprovalStore()
 
     def _generation_kernel_refusal(self, payload: dict, *, title: str) -> str:
@@ -1570,22 +1572,23 @@ class SkillLoader:
 
         return None
 
-    def generate_skill(self, *args, **kwargs) -> Optional[str]:
+    def generate_skill(self, *args, procedure_agents: Sequence[str] | None = None, **kwargs) -> Optional[str]:
         """Generate a new skill (see :meth:`_generate_skill`). A generation that fails after
         its usage row was written puts the sidecar back as it was: no stray agent row."""
-        self._creation_undo = None
-        try:
-            return self._generate_skill(*args, **kwargs)
-        except Exception:
-            undo, self._creation_undo = self._creation_undo, None
-            put_back = getattr(self._usage, "put_back", None)
-            if undo is not None and callable(put_back):
-                try:
-                    put_back(undo)
-                except Exception:
-                    logger.warning("the usage row of a skill that was not generated could not be removed",
-                                   exc_info=True)
-            raise
+        with self._generation_lock:
+            self._creation_undo = None
+            try:
+                return self._generate_skill(*args, procedure_agents=procedure_agents, **kwargs)
+            except Exception:
+                undo, self._creation_undo = self._creation_undo, None
+                put_back = getattr(self._usage, "put_back", None)
+                if undo is not None and callable(put_back):
+                    try:
+                        put_back(undo)
+                    except Exception:
+                        logger.warning("the usage row of a skill that was not generated could not be removed",
+                                       exc_info=True)
+                raise
 
     def _generate_skill(
         self,
@@ -1595,10 +1598,12 @@ class SkillLoader:
         command_name: str = None,
         output: str = None,
         write_origin: str = "learning",
+        *,
+        procedure_agents: Sequence[str] | None = None,
     ) -> Optional[str]:
         """
         Generate a new skill from a successful agent task completion.
-        Writes SKILL.md + main.py template to skills/<name>/.
+        An explicit procedure scope writes instructions only; legacy calls also write main.py.
         Returns the skill name if created, None if skipped.
         """
         # This call's own outcome only: a refusal or skip before the checks below must not
@@ -1606,6 +1611,16 @@ class SkillLoader:
         # conversation's (review-H350 F4, review-H507 F3).
         self.last_generation_problems = []
         self.last_generation_warnings = []
+        if procedure_agents is not None and (
+            not isinstance(agent_id, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", agent_id)
+            or isinstance(procedure_agents, (str, bytes)) or not isinstance(procedure_agents, Sequence)
+            or not procedure_agents
+            or ("all" in procedure_agents and len(procedure_agents) != 1)
+            or any(not isinstance(agent, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", agent)
+                   for agent in procedure_agents)
+        ):
+            logger.warning("Skill procedure generation refused: invalid agent scope")
+            return None
         skill_name = self._name_from_task(task_description)
         # Generated skills are personal content — they land in the user data
         # home when one is active (falling back to the bundled tree in dev).
@@ -1646,6 +1661,11 @@ class SkillLoader:
         cmd = _safe_command_name(cmd, skill_name)
 
         steps_text = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(solution_steps))
+        procedure = procedure_agents is not None
+        declared_agents = ", ".join(procedure_agents) if procedure else agent_id
+        usage = ("After owner approval, read and follow the steps below."
+                 if procedure else "Agent-generated skill from successful task completion.")
+        commands = "" if procedure else f"## Commands\n- `{cmd} <input>` — {task_description}\n\n"
 
         skill_md = f"""# {skill_name.replace("_", " ").title()}
 
@@ -1653,18 +1673,15 @@ class SkillLoader:
 
 **Version:** 0.1.0
 **Author:** jarvis-agent:{agent_id}
-**Agents:** {agent_id}
+**Agents:** {declared_agents}
 **Requires:**
 
 {task_description}
 
 ## Usage
-Agent-generated skill from successful task completion.
+{usage}
 
-## Commands
-- `{cmd} <input>` — {task_description}
-
-## Steps
+{commands}## Steps
 {steps_text}
 """
         if output:
@@ -1690,7 +1707,7 @@ Agent-generated skill from successful task completion.
         if refused:
             logger.warning("Skill generation refused by the action kernel (%s): %s", refused, skill_name)
             return None
-        # H20.5 / H349 — provenance, decided now and written before the folder exists: a
+        # H20.5 / H349 — provenance, decided now and written before the manifest exists: a
         # fresh row with the sticky agent marker and who wrote the skill (``write_origin``:
         # the learning loop and the background review are curated, a skill the model wrote
         # with its tool inside a turn is not), under the name the skill will REGISTER as
@@ -1707,6 +1724,11 @@ Agent-generated skill from successful task completion.
         if title in self.skills or name_holder(title, except_dir=skill_dir, registry=self.skills) is not None:
             logger.info("A skill named %r is already installed; skipping generation", title)
             return None
+        # Reserve the destination before touching its provenance or its files.
+        try:
+            skill_dir.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            return None
         settle = getattr(self._usage, "settle_created", None)
         if callable(settle):
             try:
@@ -1714,8 +1736,17 @@ Agent-generated skill from successful task completion.
             except Exception:
                 logger.warning("the usage sidecar could not record the new skill %r as agent-made; it is not "
                                "generated", skill_name, exc_info=True)
+                try:
+                    skill_dir.rmdir()
+                except OSError:
+                    logger.warning("could not release reserved skill folder %r", skill_name, exc_info=True)
                 return None
-        skill_dir.mkdir(parents=True, exist_ok=True)
+        pending_marker = skill_dir / "PENDING_REVIEW"
+        if procedure:
+            # A concurrent discovery must never see a readable procedure before quarantine.
+            pending_marker.write_text(
+                f"agent={agent_id}\ntask={task_description}\n"
+                f"generated={datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
         # The bytes checked, never text mode: Windows would write every '\n' as '\r\n'.
         (skill_dir / "SKILL.md").write_bytes(skill_md.encode("utf-8"))
 
@@ -1760,13 +1791,14 @@ def register(skill):
     """Register commands with the skill system."""
     skill.register_command("$cmd", $cmd)
 '''
-        main_py = (
-            main_py.replace("$skill_name", skill_name)
-            .replace("$agent_id", agent_id)
-            .replace("$cmd", cmd)
-            .replace("$timestamp", datetime.now(timezone.utc).isoformat())
-        )
-        (skill_dir / "main.py").write_text(main_py, encoding="utf-8")
+        if not procedure:
+            main_py = (
+                main_py.replace("$skill_name", skill_name)
+                .replace("$agent_id", agent_id)
+                .replace("$cmd", cmd)
+                .replace("$timestamp", datetime.now(timezone.utc).isoformat())
+            )
+            (skill_dir / "main.py").write_text(main_py, encoding="utf-8")
 
         # CDX-8: quarantine by default. An agent-emitted [learn:…] is untrusted LLM output
         # that becomes executable code — strictly more dangerous than a downloaded skill, so
@@ -1774,11 +1806,12 @@ def register(skill):
         # in-process; mint it PENDING_REVIEW. `_load_skill` registers it (so it's visible for
         # review) but never runs its module until `approve_generated_skill()` (owner-gated)
         # signs + activates it. Auto-generation stays on; only promotion-to-reusable is gated.
-        (skill_dir / "PENDING_REVIEW").write_text(
-            f"agent={agent_id}\ntask={task_description}\n"
-            f"generated={datetime.now(timezone.utc).isoformat()}\n",
-            encoding="utf-8",
-        )
+        if not procedure:
+            pending_marker.write_text(
+                f"agent={agent_id}\ntask={task_description}\n"
+                f"generated={datetime.now(timezone.utc).isoformat()}\n",
+                encoding="utf-8",
+            )
         self._load_skill(skill_dir)
         from ..code_guidance import scan_tree
 

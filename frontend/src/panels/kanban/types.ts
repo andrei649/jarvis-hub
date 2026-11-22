@@ -26,6 +26,9 @@ export interface KanbanTask {
   current_run_started_at?: null | number
   worker_pid?: null | number
   last_heartbeat_at?: null | number
+  current_run_id?: null | number
+  /** Present only when the native hub can check this exact run for recovery. */
+  recoverable_run_id?: null | number
 }
 
 export interface KanbanColumn {
@@ -136,6 +139,7 @@ export interface KanbanTaskDetail {
   attachments?: KanbanAttachment[] | null
   links: { parents: string[]; children: string[] }
   link_tasks?: KanbanLinkTask[] | null
+  child_results?: (KanbanLinkTask & Pick<KanbanTaskFull, 'assignee' | 'result' | 'latest_summary'>)[] | null
   runs: KanbanRun[]
 }
 

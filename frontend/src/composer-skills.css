@@ -1,0 +1,20 @@
+.composer-skills { position: relative; flex: none; }
+.composer-skills-panel {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 35;
+  box-sizing: border-box; width: min(360px, calc(100vw - 24px));
+  max-height: min(54vh, 26rem); overflow: auto; padding: 12px 14px;
+  background: var(--panel, #10171c); border: 1px solid var(--panel-line);
+  border-radius: var(--radius, 10px); color: var(--ink); font-size: 13px;
+}
+.composer-skills-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.composer-skills-panel p { margin: 8px 0; line-height: 1.4; color: var(--ink-2); }
+.composer-skills-list { list-style: none; margin: 8px 0; padding: 0; }
+.composer-skills-list li { border-top: 1px solid var(--panel-line); }
+.composer-skills-list button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 9px 2px; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.composer-skills-list button:hover, .composer-skills-list button:focus-visible { color: var(--accent-light); }
+.composer-skills-list code { color: var(--accent-light); font: inherit; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.composer-skills-list span { color: var(--ink-2); }
+.composer-skills-review { border-top: 1px solid var(--panel-line); padding-top: 10px; }
+.composer-skills-review a { color: var(--accent-light); }
+.composer-skills-panel > a { color: var(--accent-light); }

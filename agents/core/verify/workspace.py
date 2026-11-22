@@ -111,7 +111,8 @@ class _Budget:
         return min(GIT_TIMEOUT, self.deadline - time.monotonic())
 
 
-def git(root: Path, *args: str, budget: _Budget | None = None) -> str | None:
+def git(root: Path, *args: str, budget: _Budget | None = None,
+        require_complete: bool = False) -> str | None:
     """Run one fixed read-only git command in *root*; its stdout (cut at
     :data:`MAX_OUTPUT`, read as a stream), or None on any failure or past the deadline."""
     budget = budget or _Budget(GIT_TIMEOUT)
@@ -124,30 +125,67 @@ def git(root: Path, *args: str, budget: _Budget | None = None) -> str | None:
     except OSError:
         return None
     output = bytearray()
+    reader = None
     try:
         assert proc.stdout is not None  # nosec B101 - Popen with stdout=PIPE always sets it
-        with selectors.DefaultSelector() as selector:
-            selector.register(proc.stdout, selectors.EVENT_READ)
-            while True:
-                left = budget.left()
-                if left <= 0 or len(output) > MAX_OUTPUT:
-                    proc.kill()
-                    proc.wait()
-                    return None if left <= 0 else output[:MAX_OUTPUT].decode("utf-8", errors="replace")
-                if not selector.select(left):
-                    continue
-                chunk = os.read(proc.stdout.fileno(), 65536)
-                if not chunk:
-                    break
-                output.extend(chunk)
+        if os.name == "nt":
+            # Windows cannot select() a pipe. Read at most the cap plus one byte.
+            done = threading.Event()
+            errors: list[OSError] = []
+
+            def pump() -> None:
+                try:
+                    while len(output) <= MAX_OUTPUT:
+                        chunk = os.read(proc.stdout.fileno(), min(65536, MAX_OUTPUT + 1 - len(output)))
+                        if not chunk:
+                            break
+                        output.extend(chunk)
+                except OSError as exc:
+                    errors.append(exc)
+                finally:
+                    done.set()
+
+            reader = threading.Thread(target=pump, daemon=True)
+            reader.start()
+            if not done.wait(max(0.0, budget.left())):
+                raise subprocess.TimeoutExpired(argv, GIT_TIMEOUT)
+            if errors:
+                raise errors[0]
+        else:
+            with selectors.DefaultSelector() as selector:
+                selector.register(proc.stdout, selectors.EVENT_READ)
+                while True:
+                    left = budget.left()
+                    if left <= 0:
+                        raise subprocess.TimeoutExpired(argv, GIT_TIMEOUT)
+                    if not selector.select(left):
+                        continue
+                    chunk = os.read(proc.stdout.fileno(), 65536)
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+                    if len(output) > MAX_OUTPUT:
+                        break
+        if budget.left() <= 0:
+            return None
+        if len(output) > MAX_OUTPUT:
+            return None if require_complete else output[:MAX_OUTPUT].decode("utf-8", errors="replace")
         code = proc.wait(timeout=max(0.05, budget.left()))
+        if budget.left() <= 0:
+            return None
     except (OSError, subprocess.SubprocessError):
-        proc.kill()
-        proc.wait()
         return None
     finally:
+        if proc.poll() is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass  # the child may exit between poll() and kill()
+        proc.wait()
         if proc.stdout is not None:
             proc.stdout.close()
+        if reader is not None:
+            reader.join(timeout=0.5)
     if code != 0:
         return None
     return output[:MAX_OUTPUT].decode("utf-8", errors="replace")
@@ -156,7 +194,8 @@ def git(root: Path, *args: str, budget: _Budget | None = None) -> str | None:
 def config_refusal(root: Path, budget: _Budget | None = None) -> str | None:
     """Why the repository's config is not plain (the first key outside the allowlist,
     case preserved), or None when every key is allowed. An unreadable config refuses."""
-    listed = git(root, "config", "--list", "--show-scope", "-z", budget=budget)
+    listed = git(root, "config", "--list", "--show-scope", "-z", budget=budget,
+                 require_complete=True)
     if listed is None:
         return "its git config could not be read"
     fields = listed.split("\0")

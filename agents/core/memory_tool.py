@@ -751,6 +751,43 @@ def owner_change(living: Any, target: str, fact: str, text: str | None = None, *
             "undo_ref": ref, "usage": usage(after[target], target)}
 
 
+def owner_add(living: Any, target: str, text: str, *, audit: Any,
+              actor: str = "owner", store: UndoStore | None = None) -> dict:
+    """Add one curated fact through the memory tool's locked, audited write path."""
+    if target not in TARGETS:
+        raise MemoryToolError("memory_bad_target", f"target is one of {', '.join(TARGETS)}")
+    if living is None:
+        raise MemoryToolError("memory_unavailable", "this hub has no long-term memory module")
+    store = UNDO if store is None else store
+    with _WRITE_LOCK, _ring_locks(living):
+        _settle(living)
+        before = {t: getattr(living, attr).list() for t, attr in TARGETS.items()}
+        caps = {t: int(getattr(getattr(living, attr), "cap", 20)) for t, attr in TARGETS.items()}
+        after, rows = plan([{"action": "add", "target": target, "text": text}], before, caps)
+        fact = _clean_text(text, 1, "text")
+        changed = after[target] != before[target]
+        ref = (_write_recorded(living, before, after, rows, sink=audit, actor=actor, undo_store=store,
+                               why="the owner added to its long-term memory") if changed else None)
+        ring = getattr(living, TARGETS[target])
+        from .memory.timeline import ring_items
+        path = getattr(ring, "path", None)
+        try:
+            saved_epoch = path.stat().st_mtime if path is not None else None
+        except OSError:
+            saved_epoch = None
+        try:
+            added = ring.added_at() if callable(getattr(ring, "added_at", None)) else None
+        except Exception:
+            added = None
+        entry = next(item for item in ring_items(target, after[target], saved_epoch, added)
+                     if item["value"] == fact)
+    result = {"ok": True, "changed": [target] if changed else [], "target": target,
+              "fact": fact, "entry": entry}
+    if ref:
+        result.update(undo_ref=ref, usage=usage(after[target], target))
+    return result
+
+
 def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: UndoStore | None = None) -> dict:
     """Restore the rings a write replaced, while nothing has changed them since."""
     store = UNDO if store is None else store
@@ -1063,7 +1100,7 @@ __all__ = [
     "ACTIONS", "CAPABILITY_ID", "DESCRIPTION", "FULL_ATTEMPTS_PER_TURN", "INPUT_SCHEMA", "LISTING_MAX_CHARS",
     "LOCK_TIMEOUT_S", "MAX_FACT_CHARS", "MAX_OPERATIONS",
     "MemoryToolError", "OFF_DESCRIPTION", "RESET_CONFIRM", "RESET_TARGETS", "STORE_LABELS", "SWITCH_CATEGORY",
-    "SWITCH_KEY", "SWITCH_SETTING", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "owner_change", "plan",
+    "SWITCH_KEY", "SWITCH_SETTING", "TARGETS", "TOOL_NAME", "UNDO", "UndoStore", "owner_add", "owner_change", "plan",
     "register_memory_tool",
     "current_entries", "note_ring_refusal", "reset", "reset_targets", "set_switch", "store_sizes", "switched_on",
     "undo", "usage", "ROLLBACK",

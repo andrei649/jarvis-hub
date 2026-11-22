@@ -1,6 +1,6 @@
 """Read-only discovery of the commands the current chat principal may use."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
@@ -40,7 +40,7 @@ class CommandCatalog(BaseModel):
 
 
 @router.get("/api/commands", response_model=CommandCatalog, dependencies=[Depends(user_guard)])
-async def command_catalog(request: Request):
+async def command_catalog(request: Request, agent: Annotated[str | None, Query(min_length=1, max_length=64)] = None):
     """List the live registry using the same owner identity as the chat endpoint.
 
     No handler is invoked. A hub that has not started its registry reports that
@@ -63,7 +63,7 @@ async def command_catalog(request: Request):
     shortcuts = []
     shortcuts_unavailable = False
     if principal.admin is True:
-        projected = project(registry, getattr(orch, "skills", None), slots=MAX_ROWS - len(commands))
+        projected = project(registry, getattr(orch, "skills", None), slots=MAX_ROWS - len(commands), agent=agent)
         shortcuts = projected.rows
         truncated |= projected.truncated
         shortcuts_unavailable = projected.unavailable

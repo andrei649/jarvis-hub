@@ -77,7 +77,7 @@ def _record(backend: str, request: httpx.Request, *, allowed: bool, reason: str 
         pass
 
 
-def _recorder(backend: str, protocol_backend: str | None = None):
+def _recorder(backend: str, protocol_backend: str | None = None, client_ref=None):
     """Build the async httpx request hook: refuse a protocol/host mismatch, then record.
 
     httpx runs request hooks before each dispatch — including every hop of a followed
@@ -89,6 +89,8 @@ def _recorder(backend: str, protocol_backend: str | None = None):
         # Direct clients without a routed scope retain their existing contract.
         from .data_handling import check_physical_request
         try:
+            from .physical_local import check_physical_local_request
+            check_physical_local_request(request, client_ref[0] if client_ref else None, backend)
             await check_physical_request(request)
         except Exception:
             _record(backend, request, allowed=False, reason="routed data-handling gate refused")
@@ -119,9 +121,10 @@ def llm_async_client(backend: str, **kwargs) -> httpx.AsyncClient:
     from .quota import request_hook, response_hook
 
     event_hooks = dict(kwargs.pop("event_hooks", None) or {})
+    client_ref = [None]
     # H373: the shared 429 guard refuses first (a refused request never left, so it is not
     # an egress row); every cloud response's quota headers are then recorded.
-    event_hooks["request"] = [*event_hooks.get("request", []), request_hook(backend), _recorder(backend)]
+    event_hooks["request"] = [*event_hooks.get("request", []), request_hook(backend), _recorder(backend, client_ref=client_ref)]
     event_hooks["response"] = [*event_hooks.get("response", []), response_hook(backend)]
     # H504: every model client verifies against the one trust anchor (JARVIS_CA_BUNDLE
     # included). An explicit SSLContext also means httpx never reads SSL_CERT_FILE on its
@@ -131,7 +134,9 @@ def llm_async_client(backend: str, **kwargs) -> httpx.AsyncClient:
         from agents.core.tls_trust import verify_for
 
         kwargs["verify"] = verify_for(backend, kwargs.get("base_url"))
-    return httpx.AsyncClient(event_hooks=event_hooks, **kwargs)
+    client = httpx.AsyncClient(event_hooks=event_hooks, **kwargs)
+    client_ref[0] = client
+    return client
 
 
 def llm_sync_request_hook(backend):

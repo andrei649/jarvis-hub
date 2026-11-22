@@ -31,6 +31,32 @@ beforeEach(() => {
 
 afterEach(() => dom.window.close());
 
+it('attaches matching notes only to the chosen hub chat turn', async () => {
+  const { document } = dom.window;
+  const meta = document.createElement('meta');
+  meta.name = 'jarvis-os-hub';
+  document.head.appendChild(meta);
+  dom.window.eval(fs.readFileSync(path.join(appRoot, 'js/api.js'), 'utf8')
+    .replace(/^export /gm, '') + '\nwindow.sendChat = chat;');
+  const excerpt = { name: 'Inbox/Workshop.md', text: 'Synthetic workspace note' };
+  const requests = [];
+  dom.window.fetch = async (url, options = {}) => {
+    requests.push([url, options.body && JSON.parse(options.body)]);
+    return { ok: true, json: async () => url.includes('/retrieve')
+      ? { ok: true, attachments: [excerpt] } : { reply: 'OK' } };
+  };
+  const choice = document.getElementById('vault-grounding');
+  const turn = { prompt: 'workshop' };
+  await dom.window.sendChat(turn);
+  choice.checked = true;
+  expect((await dom.window.sendChat(turn)).vaultSources).toEqual([excerpt.name]);
+  await dom.window.sendChat(turn);
+  expect(requests.filter(([url]) => url.includes('/retrieve'))).toHaveLength(1);
+  expect(requests.filter(([url]) => url === '/chat').map(([, body]) => body)).toEqual([
+    { message: 'workshop' }, { message: 'workshop', attachments: [excerpt] }, { message: 'workshop' },
+  ]);
+});
+
 it('masks OpenRouter and the later voice key, then preserves masks on save', async () => {
   await app.refreshAIStatus();
   const doc = dom.window.document;

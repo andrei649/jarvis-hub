@@ -757,15 +757,33 @@ def _docx(data: bytes, guard: _Guard) -> Extracted:
 
 # ── XLSX ─────────────────────────────────────────────────────────────────────────────
 
+_XLSX_TEXT_ESCAPE = re.compile(
+    r"_x(d[89ab][0-9a-f]{2})__x(d[cdef][0-9a-f]{2})_|_x([0-9a-f]{4})_",
+    re.IGNORECASE,
+)
+
+
+def _xlsx_string(text: str) -> str:
+    """Decode SpreadsheetML escapes once; an escaped underscore may form literal ``_xHHHH_``."""
+    def replace(match: re.Match[str]) -> str:
+        if match.group(3) is not None:
+            return chr(int(match.group(3), 16))
+        first = int(match.group(1), 16)
+        second = int(match.group(2), 16)
+        return chr(0x10000 + (first - 0xD800) * 0x400 + second - 0xDC00)
+
+    return _XLSX_TEXT_ESCAPE.sub(replace, text)
+
+
 def _rich_text(node: _XmlNode) -> str:
     """Text of a shared-string ``si`` or an inline ``is`` (plain or rich runs; no phonetics)."""
     parts: list[str] = []
     for child in node:
         name = _local(child.tag)
         if name == "t":
-            parts.append(child.text or "")
+            parts.append(_xlsx_string(child.text or ""))
         elif name == "r":
-            parts.extend(run.text or "" for run in _children(child, "t"))
+            parts.extend(_xlsx_string(run.text or "") for run in _children(child, "t"))
     return "".join(parts)
 
 
@@ -913,7 +931,9 @@ def _cell_text(cell: _XmlNode, context: _SheetContext) -> str:
         return context.shared[index] if 0 <= index < len(context.shared) else ""
     if cell_type == "b":
         return "TRUE" if raw.strip() == "1" else "FALSE"
-    if cell_type in ("str", "e", "d"):
+    if cell_type == "str":
+        return _xlsx_string(raw)
+    if cell_type in ("e", "d"):
         return raw
     style = _int_or(cell.get("s"), 0)
     kind = context.formats[style] if 0 <= style < len(context.formats) else ""

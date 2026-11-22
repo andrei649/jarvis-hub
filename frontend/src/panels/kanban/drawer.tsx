@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Markdown } from '../../markdown';
+import { fetchWorkshopContext, projectLink, WorkshopProjects } from '../../workshop-projects';
 import * as api from './api';
 import { ago, shortId } from './board';
 import { columnLabel, useKanban } from './i18n';
@@ -15,12 +16,14 @@ import {
   type KanbanRunDetail,
   type KanbanTask,
   type KanbanTaskDetail,
-  type RunProcessInspection,
   type TaskEstimate,
 } from './types';
 import { errText, isLockedTarget } from './KanbanView';
 
-type Tab = 'comments' | 'activity' | 'runs' | 'log';
+type Tab = 'comments' | 'activity' | 'runs';
+function runState(value: string): string {
+  return ({ nerva_worker_interrupted: 'Interrupted', nerva_worker_failed: 'Failed', gave_up: 'Stopped after repeated failures', completed: 'Completed' } as Record<string, string>)[value] || value.replace(/_/g, ' ');
+}
 function eventText(event: KanbanEvent): string {
   let data: Record<string, unknown> = {};
   if (typeof event.payload === 'string') { try { data = JSON.parse(event.payload); } catch { return `${event.kind.replace(/_/g, ' ')} · ${event.payload}`; } }
@@ -63,40 +66,48 @@ function AttachmentList({ slug, attachments, onUpload, pending, onError }: {
     <label>Upload attachment<input ref={fileRef} aria-label="Upload attachment" type="file" disabled={pending} onChange={e => { const file = e.target.files?.[0]; if (file) onUpload(file); if (fileRef.current) fileRef.current.value = ''; }} /></label>
   </Section>;
 }
-export function TaskDrawer({
-  slug, id, columns, profiles, knownAssignees = [], allTasks = [], modelOptions = null, modelOptionsError = '',
-  onRefreshModelOptions, onOpen, onClose, onChanged,
-}: {
+type DrawerProps = {
   slug: string; id: string; columns: string[]; profiles: KanbanProfile[]; knownAssignees?: KanbanAssignee[];
   allTasks?: KanbanTask[]; modelOptions?: KanbanModelOptionsResponse | null; modelOptionsError?: string;
   onRefreshModelOptions?: () => Promise<void> | void;
   onOpen: (id: string) => void; onClose: () => void; onChanged: () => Promise<unknown> | void;
-}) {
+};
+export function TaskDrawer(props: DrawerProps) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draftKey = JSON.stringify([props.slug, props.id]);
+  function updateDraft(change: (previous: string) => string) {
+    setDrafts(current => ({ ...current, [draftKey]: change(current[draftKey] || '') }));
+  }
+  return <TaskDetails key={draftKey} {...props} comment={drafts[draftKey] || ''} updateDraft={updateDraft}/>;
+}
+function TaskDetails({
+  slug, id, columns, profiles, knownAssignees = [], allTasks = [], modelOptions = null, modelOptionsError = '',
+  onRefreshModelOptions, onOpen, onClose, onChanged, comment, updateDraft,
+}: DrawerProps & { comment:string; updateDraft: (change: (previous: string) => string) => void }) {
   const k = useKanban();
   const [detail, setDetail] = useState<KanbanTaskDetail | null>(null);
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>('comments'); const [comment, setComment] = useState(''); const [busy, setBusy] = useState(false);
-  const [log, setLog] = useState(''); const [logError, setLogError] = useState('');
+  const [tab, setTab] = useState<Tab>('comments'); const [busy, setBusy] = useState(false);
   const [editBody, setEditBody] = useState(false); const [bodyDraft, setBodyDraft] = useState('');
   const [actions, setActions] = useState(false);
   const [reassignTarget, setReassignTarget] = useState('');
-  const [reclaimFirst, setReclaimFirst] = useState(false);
   const [workerReason, setWorkerReason] = useState('');
   const [taskEstimate, setTaskEstimate] = useState<TaskEstimate | null>(null);
   const [linkDir, setLinkDir] = useState<'parent' | 'child'>('parent');
   const [linkTarget, setLinkTarget] = useState('');
   const [selectedRun, setSelectedRun] = useState<KanbanRunDetail | null>(null);
-  const [runInspection, setRunInspection] = useState<{ runId: number | string; info: RunProcessInspection } | null>(null);
   const [homeChannels, setHomeChannels] = useState<HomeChannelsResponse | null>(null);
   const [channelsNote, setChannelsNote] = useState('');
   const [channelPlatform, setChannelPlatform] = useState('telegram');
   const serial = useRef(0);
+  const initialTabSet = useRef(false);
   const load = async () => {
     const request = ++serial.current; setLoading(true);
     try {
       const next = await api.fetchTask(slug, id);
       if (request === serial.current) {
         setDetail(next);
+        if (!initialTabSet.current) { setTab(next.runs.length ? 'runs' : 'comments'); initialTabSet.current = true; }
         setBodyDraft(next.task.body || '');
         setReassignTarget(next.task.assignee || '');
         setError('');
@@ -115,10 +126,9 @@ export function TaskDrawer({
     }
   };
   useEffect(() => {
-    setSelectedRun(null); setRunInspection(null); setTaskEstimate(null); setNotice('');
+    setSelectedRun(null); setTaskEstimate(null); setNotice('');
     void load();
     let live = true;
-    api.fetchLog(slug, id).then(r => { if (live) setLog(r.content || ''); }).catch(e => { if (live) setLogError(errText(e)); });
     void loadChannels(() => live);
     const poll = setInterval(() => { void load(); }, 30_000);
     return () => { live = false; serial.current++; clearInterval(poll); };
@@ -136,9 +146,9 @@ export function TaskDrawer({
     for (const ch of homeChannels?.channels || []) if (ch.platform) seen.add(ch.platform);
     return [...seen];
   }, [homeChannels]);
-  const mutate = async (fn: () => Promise<unknown>, after?: () => void) => {
+  const mutate = async (fn: () => Promise<unknown>, after?: (result: unknown) => void) => {
     setBusy(true); setError(''); setNotice('');
-    try { await fn(); await Promise.all([load(), Promise.resolve(onChanged())]); after?.(); }
+    try { const result = await fn(); await Promise.all([load(), Promise.resolve(onChanged())]); after?.(result); }
     catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
   };
@@ -151,12 +161,15 @@ export function TaskDrawer({
     catch (e) { setDetail(previous); setError(errText(e)); return false; }
     finally { setBusy(false); }
   };
-  const postComment = (e: FormEvent) => { e.preventDefault(); if (!comment.trim()) return; const value = comment.trim(); void mutate(() => api.addComment(slug, id, value), () => setComment('')); };
+  const postComment = (e: FormEvent) => {
+    e.preventDefault();
+    if (!comment.trim() || busy || task?.id !== id) return;
+    void mutate(() => api.addComment(slug, id, comment.trim()), () => updateDraft(current => current === comment ? '' : current));
+  };
   const upload = (file: File) => void mutate(() => api.uploadAttachment(slug, id, file));
-  const submitReassign = (profileValue: string, forceReclaim = reclaimFirst) => {
+  const submitReassign = (profileValue: string) => {
     void mutate(() => api.reassignTask(slug, id, {
       profile: profileValue || null,
-      reclaim_first: forceReclaim,
       ...(workerReason.trim() ? { reason: workerReason.trim() } : {}),
     }), () => setNotice(profileValue ? `Reassigned to ${profileValue}.` : 'Task unassigned.'));
   };
@@ -177,19 +190,26 @@ export function TaskDrawer({
     } catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
   };
-  const loadRunInspection = async (runId: number | string) => {
-    setBusy(true); setError('');
-    try {
-      const info = await api.inspectRun(slug, runId);
-      setRunInspection({ runId, info });
-    } catch (e) { setError(errText(e)); }
-    finally { setBusy(false); }
+  const recoverableRunId = detail?.task.recoverable_run_id;
+  const activeRun = typeof recoverableRunId === 'number' && Number.isSafeInteger(recoverableRunId)
+    && detail?.task.id === id && detail.task.status === 'running' && detail.task.current_run_id === recoverableRunId
+    ? detail.runs.find(run => Number(run.id) === recoverableRunId && run.status === 'running' && run.ended_at == null)
+    : undefined;
+  const recover = () => {
+    if (!activeRun || typeof recoverableRunId !== 'number') return;
+    void mutate(() => api.reclaimTask(slug, id, recoverableRunId, workerReason.trim() || undefined),
+      result => {
+        const status = (result as {status?: string} | null)?.status;
+        setNotice(status === 'recovered' ? 'Interrupted run recovered; task held for review.'
+          : status === 'board_effect_preserved' ? 'Worker result was already saved; history refreshed.'
+          : 'Worker history refreshed.');
+      });
   };
   const handleDiagnosticAction = (action: DiagnosticAction) => {
     if (action.kind === 'reclaim') {
-      void mutate(() => api.reclaimTask(slug, id, workerReason.trim() || undefined));
+      recover();
     } else if (action.kind === 'reassign') {
-      submitReassign(reassignTarget, Boolean(action.payload?.reclaim_first));
+      if (!action.payload?.reclaim_first) submitReassign(reassignTarget);
     } else if (action.kind === 'unblock') {
       void patch({ status: 'ready' });
     } else if (action.kind === 'cli_hint' && typeof action.payload?.command === 'string') {
@@ -242,24 +262,47 @@ export function TaskDrawer({
       <main className="kb-drawer-main">
         {task.status === 'ready' && !task.assignee && <div className="kb-alert">Ready task is unassigned; it will wait for an available assignee.</div>}
         {!!task.diagnostics?.length && <Section title={`Diagnostics · ${task.diagnostics.length}`}>{task.diagnostics.map((d, i) => <article className="kb-diagnostic" key={`${d.kind}-${i}`} style={{borderLeft:`3px solid ${SEVERITY_TONE[d.severity]}`}}><strong>{d.title}</strong><p>{d.detail}</p><div className="kb-inline-actions">{d.actions.map((a, j) => {
-          const supported = a.kind === 'reclaim' || a.kind === 'reassign' || a.kind === 'unblock' || a.kind === 'cli_hint';
+          const supported = (a.kind === 'reclaim' && Boolean(activeRun)) || (a.kind === 'reassign' && !a.payload?.reclaim_first) || a.kind === 'unblock' || a.kind === 'cli_hint';
           return <button key={j} type="button" disabled={busy || !supported} onClick={() => handleDiagnosticAction(a)}>{supported ? a.label : `${a.label} · unavailable`}</button>;
         })}</div></article>)}</Section>}
         <Section title="Description">{editBody ? <form onSubmit={e => { e.preventDefault(); void patch({body: bodyDraft}).then(ok => { if (ok) setEditBody(false); }); }}><textarea aria-label="Edit description" value={bodyDraft} onChange={e => setBodyDraft(e.target.value)} /><footer><button type="button" onClick={() => setEditBody(false)}>Cancel</button><button type="submit" disabled={busy}>Save description</button></footer></form> : <><div className="kb-markdown">{task.body ? <Markdown text={task.body} className="md" /> : <span className="kb-muted">No description</span>}</div><button type="button" onClick={() => setEditBody(true)}>Edit description</button></>}</Section>
         {task.result && <Section title="Result"><Markdown text={task.result} className="md kb-markdown" /></Section>}
         {task.latest_summary && <Section title="Latest summary"><Markdown text={task.latest_summary} className="md kb-markdown" /></Section>}
-        <Section title="Activity"><div className="kb-tabs" role="tablist">{(['comments','activity','runs','log'] as const).map(x => <button type="button" role="tab" aria-selected={tab === x} key={x} onClick={() => setTab(x)}>{x === 'runs' ? 'Run history' : x[0].toUpperCase() + x.slice(1)}</button>)}</div>
-          {tab === 'comments' && <><div className="kb-feed">{detail.comments.map(c => <article key={c.id}><strong>{c.author}</strong> <time>{ago(c.created_at)}</time><Markdown text={c.body} className="md kb-markdown" /></article>)}</div><form onSubmit={postComment}><label>Comment<textarea value={comment} onChange={e => setComment(e.target.value)} /></label><footer><button type="submit" disabled={busy || !comment.trim()}>Post comment</button></footer></form></>}
+        {!!detail.child_results?.length && <Section title="Child results"><div className="kb-feed">
+          {detail.child_results.map(child => {
+            const output = child.result?.trim() ? child.result : child.latest_summary;
+            return <article key={child.id} aria-label={child.title}>
+              <div className="kb-inline-actions">
+                <button type="button" onClick={() => onOpen(child.id)}>{child.title}</button>
+                <span className="kb-muted">{columnLabel(k, child.status)}{child.assignee && ` · Assigned to ${child.assignee}`}</span>
+              </div>
+              {output && <><small>{output === child.result ? 'Result' : 'Latest run summary'}</small>
+                <Markdown text={output} className="md kb-markdown" /></>}
+            </article>;
+          })}
+        </div></Section>}
+        <Section title="Activity"><div className="kb-tabs" role="tablist">{(['runs','activity','comments'] as const).map(x => <button type="button" role="tab" aria-selected={tab === x} key={x} onClick={() => setTab(x)}>{x === 'runs' ? 'Worker history' : x[0].toUpperCase() + x.slice(1)}</button>)}</div>
+          {tab === 'comments' && <><div className="kb-feed">{detail.comments.map(c => <article key={c.id}><strong>{c.author}</strong> <time>{ago(c.created_at)}</time><Markdown text={c.body} className="md kb-markdown" /></article>)}</div>
+            <form onSubmit={postComment}>
+              <label>Comment<textarea value={comment} onChange={e => { const value = e.target.value; updateDraft(() => value); }} /></label>
+              {task?.id === id && <WorkshopProjects heading="Link a saved 3D project" actionLabel="Add to comment"
+                onChoose={async (ref, signal) => {
+                  const { summary } = await fetchWorkshopContext(ref.path, signal);
+                  if (!signal.aborted) updateDraft(current => [current.trimEnd(), '[Open saved 3D project](' + projectLink(ref.path) + ')\n' + summary].filter(Boolean).join('\n\n'));
+                }}/>}
+              <footer><button type="submit" disabled={busy || !comment.trim() || task?.id !== id}>Post comment</button></footer>
+            </form></>}
           {tab === 'activity' && <div className="kb-feed">{detail.events.map(e => <article key={e.id}>{eventText(e)} <time>{ago(e.created_at)}</time></article>)}</div>}
           {tab === 'runs' && <div className="kb-feed">
-            {detail.runs.length ? detail.runs.map(r => <article key={r.id}>
-              <strong>{r.profile || 'Worker'} · {r.status}</strong> {r.outcome && <span>{r.outcome}</span>}
+            {detail.runs.length ? detail.runs.map((r, i) => <article key={r.id}>
+              <strong>Attempt {i + 1}{i === detail.runs.length - 1 ? ' · Latest' : ''} · {r.profile || 'Worker'}</strong>
+              <div>Status: {runState(r.status)}{r.outcome && r.outcome !== r.status ? ` · Outcome: ${runState(r.outcome)}` : ''}</div>
+              <div className="kb-run-detail">Started {ago(r.started_at)}{r.ended_at == null ? ' · In progress' : ` · Ended ${ago(r.ended_at)}`}</div>
               {r.summary && <p>{r.summary}</p>}
               {r.error && <p className="kb-warning">{r.error}</p>}
+              {r.outcome === 'nerva_worker_interrupted' && typeof r.metadata === 'object' && r.metadata && typeof r.metadata.retry_status === 'string' && <p>Interrupted; next state: {runState(r.metadata.retry_status)}.</p>}
               <div className="kb-inline-actions">
                 <button type="button" disabled={busy} onClick={() => void loadRunDetail(r.id)}>Run details</button>
-                <button type="button" disabled={busy} onClick={() => void loadRunInspection(r.id)}>Inspect process</button>
-                <button type="button" disabled={busy} onClick={() => void mutate(() => api.terminateRun(slug, r.id, workerReason.trim() || undefined))}>Terminate run</button>
               </div>
               {selectedRun && String(selectedRun.id) === String(r.id) && <div className="kb-run-detail" aria-label={`Run ${r.id} details`}>
                 <span>Run #{selectedRun.id}</span>
@@ -267,13 +310,8 @@ export function TaskDrawer({
                 {selectedRun.started_at != null && <span> · started {ago(selectedRun.started_at)}</span>}
                 {selectedRun.last_heartbeat_at != null && <span> · heartbeat {ago(selectedRun.last_heartbeat_at)}</span>}
               </div>}
-              {runInspection && String(runInspection.runId) === String(r.id) && <div className="kb-run-detail" aria-label={`Run ${r.id} process`}>
-                <span>Process: {runInspection.info.state || (runInspection.info.alive ? 'alive' : 'stopped')}</span>
-                {runInspection.info.detail && <span> · {runInspection.info.detail}</span>}
-              </div>}
             </article>) : <span className="kb-muted">No runs recorded</span>}
           </div>}
-          {tab === 'log' && <div className="kb-feed">{logError ? <span className="kb-muted">{logError}</span> : log ? <pre>{log}</pre> : <span className="kb-muted">No worker log</span>}</div>}
         </Section>
       </main>
       <aside className="kb-drawer-aside">
@@ -336,11 +374,8 @@ export function TaskDrawer({
         <Section title="Task metadata"><div>Created by: {task.created_by || 'unknown'}</div><div>Created: {ago(task.created_at)}</div>{task.worker_pid && <div>Worker pid: {task.worker_pid}</div>}</Section>
         <Section title="Worker controls">
           <input aria-label="Worker action reason" value={workerReason} onChange={e => setWorkerReason(e.target.value)} placeholder="Reason (optional)" />
-          {task.status === 'running' && <label><input type="checkbox" checked={reclaimFirst} onChange={e => setReclaimFirst(e.target.checked)} />Reclaim before reassign</label>}
           <div className="kb-inline-actions">
-            {task.status === 'running'
-              ? <button type="button" disabled={busy} onClick={() => void mutate(() => api.reclaimTask(slug, id, workerReason.trim() || undefined))}>Reclaim</button>
-              : <button type="button" disabled title="Only running tasks have an active worker claim">Reclaim · unavailable</button>}
+            {activeRun && <button type="button" disabled={busy} onClick={recover}>Check and recover interrupted run</button>}
             <button type="button" disabled={busy} onClick={() => submitReassign(reassignTarget)}>Reassign</button>
             <button type="button" disabled={busy} onClick={() => void runTaskEstimate()}>Estimate</button>
             <button type="button" disabled={busy} onClick={() => void mutate(() => api.specifyTask(slug, id))}>Specify</button>

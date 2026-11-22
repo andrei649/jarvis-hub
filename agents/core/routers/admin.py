@@ -48,7 +48,7 @@ from agents.core.env_provenance import SECRET_HINTS, masked
 from agents.core.log_safe import log_safe
 from agents.core.paths import data_path
 from agents.core.routers._deps import admin_guard
-from agents.core.web_helpers import mask_secret, nocache_json, safe_reflect
+from agents.core.web_helpers import mask_secret, nocache_json, read_bounded_body, safe_reflect
 
 logger = logging.getLogger("jarvis.web")
 
@@ -411,19 +411,6 @@ def _refuse_cross_site_write(request: Request) -> JSONResponse | None:
     return None
 
 
-async def _bounded_body(request: Request, limit: int) -> bytes | None:
-    declared = request.headers.get("content-length", "")
-    if declared.isascii() and declared.isdigit() and int(declared) > limit:
-        return None
-    chunks, size = [], 0
-    async for chunk in request.stream():
-        size += len(chunk)
-        if size > limit:
-            return None
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
 @router.post("/api/admin/settings/import", dependencies=[Depends(admin_guard)])
 async def admin_import_settings(request: Request):
     """H157 — import a settings document (an export, or any ``{"settings": {category:
@@ -439,7 +426,7 @@ async def admin_import_settings(request: Request):
     refused = _refuse_cross_site_write(request)
     if refused is not None:
         return refused
-    raw = await _bounded_body(request, _IMPORT_MAX_BYTES)
+    raw = await read_bounded_body(request, _IMPORT_MAX_BYTES)
     if raw is None:
         return nocache_json({"error": "invalid settings", "details": ["the document is over 1 MB"]},
                             status_code=413)
@@ -499,7 +486,7 @@ async def admin_import_settings(request: Request):
 
 async def _dry_run_asked(request: Request) -> bool | JSONResponse:
     """H259 — whether a reset's JSON body is ``{"dry_run": true}`` (only a JSON ``true``)."""
-    raw = await _bounded_body(request, 4096)
+    raw = await read_bounded_body(request, 4096)
     if raw is None:
         return nocache_json({"error": "the request is over 4 KB"}, status_code=413)
     try:

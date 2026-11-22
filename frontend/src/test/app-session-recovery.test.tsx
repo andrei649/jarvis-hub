@@ -29,6 +29,20 @@ async function mount() {
   await screen.findByLabelText('Attach images');
 }
 
+it('restores measured model calls on a saved reply without deriving a badge from missing evidence', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => path === '/memory'
+    ? json(200, {session:'current',turns:[
+      {role:'assistant',content:'Measured prior reply',model_calls:[{provider:'ollama',model:'qwen-7b'}]},
+      {role:'assistant',content:'Unexecuted prior reply',usage:{api_calls:0}},
+      {role:'system',content:'Non-assistant notice',model_calls:[{provider:'ollama',model:'wrong-attribution'}]},
+    ]}) : json(200, {})));
+  await mount();
+  const measured = await screen.findByText('Measured prior reply');
+  expect(measured.closest('.msg.agent')?.querySelector('.prov-chip')?.textContent).toContain('ollama / qwen-7b');
+  expect(screen.getByText('Unexecuted prior reply').closest('.msg.agent')?.querySelector('.prov-chip')).toBeNull();
+  expect(screen.getByText('Non-assistant notice').closest('.msg.agent')?.querySelector('.prov-chip')).toBeNull();
+});
+
 it('rehydrates exact missing-session 404 to current memory and sends the next turn there', async () => {
   sessionStorage.setItem('nerva.chat.session_id', 'old');
   vi.stubGlobal('fetch', vi.fn(async (path: string, init?: { body?: string }) => {

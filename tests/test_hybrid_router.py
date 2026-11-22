@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,6 +15,7 @@ from core.llm.hybrid_router import (
     DEFAULT_DEEP_MODEL,
     HybridRouter,
     LocalBackendUnavailableError,
+    CloudBackendUnavailableError,
     POLICY_LOCAL,
     POLICY_CLOUD,
     POLICY_CLAUDE,
@@ -25,6 +27,7 @@ from core.llm.hybrid_router import (
     FLASH_MAX_TOKENS,
 )
 from core.llm.base import LLMBackend
+from core.llm.job_selection import selection_scope
 
 
 class FakeBackend(LLMBackend):
@@ -139,6 +142,13 @@ def test_get_agent_policy_cloud():
         assert router.get_agent_policy(aid) == POLICY_CLOUD
 
 
+def test_athena_registry_cannot_remove_cloud_only_policy(monkeypatch):
+    import core.llm.hybrid_router as hr
+
+    monkeypatch.setattr(hr, "_registry_policies", lambda: {"athena": "local"})
+    assert HybridRouter().get_agent_policy("athena") == POLICY_CLOUD
+
+
 def test_get_agent_policy_auto():
     router = HybridRouter()
     assert router.get_agent_policy("jarvis") == POLICY_AUTO
@@ -219,6 +229,24 @@ def test_select_backend_local_only_policy_cloud_fallback(monkeypatch):
     assert route == "local-fallback"
 
 
+@pytest.mark.parametrize("entrypoint", ["select_backend", "preview_backend", "get_route_name"])
+def test_athena_without_cloud_never_selects_usable_local(entrypoint):
+    router = HybridRouter()
+    router._local_available = True
+    router._backend = FakeBackend()
+    with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+        getattr(router, entrypoint)("athena", "hello")
+
+
+def test_athena_disallowed_cloud_does_not_use_local(monkeypatch):
+    router = HybridRouter(gemini_api_key="test")
+    router._local_available = router._cloud_available = True
+    router._backend, router._gemini_backend = FakeBackend(), FakeBackend()
+    monkeypatch.setattr(router, "_cloud_permitted", lambda: False)
+    with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+        router.select_backend("athena", "hello")
+
+
 # ── Only cloud available ──────────────────────────────────────────────
 
 
@@ -245,6 +273,146 @@ def test_select_backend_cloud_only_policy_cloud(monkeypatch):
     router._gemini_backend = FakeBackend()
     backend, model, route = router.select_backend("athena", "hello")
     assert route == "cloud"
+
+
+@pytest.mark.asyncio
+async def test_athena_uses_synthetic_cloud_backend_without_local_generation():
+    router = HybridRouter(gemini_api_key="test")
+    local, cloud = FakeBackend(), FakeBackend()
+    router._local_available = router._cloud_available = True
+    router._backend, router._gemini_backend = local, cloud
+    backend, model, route = router.select_backend("athena", "hello")
+    assert (backend, model, route) == (cloud, router._gemini_model, "cloud")
+    assert await backend.generate(model, "hello") == "fake"
+
+
+def test_athena_job_provider_pin_cannot_substitute_local():
+    router = HybridRouter(gemini_api_key="test")
+    router._local_available = router._cloud_available = True
+    router._backend, router._gemini_backend = FakeBackend(), FakeBackend()
+    router._backend.context_window = lambda _model: 8192
+    router._backend_name = "lm-studio"
+    with selection_scope({"provider": "lm-studio"}):
+        with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+            router.select_backend("athena", "hello")
+
+
+@pytest.mark.parametrize("override", ["active-model", "job-pin"])
+def test_athena_local_committee_override_is_refused(monkeypatch, override):
+    router = HybridRouter(gemini_api_key="test")
+    router._local_available = router._cloud_available = True
+    router._backend, router._gemini_backend = FakeBackend(), FakeBackend()
+    monkeypatch.setattr(router, "resolve_moa_preset", lambda *_: (FakeBackend(), "moa:local", "local-moa"))
+    if override == "active-model":
+        router._local_model = "moa:local"
+        with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+            router.select_backend("athena", "hello")
+    else:
+        with selection_scope({"model": "moa:local"}):
+            with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+                router.select_backend("athena", "hello")
+
+
+@pytest.mark.parametrize("member_route", ["local", "cloud"])
+def test_athena_committee_members_obey_cloud_only_route(monkeypatch, member_route):
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    committee = SimpleNamespace(_proposers=[("one", FakeBackend(), "model", member_route)], _agg_route="cloud")
+    router._local_model = "moa:team"
+    monkeypatch.setattr(router, "resolve_moa_preset", lambda *_: (committee, "moa:team", "hybrid-moa"))
+    if member_route == "local":
+        with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+            router.select_backend("athena", "hello")
+    else:
+        assert router.select_backend("athena", "hello") == (committee, "moa:team", "hybrid-moa")
+
+
+def test_athena_active_local_committee_is_refused(monkeypatch):
+    import core.llm.moa as moa
+
+    router = HybridRouter(gemini_api_key="test")
+    router._local_available = router._cloud_available = True
+    router._backend, router._gemini_backend = FakeBackend(), FakeBackend()
+    monkeypatch.setattr(moa, "get_active_preset_name", lambda: "team")
+    monkeypatch.setattr(moa, "get_preset", lambda _name: SimpleNamespace(is_pure_local=True))
+    monkeypatch.setattr(router, "resolve_moa_preset", lambda *_: (FakeBackend(), "moa:team", "local-moa"))
+    with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+        router.select_backend("athena", "hello")
+
+
+@pytest.mark.parametrize("destination", ["loopback", "lan"])
+def test_athena_refuses_known_local_custom_compatible_endpoint(destination):
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    custom = FakeBackend()
+    custom._custom_endpoint_runtime = SimpleNamespace(endpoint=SimpleNamespace(destination_class=destination))
+    router._compatible_backend, router._compatible_model = custom, "custom-model"
+    with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+        router.select_backend("athena", "hello")
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:1234/v1", "http://modelbox.lan:1234/v1",
+                                "http://127.0.0.1:1234/custom/inference",
+                                "http://modelbox.lan:1234/custom/inference"])
+@pytest.mark.parametrize("provider_id", ["openai-compatible", "openrouter"])
+def test_athena_refuses_known_local_legacy_compatible_endpoint(url, provider_id):
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    compatible = FakeBackend()
+    compatible.base_url = url
+    router._compatible_backend, router._compatible_model = compatible, "custom-model"
+    router._compatible_provider_id = provider_id
+    with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+        router.select_backend("athena", "hello")
+
+
+@pytest.mark.parametrize("provider_id", ["openai-compatible", "openrouter"])
+def test_athena_accepts_public_legacy_compatible_endpoint_with_custom_path(provider_id):
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    compatible = FakeBackend()
+    compatible.base_url = "https://models.example.com/custom/inference"
+    router._compatible_backend, router._compatible_model = compatible, "custom-model"
+    router._compatible_provider_id = provider_id
+    assert router.select_backend("athena", "hello") == (
+        compatible, "custom-model", "cloud-compatible")
+
+
+@pytest.mark.parametrize("agent_id,destination", [("athena", "public"), ("jarvis", "loopback")])
+def test_custom_compatible_keeps_per_agent_routing(agent_id, destination):
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._gemini_backend = FakeBackend()
+    custom = FakeBackend()
+    custom._custom_endpoint_runtime = SimpleNamespace(endpoint=SimpleNamespace(destination_class=destination))
+    router._compatible_backend, router._compatible_model = custom, "custom-model"
+    assert router.select_backend(agent_id, "hello") == (custom, "custom-model", "cloud-compatible")
+
+
+def test_athena_direct_committee_resolution_refuses_local_member(monkeypatch):
+    import core.llm.moa as moa
+
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    committee = SimpleNamespace(_proposers=[("local", FakeBackend(), "qwen", "local")], _agg_route="cloud")
+    monkeypatch.setattr(moa, "build_moa_backend", lambda *_: (committee, "moa:team", "hybrid-moa"))
+    with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+        router.resolve_moa_preset("athena", "team")
+
+
+def test_athena_committee_refuses_known_local_compatible_member(monkeypatch):
+    router = HybridRouter(gemini_api_key="test")
+    router._cloud_available = True
+    router._local_model = "moa:team"
+    custom = FakeBackend()
+    custom._custom_endpoint_runtime = SimpleNamespace(endpoint=SimpleNamespace(destination_class="loopback"))
+    committee = SimpleNamespace(_proposers=[("custom", custom, "model", "cloud-compatible")], _agg_route="cloud")
+    monkeypatch.setattr(router, "resolve_moa_preset", lambda *_: (committee, "moa:team", "hybrid-moa"))
+    with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+        router.select_backend("athena", "hello")
 
 
 def test_select_backend_strict_local_never_cloud(monkeypatch):

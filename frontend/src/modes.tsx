@@ -3,6 +3,7 @@ import { V2, Conversation, InputBar } from './ui';
 import { Icon, ICONS, Glyph, statusClass } from './ui';
 import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch, decidePayment, getAuditVerify } from './api/actions';
 import { MemoryNeighborhood } from './panels/memory-neighborhood';
+import { SavedFacts } from './panels/saved-facts';
 import { SoulEditor } from './soul-edit';
 import { AgentProfileControls, NewAgentDialog, RetiredAgents } from './agent-roster';
 /* HUD v2 · MODES — Agents, Trust, Memory */
@@ -369,6 +370,7 @@ function MemoryMode({ t, demo = false }) {
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
       <div className="panel-head"><Icon d={ICONS.memory} size={14}/><span className="ttl">{t.memTitle}</span><span className="st">{demo ? 'DEMO · sample memory' : 'stored memory'}</span></div>
       <div className="panel-body">
+        {!demo && <SavedFacts />}
         <div className="mem-grid" style={{marginBottom:'var(--gap)'}}>
           {[[M.sessions,'sessions'],[M.vectors,'vectors'],[M.entities,'entities'],[M.relations,'relations']].map(([v,l],i)=>(
             <div className="stat-card" key={i}><div className="sv">{v}</div><div className="sl">{l}</div></div>

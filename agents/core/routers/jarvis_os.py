@@ -25,14 +25,18 @@ import importlib.util
 import logging
 import mimetypes
 import re
+import sys
 import threading
 from pathlib import Path
 from types import ModuleType
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from agents.core import estop, workshop_edit
+from agents.core.app_state import get_orch
 from agents.core.env_config import env_flag, env_str
 from agents.core.paths import app_root
 from agents.core.routers._deps import user_guard
@@ -58,6 +62,7 @@ _NOT_INSTALLED = "the ANDREI OS interface (apps/jarvis-os) is not part of this i
 
 _module: ModuleType | None = None
 _module_lock = threading.Lock()
+_workshop_edit_lock = asyncio.Lock()
 
 
 def _app_dir() -> Path:
@@ -80,6 +85,7 @@ def _engine() -> ModuleType | None:
         if _module is None:
             spec = importlib.util.spec_from_file_location("jarvis_os_standalone", source)
             module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
             spec.loader.exec_module(module)
             _module = module
     return _module
@@ -89,8 +95,15 @@ def _config(engine: ModuleType) -> dict:
     """The vault settings for the hub. Never the standalone `config.json`."""
     vault = env_str(VAULT_ENV).strip() or engine.DEFAULT_VAULT_PATH
     return {
-        "vaultMode": "andrei_plus_nerva",
+        "vaultMode": "andrei_plus_nerva" if env_flag("JARVIS_OS_REPOSITORY_DOCS", True) else "andrei_os",
         "vaultPath": str(Path(vault).expanduser()),
+        "vaultInclude": env_str("JARVIS_OS_VAULT_INCLUDE"),
+        "vaultExclude": env_str("JARVIS_OS_VAULT_EXCLUDE"),
+        "vaultInbox": env_str("JARVIS_OS_VAULT_INBOX", engine.INBOX_FOLDER),
+        "projectIndex": env_flag("JARVIS_OS_PROJECT_INDEX"),
+        "projectIndexPath": env_str("JARVIS_OS_PROJECT_INDEX_PATH", engine.vault_projects.INDEX_PATH),
+        "projectRegisterDir": env_str("JARVIS_OS_PROJECT_REGISTER_DIR", engine.vault_projects.REGISTER_DIR),
+        "projectIndexSchema": env_str("JARVIS_OS_PROJECT_INDEX_SCHEMA", engine.vault_projects.SCHEMA),
         "nervaPath": str(app_root()),
         "allowHardLinks": env_flag(HARDLINKS_ENV),
     }
@@ -135,7 +148,7 @@ async def os_asset(request: Request, path: str = ""):
 class CaptureBody(BaseModel):
     title: str = Field("", max_length=200)
     content: str = Field("", max_length=100_000)
-    links: list[str] = Field(default_factory=lambda: ["Acasa"], max_length=16)
+    links: list[str] = Field(default_factory=list, max_length=16)
 
 
 def _unavailable():
@@ -155,6 +168,7 @@ async def os_status():
         "preferredProvider": "auto",
         "vaultMode": cfg["vaultMode"] if _vault_available(cfg) else "demo_550",
         "vaultPath": cfg["vaultPath"],
+        "inboxFolder": engine.configured_inbox(cfg),
         "nervaPath": cfg["nervaPath"],
         "vaultAvailable": _vault_available(cfg),
         "vaultEnv": VAULT_ENV,
@@ -207,23 +221,34 @@ async def os_brain_retrieve(q: str = ""):
     if not query or not _vault_available(cfg):
         return nocache_json({"ok": True, "attachments": [], "focus": None})
     _text, nodes = await asyncio.to_thread(engine.retrieve_vault_context, query, cfg, _ATTACHMENT_COUNT)
-    attachments = [
-        {"name": str(node.get("relPath") or node.get("title") or "note")[:200],
-         "text": str(node.get("body") or "")[:_ATTACHMENT_CHARS]}
-        for node in nodes if str(node.get("body") or "").strip()
-    ]
+    attachments = []
+    sources = {}
+    source_names = set()
+    ambiguous_names = set()
+    for node in nodes:
+        if not str(node.get("body") or "").strip():
+            continue
+        name = str(node.get("relPath") or node.get("title") or "note")[:200]
+        attachments.append({"name": name, "text": str(node.get("body") or "")[:_ATTACHMENT_CHARS]})
+        if name in source_names:
+            ambiguous_names.add(name)
+            sources.pop(name, None)
+        else:
+            source_names.add(name)
+        if node.get("obsidianSource") and name not in ambiguous_names:
+            sources[name] = node["obsidianSource"]
     focus = None
     if nodes:
         title = str(nodes[0].get("title") or "")
         words = re.findall(r"[\wăâîșț]{3,}", engine.nfc(query).lower())
         if title and any(word in title.lower() for word in words):
             focus = title
-    return nocache_json({"ok": True, "attachments": attachments, "focus": focus})
+    return nocache_json({"ok": True, "attachments": attachments, "sources": sources, "focus": focus})
 
 
 @router.post("/api/os/brain/capture", dependencies=[Depends(user_guard)])
 async def os_brain_capture(body: CaptureBody):
-    """Write a new note into the vault's `08 Inbox/`."""
+    """Write a new note into the configured vault inbox."""
     engine = _engine()
     if engine is None:
         return _unavailable()
@@ -237,8 +262,104 @@ async def os_brain_capture(body: CaptureBody):
     except engine.vault_fs.UnsafePath as exc:
         # The inbox (or a folder above it) is a link out of the vault, or this platform
         # has no handle-relative create. Refused; nothing was written anywhere.
-        return error_json(exc, 409, "the vault inbox is not a plain folder inside the vault; "
-                                    "capture is refused", extra={"ok": False})
+        return error_json(exc, 409, "the vault inbox must be an allowed, plain folder inside the vault",
+                          extra={"ok": False})
     except OSError as exc:
         return error_json(exc, 500, "could not write the note", extra={"ok": False})
     return nocache_json(result)
+
+
+class WorkshopEditBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    view: Literal["robot", "house"]
+    instruction: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("instruction")
+    @classmethod
+    def nonblank_instruction(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("instruction must not be blank")
+        return value
+
+
+@router.post("/api/os/workshop/edit", dependencies=[Depends(user_guard)])
+async def os_workshop_edit(body: WorkshopEditBody):
+    """Turn one instruction into bounded parameters; the browser applies them."""
+    if estop.is_engaged():
+        return nocache_json({"ok": False, "error": "workshop edit unavailable"}, status_code=503)
+    if _workshop_edit_lock.locked():
+        return nocache_json({"ok": False, "error": "workshop edit busy"}, status_code=429)
+    orchestrator = get_orch()
+    llm_router = getattr(orchestrator, "llm_router", None)
+    if llm_router is None:
+        return nocache_json({"ok": False, "error": "local model unavailable"}, status_code=503)
+    async with _workshop_edit_lock:
+        if estop.is_engaged():
+            return nocache_json({"ok": False, "error": "workshop edit unavailable"}, status_code=503)
+        try:
+            params = await asyncio.wait_for(
+                workshop_edit.propose(llm_router, body.view, body.instruction), timeout=20.0)
+        except workshop_edit.InvalidEdit:
+            return nocache_json({"ok": False, "error": "unsupported workshop edit"}, status_code=422)
+        except Exception:
+            logger.warning("Local workshop edit unavailable")
+            return nocache_json({"ok": False, "error": "local model unavailable"}, status_code=503)
+        if estop.is_engaged():
+            return nocache_json({"ok": False, "error": "workshop edit unavailable"}, status_code=503)
+    return nocache_json({"ok": True, "params": params})
+
+
+class WorkshopProjectBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    project: dict
+
+
+@router.get("/api/os/workshop/projects", dependencies=[Depends(user_guard)])
+async def os_workshop_projects():
+    engine = _engine()
+    if engine is None:
+        return _unavailable()
+    try:
+        projects = await asyncio.to_thread(engine.workshop_projects.list_projects, engine, _config(engine))
+    except (OSError, ValueError):
+        return nocache_json({"ok": False, "error": "workshop projects unavailable"}, status_code=422)
+    return nocache_json({"ok": True, "projects": projects})
+
+
+@router.get("/api/os/workshop/project", dependencies=[Depends(user_guard)])
+async def os_workshop_project(path: str = ""):
+    engine = _engine()
+    if engine is None:
+        return _unavailable()
+    try:
+        result = await asyncio.to_thread(engine.workshop_projects.get_project, engine, _config(engine), path)
+    except FileNotFoundError:
+        return nocache_json({"ok": False, "error": "workshop project not found"}, status_code=404)
+    except (OSError, ValueError):
+        return nocache_json({"ok": False, "error": "workshop project unavailable or corrupt"}, status_code=422)
+    return nocache_json({"ok": True, **result})
+
+
+@router.post("/api/os/workshop/projects", dependencies=[Depends(user_guard)])
+async def os_workshop_project_save(body: WorkshopProjectBody):
+    engine = _engine()
+    if engine is None:
+        return _unavailable()
+    cfg = _config(engine)
+    if not _vault_available(cfg):
+        return nocache_json({"ok": False, "error": "no vault found to save into"}, status_code=409)
+    try:
+        result = await asyncio.to_thread(engine.workshop_projects.save_project, engine, cfg,
+                                         body.title, body.project)
+    except engine.workshop_projects.SavedProjectUnavailable as exc:
+        return nocache_json({"ok": False, "error": "project saved but could not be reopened", "path": exc.path},
+                            status_code=500)
+    except engine.vault_fs.UnsafePath:
+        return nocache_json({"ok": False, "error": "vault inbox unavailable"}, status_code=409)
+    except (OSError, ValueError):
+        return nocache_json({"ok": False, "error": "invalid or unavailable workshop project"}, status_code=422)
+    return nocache_json({"ok": True, **result})

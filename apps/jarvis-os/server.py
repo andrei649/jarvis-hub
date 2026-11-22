@@ -18,6 +18,7 @@ ANDREI OS / AI WORKSHOP OS — J.A.R.V.I.S. Local Server (http://localhost:4719)
 
 from __future__ import annotations
 
+import ast
 import datetime as dt
 import hashlib
 import importlib.util
@@ -66,6 +67,9 @@ def _load_sibling(name: str):
 
 # Every read and create under a vault goes through this: handle-relative, no link followed.
 vault_fs = _load_sibling("vault_fs")
+vault_search = _load_sibling("vault_search")
+vault_projects = _load_sibling("vault_projects")
+workshop_projects = _load_sibling("workshop_projects")
 
 
 def _detect_default_vault_path() -> str:
@@ -171,6 +175,13 @@ CONFIG_KEYS = (
     "allowHardLinks",
     "vaultMode",
     "vaultPath",
+    "vaultInclude",
+    "vaultExclude",
+    "vaultInbox",
+    "projectIndex",
+    "projectIndexPath",
+    "projectRegisterDir",
+    "projectIndexSchema",
     "nervaPath",
     "ollamaUrl",
     "ollamaModel",
@@ -186,7 +197,7 @@ CONFIG_KEYS = (
 
 PROVIDERS = {"auto", "ollama", "claude_subscription", "anthropic", "gemini", "openai", "openrouter"}
 SECRET_KEYS = {"anthropicKey", "geminiKey", "openaiKey", "openrouterKey", "elevenlabsKey"}
-BOOLEAN_KEYS = {"cloudConsent", "allowHardLinks"}
+BOOLEAN_KEYS = {"cloudConsent", "allowHardLinks", "projectIndex"}
 
 
 def _normalize_routing(cfg: dict) -> dict:
@@ -298,13 +309,14 @@ def load_config() -> dict:
             for k in CONFIG_KEYS:
                 if k in BOOLEAN_KEYS:
                     cfg[k] = disk.get(k) is True
+                elif k in ("vaultInclude", "vaultExclude", "vaultInbox") and k in disk:
+                    # Keep malformed scope values so the reader or capture refuses them.
+                    cfg[k] = disk[k]
                 elif k in disk and isinstance(disk[k], str) and disk[k] != "":
                     cfg[k] = disk[k]
         except Exception:
             pass
-    # Cross-OS path healing (e.g. if config.json was copied between macOS and Windows)
-    if cfg.get("vaultPath") and not Path(cfg["vaultPath"]).exists() and Path(DEFAULT_VAULT_PATH).exists():
-        cfg["vaultPath"] = DEFAULT_VAULT_PATH
+    # The selected personal vault can be offline. Never substitute another vault.
     if cfg.get("nervaPath") and not Path(cfg["nervaPath"]).exists() and Path(DEFAULT_NERVA_PATH).exists():
         cfg["nervaPath"] = DEFAULT_NERVA_PATH
     return _normalize_routing(cfg)
@@ -626,6 +638,123 @@ def _vault_read_cap(name: str) -> int:
     return _NOTE_READ_CAP if name.lower().endswith(".md") else 0
 
 
+_NATIVE_UNSAFE = re.compile(r'[<>:"/\\|?*^#%\x00-\x1f\x7f]')
+
+
+def _native_note_source(vault_name: str, parts: tuple[str, ...], readable: bool) -> dict | None:
+    values = (vault_name, *parts)
+    if any(not value or value.startswith(".") or value != value.strip() or value.endswith(".")
+           or _NATIVE_UNSAFE.search(value) for value in values):
+        return None
+    try:
+        vault_fs.check_name(vault_name)
+        for part in parts:
+            vault_fs.check_name(part)
+    except OSError:
+        return None
+    return {"vault": vault_name, "file": "/".join(parts), "readable": readable}
+
+
+def _folder_policy(cfg=None) -> tuple[tuple[tuple[str, ...], ...], tuple[tuple[str, ...], ...]]:
+    """Folder lists are semicolon-separated, vault-relative paths; invalid policy refuses all."""
+    def parse(kind: str) -> tuple[tuple[str, ...], ...]:
+        key = "vault" + kind.title()
+        raw = (cfg or {}).get(key, os.environ.get(f"NERVA_OS_VAULT_{kind}", os.environ.get(f"JARVIS_OS_VAULT_{kind}", "")))
+        if not isinstance(raw, str):
+            raise ValueError("invalid vault scope")
+        paths = []
+        for item in raw.split(";"):
+            item = item.strip().replace("\\", "/")
+            if not item:
+                if raw.strip():
+                    raise ValueError("empty vault folder")
+                continue
+            if item.startswith("/") or re.match(r"^[A-Za-z]:", item):
+                raise ValueError("absolute vault folder")
+            parts = tuple(unicodedata.normalize("NFC", p).casefold() for p in item.split("/"))
+            if any(p in ("", ".", "..") for p in parts):
+                raise ValueError("unsafe vault folder")
+            paths.append(parts)
+        return tuple(paths)
+    return parse("INCLUDE"), parse("EXCLUDE")
+
+
+def _vault_path_allowed(parts: tuple[str, ...], includes, excludes, *, directory: bool) -> bool:
+    norm = tuple(unicodedata.normalize("NFC", p).casefold() for p in parts)
+    if any(norm[:len(p)] == p for p in excludes):
+        return False
+    if not includes:
+        return True
+    return any(norm[:len(p)] == p or (directory and p[:len(norm)] == norm) for p in includes)
+
+
+def _markdown_is_visible(data: bytes, size: int) -> bool:
+    """Accept plain notes and simple public YAML headers; refuse undecidable headers."""
+    if size >= _NOTE_READ_CAP or len(data) < size:
+        return False
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return False
+    lines = text.splitlines()
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first is None or not lines[first].strip().startswith("---"):
+        return True
+    if lines[first].strip() != "---":
+        return False
+    closing = next((i for i in range(first + 1, len(lines)) if lines[i].strip() in ("---", "...")), None)
+    if closing is None or closing - first > 256 or sum(len(line) for line in lines[first + 1:closing]) > 16_384:
+        return False
+    header = [line.strip() for line in lines[first + 1:closing] if line.strip() and not line.lstrip().startswith("#")]
+    if not header:
+        return True
+    pairs = []
+    if len(header) == 1 and header[0].startswith("{"):
+        try:
+            expression = ast.parse(header[0], mode="eval").body
+            if not isinstance(expression, ast.Dict):
+                return False
+            pairs = [(ast.literal_eval(key), ast.literal_eval(expression.values[index]))
+                     for index, key in enumerate(expression.keys)]
+        except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError):
+            return False
+    else:
+        for line in header:
+            if line.startswith(("-", "?", "[", "{")) or ":" not in line:
+                return False
+            key, value = (part.strip() for part in line.split(":", 1))
+            if key.startswith(("'", '"')):
+                try:
+                    key = ast.literal_eval(key)
+                except (SyntaxError, ValueError):
+                    return False
+            value = value.split(" #", 1)[0].strip()
+            if value.startswith(("'", '"')):
+                try:
+                    value = ast.literal_eval(value)
+                except (SyntaxError, ValueError):
+                    return False
+            elif value.startswith("[") and value.endswith("]"):
+                pass  # ordinary inline tags; privacy below rejects non-scalars
+            elif not re.fullmatch(r"[\w .,/:+@-]*", value, flags=re.UNICODE):
+                return False
+            pairs.append((key, value))
+    for key, value in pairs:
+        if not isinstance(key, str):
+            return False
+        if isinstance(value, (dict, tuple, set)) or (isinstance(value, list) and
+                                                    (key.casefold().strip() != "tags" or
+                                                     any(not isinstance(tag, str) for tag in value))):
+            return False
+        if unicodedata.normalize("NFKC", key).casefold().strip() == "privacy":
+            if not isinstance(value, str):
+                return False
+            label = re.sub(r"[\s_\u2010-\u2015-]+", "-", unicodedata.normalize("NFKC", value).casefold().strip())
+            if label != "public":
+                return False
+    return True
+
+
 def _allow_hardlinks(cfg: dict) -> bool:
     """Whether vault files with more than one hard link are indexed. Off unless asked.
 
@@ -707,18 +836,23 @@ def _cache_key(cfg: dict) -> str:
     """
     vault_mode, vault_dir, nerva_dir = _source_roots(cfg)
     return "|".join((vault_mode, str(vault_dir), os.path.realpath(vault_dir), str(nerva_dir),
-                     os.path.realpath(nerva_dir), "links" if _allow_hardlinks(cfg) else "nolinks"))
+                     os.path.realpath(nerva_dir), "links" if _allow_hardlinks(cfg) else "nolinks",
+                     repr(_folder_policy(cfg)), repr(vault_projects.settings(cfg)),
+                     str(cfg.get("projectIndex", ""))))
 
 
 def build_real_brain_graph(cfg: dict) -> dict:
     vault_mode, vault_dir, nerva_dir = _source_roots(cfg)
     include_nerva = vault_mode == "andrei_plus_nerva" and nerva_dir.exists()
 
-    cache_key = _cache_key(cfg)
+    try:
+        includes, excludes = _folder_policy(cfg)
+        project_index_path, project_register_dir, project_schema = vault_projects.settings(cfg)
+        cache_key = _cache_key(cfg)
+    except ValueError:
+        invalidate_brain_cache()
+        return {"ok": False, "mode": vault_mode, "reason": "invalid vault folder policy", "nodes": []}
     now = time.time()
-    with _BRAIN_LOCK:
-        if _BRAIN_CACHE["key"] == cache_key and _BRAIN_CACHE["data"] and (now - _BRAIN_CACHE["ts"] < 15.0):
-            return _BRAIN_CACHE["data"]
 
     if not vault_dir.exists():
         # No graph for this configuration: drop whatever an earlier one left behind, so
@@ -742,14 +876,9 @@ def build_real_brain_graph(cfg: dict) -> dict:
         "radius": 3.2,
         "base3d": [0.0, 0.0, 0.0],
         "base2d": [0.0, 0.0],
-        "relPath": "00 Acasa/Acasa.md",
+        "relPath": "",
         "tags": ["andrei-os", "second-brain"],
-        "body": (
-            "Nucleul Second Brain-ului real al lui Andrei (`Andrei OS Obsidian`"
-            + (" + `Nerva / Jarvis Hub`" if include_nerva else "")
-            + ").\n\nConectează proiectele active, infrastructura locală (Bonobo RTX 5090, Mac mini, NAS UGREEN, Pi 5), "
-            "deciziile de arhitectură și rutare a modelelor, colecțiile și istoricul NAS."
-        ),
+        "body": f"Obsidian · {vault_dir.name}",
         "wikilinks": [],
     }
     nodes.append(core_node)
@@ -796,8 +925,17 @@ def build_real_brain_graph(cfg: dict) -> dict:
     # relPath -> (source, root, on-disk path components): the only files the note route
     # serves. The source is recorded here, by the indexer that opened the file.
     indexed_files: dict[str, tuple[str, str, tuple[str, ...]]] = {}
+    ambiguous_files: set[str] = set()
+    project_note_files: dict[int, str] = {}
+    project_index_enabled = cfg.get("projectIndex", os.environ.get(
+        "NERVA_OS_PROJECT_INDEX", os.environ.get("JARVIS_OS_PROJECT_INDEX", "")) == "1") is True
+    project_source = None
     with vault_handle as vault_files:
-        for parts, entry, data in vault_files.walk(want=_vault_wants, cap=_vault_read_cap):
+        for parts, entry, data in vault_files.walk(
+            want=_vault_wants, cap=_vault_read_cap,
+            allow_dir=lambda p: _vault_path_allowed(p, includes, excludes, directory=True),
+            allow_file=lambda p: _vault_path_allowed(p, includes, excludes, directory=False),
+        ):
             fn = parts[-1]
             ext = Path(fn).suffix.lower()
             rel_str = nfc("/".join(parts))
@@ -811,6 +949,8 @@ def build_real_brain_graph(cfg: dict) -> dict:
 
             is_dataless = entry.dataless
             size = entry.size
+            if ext == ".md" and (is_dataless or not _markdown_is_visible(data, size)):
+                continue
 
             title = stem
             tags: list[str] = []
@@ -851,16 +991,80 @@ def build_real_brain_graph(cfg: dict) -> dict:
                 ],
                 "radius": 1.35 if ext == ".canvas" else (1.12 if hub_key in ("00 Acasa", "02 Proiecte", "03 Infrastructura", "04 Sisteme si decizii") else 0.86),
                 "relPath": rel_str,
-                "sourceVault": "Andrei OS Obsidian",
+                "sourceVault": vault_dir.name,
                 "cloudEvicted": is_dataless,
                 "tags": tags,
                 "body": body[:3800],
                 "wikilinks": wikilinks,
             }
+            if ext == ".md" and "```nerva-workshop" in body:
+                node_obj["workshopProject"] = True
             nodes.append(node_obj)
-            indexed_files[rel_str] = (SOURCE_VAULT, str(vault_dir), parts)
+            if rel_str in indexed_files:
+                indexed_files.pop(rel_str)
+                ambiguous_files.add(rel_str)
+            elif rel_str not in ambiguous_files:
+                indexed_files[rel_str] = (SOURCE_VAULT, str(vault_dir), parts)
+            if ext == ".md":
+                source = _native_note_source(vault_dir.name, parts, True)
+                if source is not None:
+                    node_obj["obsidianSource"] = source
             register_lookup(stem, idx)
             register_lookup(title, idx)
+            if project_index_enabled and rel_str == project_index_path:
+                # A register row grants access to its summary. Its filename can
+                # supply a native link without admitting the note body to the index.
+                records = []
+                try:
+                    meta, payload = vault_files.read_file(parts, vault_projects.MAX_BYTES + 1)
+                    if meta.dataless or len(payload) != meta.size:
+                        raise ValueError("incomplete project index")
+                    records = vault_projects.project_records(payload, index_path=project_index_path,
+                                                            schema=project_schema)
+                    detail = f"{len(records)} project summaries indexed"
+                    status = "connected"
+                except (ValueError, OSError):
+                    status, detail = "unavailable", "Project index could not be read"
+                project_source = {"name": "Project register", "path": rel_str, "status": status, "detail": detail}
+                node_obj.update(title="Project register", body=detail)
+                for record in records:
+                    note_file = record.pop("noteFile")
+                    offset, _ = _det_offset(record["projectId"], 3.0, 10.0)
+                    child = {**node_obj, **record, "index": len(nodes), "id": record["projectId"],
+                             "stem": record["title"], "parentHubIndex": idx, "offset3d": offset,
+                             "base3d": [round(coord + offset[axis], 2) for axis, coord in enumerate(node_obj["base3d"])],
+                             "base2d": [node_obj["base2d"][0] + offset[0], node_obj["base2d"][1] + offset[2]]}
+                    nodes.append(child)
+                    project_note_files[child["index"]] = note_file
+                    register_lookup(record["projectId"], child["index"])
+        for node in nodes:
+            if node.get("relPath") in ambiguous_files:
+                node.pop("obsidianSource", None)
+        if project_note_files and _vault_path_allowed(tuple(project_register_dir.split("/")), (), excludes, directory=True):
+            try:
+                register_dir = vault_files.open_dir(tuple(project_register_dir.split("/")))
+            except OSError:
+                register_dir = None
+            if register_dir is not None:
+                try:
+                    for index, note_file in project_note_files.items():
+                        parts = (*project_register_dir.split("/"), note_file)
+                        if not _vault_path_allowed(parts, (), excludes, directory=False):
+                            continue
+                        source = _native_note_source(vault_dir.name, parts, False)
+                        if source is None:
+                            continue
+                        try:
+                            entry, _ = vault_files.read_in(register_dir, note_file, 0)
+                        except (OSError, ValueError):
+                            continue
+                        if entry.dataless:
+                            continue
+                        found = indexed_files.get(nfc("/".join(parts)))
+                        source["readable"] = bool(found and found[0] == SOURCE_VAULT and found[2] == parts)
+                        nodes[index]["obsidianSource"] = source
+                finally:
+                    vault_files.close_dir(register_dir)
         skipped_files = list(vault_files.skipped)
 
     # 2. Optional: Merge Nerva / Jarvis Hub local architecture docs
@@ -868,6 +1072,8 @@ def build_real_brain_graph(cfg: dict) -> dict:
         nerva_hub_idx = hub_index_by_key["Nerva Jarvis Hub"]
         nerva_hub = nodes[nerva_hub_idx]
         for doc_parts, doc_entry, doc_data in _nerva_documents(nerva_dir):
+            if doc_entry.dataless or not _markdown_is_visible(doc_data, doc_entry.size):
+                continue
             is_dl = doc_entry.dataless
             rel_n = nfc("/".join(doc_parts))
             doc_stem = Path(doc_parts[-1]).stem
@@ -912,9 +1118,16 @@ def build_real_brain_graph(cfg: dict) -> dict:
                 "wikilinks": wls + ["Nerva si Jarvis Hub", "Hermes personal OS"],
             })
             register_lookup(label, idx)
-            # A vault note may sit at this very relPath ("Nerva/jarvis-hub/..." inside the
-            # vault). It was indexed first and keeps the entry, with the vault's policy.
-            indexed_files.setdefault(f"Nerva/jarvis-hub/{rel_n}", (SOURCE_REPO, str(nerva_dir), doc_parts))
+            # A vault note at this path keeps its policy; normalized aliases in either
+            # source never gain an allowlist entry by falling back to the repo.
+            key = f"Nerva/jarvis-hub/{rel_n}"
+            if key not in ambiguous_files:
+                found = indexed_files.get(key)
+                if found is None:
+                    indexed_files[key] = (SOURCE_REPO, str(nerva_dir), doc_parts)
+                elif found[0] == SOURCE_REPO:
+                    indexed_files.pop(key)
+                    ambiguous_files.add(key)
 
     # 3. Build Real Edges (Core <-> Hubs, Note <-> Parent Hub, Authentic [[WikiLinks]], Semantic Entity Mentions)
     edge_set: set[str] = set()
@@ -970,7 +1183,7 @@ def build_real_brain_graph(cfg: dict) -> dict:
         # Entity bridge from title keywords
         t_low = n["title"].lower()
         for kw, target_name in canonical_keywords.items():
-            if kw in t_low:
+            if re.search(r"(?<!\w)" + re.escape(kw) + r"(?!\w)", t_low):
                 t_idx = title_to_idx.get(target_name)
                 if t_idx is not None:
                     add_edge(idx, t_idx)
@@ -1007,12 +1220,23 @@ def build_real_brain_graph(cfg: dict) -> dict:
 
     # Strip internal `wikilinks` array from client payload to keep JSON ultra-compact
     public_nodes = [{k: v for k, v in n.items() if k != "wikilinks"} for n in nodes]
+    markdown_count = sum(source == SOURCE_VAULT and path.lower().endswith(".md")
+                         for path, (source, _, _) in indexed_files.items())
+    sources = [{"name": vault_dir.name, "path": str(vault_dir), "status": "connected",
+                "detail": f"{markdown_count} Markdown notes indexed"}]
+    if project_index_enabled:
+        sources.append(project_source or {"name": "Project register", "path": project_index_path,
+                                         "status": "unavailable", "detail": "Project index outside the visible vault or absent"})
+    if include_nerva:
+        count = sum(n.get("sourceVault") == "Nerva Jarvis Hub" for n in nodes)
+        sources.append({"name": "Nerva / Jarvis Hub", "path": str(nerva_dir), "status": "connected",
+                        "detail": f"{count} repository documents indexed"})
 
     result = {
         "ok": True,
         "mode": vault_mode,
         "brandTitle": "ANDREI OS",
-        "vaultLabel": "Andrei OS Obsidian + Nerva Hub" if include_nerva else "Andrei OS Obsidian",
+        "vaultLabel": vault_dir.name + (" + Nerva Hub" if include_nerva else ""),
         "vaultPath": str(vault_dir),
         "nervaPath": str(nerva_dir),
         # Vault entries left out because they are links (never followed): a count and the
@@ -1026,32 +1250,7 @@ def build_real_brain_graph(cfg: dict) -> dict:
         "edges": edges,
         "categories": categories,
         "topHubs": top_hubs[:10],
-        "discoveredSources": [
-            {
-                "name": "Andrei OS Obsidian (Primary Vault)",
-                "path": DEFAULT_VAULT_PATH,
-                "status": "connected",
-                "detail": "132 Markdown notes · 530 [[wiki-links]] · Johnny.Decimal 00–90",
-            },
-            {
-                "name": "Nerva / Jarvis Hub Repository",
-                "path": DEFAULT_NERVA_PATH,
-                "status": "connected" if include_nerva else "available",
-                "detail": "17-Agent Cabinet architecture, BACKLOG, NERVA_VISION & SOUL docs",
-            },
-            {
-                "name": "Google Drive Backup",
-                "path": "gdrive://Andrei OS Obsidian Backup",
-                "status": "synced-snapshot",
-                "detail": "Andrei OS Obsidian Backup & zip archives verified",
-            },
-            {
-                "name": "NAS Obsidian Import Staging",
-                "path": str(Path.home() / "Documents" / "NAS-Obsidian-Import"),
-                "status": "archived-source",
-                "detail": "Hermes NAS session & manifest staging scripts",
-            },
-        ],
+        "discoveredSources": sources,
     }
 
     with _BRAIN_LOCK:
@@ -1065,7 +1264,13 @@ def build_real_brain_graph(cfg: dict) -> dict:
 INBOX_FOLDER = "08 Inbox"
 
 
-def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | None = None) -> dict:
+def configured_inbox(cfg: dict) -> str:
+    folder = cfg.get("vaultInbox", os.environ.get("NERVA_OS_VAULT_INBOX", os.environ.get("JARVIS_OS_VAULT_INBOX", INBOX_FOLDER)))
+    return folder.strip().replace("\\", "/") if isinstance(folder, str) else ""
+
+
+def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | None = None,
+                       *, reindex: bool = True) -> dict:
     """Create a new note in the vault's inbox. Never overwrites, never leaves the vault.
 
     The note is created through `vault_fs`: relative to the handle of the verified inbox
@@ -1074,6 +1279,16 @@ def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | N
     path-based fallback. On a name collision the next free "<title> (n)" is taken.
     """
     vault_dir = Path(cfg.get("vaultPath") or DEFAULT_VAULT_PATH)
+    inbox = configured_inbox(cfg)
+    parts = tuple(inbox.split("/"))
+    if any(not part or part.startswith(".") or ":" in part for part in parts):
+        raise vault_fs.UnsafePath("invalid inbox folder")
+    try:
+        includes, excludes = _folder_policy(cfg)
+    except ValueError as exc:
+        raise vault_fs.UnsafePath("invalid vault folder policy") from exc
+    if not _vault_path_allowed((*parts, "capture.md"), includes, excludes, directory=False):
+        raise vault_fs.UnsafePath("inbox outside the allowed folders")
 
     base_title = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "-", (title or "").strip()).strip("-. ")
     if not base_title:
@@ -1081,7 +1296,8 @@ def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | N
     base_title = base_title[:120].rstrip(". ")
 
     now_iso = dt.datetime.now().astimezone().isoformat(timespec="seconds")
-    link_str = " · ".join(f"[[{link.strip('[]')}]]" for link in (links or ["Acasa"]) if link.strip())
+    default_links = ["Acasa"] if inbox == INBOX_FOLDER else []
+    link_str = " · ".join(f"[[{link.strip('[]')}]]" for link in (links or default_links) if link.strip())
 
     with vault_fs.VaultFs(vault_dir) as vault_files:
         attempt = 1
@@ -1100,17 +1316,24 @@ def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | N
                 f"{link_str}\n"
             )
             try:
-                vault_files.create_exclusive((INBOX_FOLDER,), f"{clean_title}.md", md.encode("utf-8"))
+                file_name = f"{clean_title}.md"
+                if not _vault_path_allowed((*parts, file_name), includes, excludes, directory=False):
+                    raise vault_fs.UnsafePath("note outside the allowed folders")
+                vault_files.create_exclusive(parts, file_name, md.encode("utf-8"), create_dirs=inbox == INBOX_FOLDER)
                 break
             except FileExistsError:
                 attempt += 1
                 if attempt > 999:
                     raise
 
-    target_file = vault_dir / INBOX_FOLDER / f"{clean_title}.md"
+    target_file = vault_dir.joinpath(*parts, file_name)
+    rel = nfc("/".join((*parts, file_name)))
+    if not reindex:
+        invalidate_brain_cache()
+        return {"ok": True, "path": str(target_file), "relPath": rel}
     invalidate_brain_cache()
     graph = build_real_brain_graph(cfg)
-    created_node = next((n for n in graph.get("nodes", []) if n.get("title") == clean_title), None)
+    created_node = next((n for n in graph.get("nodes", []) if n.get("relPath") == rel), None)
     return {"ok": True, "path": str(target_file), "node": created_node, "brain": graph}
 
 
@@ -1124,14 +1347,22 @@ def read_indexed_note(cfg: dict, rel_path: str) -> tuple[str, list[str], str, li
     components recorded at index time. Raises `ValueError` for anything else.
     """
     rel = nfc(rel_path or "").replace("\\", "/")
-    cache_key = _cache_key(cfg)
-    build_real_brain_graph(cfg)
+    try:
+        cache_key = _cache_key(cfg)
+    except ValueError:
+        raise ValueError("not an indexed note") from None
     with _BRAIN_LOCK:
-        # Only the index built for exactly this configuration. If the graph could not be
-        # built (missing vault) or belongs to other sources, nothing is readable.
         found = _BRAIN_CACHE["files"].get(rel) if _BRAIN_CACHE["key"] == cache_key else None
+    if found is None:
+        build_real_brain_graph(cfg)
+        with _BRAIN_LOCK:
+            found = _BRAIN_CACHE["files"].get(rel) if _BRAIN_CACHE["key"] == cache_key else None
     if found is None or not rel.lower().endswith(".md"):
         raise ValueError("not an indexed note")
+    return _read_indexed_note_found(cfg, found)
+
+
+def _read_indexed_note_found(cfg: dict, found) -> tuple[str, list[str], str, list[str]]:
     source, base_dir, parts = found
     _mode, vault_dir, nerva_dir = _source_roots(cfg)
     # The trust domain is what the indexer recorded for this file, never the shape of the
@@ -1140,15 +1371,18 @@ def read_indexed_note(cfg: dict, rel_path: str) -> tuple[str, list[str], str, li
         expected_root, allow_links = nerva_dir, True
     elif source == SOURCE_VAULT:
         expected_root, allow_links = vault_dir, _allow_hardlinks(cfg)
+        includes, excludes = _folder_policy(cfg)
+        if not _vault_path_allowed(parts, includes, excludes, directory=False):
+            raise ValueError("not an indexed note")
     else:
         raise ValueError("not an indexed note")
     if base_dir != str(expected_root):
         raise ValueError("not an indexed note")
     with vault_fs.VaultFs(expected_root, allow_hardlinks=allow_links) as files:
         entry, data = files.read_file(parts, _NOTE_READ_CAP)
-    if entry.dataless:
-        raise ValueError("note is not downloaded")
-    return _parse_markdown_content(data.decode("utf-8", errors="replace"), Path(parts[-1]).stem)
+    if entry.dataless or not _markdown_is_visible(data, entry.size):
+        raise ValueError("not an indexed note")
+    return _parse_markdown_content(data.decode("utf-8-sig"), Path(parts[-1]).stem)
 
 
 # ==============================================================================
@@ -1180,52 +1414,30 @@ def retrieve_vault_context(query: str, cfg: dict, top_k: int = 6) -> tuple[str, 
     if not nodes:
         return "", []
 
-    q_norm = nfc(query).lower()
-    raw_tokens = [t for t in re.findall(r"[\wăâîșț]{2,}", q_norm) if t not in {
-        "the", "and", "for", "what", "who", "how", "are", "you", "can", "tell", "about",
-        "show", "jarvis", "please", "with", "from", "have", "my", "me", "in", "on", "to",
-        "este", "sunt", "care", "despre", "meu", "mele", "din", "sau", "cum", "ce", "am",
-    }]
-
-    expanded = list(raw_tokens)
-    for phrase, extras in SYNONYM_EXPANSIONS.items():
-        if phrase in q_norm:
-            expanded.extend(extras)
-    for tok in raw_tokens:
-        if tok in SYNONYM_EXPANSIONS:
-            expanded.extend(SYNONYM_EXPANSIONS[tok])
-
-    scored: list[tuple[float, dict]] = []
-    for n in nodes:
-        if n.get("index") == 0:
+    try:
+        key = _cache_key(cfg)
+    except ValueError:
+        return "", []
+    with _BRAIN_LOCK:
+        files = dict(_BRAIN_CACHE["files"]) if _BRAIN_CACHE["key"] == key else {}
+    top_nodes = []
+    for node in vault_search.rank(query, nodes, SYNONYM_EXPANSIONS):
+        if len(top_nodes) >= max(0, top_k):
+            break
+        if node.get("projectId"):
+            # The graph was built for this request from the current validated register.
+            top_nodes.append(node)
             continue
-        score = 0.0
-        title_l = n.get("title", "").lower()
-        cat_l = n.get("category", "").lower()
-        body_l = n.get("body", "").lower()
-        rel_l = n.get("relPath", "").lower()
-
-        for tok in expanded:
-            if tok in title_l:
-                score += 6.0 if not n.get("isHub") else 3.0
-            if tok in cat_l or tok in rel_l:
-                score += 2.5
-            if tok in body_l:
-                score += 1.8
-
-        if score > 0:
-            scored.append((score, n))
-
-    scored.sort(key=lambda item: item[0], reverse=True)
-
-    # Always include Acasa + Portofoliu proiecte summary if general question with weak keyword overlap
-    top_nodes = [n for _, n in scored[:top_k]]
-    if not top_nodes:
-        defaults = [
-            n for n in nodes
-            if n.get("title") in ("Acasa", "Andrei", "Portofoliu proiecte", "Harta infrastructurii", "Nerva si Jarvis Hub")
-        ]
-        top_nodes = defaults[:5]
+        found = files.get(node.get("relPath", ""))
+        if found is None:
+            continue
+        if node.get("id", "").startswith("nerva-") != (found[0] == SOURCE_REPO):
+            continue
+        try:
+            title, tags, body, _links = _read_indexed_note_found(cfg, found)
+        except (OSError, ValueError):
+            continue
+        top_nodes.append({**node, "title": title, "tags": tags, "body": body[:3800]})
 
     snippets = []
     for n in top_nodes:
@@ -1631,6 +1843,7 @@ class JarvisRequestHandler(SimpleHTTPRequestHandler):
             "activeEngine": active_engine,
             "vaultMode": cfg.get("vaultMode", "andrei_plus_nerva"),
             "vaultPath": cfg.get("vaultPath", DEFAULT_VAULT_PATH),
+            "inboxFolder": configured_inbox(cfg),
             "nervaPath": cfg.get("nervaPath", DEFAULT_NERVA_PATH),
             "ollamaUrl": cfg.get("ollamaUrl", "http://127.0.0.1:11434"),
             "ollamaModel": cfg.get("ollamaModel", "qwen3.5:4b"),
@@ -1685,6 +1898,20 @@ class JarvisRequestHandler(SimpleHTTPRequestHandler):
             self._send_json({"ok": True, "title": title, "tags": tags, "body": body[:6000], "wikilinks": wls})
             return
 
+        if path in ("/api/workshop/projects", "/api/workshop/project"):
+            cfg = load_config()
+            try:
+                if path.endswith("/projects"):
+                    self._send_json({"ok": True, "projects": workshop_projects.list_projects(sys.modules[__name__], cfg)})
+                else:
+                    result = workshop_projects.get_project(sys.modules[__name__], cfg, qs.get("path", [""])[0])
+                    self._send_json({"ok": True, **result})
+            except FileNotFoundError:
+                self._send_json({"ok": False, "error": "workshop project not found"}, status=404)
+            except (OSError, ValueError):
+                self._send_json({"ok": False, "error": "workshop project unavailable or corrupt"}, status=422)
+            return
+
         super().do_GET()
 
     def do_POST(self):
@@ -1733,11 +1960,29 @@ class JarvisRequestHandler(SimpleHTTPRequestHandler):
                     cfg,
                     title=body.get("title", ""),
                     content=body.get("content", ""),
-                    links=body.get("links", ["Acasa"]),
+                    links=body.get("links"),
                 )
                 self._send_json(res)
             except Exception as exc:
                 self._send_json({"ok": False, "error": str(exc)}, status=400)
+            return
+
+        if self.path == "/api/workshop/projects":
+            try:
+                if int(self.headers.get("Content-Length", "0")) > 20_000:
+                    self._send_json({"ok": False, "error": "workshop project too large"}, status=413)
+                    return
+                body = self._read_json()
+                if type(body) is not dict or set(body) != {"title", "project"}:
+                    raise workshop_projects.InvalidProject("invalid project request")
+                result = workshop_projects.save_project(sys.modules[__name__], load_config(),
+                                                       body["title"], body["project"])
+                self._send_json({"ok": True, **result})
+            except workshop_projects.SavedProjectUnavailable as exc:
+                self._send_json({"ok": False, "error": "project saved but could not be reopened", "path": exc.path},
+                                status=500)
+            except (OSError, ValueError, TypeError):
+                self._send_json({"ok": False, "error": "invalid or unavailable workshop project"}, status=422)
             return
 
         if self.path == "/api/chat":

@@ -45,7 +45,7 @@ def _quick_inventory() -> dict[str, Any]:
     return raw
 
 
-def project(registry: CommandRegistry, loader: Any, *, slots: int) -> Projection:
+def project(registry: CommandRegistry, loader: Any, *, slots: int, agent: str | None = None) -> Projection:
     """Return executable owner shortcuts, with registry/alias precedence reserved.
 
     The 512-skill ceiling bounds the resolver's full-pool scan for every skill.
@@ -138,7 +138,7 @@ def project(registry: CommandRegistry, loader: Any, *, slots: int) -> Projection
                 if taken(name):
                     collisions += 1
                     continue
-                if loader.catalog_gate(skill):
+                if loader.catalog_gate(skill, agent):
                     continue
                 inv = slash_load.resolve("/" + name, loader, taken=taken)
                 if inv is None or inv.problem or inv.skill_name != raw:

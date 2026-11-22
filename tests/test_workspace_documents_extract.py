@@ -14,6 +14,7 @@ import zipfile
 
 import pytest
 
+from agents.core.office_export import create_xlsx
 from agents.core.workspace import extract
 from agents.core.workspace.extract import ExtractionError, Segment
 from tests.fixtures.workspace import samples
@@ -370,11 +371,33 @@ def test_xlsx_formula_strings_errors_rich_text_and_cells_without_refs():
     shared = ('<si><r><t>Bogat </t></r><r><rPr/><t>în stil</t></r><rPh><t>ignorat</t></rPh></si>'
               '<si><t>simplu</t></si>')
     sheet = ('<row r="1"><c t="s"><v>0</v></c><c t="s"><v>1</v></c><c t="s"><v>99</v></c></row>'
-             '<row r="2"><c r="A2" t="str"><f>A1</f><v>calculat</v></c>'
+             '<row r="2"><c r="A2" t="str"><f>A1</f><v>_x005F_x0041__x0042_</v></c>'
              '<c r="B2" t="e"><v>#N/A</v></c><c r="ZZZ2"><v>1</v></c></row>')
     lines = _text(extract.extract_bytes(_workbook_with_sheet(sheet, shared=shared), "xlsx"))
     assert lines.split("\n") == ["## Foaie", "", "| Bogat în stil | simplu |", "| --- | --- |",
-                                 "| calculat | #N/A |"]
+                                 "| _x0041_B | #N/A |"]
+
+
+def test_xlsx_import_preserves_literal_escapes_from_our_inline_string_export():
+    workbook = create_xlsx([["Cod", "Notă"], ["_x0041_", "Ț😀"],
+                            ["_x005F__x0041_", "lângă"]])
+    assert _text(extract.extract_bytes(workbook, "xlsx")).split("\n") == [
+        "## Sheet1", "", "| Cod | Notă |", "| --- | --- |",
+        "| _x0041_ | Ț😀 |", "| _x005F__x0041_ | lângă |",
+    ]
+
+
+def test_xlsx_shared_strings_decode_once_per_text_run_and_keep_unicode_safe():
+    shared = ('<si><t>_x005F_x0041__x0042_</t></si>'
+              '<si><r><t>_x005F_</t></r><r><t>x0041_</t></r></si>'
+              '<si><t>_xD83D__xDE00_</t></si>'
+              '<si><t>_x0007_Safe</t></si>'
+              '<si><t>_x0041__xD83D__xDE00_</t></si>')
+    sheet = ('<row r="1">' + ''.join(f'<c r="{col}1" t="s"><v>{index}</v></c>'
+                                    for index, col in enumerate("ABCDE")) + '</row>')
+    assert _text(extract.extract_bytes(_workbook_with_sheet(sheet, shared=shared), "xlsx")).split("\n") == [
+        "## Foaie", "", "| _x0041_B | _x0041_ | 😀 | Safe | A😀 |", "| --- | --- | --- | --- | --- |",
+    ]
 
 
 def test_xlsx_parts_with_a_dtd_are_invalid_file():

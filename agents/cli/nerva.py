@@ -5924,6 +5924,10 @@ _NOT_AN_ANSWER: dict[str, str] = {
     # agents.core.llm.base.LOCAL_SELECTION_UNAVAILABLE_REPLY
     "\u26a0\ufe0f No local language model is available. Start LM Studio or Ollama and try again.":
         "no local model is available",
+    # agents.core.llm.base.CLOUD_SELECTION_UNAVAILABLE_REPLY
+    "\u26a0\ufe0f Athena requires a cloud route. "
+    "Choose an available cloud provider or switch to Frigga for a local answer.":
+        "Athena has no eligible cloud route",
     # agents.core.llm.base.THINKING_EXHAUSTED_REPLY
     "\u26a0\ufe0f The model spent its whole answer budget thinking and produced no visible "
     "answer. Ask again more narrowly, or raise llm.max_tokens (or load a larger-context model).":

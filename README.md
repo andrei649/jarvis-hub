@@ -5,7 +5,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-37079-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-37317-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -98,7 +98,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **37,079** · frontend **3,213** · mobile **420**. Route surface: **930**.
+Generated test matrix: backend **37,317** · frontend **3,273** · mobile **420**. Route surface: **936**.
 <!-- project-status:run:end -->
 
 **One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
@@ -155,6 +155,24 @@ Your data is never touched unless you also pass `--purge-data`.
 - **CLI REPL:** `python agents/run.py`
 - **Scripted chat:** [CLI receipts and session attribution](docs/cli-chat-receipts.md).
 
+### Saved facts in chat
+
+In the HUD, open **Memory → Saved facts**. Choose **Agent notes** for a project
+fact or **User profile** for a preference, then save it. Use **Correct fact**
+when the information changes. New owner chats can include these facts in the
+selected model's prompt. Each fact also has **Forget fact**, with an undo
+option after removal. Curated facts are stored in the hub profile. The Obsidian
+picker below reads the notes you choose for a particular message.
+
+### Following parallel tasks
+
+Open **Projects** to see which agents are working on the selected board. Select
+a task in **Active workers** to open its history. With two worker slots enabled,
+you can approve a second agent's task while the first agent is still working.
+The total and per-agent limits also apply to these later approvals. When several
+tasks share a prerequisite, open its **Child results** section to read their
+outputs together. Selecting a child's title opens its own history.
+
 ### ANDREI OS — J.A.R.V.I.S. Second Brain & 3D Workshop (`apps/jarvis-os/`)
 
 A 3D knowledge galaxy over an Obsidian vault plus this repo's own docs, a chat HUD, and a 3D
@@ -164,7 +182,9 @@ workshop. It runs two ways from one set of files:
   cockpit. Chat goes through the hub's orchestrator (`/chat`, with its guards and approval gates;
   matching vault notes ride along as fenced attachments), speech through `/tts`, and the vault graph
   through user-guarded `/api/os/*` routes. Point it at a vault with `JARVIS_OS_VAULT_PATH`; without
-  one it shows the demo galaxy.
+  one it shows the demo galaxy. To reuse a workflow from chat, open **Skills → Review this
+  conversation**, add a focus if needed, and send. Read the proposed steps in **Console →
+  Pending skills**. After approval, choose the procedure from **Skills** in a new chat.
 - **Standalone — http://localhost:4719.** A zero-dependency Python 3.9+ server (stdlib
   `ThreadingHTTPServer`, loopback only) with its own multi-provider chat router, sharing nothing
   with the hub's runtime:
@@ -191,7 +211,7 @@ Standalone routes (the hub serves the vault ones as `/api/os/status`, `/api/os/b
 |---|---|---|
 | `/api/status` | GET | Providers, active engine, resolved `vaultPath` / `nervaPath` |
 | `/api/brain` | GET | Knowledge graph: nodes, edges, categories, top hubs |
-| `/api/brain/note` | GET | One note's full body (`?relPath=`) |
+| `/api/brain/note` | GET | First 6,000 characters of an indexed Markdown note (`?relPath=`) |
 | `/api/brain/capture` | POST | Write a note into the vault's `08 Inbox/` |
 | `/api/config` | POST | Save settings to `config.json` |
 | `/api/claude/login` | POST | Start the Claude Code CLI subscription sign-in |
@@ -219,7 +239,7 @@ Details: [`apps/jarvis-os/README.md`](apps/jarvis-os/README.md).
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **37,079** · frontend **3,213** · mobile **420** · **930** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `3a482575ec9d`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **37,317** · frontend **3,273** · mobile **420** · **936** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `3a482575ec9d`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for evidence-based situational awareness, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

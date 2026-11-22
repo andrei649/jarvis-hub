@@ -23,7 +23,10 @@ from typing import Callable, Optional
 from .agent import Agent
 from .router import IntentRouter
 from .config import JarvisConfig
-from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, is_backend_failure_reply, is_degraded_reply
+from .llm.base import (
+    CLOUD_SELECTION_UNAVAILABLE_REPLY, LOCAL_SELECTION_UNAVAILABLE_REPLY,
+    is_backend_failure_reply, is_degraded_reply,
+)
 from .llm.auth_rotation import AuthLease
 from .llm.gemini import GeminiBackend
 from .llm.providers.admitted_profiles import AdmittedProviderProfile
@@ -1256,6 +1259,61 @@ class Orchestrator:
             if not hasattr(self, "_cache_tasks"):
                 self._cache_tasks = set()
 
+    async def _select_startup_session(self) -> None:
+        """Give a never-used default durable history without reviving suspect history."""
+        from .memory.persistence import load_memory_snapshot, memory_dir
+        from .session_continuation import ContinuationRefused, history_identity
+
+        restored = self.checkpoints.restore(self)
+        if restored and self.session_id:
+            logger.info(f"Restored from checkpoint — session: {self.session_id}")
+            try:
+                if await self.memory.resume_session(self.session_id):
+                    return
+            except Exception:
+                # A corrupt or identity-changed history must keep refusing turns.
+                logger.debug("session resume after checkpoint restore skipped", exc_info=True)
+                return
+            if (memory_dir() / f"{self.session_id}.json").exists():
+                # A present but unreadable transcript is not proof of an empty chat.
+                return
+            with self.checkpoints._lock:
+                try:
+                    history_identity(self.checkpoints._conn, self.session_id)
+                    fresh_empty = self.checkpoints._conn.execute(
+                        "SELECT 1 FROM sessions AS s WHERE s.id=? AND s.turn_count=0 "
+                        "AND NOT EXISTS (SELECT 1 FROM session_continuations WHERE session_id=s.id) "
+                        "AND NOT EXISTS (SELECT 1 FROM session_history_rewinds WHERE session_id=s.id) "
+                        "AND NOT EXISTS (SELECT 1 FROM session_imports WHERE session_id=s.id)",
+                        (self.session_id,),
+                    ).fetchone() is not None
+                except ContinuationRefused:
+                    fresh_empty = False
+            if not fresh_empty:
+                return
+        else:
+            candidate = self.memory.conversation.current_session_id
+            if candidate:
+                with self.checkpoints._lock:
+                    try:
+                        history_identity(self.checkpoints._conn, candidate)
+                    except ContinuationRefused:
+                        pass
+                    else:
+                        self.session_id = candidate
+                        return
+        # Startup has no outgoing live turn to checkpoint. Persist the new identity
+        # before the HUD can advertise it or send it as an explicit first turn.
+        sid = await self.memory.new_session(f"session_{uuid.uuid4().hex}")
+        self.memory.conversation._save_snapshot(sid)
+        snapshot = load_memory_snapshot(sid)
+        clock = self.checkpoints.clock_snapshot(sid)
+        if (snapshot.get("session_id") != sid or snapshot.get("turns") != []
+                or clock is None or snapshot.get("instance_id") != clock.instance_id):
+            raise OSError("startup session transcript could not be saved")
+        self.session_id = sid
+        logger.info(f"Session: {self.session_id}")
+
     async def load_agents(self):
         await self.llm_router.detect()
         logger.info(f"LLM backend: {self.llm_router.name}")
@@ -1463,25 +1521,7 @@ class Orchestrator:
             logger.warning("learning reviewer init failed", exc_info=True)
 
         self.checkpoints.initialize()
-        restored = self.checkpoints.restore(self)
-        if restored:
-            logger.info(f"Restored from checkpoint — session: {self.session_id}")
-            # The checkpoint restores the *id*; ConversationMemory only auto-loads
-            # the newest session at construction time, so without this the two
-            # disagree — self.session_id points at a session whose turns were
-            # never loaded, and the next turn starts from an empty history that
-            # then overwrites the snapshot. Resume is a no-op when the memory
-            # already holds that session.
-            if self.session_id:
-                try:
-                    await self.memory.resume_session(self.session_id)
-                except Exception:
-                    logger.debug("session resume after checkpoint restore skipped",
-                                 exc_info=True)
-
-        if not self.session_id:
-            self.session_id = self.memory.conversation.current_session_id or await self.memory.new_session()
-            logger.info(f"Session: {self.session_id}")
+        await self._select_startup_session()
 
         self.load_runtime_settings()
         # The executor builds ToolRPC before the initial settings load. Reconcile
@@ -2847,7 +2887,7 @@ class Orchestrator:
         except Exception:
             return True  # unreadable quick commands: no shadowing
 
-    async def _begin_skill_load(self, text: str):
+    async def _begin_skill_load(self, text: str, agent_override: str | None = None):
         """H079: an owner's single skill loads through the shared guarded turn context."""
         if current_principal().admin is not True:
             return None, False
@@ -2861,7 +2901,7 @@ class Orchestrator:
             inv = slash_load.resolve(text, loader, taken=self._command_name_taken)
             if inv is None:
                 return None, False
-            answer = slash_load.begin_load(inv, loader, owner=True,
+            answer = slash_load.begin_load(inv, loader, owner=True, agent=agent_override or "",
                                            session=str(self.session_id or ""),
                                            template_vars=self.get_setting(TEMPLATE_VARS_SETTING, {}))
         except Exception:
@@ -2871,7 +2911,7 @@ class Orchestrator:
             return CommandOutcome("skill", "refused", answer), False
         return None, True
 
-    async def _begin_bundle_load(self, text: str):
+    async def _begin_bundle_load(self, text: str, agent_override: str | None = None):
         """H026 — the owner's ``/<bundle> [instruction]`` or ``/bundle <name> [instruction]``.
 
         ``(outcome, loaded)``: ``loaded`` when the bundle's members are bound to this turn
@@ -2911,7 +2951,7 @@ class Orchestrator:
                                   reply), False
         from .skills.template_vars import SETTING as TEMPLATE_VARS_SETTING
 
-        answer = skill_bundles.begin_load(inv, loader, session=str(self.session_id or ""),
+        answer = skill_bundles.begin_load(inv, loader, session=str(self.session_id or ""), agent=agent_override or "",
                                           template_vars=self.get_setting(TEMPLATE_VARS_SETTING, {}))
         if answer is not None:
             return CommandOutcome(skill_bundles.EXPLICIT_COMMAND, "refused", answer), False
@@ -2999,7 +3039,10 @@ class Orchestrator:
                     for turn in turns:
                         await self.memory.add_turn(sid, turn["role"], turn["content"],
                                                    agent_id=turn.get("agent_id"), tools=turn.get("tools"),
-                                                   media=turn.get("media"))   # H586: keep image provenance
+                                                   media=turn.get("media"),
+                                                   **({"model_calls": turn["model_calls"]}
+                                                      if not unclean and turn.get("role") == "assistant"
+                                                      and "model_calls" in turn else {}))
                 from .session_loops import migrate_session
 
                 # G2: the conversation's loop and plan mode follow it to the new id.
@@ -3727,6 +3770,11 @@ class Orchestrator:
         await self._settle_background_review(self.session_id)   # H403: a new turn, the model is its
         await self._guard_foreign_turn(self.session_id)
         await self._guard_media_history(self.session_id)
+        from .turn_usage import current_turn_usage
+
+        collector = current_turn_usage()
+        if collector is not None:
+            collector.claim_session(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             record_turn_completion("command")
@@ -3751,9 +3799,9 @@ class Orchestrator:
         turn_tools.begin()          # H441: the reply records the tools this turn calls
         await _begin_project_context(self)   # H594: the project's convention files
 
-        outcome, bundle_loaded = await self._begin_bundle_load(text)
+        outcome, bundle_loaded = await self._begin_bundle_load(text, agent_override)
         if outcome is None and not bundle_loaded:
-            outcome, bundle_loaded = await self._begin_skill_load(text)
+            outcome, bundle_loaded = await self._begin_skill_load(text, agent_override)
         if outcome is None and not bundle_loaded:
             outcome = await self._dispatch_command(text)
         if outcome is not None and getattr(outcome, "status", None) == "continue":
@@ -3847,13 +3895,15 @@ class Orchestrator:
         except RuntimeError:
             route_name = ""
 
+        # Only this response path consumes legacy skill proposals via _detect_skill_learning.
+        response_context = {**(intent.context or {}), "_can_propose_skill_marker": True}
         if intent.target_agents:
             responses = await self._call_agents_parallel(
-                self._route_candidates(intent), text, intent.context, plugin_data
+                self._route_candidates(intent), text, response_context, plugin_data
             )
         elif intent.is_general:
             responses = await self._call_agents_parallel(
-                ["jarvis"], text, intent.context, plugin_data
+                ["jarvis"], text, response_context, plugin_data
             )
         else:
             responses = {"jarvis": "I don't have a specialist for that yet."}
@@ -3863,7 +3913,7 @@ class Orchestrator:
         if handoff_target:
             logger.info(f"Handoff detected: {handoff_target}")
             handoff_responses = await self._call_agents_parallel(
-                [handoff_target], text, intent.context, plugin_data
+                [handoff_target], text, response_context, plugin_data
             )
             responses.update(handoff_responses)
 
@@ -4035,6 +4085,11 @@ class Orchestrator:
         await self._settle_background_review(self.session_id)   # H403: see _handle_input
         await self._guard_foreign_turn(self.session_id)
         await self._guard_media_history(self.session_id)
+        from .turn_usage import current_turn_usage
+
+        collector = current_turn_usage()
+        if collector is not None:
+            collector.claim_session(self.session_id)
         session_reply = await self._direct_session_command(text, channel, session_id)
         if session_reply is not None:
             record_turn_completion("command")
@@ -4067,9 +4122,9 @@ class Orchestrator:
         turn_tools.begin()          # H441: the reply records the tools this turn calls
         await _begin_project_context(self)   # H594: the project's convention files
 
-        outcome, bundle_loaded = await self._begin_bundle_load(text)
+        outcome, bundle_loaded = await self._begin_bundle_load(text, agent_override)
         if outcome is None and not bundle_loaded:
-            outcome, bundle_loaded = await self._begin_skill_load(text)
+            outcome, bundle_loaded = await self._begin_skill_load(text, agent_override)
         if outcome is None and not bundle_loaded:
             outcome = await self._dispatch_command(text)
         if outcome is not None and getattr(outcome, "status", None) == "continue":
@@ -4361,11 +4416,11 @@ class Orchestrator:
                                     session_id=self.session_id,
                                 )
                         request_scope = backend.request_scope(request_binding)
-                except LocalBackendUnavailableError:
+                except LocalBackendUnavailableError as exc:
                     record_runtime_stop("generation_failed")
                     record_agent_observation(agent_id, "unavailable")
-                    msg = LOCAL_SELECTION_UNAVAILABLE_REPLY
-                    log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-local")
+                    msg = exc.public_reply
+                    log_error(logger, E_LLM_BACKEND_MISSING, backend="stream-selection")
                     if on_token:
                         emitted = on_token(msg)
                         if inspect.isawaitable(emitted):
@@ -5800,14 +5855,15 @@ class Orchestrator:
         which prefers cloud Claude/Gemini when keys are configured. Review prompts embed
         raw conversation content and must not egress; no local backend up means a
         RuntimeError, and the review pass is skipped."""
-        from .settings_db import bounded_learning_int
+        from .settings_db import DEFAULT_REVIEW_MAX_TOKENS, bounded_learning_int
         from .llm.auxiliary_text import generate_local_auxiliary
 
         router = self.llm_router
         # Within its bounds even for a row that predates them: -1 would mean "until the
         # context is full" to a local backend (review-H465d nit 4).
         max_tokens = bounded_learning_int(
-            "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512)
+            "review_max_tokens", self.get_setting("learning.review_max_tokens", DEFAULT_REVIEW_MAX_TOKENS),
+            DEFAULT_REVIEW_MAX_TOKENS)
         return await generate_local_auxiliary(
             router, "review", system="You are a precise background reviewer. Output only JSON.",
             prompt=prompt, max_tokens=max_tokens, temperature=0.2)
@@ -5819,7 +5875,7 @@ class Orchestrator:
         from . import estop
         from .foreign_history import status
         from .learning.review_policy import REPLAY_TURN_CHARS, build_replay, replay_budget, replay_mode
-        from .settings_db import bounded_learning_int
+        from .settings_db import DEFAULT_REVIEW_MAX_TOKENS, bounded_learning_int
 
         sid = self.session_id or "default"
         if scope is None:
@@ -5850,7 +5906,8 @@ class Orchestrator:
         # model, as far as that model's window carries.
         router = getattr(self, "llm_router", None)
         budget = replay_budget(router, bounded_learning_int(
-            "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512))
+            "review_max_tokens", self.get_setting("learning.review_max_tokens", DEFAULT_REVIEW_MAX_TOKENS),
+            DEFAULT_REVIEW_MAX_TOKENS))
         replay = build_replay(earlier, replay_mode(router), budget)
         store = getattr(self, "memory_proposals", None)
         conversation_unclean = (not readable or store is None
@@ -6195,18 +6252,24 @@ class Orchestrator:
             # automatic review is held, nothing else changes.
             await Orchestrator._note_turn_taint(self, self.session_id, RECALLED_UNPROVEN)
         called = turn_tools.collected()
+        from .turn_usage import current_turn_usage
+
+        collector = current_turn_usage()
+        model_calls = (collector.commit_reply(self.session_id) if collector is not None
+                       and not is_failed_turn_reply(responder_id, synthesized) else None)
+        calls_extra = {"model_calls": model_calls} if model_calls and isinstance(self.memory, MemoryManager) else {}
         if media is not None:
             append_receipt = await self.memory.add_turn(
                 self.session_id, "assistant", synthesized, agent_id=responder_id,
-                tools=called or None, media=media)
+                tools=called or None, media=media, **calls_extra)
         elif called:
             append_receipt = await self.memory.add_turn(
                 self.session_id, "assistant", synthesized, agent_id=responder_id,
-                tools=called, **({"media": media} if media is not None else {}))
+                tools=called, **({"media": media} if media is not None else {}), **calls_extra)
         else:
             append_receipt = await self.memory.add_turn(
                 self.session_id, "assistant", synthesized, agent_id=responder_id,
-                **({"media": media} if media is not None else {}))
+                **({"media": media} if media is not None else {}), **calls_extra)
         state = _TURN_CHAT_OUTCOMES.get()
         if state is not None and not is_failed_turn_reply(responder_id, synthesized):
             state["persisted"] = True
@@ -7084,7 +7147,7 @@ class Orchestrator:
                         timeout=seconds,
                     )
                 if isinstance(resp, str) and resp.strip():
-                    if (resp == LOCAL_SELECTION_UNAVAILABLE_REPLY
+                    if (resp in (LOCAL_SELECTION_UNAVAILABLE_REPLY, CLOUD_SELECTION_UNAVAILABLE_REPLY)
                             or resp.startswith(f"[{agent_id} no LLM backend]")):
                         record_agent_observation(agent_id, "unavailable")
                     elif is_backend_failure_reply(resp.lstrip()):

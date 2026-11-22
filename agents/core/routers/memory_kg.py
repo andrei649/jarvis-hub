@@ -63,8 +63,9 @@ _KG_WRITE_OPS = frozenset({
     "delete_relation",
     "add_fact",
     "ingest",
-    # H046: a learned entry of the timeline (a curated ring's fact, a learned skill or a
-    # fact-store row) changed or deleted by its id (routers/dashboard.py).
+    # H046: a learned entry of the timeline created, changed or deleted through
+    # routers/dashboard.py.
+    "add_learning",
     "edit_learning",
     "delete_learning",
 })

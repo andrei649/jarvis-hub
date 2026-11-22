@@ -863,9 +863,37 @@ def _store_attachment(board, tid, filename, data, content_type) -> str:
 
 @_kanban_handler("kanban_attach")
 def _handle_attach(args: dict, **kw) -> str:
-    """Attach an inline (base64) file to a task."""
+    """Attach inline bytes or locally generated Office data to a task."""
     tid = _worker_guard("kanban_attach", args)
     filename = _require_text(args, "filename")
+    has_office = "office" in args
+    _check(has_office != ("content_base64" in args),
+           "kanban_attach requires exactly one of office or content_base64")
+    if has_office:
+        from agents.core.office_export import EXCEL_MIME, WORD_MIME, create_docx, create_xlsx
+
+        office = args["office"]
+        _check(type(office) is dict, "office must be an object")
+        kind = office.get("format")
+        if kind == "docx":
+            _check(set(office) == {"format", "text"}, "office docx requires only format and text")
+            mime, extension = WORD_MIME, ".docx"
+        elif kind == "xlsx":
+            _check(set(office) == {"format", "rows"}, "office xlsx requires only format and rows")
+            mime, extension = EXCEL_MIME, ".xlsx"
+        else:
+            raise _Reject("office format must be docx or xlsx")
+        _check(type(filename) is str and filename.lower().endswith(extension)
+               and bool(filename[:-len(extension)].strip(". "))
+               and len(filename) <= 200 and filename == filename.strip()
+               and not filename.startswith(".") and not any(char in filename for char in "/\\")
+               and all(char.isprintable() for char in filename),
+               f"office filename must be a leaf name ending in {extension}")
+        _check("content_type" not in args or args["content_type"] == mime,
+               f"office content_type must be {mime}")
+        data = create_docx(office["text"]) if kind == "docx" else create_xlsx(office["rows"])
+        return _store_attachment(args.get("board"), tid, filename, data, mime)
+
     content_b64 = _require_text(args, "content_base64")
     import base64
     import binascii

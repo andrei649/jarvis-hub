@@ -3,6 +3,7 @@ import { PowerChip, usePower } from './power-chip';
 import { PressureBanner, usePressure } from './pressure-banner';
 import {describeImages,restoreVisionTurn} from './vision-turn';
 import type {VisionDraft} from './composer-images';
+import type { VaultExcerpt } from './composer-vault';
 import { useAppearance } from './appearance';
 import { appUrl, logicalPath } from './base-path';
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
@@ -38,12 +39,14 @@ import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet, apiPost, apiFetchOnce } from './api/client';
 import { pendingQuestion, PendingQuestion, type Question, type QuestionAnswer } from './pending-question';
 import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
+import type { WorkshopRef } from './workshop-projects';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 import { useDemoMode } from './demo-mode';
 import { DesktopControls, notifyDesktopConversation, useDesktopConversation, useDesktopDecisionNotifications, useQuickEntryFocus } from './desktop';
 import { useListeningIndicator } from './listening';
 import { SessionRecovery } from './session-recovery';
+import { modelCalls } from './model-call-provenance';
 
 import { shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './onboarding-state';
 import { useHudRoute, navigateHud, closeHudOverlay, parseHudRoute } from './hud-routing';
@@ -76,9 +79,11 @@ function savedChatSession(): string | null {
 function visibleTurns(turns: any[]): any[] {
   return turns.map((tn: any) => {
     const ts = fmtTimeShort(new Date(tn.timestamp || Date.now()));
+    const calls = tn.role === 'assistant' ? modelCalls(tn.model_calls) : [];
     return tn.role === 'user'
       ? { role: 'user', text: tn.content, ts }
-      : restoreVisionTurn(tn,ts) || { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts };
+      : restoreVisionTurn(tn,ts) || { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts,
+        ...(calls.length ? { prov: { models: calls } } : {}) };
   });
 }
 
@@ -193,6 +198,8 @@ function App({ floating = false, shortcuts, onWorld }: {
   useDesktopDecisionNotifications(!floating && !demo);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
+  const [projectForChat, setProjectForChat] = useState<WorkshopRef | null>(null);
+  useLayoutEffect(() => setProjectForChat(null), [activeId, activeSessionId]);
   // bumped after every successful explicit save so the Artifacts tab refetches
   const [artifactsRefresh, setArtifactsRefresh] = useState(0);
   const bumpArtifacts = useCallback(() => setArtifactsRefresh((n) => n + 1), []);
@@ -434,7 +441,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       [3300, () => {
         setTrace((p) => mark(p, 3, 'done'));
         setThinking(null);
-        setMessages((m) => [...m, { role: 'agent', who: 'jarvis', role_label: 'Prime Orchestrator', ts: fmtTimeShort(new Date()), text: replyFor(text, tr), prov: { agents: tr.selected, plugins: pluginsFor(text), local: true, conf: +tr.conf.toFixed(2) } }]);
+        setMessages((m) => [...m, { role: 'agent', who: 'jarvis', role_label: 'Prime Orchestrator', ts: fmtTimeShort(new Date()), text: replyFor(text, tr) }]);
         setAgents(baseAgents.current);
       }],
     ];
@@ -448,7 +455,7 @@ function App({ floating = false, shortcuts, onWorld }: {
   // H5.16: runTurn is defined before useVoice (which takes runTurn as onTurn), so
   // the token->TTS forward goes through a ref, assigned right after the hook runs.
   const voiceRef = useRef(null);
-  const runTurn = useCallback((text:string, source:'typed'|'voice'='typed') => new Promise<string>((resolve) => {
+  const runTurn = useCallback((text:string, source:'typed'|'voice'='typed', excerpts?:VaultExcerpt[]) => new Promise<string>((resolve) => {
     if (turnBusy.current || (source==='voice' && (thinking || textTurns.current.size>0)) || (thinking && textTurns.current.size===0)) { resolve(''); return; }
     const id=++nextTextTurn.current, epoch=turnEpoch.current;
     latestTextTurn.current=id;
@@ -467,13 +474,14 @@ function App({ floating = false, shortcuts, onWorld }: {
     textTurns.current.set(id,{controller:ctl,settle});
     // Reserve the reply bubble now: a queued request may emit start after a newer one.
     setMessages((m) => [...m,
-      { role: 'user', text, ts: fmtTimeShort(new Date()) },
+      { role: 'user', text, ts: fmtTimeShort(new Date()), ...(excerpts?.length ? { vaultNames: excerpts.map(note => note.name) } : {}) },
       { role: 'agent', who: activeId, role_label: '', ts: fmtTimeShort(new Date()), text: '', _turnId:id },
     ]);
     setCenterTab('conversation');
     setThinking({ label: t.think + ' · routing', route: null });
     const updateBubble=(change:(message:any)=>any)=>setMessages((messages)=>messages.map(message=>message._turnId===id?change(message):message));
     postStream('/chat/stream', { message: text, agent: activeId, tool_events: true,
+      ...(excerpts?.length ? { attachments: excerpts } : {}),
       ...(sessionId.current ? { session_id: sessionId.current } : {}) }, (evt) => {
       if(closed||epoch!==turnEpoch.current||ctl.signal.aborted)return;
       if (evt.type === 'start') {
@@ -496,6 +504,8 @@ function App({ floating = false, shortcuts, onWorld }: {
         if (id === latestTextTurn.current) setCurrentOutcome(turnOutcome(evt.outcome));
       } else if (evt.type === 'end') {
         const finalText = typeof evt.text === 'string' ? evt.text : streamed;
+        const calls = modelCalls(evt.model_calls);
+        const receipt = calls.length ? { prov: { models: calls } } : {};
         const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;
         if (typeof evt.session_id === 'string') selectSession(evt.session_id);
         if(id===latestTextTurn.current) setCurrentOutcome(changed && ['/new', '/reset', '/undo'].includes(text.trim())
@@ -511,9 +521,9 @@ function App({ floating = false, shortcuts, onWorld }: {
               })
               .catch(() => {});
           }
-          setMessages([{ role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: finalText }]);
+          setMessages([{ role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: finalText, _complete: true, ...receipt }]);
         } else {
-          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId,approvals:approvalIds(evt.pending_approvals)}));
+          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId,approvals:approvalIds(evt.pending_approvals),_complete:true,...receipt}));
         }
         // H674: what the owner should know beside the reply (e.g. the summary was deferred).
         const notes = noticeMessages(evt, fmtTimeShort(new Date()));
@@ -523,12 +533,6 @@ function App({ floating = false, shortcuts, onWorld }: {
           if(epoch!==turnEpoch.current||ctl.signal.aborted)return;
           const tr = traceFromCognition(cog, text);
           if(id===latestTextTurn.current)setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
-          // HONESTY: real plugin reads + locality from the cognition snapshot — never a
-          // client-side guess. Unknown locality renders as "—" instead of a false claim.
-          const dloc = (cog && cog.decision) || {};
-          const reads = (cog && (cog.plugins || dloc.plugins)) || [];
-          const localKnown = typeof dloc.local === 'boolean' ? dloc.local : (cog && typeof cog.local === 'boolean' ? cog.local : undefined);
-          updateBubble(message=>({...message,prov:{ agents: tr.selected, plugins: reads, local: localKnown, conf: +(tr.conf || 0).toFixed(2) }}));
         }).catch(() => {});
       }
     }, { signal: ctl.signal }).then(() => {
@@ -582,7 +586,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     if(id!==activeId)stopTurn();
     setActiveId(id);setDossier(id);
   },[activeId,stopTurn]);
-  const submit=useCallback((text:string,vision?:VisionDraft)=>{
+  const submit=useCallback((text:string,vision?:VisionDraft,excerpts?:VaultExcerpt[])=>{
     if(turnBusy.current || (vision && (thinking||textTurns.current.size>0)) || (thinking && textTurns.current.size===0))return false;
     if(!demo&&vision?.review_token && (vision.session_id!==sessionId.current || vision.agent!==activeId))return false;
     if(vision)void runVision(text,vision);
@@ -590,7 +594,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       const now=Date.now();
       if(lastTypedSubmit.current.text===text && now-lastTypedSubmit.current.at<500)return false;
       lastTypedSubmit.current={text,at:now};
-      void runTurn(text);
+      void runTurn(text, 'typed', excerpts);
     }
     return true;
   },[runTurn,runVision,thinking,activeId]);
@@ -800,11 +804,13 @@ function App({ floating = false, shortcuts, onWorld }: {
                       <button className={'center-tab' + (centerTab === 'artifacts' ? ' active' : '')} onClick={() => setCenterTab('artifacts')}>{artifactsTabLabel(lang)}</button>
                     </div>
                     {centerTab === 'conversation'
-                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} onArtifactSaved={demo ? undefined : bumpArtifacts} lang={lang} t={t} />
+                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} onArtifactSaved={demo ? undefined : bumpArtifacts} exportAllowed={!demo} lang={lang} t={t} />
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
-                        : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} />
+                        : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} exportAllowed={!demo}
+                            onDiscussProject={project => { setProjectForChat(project); setCenterTab('conversation'); }} />}
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power}
+                      projectForChat={projectForChat} onProjectReviewed={() => setProjectForChat(null)} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -860,15 +866,6 @@ function mark(trace, i, state, j?, jstate?) {
   const stages = trace.stages.map((s, k) => (k === i ? { ...s, state } : (j !== undefined && k === j) ? { ...s, state: jstate } : s));
   return { ...trace, stages };
 }
-function pluginsFor(text) {
-  const low = text.toLowerCase(); const p = [];
-  if (/calendar|meeting|schedule/.test(low)) p.push('google-calendar');
-  if (/email|mail|inbox/.test(low)) p.push('gmail');
-  if (/weather/.test(low)) p.push('weather');
-  if (/music|playlist/.test(low)) p.push('spotify');
-  if (p.length === 0) p.push('google-calendar', 'gmail');
-  return p;
-}
 function replyFor(text, tr) {
   const a = tr.selected[0];
   const map = {
@@ -919,16 +916,19 @@ function FirstRunBanner({ llm, onDemo, onDismiss, t }) {
 }
 
 function ProvModal({ prov, onClose }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    return () => previous?.focus();
+  }, []);
   return (
-    <div className="pal-scrim" onClick={onClose} style={{ alignItems: 'center', paddingTop: 0 }}>
-      <div className="pal" onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px,92vw)' }}>
-        <div className="pal-input" style={{ borderBottom: '1px solid var(--panel-line)' }}><span className="pc"><Icon d={ICONS.shield} size={16} /></span><span style={{ fontSize: 14, letterSpacing: '.04em' }}>PROVENANCE</span><span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--green)' }}>conf {prov.conf}</span></div>
+    <div className="pal-scrim" onClick={onClose} onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }} style={{ alignItems: 'center', paddingTop: 0 }}>
+      <div className="pal" role="dialog" aria-modal="true" aria-labelledby="model-calls-title" onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px,92vw)' }}>
+        <div className="pal-input" style={{ borderBottom: '1px solid var(--panel-line)' }}><span className="pc"><Icon d={ICONS.shield} size={16} /></span><span id="model-calls-title" style={{ fontSize: 14, letterSpacing: '.04em' }}>MODELS CALLED</span><button ref={closeRef} type="button" className="tool-btn" onClick={onClose} aria-label="Close model call details" style={{marginLeft:'auto'}}>×</button></div>
         <div style={{ padding: 18 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', marginBottom: 8 }}>AGENTS CONSULTED</div>
-          <div className="dep-links" style={{ marginBottom: 16 }}>{prov.agents.map((a) => <span key={a} className="dep-link" style={{ cursor: 'default' }}><Glyph id={a} size={12} />{a}</span>)}</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', marginBottom: 8 }}>PLUGIN READS</div>
-          <div className="dep-links" style={{ marginBottom: 16 }}>{prov.plugins.map((p) => <span key={p} className="dep-link" style={{ cursor: 'default' }}>{p}</span>)}</div>
-          <div className="verified-row"><Icon d={ICONS.shield} size={13} /> {prov.local === true ? '100% on-device · no cloud egress' : prov.local === false ? 'cloud-assisted' : 'locality not reported'}</div>
+          <p style={{margin:'0 0 12px',color:'var(--ink-2)',fontSize:12}}>Measured provider and model for this reply. Physical execution location was not reported.</p>
+          <ul style={{margin:0,paddingLeft:20,overflowWrap:'anywhere'}}>{prov.models.map(({provider,model}) => <li key={provider+'\0'+model}><b>{provider}</b> / {model}</li>)}</ul>
         </div>
       </div>
     </div>

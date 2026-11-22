@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import sqlite3
 import time
 from dataclasses import asdict
 
@@ -67,11 +68,18 @@ def initialize(conn):
             lane TEXT NOT NULL, profile TEXT NOT NULL, prompt TEXT NOT NULL,
             prompt_sha TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'prepared',
             queue_id INTEGER, enqueue_id TEXT, run_id INTEGER, error TEXT,
-            created_at INTEGER NOT NULL, workspace_json TEXT
+            created_at INTEGER NOT NULL, workspace_json TEXT,
+            recovery_dev INTEGER, recovery_ino INTEGER, recovery_pid INTEGER
         )""")
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(nerva_dispatches)")}
         if "workspace_json" not in columns:
             conn.execute("ALTER TABLE nerva_dispatches ADD COLUMN workspace_json TEXT")
+        if "recovery_dev" not in columns:
+            conn.execute("ALTER TABLE nerva_dispatches ADD COLUMN recovery_dev INTEGER")
+        if "recovery_ino" not in columns:
+            conn.execute("ALTER TABLE nerva_dispatches ADD COLUMN recovery_ino INTEGER")
+        if "recovery_pid" not in columns:
+            conn.execute("ALTER TABLE nerva_dispatches ADD COLUMN recovery_pid INTEGER")
 
 
 def prepare(conn, task, *, resume=None, prompt_suffix=""):
@@ -135,7 +143,8 @@ def finish(conn, submission_id, *, state, error=None):
         )
 
 
-def claim(conn, record, queued, *, ttl_seconds, resume=None, validate_resume=None):
+def claim(conn, record, queued, *, ttl_seconds, resume=None, validate_resume=None,
+          recovery_identity=None):
     """Snapshot validation and exact board-run CAS share one write transaction."""
     now = int(time.time())
     with kb.write_txn(conn):
@@ -184,11 +193,28 @@ def claim(conn, record, queued, *, ttl_seconds, resume=None, validate_resume=Non
 
             child_resume.claim(conn, record["id"])
         conn.execute(
-            "UPDATE nerva_dispatches SET state='running', run_id=? WHERE id=?",
-            (run_id, record["id"]),
+            "UPDATE nerva_dispatches SET state='running', run_id=?, "
+            "recovery_dev=?, recovery_ino=?, recovery_pid=? WHERE id=?",
+            (run_id, *(recovery_identity or (None, None, None)), record["id"]),
         )
         return kb.get_task(conn, task.id)
 
 
 def submissions(conn):
     return [dict(r) for r in conn.execute("SELECT * FROM nerva_dispatches ORDER BY created_at, id")]
+
+
+def recoverable_run_id(conn, task):
+    """UI hint only; a recovery still must prove the OS lock is released."""
+    if task.status != "running" or task.current_run_id is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT id, run_id FROM nerva_dispatches WHERE task_id=? AND run_id=? "
+            "AND state='running' AND recovery_dev IS NOT NULL AND recovery_ino != 0 "
+            "AND recovery_pid IS NOT NULL",
+            (task.id, task.current_run_id),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return int(row["run_id"]) if row and task.claim_lock == "nerva:" + row["id"] else None

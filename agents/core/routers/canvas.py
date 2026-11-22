@@ -1,14 +1,16 @@
 """Agent Canvas / A2UI endpoints (H12.18) — extracted from web.py (CLN-3)."""
 
+import asyncio
 import time
-from typing import Optional
+from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Request, Response
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
+from agents.core.office_export import EXCEL_MIME, WORD_MIME, create_docx, create_xlsx
 from agents.core.routers._deps import _web, user_guard
 
-from agents.core.web_helpers import nocache_json, error_json
+from agents.core.web_helpers import nocache_json, error_json, read_bounded_body
 from agents.core.app_state import get_orch
 
 
@@ -33,6 +35,59 @@ class CanvasPostBody(BaseModel):
     type: str = Field(..., max_length=32)
     payload: dict = Field(default_factory=dict)
     pinned: bool = False
+
+
+class WordExport(BaseModel, extra="forbid"):
+    format: Literal["docx"]
+    text: str = Field(min_length=1, max_length=65536)
+
+
+class ExcelExport(BaseModel, extra="forbid"):
+    format: Literal["xlsx"]
+    rows: list[Annotated[list[str], Field(max_length=64)]] = Field(min_length=1, max_length=1001)
+
+
+_EXPORT_BODY = TypeAdapter(Annotated[WordExport | ExcelExport, Field(discriminator="format")])
+
+
+@router.post(
+    "/api/canvas/export", dependencies=[Depends(user_guard)], response_class=Response,
+    openapi_extra={"requestBody": {"required": True, "content": {"application/json": {"schema": {
+        "oneOf": [WordExport.model_json_schema(), ExcelExport.model_json_schema()],
+    }}}}},
+    responses={200: {"content": {mime: {"schema": {"type": "string", "format": "binary"}}
+                                for mime in (WORD_MIME, EXCEL_MIME)}}},
+)
+async def canvas_export(request: Request):
+    """Download the supplied reply or table without storing its contents."""
+    if request.headers.get("content-type", "").partition(";")[0].strip().lower() != "application/json":
+        return nocache_json({"error": "Expected application/json"}, 415)
+    raw = await read_bounded_body(request, 1024 * 1024)
+    if raw is None:
+        return nocache_json({"error": "Export request exceeds 1 MiB"}, 413)
+    try:
+        body = _EXPORT_BODY.validate_json(raw)
+    except ValidationError:
+        return nocache_json({"error": "Supply a Word reply or an Excel table within the export limits"}, 422)
+
+    try:
+        if isinstance(body, WordExport):
+            data = await asyncio.to_thread(create_docx, body.text)
+            mime, filename = WORD_MIME, "Nerva reply.docx"
+        else:
+            data = await asyncio.to_thread(create_xlsx, body.rows)
+            mime, filename = EXCEL_MIME, "Nerva table.xlsx"
+    except ValueError:
+        return nocache_json({"error": "This content exceeds the format limits or contains unsupported characters"}, 422)
+    except ModuleNotFoundError as exc:
+        if exc.name != "docx":
+            raise
+        return nocache_json({"error": "The Word export dependency is unavailable"}, 503)
+    return Response(data, media_type=mime, headers={
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox; default-src 'none'",
+    })
 
 
 @router.get("/api/canvas", dependencies=[Depends(user_guard)])

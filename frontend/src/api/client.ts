@@ -68,7 +68,7 @@ async function request(
 ): Promise<Response> {
   // Awaited only when needed: on loopback the fetch still starts synchronously.
   if (needsOwnerSession(method)) await loadOwnerSession();
-  const init: RequestInit = { method, headers: buildHeaders(opts.admin, method), signal: opts.signal };
+  const init: RequestInit = { method, headers: buildHeaders(opts.admin, method), signal: opts.signal, credentials: 'same-origin' };
   if (body !== undefined) {
     (init.headers as Record<string, string>)['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
@@ -183,6 +183,19 @@ export async function apiGetBlob(path: string, opts?: { admin?: boolean }): Prom
     let body: unknown;
     try { body = await res.json(); } catch { /* non-JSON */ }
     throw Object.assign(new Error(`GET ${path} -> ${res.status}`), { status: res.status, body });
+  }
+  return res.blob();
+}
+
+/** Same guarded write path as apiPost, for the Canvas Office export's binary response. */
+export async function apiExportOffice(body: { format: 'docx'; text: string } | { format: 'xlsx'; rows: string[][] }): Promise<Blob> {
+  const res = await request('POST', '/api/canvas/export', body);
+  if (!res.ok) await failMutation('POST', '/api/canvas/export', res);
+  const expected = body.format === 'docx'
+    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (res.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase() !== expected) {
+    throw new Error('unexpected Office export response');
   }
   return res.blob();
 }

@@ -98,7 +98,7 @@ export function headingAnchor(text: string): string {
 /** *breaks*: a single newline inside a paragraph is a line break (GitHub's comment
     flavour), for chat replies and notes written line by line; without it the lines of
     a paragraph join, as in a document. */
-export function Markdown({ text, className, breaks = false }: { text: string; className?: string; breaks?: boolean }) {
+export function Markdown({ text, className, breaks = false, tableExport }: { text: string; className?: string; breaks?: boolean; tableExport?: (rows: string[][]) => React.ReactNode }) {
   const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
   const blocks: React.ReactNode[] = [];
   const anchors = new Map<string, number>();  // a repeated anchor gets -2, -3 … like GitHub's
@@ -131,13 +131,15 @@ export function Markdown({ text, className, breaks = false }: { text: string; cl
       const rows: string[][] = [];
       i += 2;
       while (i < lines.length && lines[i].trim() && lines[i].includes('|')) { rows.push(tableCells(lines[i])); i += 1; }
-      blocks.push(
-        <table key={key}>
+      blocks.push(<React.Fragment key={key}>
+        <table>
           <thead><tr>{head.map((cell, c) => <th key={c}>{renderInline(cell, `t${key}-${c}-`)}</th>)}</tr></thead>
           <tbody>{rows.map((row, r) => (
             <tr key={r}>{row.map((cell, c) => <td key={c}>{renderInline(cell, `t${key}-${r}-${c}-`)}</td>)}</tr>
           ))}</tbody>
-        </table>);
+        </table>
+        {tableExport?.([head, ...rows])}
+      </React.Fragment>);
       continue;
     }
     if (RULE.test(line)) { blocks.push(<hr key={key} />); i += 1; continue; }
