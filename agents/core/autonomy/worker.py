@@ -1986,7 +1986,7 @@ class AutonomyWorker:
         initial_ids = {task.id for task in runnable}
         async with asyncio.TaskGroup() as group:
             children = [group.create_task(self._run_runnable([task])) for task in selected]
-            inflight = {task.id: (task, child) for task, child in zip(selected, children)}
+            inflight = {task.id: (task, child) for task, child in zip(selected, children, strict=True)}
             last_refill_error = None
             while admission is not None and refill_limit > 0 and any(not child.done() for child in children):
                 live = {child for child in children if not child.done()}

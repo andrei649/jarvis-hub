@@ -194,7 +194,11 @@ def test_the_sentinel_table_still_matches_the_hub():
     from agents.cli.nerva import _NOT_AN_ANSWER
     from agents.core.agent_runtime import _APPROVAL_REPLY
     from agents.core.conversation_clock import CONTEXT_REFUSED_REPLY
-    from agents.core.llm.base import CLOUD_SELECTION_UNAVAILABLE_REPLY, LOCAL_SELECTION_UNAVAILABLE_REPLY, THINKING_EXHAUSTED_REPLY
+    from agents.core.llm.base import (
+        CLOUD_SELECTION_UNAVAILABLE_REPLY,
+        LOCAL_SELECTION_UNAVAILABLE_REPLY,
+        THINKING_EXHAUSTED_REPLY,
+    )
     from agents.core.orchestrator import TURN_BUSY_REPLY
     from agents.core.session_continuation import CONTINUATION_REFUSED_REPLY
 
@@ -631,7 +635,11 @@ def test_the_sentinel_table_matches_every_reply_the_hub_can_send():
         _WINDOW_REPLY,
     )
     from agents.core.conversation_clock import CONTEXT_REFUSED_REPLY
-    from agents.core.llm.base import CLOUD_SELECTION_UNAVAILABLE_REPLY, LOCAL_SELECTION_UNAVAILABLE_REPLY, THINKING_EXHAUSTED_REPLY
+    from agents.core.llm.base import (
+        CLOUD_SELECTION_UNAVAILABLE_REPLY,
+        LOCAL_SELECTION_UNAVAILABLE_REPLY,
+        THINKING_EXHAUSTED_REPLY,
+    )
     from agents.core.orchestrator import TURN_BUSY_REPLY
     from agents.core.session_continuation import CONTINUATION_REFUSED_REPLY
 

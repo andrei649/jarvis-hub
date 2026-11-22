@@ -59,10 +59,10 @@ def test_active_workers_includes_two_current_native_runs_and_excludes_stale_runs
         stale, _ = claimed("stopped", locks, release=True)
         orphan, _ = claimed("orphan", locks)
         ended, ended_run = claimed("ended", locks)
-        with kanban_scope(KanbanContext(tmp_path, "dispatcher", can_mutate=True)), kb.connect_closing() as conn:
-            with kb.write_txn(conn):
-                conn.execute("UPDATE tasks SET current_run_id=NULL WHERE id=?", (orphan,))
-                conn.execute("UPDATE task_runs SET ended_at=? WHERE id=?", (int(time.time()), ended_run))
+        with (kanban_scope(KanbanContext(tmp_path, "dispatcher", can_mutate=True)),
+              kb.connect_closing() as conn, kb.write_txn(conn)):
+            conn.execute("UPDATE tasks SET current_run_id=NULL WHERE id=?", (orphan,))
+            conn.execute("UPDATE task_runs SET ended_at=? WHERE id=?", (int(time.time()), ended_run))
         workers = client.get("/api/kanban/workers/active")
         assert workers.status_code == 200, workers.text
         rows = workers.json()["workers"]
@@ -92,11 +92,11 @@ def test_active_workers_includes_two_current_native_runs_and_excludes_stale_runs
         @contextmanager
         def finishes_during_probe(home, record, *, observer=False):
             if record["task_id"] == one:
-                with kanban_scope(KanbanContext(tmp_path, "dispatcher", can_mutate=True)), kb.connect_closing() as conn:
-                    with kb.write_txn(conn):
-                        conn.execute("UPDATE task_runs SET ended_at=?, status='done' WHERE id=?",
-                                     (int(time.time()), first_run))
-                        conn.execute("UPDATE tasks SET status='done', current_run_id=NULL WHERE id=?", (one,))
+                with (kanban_scope(KanbanContext(tmp_path, "dispatcher", can_mutate=True)),
+                      kb.connect_closing() as conn, kb.write_txn(conn)):
+                    conn.execute("UPDATE task_runs SET ended_at=?, status='done' WHERE id=?",
+                                 (int(time.time()), first_run))
+                    conn.execute("UPDATE tasks SET status='done', current_run_id=NULL WHERE id=?", (one,))
                 yield "unverifiable"
             else:
                 with original_probe(home, record, observer=observer) as status:
@@ -113,11 +113,11 @@ def test_active_workers_keeps_current_legacy_pid_run_with_old_or_missing_native_
     task_id = client.post("/api/kanban/tasks", json={"title": "legacy", "assignee": "legacy",
                                                        "triage": True}).json()["task"]["id"]
     assert client.patch(f"/api/kanban/tasks/{task_id}", json={"status": "ready"}).status_code == 200
-    with kanban_scope(KanbanContext(tmp_path, "owner", can_mutate=True)), kb.connect_closing() as conn:
-        with kb.write_txn(conn):
-            run_id = kb._claim_and_open_run(conn, task_id, "ready", "legacy-claim",
-                                            int(time.time()) + 3600, int(time.time()))
-            conn.execute("UPDATE task_runs SET worker_pid=? WHERE id=?", (os.getpid(), run_id))
+    with (kanban_scope(KanbanContext(tmp_path, "owner", can_mutate=True)),
+          kb.connect_closing() as conn, kb.write_txn(conn)):
+        run_id = kb._claim_and_open_run(conn, task_id, "ready", "legacy-claim",
+                                        int(time.time()) + 3600, int(time.time()))
+        conn.execute("UPDATE task_runs SET worker_pid=? WHERE id=?", (os.getpid(), run_id))
     with kanban_scope(KanbanContext(tmp_path, "owner", can_mutate=True)), kb.connect_closing() as conn:
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='nerva_dispatches'").fetchone() is None
     workers = client.get("/api/kanban/workers/active")
@@ -236,6 +236,7 @@ def test_links_review_runs_bulk_and_signed_dispatch(tmp_path, monkeypatch):
 
 def test_recover_uses_the_reviewed_run_and_board(tmp_path, monkeypatch):
     from types import SimpleNamespace
+
     from agents.core.kanban.context import require_mutation
 
     client = _client(tmp_path)

@@ -144,7 +144,7 @@ def test_list_does_not_silently_drop_versions_after_one_hundred():
     body = engine.workshop_projects.note_content(robot())
     fake = SimpleNamespace(
         SOURCE_VAULT="vault", _BRAIN_LOCK=threading.Lock(),
-        _BRAIN_CACHE={"key": "fixed", "files": {path: ("vault", "root", ()) for path in paths}},
+        _BRAIN_CACHE={"key": "fixed", "files": dict.fromkeys(paths, ("vault", "root", ()))},
         _cache_key=lambda _cfg: "fixed",
         build_real_brain_graph=lambda _cfg: {"ok": True, "nodes": [{"relPath": path, "workshopProject": True} for path in paths]},
         read_indexed_note=lambda _cfg, path: (path, [], body, []),

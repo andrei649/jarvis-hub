@@ -292,9 +292,8 @@ def test_athena_job_provider_pin_cannot_substitute_local():
     router._backend, router._gemini_backend = FakeBackend(), FakeBackend()
     router._backend.context_window = lambda _model: 8192
     router._backend_name = "lm-studio"
-    with selection_scope({"provider": "lm-studio"}):
-        with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
-            router.select_backend("athena", "hello")
+    with selection_scope({"provider": "lm-studio"}), pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+        router.select_backend("athena", "hello")
 
 
 @pytest.mark.parametrize("override", ["active-model", "job-pin"])
@@ -308,9 +307,8 @@ def test_athena_local_committee_override_is_refused(monkeypatch, override):
         with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
             router.select_backend("athena", "hello")
     else:
-        with selection_scope({"model": "moa:local"}):
-            with pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
-                router.select_backend("athena", "hello")
+        with selection_scope({"model": "moa:local"}), pytest.raises(CloudBackendUnavailableError, match="strict-cloud"):
+            router.select_backend("athena", "hello")
 
 
 @pytest.mark.parametrize("member_route", ["local", "cloud"])

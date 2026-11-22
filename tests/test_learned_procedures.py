@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from agents.core.skills import bundles, slash_load
 from agents.core.skills import loader as loader_mod
-from agents.core.skills import slash_load, bundles
 from agents.core.skills.approval import SkillApprovalStore
 from agents.core.skills.loader import SkillLoader
 from agents.core.skills.tools import read_skill

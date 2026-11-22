@@ -98,8 +98,8 @@ def test_a_refine_cut_off_logs_no_line_and_the_per_turn_pass_logs_one(caplog):
 @pytest.mark.parametrize("stored, sent", [(-1, 1024), (40_000, 1024), ("abc", 1024),
                                            (None, 1024), (512, 512), (1024, 1024)])
 def test_the_orchestrators_review_call_reads_the_cap_within_its_bounds(monkeypatch, stored, sent):
-    from agents.core.orchestrator import Orchestrator
     from agents.core.llm import auxiliary_text
+    from agents.core.orchestrator import Orchestrator
 
     calls = []
 

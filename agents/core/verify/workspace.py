@@ -47,6 +47,7 @@ import subprocess  # nosec B404 - fixed read-only git argv, see module doc
 import threading
 import time
 from collections import OrderedDict
+from contextlib import suppress
 from pathlib import Path
 
 logger = logging.getLogger("jarvis.verify.workspace")
@@ -177,10 +178,8 @@ def git(root: Path, *args: str, budget: _Budget | None = None,
         return None
     finally:
         if proc.poll() is None:
-            try:
+            with suppress(OSError):  # the child may exit between poll() and kill()
                 proc.kill()
-            except OSError:
-                pass  # the child may exit between poll() and kill()
         proc.wait()
         if proc.stdout is not None:
             proc.stdout.close()

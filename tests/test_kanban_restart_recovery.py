@@ -10,7 +10,6 @@ from agents.core.kanban import dispatch_store as store
 from agents.core.kanban.context import KanbanContext, kanban_scope
 from agents.core.kanban.dispatcher import _file_identity
 from agents.core.kanban.upstream import kanban_db as kb
-
 from tests.test_hermes_kanban_dispatcher import OWNER, create, fixture_runtime, read
 
 
@@ -35,13 +34,13 @@ async def claimed_attempt(tmp_path, monkeypatch, *, marked=True):
                      decided_by="owner", decision="approve")
     q = queue.claim_mediated(queued["queue_id"],
                              execution_id="00000000-0000-4000-8000-000000000001")
-    with kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)):
-        with kb.connect_closing() as conn:
-            record = conn.execute("SELECT * FROM nerva_dispatches WHERE task_id=?",
-                                  (task_id,)).fetchone()
-            with controller._attempt_lock(record["id"]) as identity:
-                claimed = store.claim(conn, record, q, ttl_seconds=3600,
-                                      recovery_identity=identity if marked else None)
+    with (kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)),
+          kb.connect_closing() as conn):
+        record = conn.execute("SELECT * FROM nerva_dispatches WHERE task_id=?",
+                              (task_id,)).fetchone()
+        with controller._attempt_lock(record["id"]) as identity:
+            claimed = store.claim(conn, record, q, ttl_seconds=3600,
+                                  recovery_identity=identity if marked else None)
     return controller, orch, task_id, q, claimed.current_run_id
 
 
@@ -62,9 +61,9 @@ async def test_released_attempt_is_parked_once_without_replay(tmp_path, monkeypa
 @pytest.mark.asyncio
 async def test_active_attempt_and_legacy_claim_are_not_recovered(tmp_path, monkeypatch):
     controller, orch, task_id, q, run_id = await claimed_attempt(tmp_path, monkeypatch)
-    with kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)):
-        with kb.connect_closing() as conn:
-            sid = store.submissions(conn)[0]["id"]
+    with (kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)),
+          kb.connect_closing() as conn):
+        sid = store.submissions(conn)[0]["id"]
     # A second live lock holder proves the process still owns the attempt.
     from pathlib import Path
     path = Path(controller.home) / "nerva-attempts" / (sid + ".lock")
@@ -101,9 +100,8 @@ async def test_dispatch_reconciles_released_attempt_without_replaying(tmp_path, 
 async def test_completed_board_effect_survives_interrupted_queue(tmp_path, monkeypatch):
     controller, orch, task_id, q, run_id = await claimed_attempt(tmp_path, monkeypatch)
     with kanban_scope(KanbanContext(controller.home, "jarvis", task_id=task_id,
-                                    run_id=run_id, can_mutate=True)):
-        with kb.connect_closing() as conn:
-            assert kb.complete_task(conn, task_id, result="finished", expected_run_id=run_id)
+                                    run_id=run_id, can_mutate=True)), kb.connect_closing() as conn:
+        assert kb.complete_task(conn, task_id, result="finished", expected_run_id=run_id)
     monkeypatch.setattr("agents.core.kanban.dispatcher._pid_alive", lambda pid: False)
     with kanban_scope(KanbanContext(controller.home, "owner", can_mutate=True)):
         result = await controller.recover_interrupted(task_id, expected_run_id=run_id)
@@ -116,12 +114,11 @@ async def test_completed_board_effect_survives_interrupted_queue(tmp_path, monke
 async def test_finished_board_waits_for_process_exit_before_queue_settlement(tmp_path, monkeypatch):
     controller, orch, task_id, q, run_id = await claimed_attempt(tmp_path, monkeypatch)
     with kanban_scope(KanbanContext(controller.home, "jarvis", task_id=task_id,
-                                    run_id=run_id, can_mutate=True)):
-        with kb.connect_closing() as conn:
-            assert kb.complete_task(conn, task_id, result="finished", expected_run_id=run_id)
-    with kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)):
-        with kb.connect_closing() as conn:
-            store.finish(conn, store.submissions(conn)[0]["id"], state="finished")
+                                    run_id=run_id, can_mutate=True)), kb.connect_closing() as conn:
+        assert kb.complete_task(conn, task_id, result="finished", expected_run_id=run_id)
+    with (kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)),
+          kb.connect_closing() as conn):
+        store.finish(conn, store.submissions(conn)[0]["id"], state="finished")
     await controller.request(OWNER)
     assert orch.autonomy_queue.get(q.id).status == "running"
     monkeypatch.setattr("agents.core.kanban.dispatcher._pid_alive", lambda pid: False)
@@ -133,19 +130,19 @@ async def test_finished_board_waits_for_process_exit_before_queue_settlement(tmp
 @pytest.mark.asyncio
 async def test_finished_receipt_is_removed_once_after_queue_completion(tmp_path, monkeypatch):
     controller, orch, _, _, _ = fixture_runtime(tmp_path, monkeypatch)
-    task_id = create(controller)
+    create(controller)
     qid = (await controller.request(OWNER))["queued"][0]["queue_id"]
     orch.autonomy_queue.transition(qid, TaskStatus.APPROVED,
                                    decided_by="owner", decision="approve")
     assert (await orch.autonomy.tick())["done"] == 1
-    with kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)):
-        with kb.connect_closing() as conn:
-            record = store.submissions(conn)[0]
+    with (kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)),
+          kb.connect_closing() as conn):
+        record = store.submissions(conn)[0]
     from pathlib import Path
     path = Path(controller.home) / "nerva-attempts" / (record["id"] + ".lock")
     assert path.exists()
     await controller.request(OWNER)
     assert not path.exists()
-    with kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)):
-        with kb.connect_closing() as conn:
-            assert store.submissions(conn)[0]["recovery_dev"] is None
+    with (kanban_scope(KanbanContext(controller.home, "dispatcher", can_mutate=True)),
+          kb.connect_closing() as conn):
+        assert store.submissions(conn)[0]["recovery_dev"] is None

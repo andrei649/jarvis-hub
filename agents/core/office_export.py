@@ -1,8 +1,8 @@
 """Local, data-only Word and spreadsheet exports."""
 
 import re
+from html import escape
 from io import BytesIO
-from xml.sax.saxutils import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
 WORD_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -137,7 +137,7 @@ def create_xlsx(rows: list[list[str]]) -> bytes:
             if _number(value):
                 columns.append(f'<c r="{ref}"><v>{value}</v></c>')
             else:
-                safe = escape(_OOXML_ESCAPE.sub("_x005F_", value)).replace("\r", "&#13;")
+                safe = escape(_OOXML_ESCAPE.sub("_x005F_", value), quote=False).replace("\r", "&#13;")
                 columns.append(f'<c r="{ref}" t="inlineStr"><is><t xml:space="preserve">{safe}</t></is></c>')
         cells.append(f'<row r="{row_num}">{"".join(columns)}</row>')
     column_xml = "".join(f'<col min="{number}" max="{number}" width="{width}" customWidth="1"/>'
