@@ -82,7 +82,7 @@ it('ignores old hub, session and agent callbacks and disables capture while hist
   expect(voice.props.disabled).toBe(true);
   await act(async () => old.onTranscript('History late result'));
   expect((screen.getByPlaceholderText('Message Jarvis…') as HTMLInputElement).value).toBe('');
-  fireEvent.click(screen.getByText('Resume session').closest('button')!.parentElement!);
+  fireEvent.click(screen.getByRole('button', { name: 'Close history' }));
   fireEvent.click(screen.getByText('New'));
   await act(async () => ChatXHR.latest!.end('fresh'));
   expect(voice.props.contextKey).not.toBe(old.contextKey);
@@ -95,7 +95,7 @@ it('ignores old hub, session and agent callbacks and disables capture while hist
   old = voice.props;
   await act(async () => server.updateConfig({ ...config, token: 'different' }));
   await act(async () => { old.onTranscript('Old hub result'); old.onState({ status: 'listening', level: 1 }); });
-  expect((await screen.findByPlaceholderText('Message Jarvis…') as HTMLInputElement).value).toBe('');
+  expect((await screen.findByPlaceholderText('Message @frigga…') as HTMLInputElement).value).toBe('');
   expect(screen.getByTestId('dictation-orb').getAttribute('data-status')).not.toBe('listening');
 });
 

@@ -470,6 +470,26 @@ async def test_local_unavailable_paths_share_stable_reply_and_zero_cloud_calls(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_retired_web_recipient_never_falls_back_to_another_agent(monkeypatch, stream):
+    local = RecordingBackend("local")
+    cloud = RecordingBackend("cloud", provider="gemini")
+    athena = build_agent("athena", local=local, gemini=cloud, claude=cloud)
+    orch = streamed_orchestrator_for(athena, athena.llm_router, GuardrailsEngine(backend=local), monkeypatch)
+    orch.agents["frigga"] = build_agent("frigga", local=local, gemini=cloud, claude=cloud)
+
+    async def retire_selected(*args):
+        del orch.agents["frigga"]
+        return {}
+
+    orch._gather_plugin_data = retire_selected
+    run = orch.handle_input_stream if stream else orch.handle_input
+    reply = await run("private question", channel="web", agent_override="frigga", session_id="stream")
+    assert "selected agent is no longer available" in reply
+    assert not (local.calls or cloud.calls)
+
+
+@pytest.mark.asyncio
 async def test_cloud_only_failure_reaches_normal_and_streamed_chat(monkeypatch):
     local = RecordingBackend("local answer")
     gemini = RecordingBackend("gemini answer", provider="gemini")

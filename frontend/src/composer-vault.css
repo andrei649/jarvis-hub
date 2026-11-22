@@ -19,6 +19,7 @@
 .vault-review-note details p { white-space: pre-wrap; }
 .vault-review-actions { display: flex; align-items: center; gap: 10px; margin: 4px 0 0 24px; }
 .vault-review-actions a { color: var(--accent-light); }
+.vault-review-note .vault-path-option { margin: 6px 0 0 24px; align-items: flex-start; overflow-wrap: anywhere; }
 .vault-passage-picker, .vault-passage-preview { margin: 8px 0 0 24px; }
 .vault-passage-picker label, .vault-passage-preview strong { display: block; margin-bottom: 4px; }
 .vault-passage-picker textarea { display: block; box-sizing: border-box; width: 100%; margin-bottom: 6px; resize: vertical; color: var(--ink); background: var(--panel, #10171c); }

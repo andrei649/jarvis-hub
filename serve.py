@@ -706,3 +706,6 @@ if __name__ == "__main__":
         main()
     except ConfigurationRefused as refused:
         _leave_refused(refused)
+    except KeyboardInterrupt:
+        print("Nerva interrupted.", file=sys.stderr)
+        raise SystemExit(130) from None

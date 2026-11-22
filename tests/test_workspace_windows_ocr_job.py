@@ -639,7 +639,10 @@ async def test_native_windows_job_assignment_and_pipe_roundtrip():
     from agents.core.workspace.win_job_process import OwnedJobProcess
 
     script = ('import ctypes; import sys; from ctypes import wintypes; '
-              'k=ctypes.WinDLL("kernel32",use_last_error=True); v=wintypes.BOOL(); '
+              'k=ctypes.WinDLL("kernel32",use_last_error=True); '
+              'k.GetCurrentProcess.restype=wintypes.HANDLE; '
+              'k.IsProcessInJob.argtypes=(wintypes.HANDLE,wintypes.HANDLE,ctypes.POINTER(wintypes.BOOL)); '
+              'v=wintypes.BOOL(); '
               'assert k.IsProcessInJob(k.GetCurrentProcess(),None,ctypes.byref(v)); '
               'sys.stdout.write("owned\\n" if v.value else "unowned\\n")')
     owner = OwnedJobProcess.spawn([sys.executable, '-c', script], cwd=os.getcwd(),

@@ -799,13 +799,12 @@ async def _reap_with_native(tmp_path, native, *, helper_argv=None):
     import os
     import subprocess
     import sys
-    import tempfile
-    from pathlib import Path
 
+    from agents.core.browser_profile import create_owned_profile
     from agents.core.browser_session import BrowserOwnershipJournal
 
     journal = BrowserOwnershipJournal(tmp_path / 'journal')
-    profile = Path(tempfile.mkdtemp(prefix='nerva-browser-reuse-test'))
+    profile, identity = create_owned_profile()
     sid = 'd' * 32
     gone = [os.getpid(), 1.0]                      # a live PID with another start time
     unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
@@ -817,7 +816,7 @@ async def _reap_with_native(tmp_path, native, *, helper_argv=None):
         import psutil
 
         record_native = native(psutil.Process(unrelated.pid)) if callable(native) else native
-        journal.write(sid, {'profile': str(profile), 'controller': gone,
+        journal.write(sid, {'profile': str(profile), 'profile_identity': identity, 'controller': gone,
                             'owner_process': gone, 'native': record_native})
         result = await journal.reap_entry(journal._file(sid))
         return (result, profile.exists(), journal._file(sid).exists(),
@@ -846,12 +845,16 @@ async def test_a_reused_native_pid_is_gone_and_its_new_holder_untouched(tmp_path
 
 @pytest.mark.asyncio
 async def test_a_crash_while_chrome_launched_still_sweeps_its_profile(tmp_path):
-    """native=None: the owner died between the journal's 'profile' and 'native' writes.
-    Whatever names this exact profile is swept, and the entry no longer refuses forever."""
+    """A Windows profile marker alone cannot authorize termination of a different executable."""
+    import os
+
     result, profile_left, journal_left, unrelated_alive, helper_code = await _reap_with_native(
         tmp_path, None, helper_argv=lambda profile: f'--user-data-dir={profile}')
-    assert result is True and not profile_left and not journal_left
-    assert unrelated_alive and helper_code is not None    # the profile's process was ended
+    assert unrelated_alive
+    if os.name == 'nt':
+        assert result is False and profile_left and journal_left and helper_code is None
+    else:
+        assert result is True and not profile_left and not journal_left and helper_code is not None
 
 
 @pytest.mark.asyncio

@@ -45,7 +45,7 @@ function validShortcut(value: unknown): value is ShortcutSummary {
 }
 
 /** Read the current chat principal's catalog without invoking any command. */
-export async function fetchCommands(config: ServerConfig, signal: AbortSignal): Promise<CommandCatalog> {
+export async function fetchCommands(config: ServerConfig, signal: AbortSignal, agent?: string): Promise<CommandCatalog> {
   const base = normalizeBaseUrl(config.baseUrl);
   if (!base) throw new ApiError('No server URL configured');
   const abort = new AbortController();
@@ -61,7 +61,7 @@ export async function fetchCommands(config: ServerConfig, signal: AbortSignal): 
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (config.token.trim()) headers['X-User-Token'] = config.token.trim();
     if (config.adminToken.trim()) headers['X-Admin-Token'] = config.adminToken.trim();
-    const response = await fetch(base + '/api/commands', {
+    const response = await fetch(base + '/api/commands' + (agent ? `?agent=${encodeURIComponent(agent)}` : ''), {
       method: 'GET', headers, signal: abort.signal, cache: 'no-store', redirect: 'error',
     });
     if (abort.signal.aborted) throw new ApiError('Command request cancelled or timed out');

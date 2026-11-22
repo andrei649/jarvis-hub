@@ -134,6 +134,7 @@ export async function loadJarvisData(demo = false, isCurrent: () => boolean = ()
       const m = META[a.id] || ({} as any);
       return {
         ...a,
+        rosterSource: 'api',
         id: a.id,
         name: a.name || m.name || cap(a.id),
         tier: a.tier || m.tier || 'FND',

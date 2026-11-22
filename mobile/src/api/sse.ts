@@ -14,6 +14,7 @@ export type SseEvent = {
   session_id?: unknown;
   session_transition?: unknown;
   outcome?: unknown;
+  model_calls?: unknown;
 };
 
 /**

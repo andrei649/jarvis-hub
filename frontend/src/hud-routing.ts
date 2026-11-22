@@ -26,6 +26,8 @@ export function parseHudRoute(pathname: string, search = '', hash = '', floating
 
 export function routeHref(path: string, href = window.location.href): string {
   const url = new URL(href, window.location.origin);
+  if (logicalPath(url.pathname) === '/v2/console/pending-skills' && path !== '/v2/console/pending-skills'
+      && url.hash.startsWith('#skill=')) url.hash = '';
   url.pathname = appUrl(path);
   // Legacy World toggles are consumed by routing; all other context is preserved.
   url.searchParams.delete('world');

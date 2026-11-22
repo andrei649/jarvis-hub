@@ -122,11 +122,12 @@ it('clears counts during refresh, then shows invalid evidence with no counts', a
 });
 
 it('clears a valid count immediately on refresh and keeps errors neutral', async () => {
-  let reads = 0;
-  global.fetch = vi.fn(async () => ++reads === 1 ? response(valid())
+  let authorized = true;
+  global.fetch = vi.fn(async () => authorized ? response(valid())
     : response({ error: 'owner-one https://first.test secret' }, 401)) as any;
   mountCard();
   await waitFor(() => expect(screen.getByText('Authorized enqueue events: 2')).toBeTruthy());
+  authorized = false;
   fireEvent.click(screen.getByText('Refresh'));
   expect(screen.queryByText(/Authorized enqueue events:/)).toBeNull();
   await waitFor(() => expect(screen.getByText('Task mediation status unavailable.')).toBeTruthy());

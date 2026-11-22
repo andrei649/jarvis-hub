@@ -67,6 +67,7 @@ from agents.core.skills.approval import SkillApprovalStore
 from agents.core.skills.loader import SkillLoader
 from agents.core.skills.usage import SkillUsageStore
 from agents.core.tool_rpc import ToolRPCServer
+from tests.private_file_permissions import assert_private_file
 
 ENTRY = "/api/dashboard/today/entries/"
 ADMIN = {"X-Admin-Token": "t"}
@@ -502,7 +503,7 @@ def test_cli_edit_opens_the_editor_on_the_entry(hub, monkeypatch, tmp_path):
     def _editor(argv, path):
         with open(path, encoding="utf-8") as fh:
             seen["argv"], seen["text"] = argv, fh.read()
-        seen["mode"] = os.stat(path).st_mode & 0o777
+        assert_private_file(path)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write("warm and brief\n")
         return 0
@@ -511,7 +512,6 @@ def test_cli_edit_opens_the_editor_on_the_entry(hub, monkeypatch, tmp_path):
     code, out, err, _ = _cli(["memory-graph", "edit", entry], hub, environ={"EDITOR": "nano -w"})
     assert code == EXIT_OK, err
     assert seen["argv"] == ["nano", "-w"] and seen["text"] == "concise\n"
-    assert seen["mode"] == 0o600                       # owner-only while the editor has it
     assert hub.store._get_by_id_sync(row["id"])["value"] == "warm and brief"
 
     # Saved unchanged: nothing is written; an editor that fails writes nothing either.
@@ -647,6 +647,57 @@ def test_owner_edits_and_forgets_a_ring_fact_through_the_memory_tools_write(hub)
     assert hub.audit.rows[-1]["metadata"]["operations"] == [{"action": "remove", "target": "user"}]
     assert hub.client.delete(ENTRY + entry, headers=ADMIN).status_code == 404
     assert "lives in Bucharest" not in _by_value(_learned(hub.client)[0])
+
+
+def test_chat_fact_picker_lists_only_the_requested_ring_and_its_id_can_be_corrected(hub, monkeypatch):
+    _remember(hub, {"action": "add", "target": "user", "text": "prefers tea"},
+              {"action": "add", "target": "memory", "text": "private project note"})
+    path = "/api/memory/core/facts"
+    with monkeypatch.context() as scoped:
+        scoped.setattr(hub.living.core, "sync_from_disk", lambda: pytest.fail("read the other ring"))
+        reply = hub.client.get(path, params={"store": "user"}, headers=ADMIN)
+    assert reply.status_code == 200, reply.text
+    assert "no-store" in reply.headers["cache-control"]
+    entry_id = ring_fact_id("user", "prefers tea")
+    assert reply.json() == {"entries": [{"entry_id": entry_id, "store": "user", "value": "prefers tea"}]}
+    edit = hub.client.patch(ENTRY + entry_id, json={"value": "prefers coffee"}, headers=ADMIN)
+    assert edit.status_code == 200 and edit.json()["changed"]
+    assert hub.client.patch(ENTRY + entry_id, json={"value": "prefers water"}, headers=ADMIN).status_code == 404
+    assert hub.living.user_core.list() == ["prefers coffee"]
+    assert hub.living.core.list() == ["private project note"]
+
+
+def test_chat_fact_picker_requires_owner_and_explicit_store_before_reading(hub, monkeypatch):
+    monkeypatch.setattr(hub.living.user_core, "sync_from_disk", lambda: pytest.fail("unauthorized ring read"))
+    monkeypatch.setattr(web, "USER_TOKEN", "guest")
+    path = "/api/memory/core/facts"
+    for headers in ({}, {"X-User-Token": "guest"}):
+        assert hub.client.get(path, params={"store": "user"}, headers=headers).status_code == 401
+    for query in ({}, {"store": "facts"}):
+        assert hub.client.get(path, params=query, headers=ADMIN).status_code == 422
+
+
+def test_chat_fact_picker_refuses_unreadable_ring_instead_of_showing_stale_entries(hub):
+    _remember(hub, {"action": "add", "target": "user", "text": "private wording"})
+    hub.living.user_core.path.write_text("invalid ring", encoding="utf-8")
+    reply = hub.client.get("/api/memory/core/facts", params={"store": "user"}, headers=ADMIN)
+    assert reply.status_code == 409
+    assert "entries" not in reply.json() and "private wording" not in reply.text
+
+
+def test_chat_fact_picker_can_shorten_a_fact_saved_before_the_character_limit(hub):
+    from agents.core.cognition.memory import CoreMemory
+
+    original = "Old project instructions. " * 18
+    legacy = CoreMemory(path=hub.living.core.path)
+    assert legacy.put(original)
+    response = hub.client.get("/api/memory/core/facts", params={"store": "memory"}, headers=ADMIN)
+    assert response.status_code == 200
+    [entry] = response.json()["entries"]
+    assert entry["value"] == original.strip() and len(entry["value"]) > 300
+    edited = hub.client.patch(ENTRY + entry["entry_id"], json={"value": "Use the revised instructions."}, headers=ADMIN)
+    assert edited.status_code == 200 and edited.json()["changed"]
+    assert hub.living.core.list() == ["Use the revised instructions."]
 
 
 def test_owner_creates_a_ring_fact_then_reads_and_undoes_it(hub):
@@ -916,7 +967,7 @@ def test_the_added_record_holds_only_what_the_ring_holds_and_goes_with_it(tmp_pa
     ring = CoreMemory(cap=20, path=root / "cognition" / "user_core.json")
     assert ring.put("lives in Bucharest") and ring.put("has a cat")
     record = root / "cognition" / "user_core.json.added"
-    assert (record.stat().st_mode & 0o777) == 0o600
+    assert_private_file(record)
     assert ring.compare_and_set(["lives in Bucharest", "has a cat"], ["has a cat"])
     assert len(json.loads(record.read_text())["added"]) == 1             # the removed fact's line is gone
     assert "lives in Bucharest" not in record.read_text() and "has a cat" not in record.read_text()

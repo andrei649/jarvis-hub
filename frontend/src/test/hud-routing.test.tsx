@@ -41,6 +41,7 @@ describe('HUD URLs', () => {
   it('preserves unrelated query and hash while clearing old World toggles', () => {
     expect(routeHref('/v2/chat', 'http://localhost/v2/?demo=1&desktop=floating&keep=ok#anchor')).toBe('/v2/chat?demo=1&desktop=floating&keep=ok#anchor');
     expect(routeHref('/v2/chat', 'http://localhost/v2/?world=1&demo=1#world')).toBe('/v2/chat?demo=1');
+    expect(routeHref('/v2/chat', 'http://localhost/v2/console/pending-skills#skill=print-proof')).toBe('/v2/chat');
   });
   it('replaces root/unknown routes, updates titles and reports unknown URLs', async () => {
     window.history.replaceState(null, '', '/v2/console/unknown?demo=1#anchor');

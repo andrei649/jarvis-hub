@@ -88,6 +88,18 @@ a transcript. The projection accepts at most 100 retained turns and 2 MiB of
 compact UTF-8 JSON before and after secret redaction. Redaction uses the existing
 secret scanner; it does not promise removal of arbitrary personal information.
 
+Owners can request `?references=true` to quote retained native text. Imported
+sessions are ineligible. A turn carrying media or another chat source also
+makes that turn and all subsequent retained turns ineligible for quoting.
+Eligible turns include a `reference_revision`.
+Both chat endpoints accept a `history_reference` containing the source session, turn,
+revision, selected passage and cloud consent. The hub verifies the saved source
+again before dispatch, then fences the exact passage as untrusted model input.
+The destination must also be native. Its question stores the source ID, turn,
+role and revision. Sourced chat responses and stream end events include
+`history_source_used` so the composer can keep the draft when the destination
+is busy. The original conversation stays available at its existing location.
+
 `nerva sessions transcript SESSION_ID` prints one validated JSON document.
 `nerva sessions transcript SESSION_ID --out FILE` creates a private file only if
 the destination does not exist; files, directories and symlinks are never

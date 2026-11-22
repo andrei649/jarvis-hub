@@ -45,8 +45,10 @@ describe('Office export from normal chat', () => {
     const props = { messages: [reply], thinking: null, onSubmit: () => {}, t: { channel: 'Chat', transmit: 'Send', placeholder: 'Message' }, lang: 'en', agent: 'jarvis', sessionId: 's' };
     const view = render(<ChatMode {...props} selectedTurn />);
     expect(screen.getByRole('button', { name: 'Download Word' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Photoshop' })).toBeTruthy();
     view.rerender(<ChatMode {...props} selectedTurn={false} />);
     expect(screen.queryByRole('button', { name: 'Download Word' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Photoshop' })).toBeNull();
   });
 
   it('posts the full reply and each distinct table, then downloads fixed filenames with the user token', async () => {
@@ -95,9 +97,10 @@ describe('Office export from normal chat', () => {
       { role: 'agent', who: 'jarvis', text: '' },
       { ...reply, _complete: false },
     ];
-    const view = render(<Conversation messages={messages} thinking={null} exportAllowed lang="en" />);
+    const view = render(<Conversation messages={messages} thinking={null} exportAllowed messageActionsAllowed lang="en" />);
     expect(screen.queryByRole('button', { name: 'Download Word' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Download Excel' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Photoshop' })).toBeNull();
     view.rerender(<Conversation messages={[reply]} thinking={null} exportAllowed={false} lang="en" />);
     expect(screen.queryByRole('button', { name: 'Download Word' })).toBeNull();
   });

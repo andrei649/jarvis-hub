@@ -242,6 +242,14 @@ def _chrome_binary() -> str | None:
     if sys.platform == 'darwin':
         path = Path('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
         return str(path) if path.is_file() else None
+    if sys.platform == 'win32':
+        for root in (os.environ.get('PROGRAMFILES'), os.environ.get('PROGRAMFILES(X86)'),
+                     os.environ.get('LOCALAPPDATA')):
+            if root:
+                path = Path(root) / 'Google' / 'Chrome' / 'Application' / 'chrome.exe'
+                if path.is_file():
+                    return str(path)
+        return None
     for name in ('google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'):
         found = shutil.which(name)
         if found:
@@ -259,6 +267,9 @@ def _launch_target() -> dict:
     Readiness accepts distro Chromium (docs/PLAYWRIGHT_OPERATOR.md), but every launch asked
     for channel='chrome', so on a Chromium-only Linux host each approved run failed at
     startup after the owner had approved it (review of #1321)."""
+    if sys.platform == 'win32':
+        binary = _chrome_binary()
+        return {'executable_path': binary} if binary else {'channel': 'chrome'}
     if sys.platform != 'linux' or _CHROME_CHANNEL_LINUX.is_file():
         return {'channel': 'chrome'}
     binary = _chrome_binary()
@@ -309,9 +320,13 @@ class BrowserRuntime:
         self._cleanup_lock = asyncio.Lock()
         from .browser_session import BrowserOwnershipJournal
         self.sessions = {}
+        self._active_plans = set()
         self.journal = BrowserOwnershipJournal(
             Path(env_str('JARVIS_HOME', str(Path.home() / '.jarvis'))) / 'browser-ownership')
-        self._journal_uncertain = bool(self.journal.entries())
+        try:
+            self._journal_uncertain = bool(self.journal.entries())
+        except (OSError, ValueError):
+            self._journal_uncertain = True
         self._reaper_task = None
         self._owner_close_tasks = {}
         if self._journal_uncertain:
@@ -326,9 +341,13 @@ class BrowserRuntime:
     def _head(self):
         domains = ('fixture:' + self.fixture_origin,) if self.fixture_origin else _server_domains()
         source = []
-        for name in ('browser_runtime.py', 'browser_agent.py', 'browser_transport.py',
-                     'browser_playwright.py', 'browser_kernel.py', 'browser_session.py'):
-            source.append(hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest())
+        files = ('browser_runtime.py', 'browser_agent.py', 'browser_transport.py',
+                 'browser_playwright.py', 'browser_kernel.py', 'browser_session.py',
+                 'browser_profile.py')
+        if os.name == 'nt':
+            files += ('browser_windows_journal.py', 'checkpoint_windows_fs.py', 'persistence/private_file.py')
+        for name in files:
+            source.append(hashlib.sha256((Path(__file__).parent / name).read_bytes()).hexdigest())
         encoded = json.dumps([domains, source, _chrome_binary(),
                               env_str('JARVIS_PLAYWRIGHT_BROWSER', 'chromium')],
                              separators=(',', ':')).encode()
@@ -579,6 +598,11 @@ class BrowserRuntime:
             browser = GovernedBrowser(driver=driver, policy=policy, agent=task.agent,
                                       action_executor=executor, transport=pins)
             trace = []
+            sid = None
+            if self.driver_factory is None:
+                sid = secrets.token_hex(16)
+                self._bind_journal(driver, sid)
+                self._active_plans.add(sid)
             try:
                 async with asyncio.timeout_at(deadline):
                     for index, step in enumerate(plan.steps):
@@ -602,11 +626,11 @@ class BrowserRuntime:
                         _append_within_budget(trace, outcome)
                 return {'ok': True, 'plan_sha256': plan.sha256, 'trace': trace}
             finally:
-                self.last_profile = driver.profile_dir
-                self.last_browser_identity = getattr(driver, 'owned_browser_identity', None)
-                close_task = self._start_close(driver)
-                if not await self._await_close(driver, close_task):
-                    raise BrowserPlanRefused('browser_cleanup_unverified') from None
+                try:
+                    if not await self._close_driver(driver, sid):
+                        raise BrowserPlanRefused('browser_cleanup_unverified') from None
+                finally:
+                    self._active_plans.discard(sid)
         except (BrowserPlanRefused, TimeoutError) as exc:
             return {'ok': False, 'reason': 'browser_timeout' if isinstance(exc, TimeoutError) else str(exc)}
 
@@ -629,28 +653,48 @@ class BrowserRuntime:
                         return False
             for driver, sid in list(self._uncertain_sessions.items()):
                 if driver not in self._uncertain_drivers and driver not in self._close_tasks:
-                    await asyncio.to_thread(self.journal.remove, sid)
+                    try:
+                        await asyncio.to_thread(self.journal.remove, sid)
+                    except (OSError, ValueError):
+                        self._journal_uncertain = True
+                        return False
                     self._uncertain_sessions.pop(driver, None)
-            self._journal_uncertain = bool(self._uncertain_sessions or any(
-                path.stem not in self.sessions for path in self.journal.entries()))
+            try:
+                self._journal_uncertain = bool(self._uncertain_sessions or self._orphan_entries())
+            except (OSError, ValueError):
+                self._journal_uncertain = True
             return not self._uncertain_drivers and not self._journal_uncertain
 
-    async def _journal_observer(self, sid, event, profile, identity):
+    def _orphan_entries(self):
+        return [path for path in self.journal.entries()
+                if path.stem not in self.sessions and path.stem not in self._active_plans]
+
+    def _bind_journal(self, driver, sid):
+        driver.set_ownership_observer(lambda event, profile, identity: self._journal_observer(
+            sid, event, profile, identity, driver.profile_identity))
+
+    async def _journal_observer(self, sid, event, profile, identity, profile_identity):
         import psutil
 
+        if not isinstance(profile_identity, dict) or not profile_identity:
+            raise BrowserPlanRefused('browser_owner_unverified')
         if event == 'profile':
             if identity is None or not isinstance(getattr(identity, 'pid', None), int):
                 raise BrowserPlanRefused('browser_owner_unverified')
             started = await asyncio.to_thread(lambda: psutil.Process(identity.pid).create_time())
             owner_started = await asyncio.to_thread(lambda: psutil.Process(os.getpid()).create_time())
-            record = {'profile': str(profile), 'controller': [identity.pid, started],
+            record = {'profile': str(profile), 'profile_identity': profile_identity,
+                      'controller': [identity.pid, started],
                       'owner_process': [os.getpid(), owner_started], 'native': None}
-        else:
+        elif event == 'native':
             record = await asyncio.to_thread(self.journal.read, self.journal._file(sid))
-            if (type(identity) is not tuple or len(identity) != 2
+            if (record.get('profile') != str(profile) or record.get('profile_identity') != profile_identity
+                    or type(identity) is not tuple or len(identity) != 2
                     or type(identity[0]) is not int):
                 raise BrowserPlanRefused('browser_owner_unverified')
             record['native'] = list(identity)
+        else:
+            raise BrowserPlanRefused('browser_owner_unverified')
         await asyncio.to_thread(self.journal.write, sid, record)
 
     def _session_authorized(self, session, task, args):
@@ -712,17 +756,25 @@ class BrowserRuntime:
         session.active_args = None
         session.invalidate()
         self.sessions.pop(session.id, None)
-        self.last_profile = getattr(session.driver, 'profile_dir', None)
-        self.last_browser_identity = getattr(session.driver, 'owned_browser_identity', None)
-        self._uncertain_sessions[session.driver] = session.id
-        close_task = self._start_close(session.driver)
-        settled = await self._await_close(session.driver, close_task)
-        if settled:
-            await asyncio.to_thread(self.journal.remove, session.id)
-            self._uncertain_sessions.pop(session.driver, None)
-        else:
-            self._journal_uncertain = True
-        return settled
+        return await self._close_driver(session.driver, session.id)
+
+    async def _close_driver(self, driver, sid):
+        self.last_profile = getattr(driver, 'profile_dir', None)
+        self.last_browser_identity = getattr(driver, 'owned_browser_identity', None)
+        if sid is not None:
+            self._uncertain_sessions[driver] = sid
+        try:
+            settled = await self._await_close(driver, self._start_close(driver))
+            if settled and sid is not None:
+                await asyncio.to_thread(self.journal.remove, sid)
+                self._uncertain_sessions.pop(driver, None)
+            return settled
+        except (OSError, ValueError):
+            return False
+        finally:
+            if driver in self._uncertain_sessions:
+                self._journal_uncertain = True
+                self._ensure_reaper()
 
     def _ensure_reaper(self):
         if self._reaper_task is not None and not self._reaper_task.done():
@@ -749,10 +801,8 @@ class BrowserRuntime:
     async def reap_orphans(self):
         """On restart, never resume old sessions; reconcile only verified native owners."""
         try:
-            paths = self.journal.entries()
-            stale = [path for path in paths if path.stem not in self.sessions]
-            results = [await self.journal.reap_entry(path) for path in stale]
-            self._journal_uncertain = not all(results)
+            results = [await self.journal.reap_entry(path) for path in self._orphan_entries()]
+            self._journal_uncertain = bool(self._uncertain_sessions or not all(results))
             return not self._journal_uncertain
         except Exception:
             self._journal_uncertain = True
@@ -784,8 +834,7 @@ class BrowserRuntime:
                 self._owner_close_tasks.pop(sid, None)
                 try:
                     if task.result() is True and not self._uncertain_drivers:
-                        self._journal_uncertain = any(
-                            path.stem not in self.sessions for path in self.journal.entries())
+                        self._journal_uncertain = bool(self._uncertain_sessions or self._orphan_entries())
                 except BaseException:
                     self._journal_uncertain = True
 
@@ -906,8 +955,7 @@ class BrowserRuntime:
                 driver.set_execution_guard(lambda: self._session_network_current(session))
                 driver.set_ref_resolver(session.resolve_ref)
                 if self.driver_factory is None:
-                    driver.set_ownership_observer(lambda event, profile, identity: (
-                        self._journal_observer(sid, event, profile, identity)))
+                    self._bind_journal(driver, sid)
             else:
                 session = self.sessions.get(request.session_id)
                 if (session is None or not session.current() or session.agent != task.agent

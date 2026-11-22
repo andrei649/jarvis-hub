@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard, user_guard
-from agents.core.web_helpers import nocache_json
+from agents.core.web_helpers import nocache_json, read_bounded_body
 
 logger = logging.getLogger("jarvis.web")
 
@@ -425,13 +425,13 @@ async def voice_commands_write(request: Request):
     written here: it goes to the Decision Inbox as an irreversible-tier card naming the
     program and its argv (202), and a human's accept writes it. A clear applies at once
     and is audited. Same-origin JSON only (the admin guard trusts loopback)."""
-    from agents.core.routers.admin import _bounded_body, _refuse_cross_site_write
+    from agents.core.routers.admin import _refuse_cross_site_write
     from agents.core.voice import command_settings
 
     refused = _refuse_cross_site_write(request)
     if refused is not None:
         return refused
-    raw = await _bounded_body(request, VOICE_COMMAND_MAX_BODY)
+    raw = await read_bounded_body(request, VOICE_COMMAND_MAX_BODY)
     if raw is None:
         return nocache_json({"error": "request body too large"}, status_code=413)
     try:

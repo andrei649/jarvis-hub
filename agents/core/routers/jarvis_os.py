@@ -27,11 +27,12 @@ import mimetypes
 import re
 import sys
 import threading
+import uuid
 from pathlib import Path
 from types import ModuleType
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -151,6 +152,58 @@ class CaptureBody(BaseModel):
     links: list[str] = Field(default_factory=list, max_length=16)
 
 
+class ChatNoteBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    targetId: str = Field(strict=True, pattern=r"^v1-[0-9a-f]{64}$", min_length=67, max_length=67)
+    requestId: str = Field(strict=True, max_length=64)
+    title: str = Field(strict=True, min_length=1, max_length=120)
+    content: str = Field(strict=True, min_length=1, max_length=100_000)
+
+    @field_validator("requestId")
+    @classmethod
+    def valid_request_id(cls, value: str) -> str:
+        try:
+            parsed = uuid.UUID(value)
+        except (ValueError, AttributeError) as exc:
+            raise ValueError("requestId must be a UUID") from exc
+        return str(parsed)
+
+    @field_validator("title")
+    @classmethod
+    def nonblank_title(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("title must not be blank")
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("title must be valid Unicode") from exc
+        return value
+
+    @field_validator("content")
+    @classmethod
+    def nonblank_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("content must not be blank")
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("content must be valid Unicode") from exc
+        return value
+
+
+class ChatNoteSource(BaseModel):
+    vault: str
+    file: str
+    readable: bool
+
+
+class ChatNoteReceipt(BaseModel):
+    ok: Literal[True]
+    relPath: str
+    source: ChatNoteSource | None
+
+
 def _unavailable():
     return nocache_json({"ok": False, "error": _NOT_INSTALLED}, status_code=503)
 
@@ -161,6 +214,7 @@ async def os_status():
     if engine is None:
         return _unavailable()
     cfg = _config(engine)
+    capture_target = await asyncio.to_thread(engine.chat_note_target, cfg)
     return nocache_json({
         "ok": True,
         "backend": "hub",
@@ -169,6 +223,8 @@ async def os_status():
         "vaultMode": cfg["vaultMode"] if _vault_available(cfg) else "demo_550",
         "vaultPath": cfg["vaultPath"],
         "inboxFolder": engine.configured_inbox(cfg),
+        "captureTarget": capture_target,
+        "captureUnavailableReason": None if capture_target else "Configure an existing allowed vault inbox, then refresh.",
         "nervaPath": cfg["nervaPath"],
         "vaultAvailable": _vault_available(cfg),
         "vaultEnv": VAULT_ENV,
@@ -191,7 +247,9 @@ async def os_brain(reindex: int = 0):
 
 
 @router.get("/api/os/brain/note", dependencies=[Depends(user_guard)])
-async def os_brain_note(relPath: str = ""):  # noqa: N803 — the page's query name
+async def os_brain_note(relPath: str = "",  # noqa: N803 — the page's query names
+                        targetId: Annotated[str | None, Query(pattern=r"^v1-[0-9a-f]{64}$", max_length=67)] = None,
+                        q: str = ""):
     engine = _engine()
     if engine is None:
         return _unavailable()
@@ -199,10 +257,20 @@ async def os_brain_note(relPath: str = ""):  # noqa: N803 — the page's query n
     # (never config.json, .env or a *.local.md), read without following any link.
     try:
         title, tags, body, wikilinks = await asyncio.to_thread(
-            engine.read_indexed_note, _config(engine), relPath)
+            engine.read_indexed_note, _config(engine), relPath, target_id=targetId)
     except (OSError, ValueError) as exc:
         return error_json(exc, 404, "note not found", extra={"ok": False})
-    return nocache_json({"ok": True, "title": title, "tags": tags, "body": body[:6000], "wikilinks": wikilinks})
+    if targetId is not None:
+        if len(body) > 100_000:
+            return nocache_json({"ok": False, "error": "Note exceeds the chat reader limit."}, status_code=413)
+        return nocache_json({"ok": True, "targetId": targetId, "relPath": relPath, "body": body})
+    start = 0
+    query = q.strip()[:4096]
+    if query and len(body) > 6000:
+        excerpt = await asyncio.to_thread(engine.vault_search.passage, body, query, engine.SYNONYM_EXPANSIONS)
+        start = body.index(excerpt)
+    return nocache_json({"ok": True, "title": title, "tags": tags, "body": body[start:start + 6000],
+                         "wikilinks": wikilinks, **({"start": start} if start else {})})
 
 
 @router.get("/api/os/brain/retrieve", dependencies=[Depends(user_guard)])
@@ -226,10 +294,11 @@ async def os_brain_retrieve(q: str = ""):
     source_names = set()
     ambiguous_names = set()
     for node in nodes:
-        if not str(node.get("body") or "").strip():
+        excerpt = str(node.get("excerpt", node.get("body")) or "")[:_ATTACHMENT_CHARS]
+        if not excerpt.strip():
             continue
         name = str(node.get("relPath") or node.get("title") or "note")[:200]
-        attachments.append({"name": name, "text": str(node.get("body") or "")[:_ATTACHMENT_CHARS]})
+        attachments.append({"name": name, "text": excerpt})
         if name in source_names:
             ambiguous_names.add(name)
             sources.pop(name, None)
@@ -264,6 +333,25 @@ async def os_brain_capture(body: CaptureBody):
         # has no handle-relative create. Refused; nothing was written anywhere.
         return error_json(exc, 409, "the vault inbox must be an allowed, plain folder inside the vault",
                           extra={"ok": False})
+    except OSError as exc:
+        return error_json(exc, 500, "could not write the note", extra={"ok": False})
+    return nocache_json(result)
+
+
+@router.post("/api/os/brain/chat-note", dependencies=[Depends(user_guard)], response_model=ChatNoteReceipt)
+async def os_brain_chat_note(body: ChatNoteBody):
+    engine = _engine()
+    if engine is None:
+        return _unavailable()
+    try:
+        result = await asyncio.to_thread(engine.save_chat_note, _config(engine), body.targetId,
+                                         body.requestId, body.title, body.content)
+    except engine.ChatNoteConflict as exc:
+        message = ("A note with this title already exists; choose a different title and try again."
+                   if exc.code == "title_conflict" else "saved note changed or request ID conflicts")
+        return nocache_json({"ok": False, "code": exc.code, "error": message}, status_code=409)
+    except (engine.vault_fs.UnsafePath, FileNotFoundError):
+        return nocache_json({"ok": False, "error": "capture target changed or note conflicts"}, status_code=409)
     except OSError as exc:
         return error_json(exc, 500, "could not write the note", extra={"ok": False})
     return nocache_json(result)

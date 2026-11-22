@@ -175,7 +175,9 @@ class SkillProposalStore(JsonStore):
         with self._lock:
             for rec in self._items.values():
                 if (rec.get("skill") == skill and rec.get("status") == STATUS_PENDING
-                        and rec.get("proposed_hash") == proposed_hash):
+                        and rec.get("original_hash") == original_hash
+                        and rec.get("proposed_hash") == proposed_hash
+                        and rec.get("proposed") == proposed):
                     return dict(rec)         # identical pending proposal exists
             pid = f"sp-{uuid.uuid4().hex[:10]}"
             rec = {"id": pid, "skill": skill, "origin": origin,

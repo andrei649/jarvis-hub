@@ -43,6 +43,31 @@ async def test_sse_cancels_model_turn_on_client_disconnect():
     assert cancelled.is_set()
 
 
+async def test_quiet_model_keeps_chat_stream_open_until_reply(monkeypatch):
+    monkeypatch.setattr(web, "_CHAT_STREAM_PING_SECONDS", 0.01, raising=False)
+    release = asyncio.Event()
+
+    class QuietOrch:
+        session_id = "cold_local"
+
+        async def handle_input_stream(self, message, channel, on_token, agent_override=None):
+            await release.wait()
+            return "ready"
+
+    stream = web._chat_event_stream(QuietOrch(), "hi", "frigga", "frigga")
+    try:
+        assert _payload(await anext(stream))["type"] == "start"
+        for _ in range(2):
+            assert await asyncio.wait_for(anext(stream), 1) == ": ping\n\n"
+        release.set()
+        events = [_payload(chunk) async for chunk in stream if chunk.startswith("data: ")]
+        assert events[-1]["type"] == "end"
+        assert events[-1]["text"] == "ready"
+        assert events[-1]["session_id"] == "cold_local"
+    finally:
+        await stream.aclose()
+
+
 async def test_sse_normal_completion_emits_start_tokens_end(monkeypatch):
     from agents.core.channels import outbound_safety
 

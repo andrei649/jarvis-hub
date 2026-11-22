@@ -8,7 +8,8 @@ import './composer-vault.css';
 export type VaultExcerpt = { name: string; text: string };
 type VaultSource = { vault: string; file: string; readable: boolean };
 type VaultResult = VaultExcerpt & { source?: VaultSource };
-type Passage = { source: VaultSource; body: string; text: string };
+type NoteWindow = { body: string; start: number };
+type Passage = NoteWindow & { source: VaultSource; text: string };
 const canChoosePassage = (source?: VaultSource) => !!source?.readable && Array.from(source.file).length <= 200;
 const displayedNote = (body: string) => body.replace(/\r\n?/g, '\n');
 
@@ -29,20 +30,24 @@ async function findNotes(question: string, signal: AbortSignal): Promise<VaultRe
   });
 }
 
-async function readNote(source: VaultSource, signal: AbortSignal): Promise<string> {
-  const response = await apiFetchOnce('/api/os/brain/note?relPath=' + encodeURIComponent(source.file), { signal });
+async function readNote(source: VaultSource, question: string, signal: AbortSignal): Promise<NoteWindow> {
+  const params = new URLSearchParams({ relPath: source.file, q: question });
+  const response = await apiFetchOnce('/api/os/brain/note?' + params, { signal });
   if (!response.ok) throw new Error('Note unavailable');
   const note = await response.json();
-  if (note.ok !== true || typeof note.body !== 'string') throw new Error('Invalid note');
-  return note.body;
+  const start = note.start === undefined ? 0 : note.start;
+  if (note.ok !== true || typeof note.body !== 'string' || Array.from(note.body).length > 6000 ||
+      !Number.isSafeInteger(start) || start < 0) throw new Error('Invalid note');
+  return { body: note.body, start };
 }
 
 export function useVaultNotes(question: string, agent: string, session: string, live: boolean) {
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<VaultResult[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [includedPaths, setIncludedPaths] = useState<string[]>([]);
   const [passages, setPassages] = useState<Record<string, Passage>>({});
-  const [choosing, setChoosing] = useState<{ name: string; body: string } | null>(null);
+  const [choosing, setChoosing] = useState<(NoteWindow & { name: string }) | null>(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const pending = useRef<AbortController | null>(null);
@@ -54,7 +59,7 @@ export function useVaultNotes(question: string, agent: string, session: string, 
     pending.current = null;
     sendingQuestion.current = null;
     projectPath.current = '';
-    setOpen(false); setResults([]); setSelected([]); setPassages({}); setChoosing(null); setStatus(''); setBusy(false);
+    setOpen(false); setResults([]); setSelected([]); setIncludedPaths([]); setPassages({}); setChoosing(null); setStatus(''); setBusy(false);
   }
   useLayoutEffect(() => {
     clear();
@@ -68,7 +73,7 @@ export function useVaultNotes(question: string, agent: string, session: string, 
     }
   }, [question]);
 
-  async function lookup(send?: (notes: VaultExcerpt[]) => boolean, path = projectPath.current) {
+  async function lookup(send?: (notes: VaultExcerpt[], message: string) => boolean, path = projectPath.current) {
     if (pending.current || !live || (!question && !path) || question.startsWith('/') || (send && !question)) return;
     const controller = new AbortController();
     pending.current = controller;
@@ -96,24 +101,31 @@ export function useVaultNotes(question: string, agent: string, session: string, 
           const outgoing = await Promise.all(checked.map(async item => {
             const passage = passages[item.name];
             if (!passage) return { name: item.name, text: item.text };
-            if (await readNote(passage.source, controller.signal) !== passage.body) throw new Error('Note changed');
+            const current = await readNote(passage.source, question, controller.signal);
+            if (current.body !== passage.body || current.start !== passage.start) throw new Error('Note changed');
             return { name: passage.source.file, text: passage.text };
           }));
           if (controller.signal.aborted) return;
           if (new Set(outgoing.map(item => item.name)).size !== outgoing.length) throw new Error('Ambiguous source');
-          if (send(outgoing)) clear();
+          const sourcePaths = checked.flatMap(item => includedPaths.includes(item.name) && item.source?.readable ? [item.source.file] : []);
+          const message = sourcePaths.length ? `${question}\n\n${sourcePaths.map(file => `Obsidian note path: ${file}`).join('\n')}` : question;
+          if (sourcePaths.length && Array.from(message).length > 4096) {
+            setStatus('Message with note path is too long (4,096 characters). Shorten your message, then review the note again.');
+            return;
+          }
+          if (send(outgoing, message)) clear();
           else setStatus('Your draft is ready. Try sending again.');
           return;
         } catch {
           if (controller.signal.aborted) return;
         }
       }
-      setResults(found); setSelected([]); setPassages({}); setChoosing(null);
+      setResults(found); setSelected([]); setIncludedPaths([]); setPassages({}); setChoosing(null);
       setStatus(send ? 'A selected note changed or became unavailable. Review the results again.'
         : found.length ? '' : 'No matching notes. Check your vault or try different words.');
     } catch {
       if (controller.signal.aborted) return;
-      setResults([]); setSelected([]); setPassages({}); setChoosing(null);
+      setResults([]); setSelected([]); setIncludedPaths([]); setPassages({}); setChoosing(null);
       setStatus(path ? 'The saved project could not be read. Open it from the list to try again.'
         : 'The vault could not be searched. Check the connection and try again.');
     } finally {
@@ -122,7 +134,11 @@ export function useVaultNotes(question: string, agent: string, session: string, 
   }
 
   function toggle(name: string) {
+    setIncludedPaths(paths => paths.filter(path => path !== name));
     setSelected(names => names.includes(name) ? names.filter(n => n !== name) : [...names, name]);
+  }
+  function togglePath(name: string) {
+    setIncludedPaths(paths => paths.includes(name) ? paths.filter(path => path !== name) : [...paths, name]);
   }
   async function choosePassage(name: string) {
     const source = results.find(item => item.name === name)?.source;
@@ -130,10 +146,10 @@ export function useVaultNotes(question: string, agent: string, session: string, 
     const controller = new AbortController();
     pending.current = controller; setBusy(true); setStatus('Opening note…'); setChoosing(null);
     try {
-      const body = await readNote(source, controller.signal);
-      if (!controller.signal.aborted) { setChoosing({ name, body }); setStatus(''); }
+      const view = await readNote(source, question, controller.signal);
+      if (!controller.signal.aborted) { setChoosing({ name, ...view }); setStatus(''); }
     } catch {
-      if (!controller.signal.aborted) { setStatus('The note could not be read. Search again before choosing a passage.'); setSelected(names => names.filter(n => n !== name)); setPassages(current => { const next = { ...current }; delete next[name]; return next; }); }
+      if (!controller.signal.aborted) { setStatus('The note could not be read. Search again before choosing a passage.'); setSelected(names => names.filter(n => n !== name)); setIncludedPaths(paths => paths.filter(path => path !== name)); setPassages(current => { const next = { ...current }; delete next[name]; return next; }); }
     } finally {
       if (pending.current === controller) { pending.current = null; setBusy(false); }
     }
@@ -144,7 +160,7 @@ export function useVaultNotes(question: string, agent: string, session: string, 
     if (start >= end) { setStatus('Highlight the passage you want to send.'); return; }
     const text = displayedNote(choosing.body).slice(start, end);
     if (!text.trim() || Array.from(text).length > 1500) { setStatus('Select up to 1,500 characters of note text.'); return; }
-    setPassages(current => ({ ...current, [name]: { source, body: choosing.body, text } }));
+    setPassages(current => ({ ...current, [name]: { source, body: choosing.body, start: choosing.start, text } }));
     setSelected(names => names.includes(name) ? names : [...names, name]);
     setChoosing(null); setStatus('Passage selected. Review it before sending.');
   }
@@ -153,7 +169,7 @@ export function useVaultNotes(question: string, agent: string, session: string, 
     projectPath.current = path;
     void lookup(undefined, path);
   }
-  return { open, results, selected, passages, choosing, status, busy, lookup, reviewProject, toggle, choosePassage, confirmPassage, clear };
+  return { open, results, selected, includedPaths, passages, choosing, status, busy, lookup, reviewProject, toggle, togglePath, choosePassage, confirmPassage, clear };
 }
 
 export function VaultNoteReview({ draft }: { draft: ReturnType<typeof useVaultNotes> }) {
@@ -167,17 +183,23 @@ export function VaultNoteReview({ draft }: { draft: ReturnType<typeof useVaultNo
     <WorkshopProjects actionLabel="Review in chat" onChoose={project => draft.reviewProject(project.path)}/>
     {draft.results.length > 0 && <p>Check a found excerpt or choose a passage to send with this message.</p>}
     {draft.status && <p role="status">{draft.status}</p>}
-    {draft.results.map(note => <div className="vault-review-note" key={note.name}>
+    {draft.results.map((note, index) => <div className="vault-review-note" key={note.name}>
       <label><input type="checkbox" checked={draft.selected.includes(note.name)} disabled={draft.busy}
         onChange={() => draft.toggle(note.name)}/><span>{note.name}</span></label>
-      <details><summary>Found excerpt or summary</summary><p>{note.text}</p></details>
+      <details open={index === 0}><summary>Found excerpt or summary</summary><p>{note.text}</p></details>
       {note.source && <div className="vault-review-actions">
         <a href={obsidianOpenUri(note.source) || undefined}>Open in Obsidian</a>
         {canChoosePassage(note.source) && <button type="button" className="tool-btn" disabled={draft.busy}
           onClick={() => void draft.choosePassage(note.name)}>Choose passage</button>}
       </div>}
+      {draft.selected.includes(note.name) && note.source?.readable && <label className="vault-path-option">
+        <input type="checkbox" checked={draft.includedPaths.includes(note.name)} disabled={draft.busy}
+          onChange={() => draft.togglePath(note.name)}/>
+        <span>Include note path in message for the model and saved chat: <code>{note.source.file}</code></span>
+      </label>}
       {draft.choosing?.name === note.name && <div className="vault-passage-picker">
-        <label htmlFor="vault-passage-text">Select text from this note{Array.from(draft.choosing.body).length >= 6000
+        <label htmlFor="vault-passage-text">Select text from this note{draft.choosing.start > 0
+          ? ` (starting at character ${(draft.choosing.start + 1).toLocaleString()})` : Array.from(draft.choosing.body).length >= 6000
           ? ' (first 6,000 characters)' : ''}</label>
         <textarea id="vault-passage-text" ref={passageInput} readOnly value={displayedNote(draft.choosing.body)} rows={8}/>
         <button type="button" className="tool-btn" onClick={() => draft.confirmPassage(note.name,

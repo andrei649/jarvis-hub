@@ -13,7 +13,7 @@ import type {
   KanbanBoard,
   KanbanConfig,
   KanbanModelOptionsResponse,
-  KanbanProfile,
+  KanbanProfilesResponse,
   KanbanProject,
   KanbanRunDetail,
   KanbanStats,
@@ -53,11 +53,12 @@ export const unlinkPath = (slug: string, parent_id: string, child_id: string) =>
   if (slug) query.set('board', slug);
   return root + '/links?' + query;
 };
-export const fetchBoard = (slug: string, archived = false) => apiGet<KanbanBoard>(boardPath(slug, archived), { admin: true });
-export const fetchBoards = () => apiGet<BoardsResponse>(root + '/boards', { admin: true });
-export const fetchTask = (slug: string, id: string) => apiGet<KanbanTaskDetail>(scopedPath(`/tasks/${encodeURIComponent(id)}`, slug), { admin: true });
+const liveBoardRead = { admin: true, cache: 'no-store', redirect: 'error' } as const;
+export const fetchBoard = (slug: string, archived = false) => apiGet<KanbanBoard>(boardPath(slug, archived), liveBoardRead);
+export const fetchBoards = () => apiGet<BoardsResponse>(root + '/boards', liveBoardRead);
+export const fetchTask = (slug: string, id: string) => apiGet<KanbanTaskDetail>(scopedPath(`/tasks/${encodeURIComponent(id)}`, slug), liveBoardRead);
 export const fetchProjects = () => apiGet<{projects: KanbanProject[]}>(root + '/projects', { admin: true });
-export const fetchProfiles = () => apiGet<{profiles: KanbanProfile[]}>(root + '/profiles', { admin: true });
+export const fetchProfiles = () => apiGet<KanbanProfilesResponse>(root + '/profiles', { admin: true });
 export const fetchOrchestration = () => apiGet<OrchestrationSettings>(root + '/orchestration', { admin: true });
 export const fetchConfig = () => apiGet<KanbanConfig>(root + '/config', { admin: true });
 export const fetchModelOptions = () => apiGet<KanbanModelOptionsResponse>(root + '/model-options', { admin: true });

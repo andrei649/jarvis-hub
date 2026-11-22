@@ -9,12 +9,16 @@ admin-gated and binds its own live kernel and governed egress for each request.
 """
 
 import hashlib
-from typing import Annotated
+import json
+import os
+import re
+import unicodedata
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, field_validator
 
 from agents.core.routers._deps import user_guard, admin_guard
 from agents.core.routers._component import component_unavailable, require_component
@@ -31,6 +35,8 @@ from agents.core.paths import app_root
 from agents.core.skills.importer import SkillImportError, SkillImporter, _load_hermes_pin, _safe_slug
 from agents.core.skills.loader import _writable_skills_dir
 from agents.core.skills.signing import source_snapshot
+from agents.core.skills.usage import WRITE_REVIEWED_REPLY
+from agents.core.extensions.store_lock import StoreLockError, locked_store
 
 
 router = APIRouter(tags=["skills"])
@@ -1428,6 +1434,330 @@ async def marketplace_uninstall(body: UninstallSkillBody):
 _PENDING_REASON = "pending review (CDX-8 quarantine)"
 
 
+class ProcedureBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent: StrictStr = Field(..., pattern=r"^[a-z][a-z0-9_-]*$", max_length=64)
+    description: StrictStr
+    steps: list[StrictStr] = Field(..., min_length=1, max_length=20)
+    request_id: StrictStr = Field(..., min_length=32, max_length=32, pattern=r"^[0-9a-f]{32}$")
+
+    @field_validator("agent", "request_id")
+    @classmethod
+    def exact_identifier(cls, value, info):
+        pattern = r"[a-z][a-z0-9_-]*" if info.field_name == "agent" else r"[0-9a-f]{32}"
+        if re.fullmatch(pattern, value) is None:
+            raise ValueError("invalid identifier")
+        return value
+
+    @field_validator("description", "steps")
+    @classmethod
+    def one_line(cls, value):
+        lines = value if isinstance(value, list) else [value]
+        if any(not line.strip() or len(line) > 300 or len(line.splitlines()) != 1
+               or any(unicodedata.category(char)[0] == "C" for char in line) for line in lines):
+            raise ValueError("each description and step must be one nonempty line of at most 300 characters")
+        return value
+
+
+class ProcedureSuccess(BaseModel):
+    ok: Literal[True]
+    pending: Literal[True]
+    skill: str
+
+
+def _procedure_reply(body: dict, status: int = 200) -> JSONResponse:
+    return JSONResponse(body, status_code=status, headers={"Cache-Control": "no-store"})
+
+
+def _procedure_pending_reply(loader, folder):
+    try:
+        marker = folder / "PENDING_REVIEW"
+        if marker.is_symlink() or not marker.is_file():
+            raise OSError("pending procedure is unreadable")
+        raw = source_snapshot(folder).read_bytes("SKILL.md")
+        if raw is None:
+            raise OSError("procedure manifest is missing")
+        name = loader.manifest_name(folder, raw.decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, SkillSourceSnapshotError):
+        return _procedure_reply({"error": "procedure review is unavailable",
+                                 "reason": "procedure_unavailable"}, 503)
+    return _procedure_reply(ProcedureSuccess(ok=True, pending=True, skill=name).model_dump(), 202)
+
+
+def _recover_interrupted_procedure(folder, request_id, digest):
+    """A pre-publication reservation may be removed only under its request lock."""
+    try:
+        if (folder.is_symlink() or folder.resolve() != folder.parent.resolve() / folder.name
+                or not folder.is_dir() or (folder / "SKILL.md").exists()):
+            return False
+        files = list(folder.iterdir())
+        if any(item.is_symlink() or not item.is_file()
+               or item.name not in {"PROCEDURE_REQUEST", "PROCEDURE_REQUEST.tmp",
+                                    "PENDING_REVIEW", "SKILL.md.tmp"} for item in files):
+            return False
+        marker = folder / "PROCEDURE_REQUEST"
+        if marker.is_file() and marker.read_text(encoding="ascii").splitlines() != [request_id, digest]:
+            return False
+        for item in files:
+            item.unlink()
+        folder.rmdir()
+        return True
+    except (OSError, UnicodeError):
+        return False
+
+
+def _submit_procedure(orch, loader, body: ProcedureBody):
+    from agents.core.paths import data_path
+    from agents import web
+
+    digest = hashlib.sha256(json.dumps(
+        {"agent": body.agent, "description": body.description, "steps": body.steps},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    slug = f"procedure_{body.request_id}"
+    destination = _writable_skills_dir() / slug
+    archive = data_path("skills", "discarded")
+    receipt_dir = data_path("skills", "procedure-requests")
+    receipt = receipt_dir / body.request_id
+    intent = receipt_dir / f"{body.request_id}.intent"
+    with locked_store(receipt_dir / "submit"):
+        try:
+            if receipt_dir.is_symlink() or receipt.is_symlink() or intent.is_symlink():
+                raise OSError("linked procedure receipt")
+            recorded_digest = receipt.read_text(encoding="ascii").strip() if receipt.exists() else None
+            intent_digest = intent.read_text(encoding="ascii").strip() if intent.exists() else None
+        except (OSError, UnicodeError):
+            return _procedure_reply({"error": "procedure receipt is unavailable",
+                                     "reason": "procedure_unavailable"}, 503)
+        if recorded_digest is not None and recorded_digest != digest:
+            return _procedure_reply({"error": "request_id was used for a different procedure",
+                                     "reason": "request_conflict"}, 409)
+        if intent_digest is not None and intent_digest != digest:
+            return _procedure_reply({"error": "request_id was used for a different procedure",
+                                     "reason": "request_conflict"}, 409)
+
+        def keep_receipt():
+            if recorded_digest is not None:
+                return True
+            try:
+                receipt_dir.mkdir(parents=True, exist_ok=True)
+                with receipt.open("x", encoding="ascii") as output:
+                    output.write(digest + "\n")
+                    output.flush()
+                    os.fsync(output.fileno())
+                return True
+            except OSError:
+                logger.warning("Procedure request receipt could not be saved", exc_info=True)
+                return False
+
+        if intent_digest == digest and recorded_digest is None and destination.is_dir() \
+                and not (destination / "SKILL.md").exists():
+            if not _recover_interrupted_procedure(destination, body.request_id, digest):
+                return _procedure_reply({"error": "procedure generation is incomplete",
+                                         "reason": "procedure_unavailable"}, 503)
+        candidates = [*archive.glob(f"{slug}-*"), destination] if archive.is_dir() else [destination]
+        for candidate in candidates:
+            if not candidate.exists() and not candidate.is_symlink():
+                continue
+            candidate_receipt = candidate / "PROCEDURE_REQUEST"
+            try:
+                if candidate.is_symlink() or candidate_receipt.is_symlink():
+                    raise OSError("linked procedure receipt")
+                recorded = candidate_receipt.read_text(encoding="ascii").splitlines()
+            except (OSError, UnicodeError):
+                return _procedure_reply({"error": "procedure receipt is unavailable",
+                                         "reason": "procedure_unavailable"}, 503)
+            if recorded != [body.request_id, digest]:
+                return _procedure_reply({"error": "request_id was used for a different procedure",
+                                         "reason": "request_conflict"}, 409)
+            if candidate != destination:
+                if not keep_receipt():
+                    return _procedure_reply({"error": "procedure receipt is unavailable",
+                                             "reason": "procedure_unavailable"}, 503)
+                return _procedure_reply({"error": "procedure is no longer pending review",
+                                         "reason": "procedure_decided"}, 409)
+            if not (destination / "PENDING_REVIEW").is_file() and not (destination / "SKILL.md").is_file():
+                return _procedure_reply({"error": "procedure generation is incomplete",
+                                         "reason": "procedure_unavailable"}, 503)
+            if not (destination / "PENDING_REVIEW").is_file():
+                if not keep_receipt():
+                    return _procedure_reply({"error": "procedure receipt is unavailable",
+                                             "reason": "procedure_unavailable"}, 503)
+                return _procedure_reply({"error": "procedure is no longer pending review",
+                                         "reason": "procedure_decided"}, 409)
+            pending = _procedure_pending_reply(loader, destination)
+            if pending.status_code == 202 and not keep_receipt():
+                return _procedure_reply({"error": "procedure receipt is unavailable",
+                                         "reason": "procedure_unavailable"}, 503)
+            return pending
+        if recorded_digest is not None:
+            return _procedure_reply({"error": "procedure is no longer pending review",
+                                     "reason": "procedure_decided"}, 409)
+        registered = getattr(getattr(orch, "config", None), "agents", {}).get(body.agent)
+        if (body.agent == "all" or registered is None or getattr(registered, "status", None) != "active"
+                or (body.agent != "jarvis" and body.agent not in getattr(orch, "agents", {}))
+                or web._get_agent_settings().get(body.agent, {}).get("enabled") is False):
+            return _procedure_reply({"error": "agent is not active", "reason": "agent_unavailable"}, 422)
+        if intent_digest is None:
+            try:
+                with intent.open("x", encoding="ascii") as output:
+                    output.write(digest + "\n")
+                    output.flush()
+                    os.fsync(output.fileno())
+            except OSError:
+                return _procedure_reply({"error": "procedure intent is unavailable",
+                                         "reason": "procedure_unavailable"}, 503)
+        try:
+            created = loader.generate_skill(body.agent, body.description, body.steps,
+                                            write_origin=WRITE_REVIEWED_REPLY,
+                                            procedure_agents=[body.agent],
+                                            procedure_request=(body.request_id, digest))
+        except Exception:
+            logger.warning("Owner procedure generation failed", exc_info=True)
+            return _procedure_reply({"error": "procedure generation is unavailable",
+                                     "reason": "procedure_unavailable"}, 503)
+        if not created:
+            return _procedure_reply({"error": "procedure generation was refused",
+                                     "reason": "generation_refused"}, 409)
+        pending = _procedure_pending_reply(loader, destination)
+        if pending.status_code == 202 and not keep_receipt():
+            return _procedure_reply({"error": "procedure receipt is unavailable",
+                                     "reason": "procedure_unavailable"}, 503)
+        return pending
+
+
+@router.post("/api/skills/procedures", dependencies=[Depends(admin_guard)],
+             status_code=202, response_model=ProcedureSuccess)
+async def submit_procedure(body: ProcedureBody):
+    """Submit one owner-edited, single-agent procedure for quarantined skill review.
+
+    Retries with the same request_id and content return the pending skill's registry name.
+    A changed body or an already decided procedure returns 409.
+    """
+    import asyncio
+
+    orch = get_orch()
+    loader = getattr(orch, "skills", None) if orch else None
+    if loader is None:
+        return _procedure_reply({"error": "skills are not available", "reason": "procedure_unavailable"}, 503)
+    try:
+        return await asyncio.to_thread(_submit_procedure, orch, loader, body)
+    except StoreLockError:
+        return _procedure_reply({"error": "procedure request lock is unavailable",
+                                 "reason": "procedure_unavailable"}, 503)
+
+
+class ProcedureRevisionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent: StrictStr = Field(..., min_length=1, max_length=64)
+    command: StrictStr = Field(..., min_length=1, max_length=64)
+    steps: list[StrictStr] = Field(..., min_length=1, max_length=20)
+    base_hash: StrictStr = Field(..., min_length=64, max_length=64)
+
+    @field_validator("agent", "command", "base_hash")
+    @classmethod
+    def exact_revision_identifier(cls, value, info):
+        pattern = (r"[a-z][a-z0-9_-]*" if info.field_name == "agent" else
+                   r"[a-z][a-z0-9_-]{0,63}" if info.field_name == "command" else r"[0-9a-f]{64}")
+        if re.fullmatch(pattern, value) is None:
+            raise ValueError("invalid identifier")
+        return value
+
+    @field_validator("steps")
+    @classmethod
+    def valid_steps(cls, value):
+        return ProcedureBody.one_line(value)
+
+
+class ProcedureRevisionSurface(BaseModel):
+    skill: str
+    steps: list[str]
+    base_hash: str
+
+
+class ProcedureRevisionAccepted(BaseModel):
+    proposal_id: str
+    skill: str
+
+
+def _revision_surface(orch, agent: str, command: str):
+    from agents.core.command_shortcuts import MAX_ROWS, project
+    from agents.core.commands import CommandRegistry
+    from agents.core.skills import procedure_revision, slash_load
+
+    loader = getattr(orch, "skills", None)
+    registry = getattr(orch, "commands", None)
+    if loader is None or not isinstance(registry, CommandRegistry):
+        return None
+    rows = project(registry, loader, slots=MAX_ROWS, agent=agent).rows
+    if not any(row.get("kind") == "skill" and row.get("name") == command
+               and row.get("editable_procedure") is True for row in rows):
+        return None
+    invocation = slash_load.resolve("/" + command, loader)
+    if invocation is None or invocation.problem:
+        return None
+    skill = loader.skills.get(invocation.skill_name)
+    return procedure_revision.read(loader, skill, agent) if skill is not None else None
+
+
+@router.get("/api/skills/procedures/revision", dependencies=[Depends(admin_guard)],
+            response_model=ProcedureRevisionSurface)
+async def get_procedure_revision(agent: str = Query(..., min_length=1, max_length=64),
+                                 command: str = Query(..., min_length=1, max_length=64)):
+    import asyncio
+
+    if re.fullmatch(r"[a-z][a-z0-9_-]*", agent) is None or re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", command) is None:
+        return _procedure_reply({"reason": "invalid_identifier"}, 422)
+    surface = await asyncio.to_thread(_revision_surface, get_orch(), agent, command)
+    if surface is None:
+        return _procedure_reply({"reason": "procedure_unavailable"}, 404)
+    return _procedure_reply({k: surface[k] for k in ("skill", "steps", "base_hash")})
+
+
+@router.post("/api/skills/procedures/revision", dependencies=[Depends(admin_guard)],
+             status_code=202, response_model=ProcedureRevisionAccepted)
+async def submit_procedure_revision(body: ProcedureRevisionBody):
+    import asyncio
+
+    from agents.core.security import quarantine
+    from agents.core.skills.validate import validate_skill_md
+
+    orch = get_orch()
+    store = getattr(orch, "skill_proposals", None)
+    queue = getattr(orch, "action_approvals", None)
+    if store is None or queue is None:
+        return _procedure_reply({"reason": "review_unavailable"}, 503)
+    surface = await asyncio.to_thread(_revision_surface, orch, body.agent, body.command)
+    if surface is None:
+        return _procedure_reply({"reason": "procedure_unavailable"}, 404)
+    if surface["base_hash"] != body.base_hash:
+        return _procedure_reply({"reason": "stale_baseline"}, 409)
+    proposed = (surface["prefix"] + surface["newline"].join(
+        f"{i}. {step}" for i, step in enumerate(body.steps, 1)) + surface["newline"])
+    if quarantine.detect_injection_normalized(proposed) or validate_skill_md(proposed.strip()):
+        return _procedure_reply({"reason": "unsafe_procedure"}, 422)
+    def queue_revision():
+        rec = store.propose(surface["skill"], surface["current"], proposed, origin="owner_procedure_revision")
+        if rec is None:
+            return None, "no_change"
+        card = store.queue_card(rec["id"], queue, agent=body.agent,
+                                summary=f"Revise the steps of procedure '{surface['skill']}'")
+        if not card:
+            return None, "review_unavailable"
+        return rec, ""
+
+    try:
+        rec, error = await asyncio.to_thread(queue_revision)
+    except Exception:
+        logger.warning("Procedure revision could not be queued", exc_info=True)
+        return _procedure_reply({"reason": "review_unavailable"}, 503)
+    if error:
+        return _procedure_reply({"reason": error}, 409 if error == "no_change" else 503)
+    return _procedure_reply({"proposal_id": rec["id"], "skill": surface["skill"]}, 202)
+
+
 @router.get("/api/skills/pending", dependencies=[Depends(admin_guard)])
 async def list_pending_skills():
     """CDX-8: auto-generated skills awaiting owner review — quarantined, NOT yet executable."""
@@ -1698,7 +2028,7 @@ PROPOSALS_SHOWN = 20
 
 
 @router.get("/api/skills/proposals", dependencies=[Depends(admin_guard)])
-async def skill_proposals():
+async def skill_proposals(focus: str | None = Query(None, max_length=13)):
     """The skill changes awaiting the owner, as they review them (review-H318b M-2): each
     pending proposal with the whole diff built from the ledger against the live SKILL.md
     (never a card's own text), whether the skill drifted since, what the change does beyond
@@ -1713,6 +2043,12 @@ async def skill_proposals():
     queue = getattr(orch, "action_approvals", None)
     out = []
     pending = store.list("pending")
+    if focus is not None:
+        if re.fullmatch(r"sp-[0-9a-f]{10}", focus) is None:
+            return _procedure_reply({"reason": "invalid_proposal_id"}, 422)
+        selected = next((rec for rec in pending if rec.get("id") == focus), None)
+        if selected is not None:
+            pending = [selected, *(rec for rec in pending if rec.get("id") != focus)]
     cards = []
     for index, rec in enumerate(pending):
         if queue is not None:

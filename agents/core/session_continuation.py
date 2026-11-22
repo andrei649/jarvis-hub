@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 
 from .conversation_clock import ClockSnapshot, parse_started_at
-from .memory.conversation import _tool_names
+from .memory.conversation import _tool_names, validated_board_sources, validated_history_source
 from .validation import is_valid_session_id
 
 MAX_SEED_BYTES = 512 * 1024
@@ -146,6 +146,16 @@ def seed_json(turns):
             if foreign_origin not in {"claude", "codex"}:
                 raise ContinuationRefused("invalid_history")
             carried["foreign_origin"] = foreign_origin
+        if foreign_origin is None and turn["role"] == "user" and "history_source" in turn:
+            source = validated_history_source(turn["history_source"])
+            if source is None:
+                raise ContinuationRefused("invalid_history")
+            carried["history_source"] = source
+        if foreign_origin is None and turn["role"] == "user" and "board_sources" in turn:
+            sources = validated_board_sources(turn["board_sources"])
+            if sources is None:
+                raise ContinuationRefused("invalid_history")
+            carried["board_sources"] = sources
         tools = _tool_names(turn.get("tools"))   # H441: names only, absent when none
         if tools:
             carried["tools"] = tools
@@ -540,7 +550,10 @@ def _load_locked(orch, sid):
             value["role"], value["content"], value.get("agent_id"), value.get("token_count", 0),
             tools=value.get("tools"), media=restored_media(value.get("media")),
             foreign_origin=value.get("foreign_origin"),
+            history_source=value.get("history_source") if not origin.tainted else None,
+            board_sources=value.get("board_sources") if not origin.tainted and not legacy else None,
             model_calls=value.get("model_calls") if not origin.tainted and not lineage else None,
+            tool_activity=value.get("tool_activity") if not origin.tainted and not lineage else None,
         )
         turn.timestamp = value["timestamp"]
         restored.append(turn)

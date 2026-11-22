@@ -572,6 +572,24 @@ def _classify_vault_hub(rel_parts: tuple[str, ...]) -> str:
     return "00 Acasa"
 
 
+def _outside_code_fences(text: str) -> str:
+    if "```" not in text and "~~~" not in text:
+        return text
+    fence = ""
+    lines = []
+    for line in text.splitlines():
+        mark = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if mark and mark[1].startswith(fence) and not mark[2].strip(" \t"):
+                fence = ""
+        elif mark and (mark[1][0] == "~" or "`" not in mark[2]):
+            fence = mark[1]
+            lines.append("")
+        else:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 def _parse_markdown_content(raw_text: str, fallback_title: str) -> tuple[str, list[str], str, list[str]]:
     text = nfc(raw_text)
     title = fallback_title
@@ -592,7 +610,8 @@ def _parse_markdown_content(raw_text: str, fallback_title: str) -> tuple[str, li
                 tags = [t.strip().strip("\"'") for t in m_tags.group(1).split(",") if t.strip()]
 
     # Extract [[WikiLinks]]
-    raw_links = re.findall(r"\[\[([^\]]+)\]\]", text)
+    link_text = _outside_code_fences(text)
+    raw_links = re.findall(r"\[\[([^\]]+)\]\]", link_text)
     wikilinks = []
     for wl in raw_links:
         target = wl.split("|", 1)[0].split("#", 1)[0].strip()
@@ -600,7 +619,7 @@ def _parse_markdown_content(raw_text: str, fallback_title: str) -> tuple[str, li
             wikilinks.append(nfc(Path(target).stem if "/" in target else target))
 
     # Extract relative .md links [label](foo.md)
-    md_links = re.findall(r"\[[^\]]+\]\(([^)]+\.(?:md|canvas))\)", text)
+    md_links = re.findall(r"\[[^\]]+\]\(([^)]+\.(?:md|canvas))\)", link_text)
     for ml in md_links:
         if not ml.startswith(("http://", "https://")):
             decoded = urllib.parse.unquote(ml)
@@ -657,9 +676,8 @@ def _native_note_source(vault_name: str, parts: tuple[str, ...], readable: bool)
 
 def _folder_policy(cfg=None) -> tuple[tuple[tuple[str, ...], ...], tuple[tuple[str, ...], ...]]:
     """Folder lists are semicolon-separated, vault-relative paths; invalid policy refuses all."""
-    def parse(kind: str) -> tuple[tuple[str, ...], ...]:
-        key = "vault" + kind.title()
-        raw = (cfg or {}).get(key, os.environ.get(f"NERVA_OS_VAULT_{kind}", os.environ.get(f"JARVIS_OS_VAULT_{kind}", "")))
+    def parse(key: str, preferred: str, legacy: str) -> tuple[tuple[str, ...], ...]:
+        raw = (cfg or {}).get(key, os.environ.get(preferred, os.environ.get(legacy, "")))
         if not isinstance(raw, str):
             raise ValueError("invalid vault scope")
         paths = []
@@ -676,7 +694,8 @@ def _folder_policy(cfg=None) -> tuple[tuple[tuple[str, ...], ...], tuple[tuple[s
                 raise ValueError("unsafe vault folder")
             paths.append(parts)
         return tuple(paths)
-    return parse("INCLUDE"), parse("EXCLUDE")
+    return (parse("vaultInclude", "NERVA_OS_VAULT_INCLUDE", "JARVIS_OS_VAULT_INCLUDE"),
+            parse("vaultExclude", "NERVA_OS_VAULT_EXCLUDE", "JARVIS_OS_VAULT_EXCLUDE"))
 
 
 def _vault_path_allowed(parts: tuple[str, ...], includes, excludes, *, directory: bool) -> bool:
@@ -841,7 +860,7 @@ def _cache_key(cfg: dict) -> str:
                      str(cfg.get("projectIndex", ""))))
 
 
-def build_real_brain_graph(cfg: dict) -> dict:
+def build_real_brain_graph(cfg: dict, *, on_body=None) -> dict:
     vault_mode, vault_dir, nerva_dir = _source_roots(cfg)
     include_nerva = vault_mode == "andrei_plus_nerva" and nerva_dir.exists()
 
@@ -1009,6 +1028,8 @@ def build_real_brain_graph(cfg: dict) -> dict:
                 source = _native_note_source(vault_dir.name, parts, True)
                 if source is not None:
                     node_obj["obsidianSource"] = source
+                if on_body is not None:
+                    on_body(node_obj, body)
             register_lookup(stem, idx)
             register_lookup(title, idx)
             if project_index_enabled and rel_str == project_index_path:
@@ -1117,6 +1138,8 @@ def build_real_brain_graph(cfg: dict) -> dict:
                 "body": body[:3800],
                 "wikilinks": wls + ["Nerva si Jarvis Hub", "Hermes personal OS"],
             })
+            if on_body is not None:
+                on_body(nodes[-1], body)
             register_lookup(label, idx)
             # A vault note at this path keeps its policy; normalized aliases in either
             # source never gain an allowlist entry by falling back to the repo.
@@ -1269,6 +1292,155 @@ def configured_inbox(cfg: dict) -> str:
     return folder.strip().replace("\\", "/") if isinstance(folder, str) else ""
 
 
+class ChatNoteConflict(ValueError):
+    """A request ID was reused or its previously saved note changed."""
+    code = "conflict"
+
+
+class ChatNoteTitleConflict(ChatNoteConflict):
+    code = "title_conflict"
+
+
+class ChatNoteChanged(ChatNoteConflict):
+    code = "note_changed"
+
+
+def _chat_note_scope(cfg: dict, files, folder: int | None) -> tuple[dict, tuple[str, ...]]:
+    inbox = configured_inbox(cfg)
+    parts = tuple(inbox.split("/"))
+    if any(not part or part.startswith(".") for part in parts):
+        raise vault_fs.UnsafePath("invalid inbox folder")
+    for part in parts:
+        vault_fs.check_name(part)
+    try:
+        includes, excludes = _folder_policy(cfg)
+    except ValueError as exc:
+        raise vault_fs.UnsafePath("invalid vault folder policy") from exc
+    if not _vault_path_allowed((*parts, "chat-note.md"), includes, excludes, directory=False):
+        raise vault_fs.UnsafePath("inbox outside the allowed folders")
+    root = Path(cfg["vaultPath"]).resolve(strict=True)
+    identity = files.root_identity() if inbox == INBOX_FOLDER else files.folder_identity(folder)
+    binding = json.dumps((str(root), identity, inbox,
+                          cfg.get("vaultInclude", ""), cfg.get("vaultExclude", "")),
+                         ensure_ascii=False, separators=(",", ":"))
+    target_id = "v1-" + hashlib.sha256(binding.encode("utf-8")).hexdigest()
+    return {"id": target_id, "vault": root.name, "inbox": inbox}, parts
+
+
+def chat_note_target(cfg: dict) -> dict | None:
+    """The current, physically bound and writable vault inbox, if one exists."""
+    try:
+        with vault_fs.VaultFs(cfg["vaultPath"]) as files:
+            inbox = tuple(configured_inbox(cfg).split("/"))
+            try:
+                folder = files.open_dir(inbox)
+            except FileNotFoundError:
+                if configured_inbox(cfg) != INBOX_FOLDER:
+                    raise
+                folder = None
+            try:
+                target, _ = _chat_note_scope(cfg, files, folder)
+                return target
+            finally:
+                if folder is not None:
+                    files.close_dir(folder)
+    except (OSError, ValueError):
+        return None
+
+
+def _chat_note_name(title: str, request_id: str | None = None) -> str:
+    # The old UUID suffix remains available only for replaying v1 receipts.
+    clean = re.sub(r'[<>:"/\\|?*^#%\x00-\x1f\x7f]', "-", unicodedata.normalize("NFC", title)).strip(" .-")
+    result, utf8, utf16 = "", 0, 0
+    limit = 200 if request_id else 240
+    for char in clean:
+        size8, size16 = len(char.encode("utf-8")), len(char.encode("utf-16-le")) // 2
+        if utf8 + size8 > limit or utf16 + size16 > limit:
+            break
+        result += char
+        utf8 += size8
+        utf16 += size16
+    result = result.rstrip(" .-") or "Note"
+    if request_id:
+        return f"{result} - {request_id}.md"
+    if result.casefold().endswith(".md"):
+        result = result[:-3].rstrip(" .-") or "Note"
+    stem, dot, rest = result.partition(".")
+    if re.fullmatch(r"(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])", stem, re.I):
+        result = stem + "-Note" + dot + rest
+    return result + ".md"
+
+
+def save_chat_note(cfg: dict, target_id: str, request_id: str, title: str, content: str) -> dict:
+    """Persist exactly the reviewed body; a UUID identifies one immutable save intent."""
+    data = content.encode("utf-8")
+    marker = f".chat-note-{request_id}.json"
+    name = _chat_note_name(title)
+    digest = hashlib.sha256(data).hexdigest()
+    receipt = json.dumps({"version": 2, "title": title, "sha256": digest, "file": name},
+                         ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    with vault_fs.VaultFs(cfg["vaultPath"]) as files:
+        inbox = tuple(configured_inbox(cfg).split("/"))
+        default_inbox = configured_inbox(cfg) == INBOX_FOLDER
+        try:
+            folder = files.open_dir(inbox)
+        except FileNotFoundError:
+            if not default_inbox:
+                raise
+            folder = None
+        try:
+            target, parts = _chat_note_scope(cfg, files, folder)
+            if target_id != target["id"]:
+                raise ChatNoteConflict("capture target changed")
+            includes, excludes = _folder_policy(cfg)
+            if not _vault_path_allowed((*parts, name), includes, excludes, directory=False):
+                raise vault_fs.UnsafePath("note outside the allowed folders")
+            if folder is None:
+                folder = files.open_dir(inbox, create=True)
+            marker_preexisting = False
+            try:
+                files.publish_in(folder, marker, receipt)
+            except FileExistsError:
+                marker_preexisting = True
+                entry, existing = files.read_in(folder, marker, 2048)
+                if entry.size > 2048 or len(existing) != entry.size:
+                    raise ChatNoteConflict("request ID already used") from None
+                try:
+                    previous = json.loads(existing)
+                except (ValueError, UnicodeDecodeError):
+                    raise ChatNoteConflict("request ID already used") from None
+                if (not isinstance(previous, dict) or previous.get("title") != title
+                        or previous.get("sha256") != digest):
+                    raise ChatNoteConflict("request ID already used") from None
+                if previous.get("version") == 2 and previous.get("file") == name:
+                    pass
+                elif set(previous) == {"title", "sha256"}:
+                    name = _chat_note_name(title, request_id)
+                else:
+                    raise ChatNoteConflict("request ID already used") from None
+            try:
+                files.publish_in(folder, name, data)
+            except FileExistsError:
+                try:
+                    entry, existing = files.read_in(folder, name, len(data) + 1)
+                except vault_fs.UnsafePath:
+                    # A concurrent publisher can still hold its temporary link to this title.
+                    if marker_preexisting:
+                        raise
+                    raise ChatNoteTitleConflict("title already exists") from None
+                if entry.size != len(data) or existing != data:
+                    if marker_preexisting:
+                        raise ChatNoteChanged("saved note changed") from None
+                    raise ChatNoteTitleConflict("title already exists") from None
+        finally:
+            if folder is not None:
+                files.close_dir(folder)
+    invalidate_brain_cache()
+    rel = nfc("/".join((*parts, name)))
+    return {"ok": True, "relPath": rel,
+            "source": _native_note_source(target["vault"], (*parts, name), True)}
+
+
 def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | None = None,
                        *, reindex: bool = True) -> dict:
     """Create a new note in the vault's inbox. Never overwrites, never leaves the vault.
@@ -1337,7 +1509,7 @@ def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | N
     return {"ok": True, "path": str(target_file), "node": created_node, "brain": graph}
 
 
-def read_indexed_note(cfg: dict, rel_path: str) -> tuple[str, list[str], str, list[str]]:
+def read_indexed_note(cfg: dict, rel_path: str, *, target_id: str | None = None) -> tuple[str, list[str], str, list[str]]:
     """`(title, tags, body, wikilinks)` of a Markdown note the graph itself indexed.
 
     The lookup is an allowlist, not a path check: only a `relPath` that the current graph
@@ -1359,10 +1531,10 @@ def read_indexed_note(cfg: dict, rel_path: str) -> tuple[str, list[str], str, li
             found = _BRAIN_CACHE["files"].get(rel) if _BRAIN_CACHE["key"] == cache_key else None
     if found is None or not rel.lower().endswith(".md"):
         raise ValueError("not an indexed note")
-    return _read_indexed_note_found(cfg, found)
+    return _read_indexed_note_found(cfg, found, target_id=target_id)
 
 
-def _read_indexed_note_found(cfg: dict, found) -> tuple[str, list[str], str, list[str]]:
+def _read_indexed_note_found(cfg: dict, found, *, target_id: str | None = None) -> tuple[str, list[str], str, list[str]]:
     source, base_dir, parts = found
     _mode, vault_dir, nerva_dir = _source_roots(cfg)
     # The trust domain is what the indexer recorded for this file, never the shape of the
@@ -1379,7 +1551,21 @@ def _read_indexed_note_found(cfg: dict, found) -> tuple[str, list[str], str, lis
     if base_dir != str(expected_root):
         raise ValueError("not an indexed note")
     with vault_fs.VaultFs(expected_root, allow_hardlinks=allow_links) as files:
-        entry, data = files.read_file(parts, _NOTE_READ_CAP)
+        if target_id is None:
+            entry, data = files.read_file(parts, _NOTE_READ_CAP)
+        else:
+            inbox = tuple(configured_inbox(cfg).split("/"))
+            if source != SOURCE_VAULT or parts[:-1] != inbox:
+                raise ValueError("not in the saved inbox")
+            folder = files.open_dir(inbox)
+            try:
+                # Bind the check and the file read to the same open folder.
+                target, _ = _chat_note_scope(cfg, files, folder)
+                if target["id"] != target_id:
+                    raise ValueError("vault destination changed")
+                entry, data = files.read_in(folder, parts[-1], _NOTE_READ_CAP)
+            finally:
+                files.close_dir(folder)
     if entry.dataless or not _markdown_is_visible(data, entry.size):
         raise ValueError("not an indexed note")
     return _parse_markdown_content(data.decode("utf-8-sig"), Path(parts[-1]).stem)
@@ -1409,10 +1595,25 @@ SYNONYM_EXPANSIONS = {
 def retrieve_vault_context(query: str, cfg: dict, top_k: int = 6) -> tuple[str, list[dict]]:
     if cfg.get("vaultMode") == "demo_550":
         return "", []
-    graph = build_real_brain_graph(cfg)
+    terms, related = vault_search.query_terms(query, SYNONYM_EXPANSIONS)
+    if top_k <= 0 or not (terms or related):
+        return "", []
+    scored = []
+
+    def score_body(node, body):
+        literal, expanded = vault_search.score(node, terms, related, body=body)
+        if literal or expanded:
+            scored.append((literal, expanded, node.get("relPath", ""), node["index"]))
+
+    graph = build_real_brain_graph(cfg, on_body=score_body)
     nodes = graph.get("nodes", [])
     if not nodes:
         return "", []
+    for node in nodes:
+        if node.get("projectId"):
+            score_body(node, node.get("body", ""))
+    scored.sort(key=lambda item: (-item[0], -item[1], item[2]))
+    by_index = {node["index"]: node for node in nodes}
 
     try:
         key = _cache_key(cfg)
@@ -1421,29 +1622,34 @@ def retrieve_vault_context(query: str, cfg: dict, top_k: int = 6) -> tuple[str, 
     with _BRAIN_LOCK:
         files = dict(_BRAIN_CACHE["files"]) if _BRAIN_CACHE["key"] == key else {}
     top_nodes = []
-    for node in vault_search.rank(query, nodes, SYNONYM_EXPANSIONS):
-        if len(top_nodes) >= max(0, top_k):
+    snippets = []
+    for _literal, _expanded, _path, index in scored:
+        if len(top_nodes) >= top_k:
             break
+        node = by_index[index]
         if node.get("projectId"):
             # The graph was built for this request from the current validated register.
-            top_nodes.append(node)
-            continue
-        found = files.get(node.get("relPath", ""))
-        if found is None:
-            continue
-        if node.get("id", "").startswith("nerva-") != (found[0] == SOURCE_REPO):
-            continue
-        try:
-            title, tags, body, _links = _read_indexed_note_found(cfg, found)
-        except (OSError, ValueError):
-            continue
-        top_nodes.append({**node, "title": title, "tags": tags, "body": body[:3800]})
-
-    snippets = []
-    for n in top_nodes:
-        snippets.append(
-            f"[Node #{n['index']} | {n['title']} | Path: {n.get('relPath', '')}]\n{n.get('body', '')[:700]}"
-        )
+            body = node.get("body", "")
+            fresh_node = node
+        else:
+            found = files.get(node.get("relPath", ""))
+            if found is None:
+                continue
+            if node.get("id", "").startswith("nerva-") != (found[0] == SOURCE_REPO):
+                continue
+            try:
+                title, tags, body, _links = _read_indexed_note_found(cfg, found)
+            except (OSError, ValueError):
+                continue
+            fresh_node = {**node, "title": node["title"] if found[0] == SOURCE_REPO else title,
+                          "tags": tags, "body": body[:3800]}
+            if not any(vault_search.score(fresh_node, terms, related, body=body)):
+                continue
+        excerpt = vault_search.passage(body, query, SYNONYM_EXPANSIONS)
+        top_nodes.append({**fresh_node, "excerpt": excerpt})
+        short = excerpt if len(excerpt) <= 700 else vault_search.passage(body, query, SYNONYM_EXPANSIONS, limit=700)
+        snippets.append(f"[Node #{index} | {fresh_node['title']} | Path: {node.get('relPath', '')}]\n"
+                        + short)
     return "\n\n---\n\n".join(snippets), top_nodes
 
 
@@ -1648,7 +1854,7 @@ def _call_ollama(user_payload: str, cfg: dict) -> dict:
 def _synthesize_grounded_fallback(prompt: str, matched_nodes: list[dict]) -> dict:
     if matched_nodes:
         top = matched_nodes[0]
-        body_clean = re.sub(r"[#*`\[\]]+", "", top.get("body", "")).strip()
+        body_clean = re.sub(r"[#*`\[\]]+", "", top.get("excerpt", top.get("body", ""))).strip()
         first_sentences = " ".join(body_clean.split())[:260]
         return {
             "reply": f"From your Second Brain note '{top['title']}': {first_sentences}",

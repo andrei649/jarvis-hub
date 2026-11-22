@@ -26,7 +26,7 @@ from .auxiliary_recovery import (
     auxiliary_temperature_recovery_scope,
     may_omit_rejected_output_cap,
 )
-from .base import LMStudioBackend, OllamaBackend
+from .base import LMStudioBackend, OllamaBackend, is_auto_max_tokens
 from .data_handling import auxiliary_request_scope
 from .job_selection import SelectionError, current_selection
 from .model_config import DEFAULT_LOCAL_MODEL
@@ -124,7 +124,7 @@ def _direct_local_request_check(router, backend, model, prompt, system, max_toke
             messages.append({"role": "user", "content": prompt})
             allowed = {"model", "messages", "stream", "max_tokens", "temperature"}
             cap_valid = (body["max_tokens"] == max_tokens if "max_tokens" in body
-                         else may_omit_rejected_output_cap(backend, model))
+                         else is_auto_max_tokens(max_tokens) or may_omit_rejected_output_cap(backend, model))
             if (set(body) - allowed or body.get("messages") != messages
                     or not cap_valid
                     or ("temperature" in body and body["temperature"] != temperature)):

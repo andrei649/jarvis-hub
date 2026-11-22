@@ -837,7 +837,9 @@ class HybridRouter(LLMRouter):
             from .custom_endpoints import CustomEndpointInvalid, classify_url
 
             try:
-                original = effective.base_url
+                original = getattr(effective, "base_url", None)
+                if not isinstance(original, str) or not original:
+                    return True
                 parts = urlsplit(original)
                 if parts.query or parts.fragment:
                     return True

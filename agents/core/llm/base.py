@@ -259,7 +259,68 @@ def _chat_messages(system: str, prompt: str) -> list:
     return messages
 
 
-# ── Post-processing filter (used on non-stream responses) ─────────────────────
+# ── Response filters ──────────────────────────────────────────────────────────
+
+_THINKING_HEADING = re.compile(
+    r"(?:Here['\u2019]s a thinking process[^\r\n]*|"
+    r"\*{2}Thinking(?: process)?(?:\.{3}|…|[:.])?\*{2}|"
+    r"Thinking(?: process)?(?:\.{3}|…|[:.])?)",
+    re.IGNORECASE,
+)
+_THINKING_END = re.compile(r"\r?\n\r?\n(?=[A-Z\u0102\u00ce\u0218\u021a\u00c2])")
+
+
+class _ThinkingProseFilter:
+    """Withhold an explicit leading thinking section until its answer begins."""
+
+    def __init__(self):
+        self._state = "start"
+        self._pending = ""
+
+    def feed(self, chunk: str) -> str:
+        if self._state == "done":
+            return chunk
+        self._pending += chunk
+        if self._state == "start":
+            line_start = len(self._pending) - len(self._pending.lstrip(" \t\r\n"))
+            newline = self._pending.find("\n", line_start)
+            if newline < 0:
+                prefix = self._pending.lstrip().casefold()
+                candidates = ("here's a thinking process", "here’s a thinking process",
+                              "**thinking", "**thinking process", "thinking", "thinking process")
+                if prefix and not any(
+                    p.startswith(prefix) or (prefix.startswith(p)
+                                             and (len(prefix) == len(p)
+                                                  or p.startswith("here")
+                                                  or prefix[len(p)] in ":.*…"))
+                    for p in candidates
+                ):
+                    self._state = "done"
+                    result, self._pending = self._pending, ""
+                    return result
+                return ""
+            if not _THINKING_HEADING.fullmatch(self._pending[line_start:newline].strip()):
+                self._state = "done"
+                result, self._pending = self._pending, ""
+                return result
+            self._state = "hide"
+            self._pending = "\n" + self._pending[newline + 1:]
+        end = _THINKING_END.search(self._pending)
+        if end:
+            self._state = "done"
+            result, self._pending = self._pending[end.end():], ""
+            return result
+        self._pending = self._pending[-4:]
+        return ""
+
+    def flush(self) -> str:
+        if (self._state == "start"
+                and (self._pending.strip().casefold() in {"thinking", "thinking process"}
+                     or not _THINKING_HEADING.fullmatch(self._pending.strip()))):
+            result, self._pending = self._pending, ""
+            return result
+        return ""
+
 
 def strip_thinking(text: str) -> str:
     """Remove chain-of-thought reasoning from a complete LLM response.
@@ -269,8 +330,8 @@ def strip_thinking(text: str) -> str:
       1a. <think>...</think> XML-style tags (closed)
       1b. <think> with no closing tag — reasoning that never reached an answer
           (e.g. generation truncated at max_tokens mid-thought). Drop to end.
-      2. "Here's a thinking process..." prose blocks with numbered steps
-      3. Leading numbered-step sections before the actual answer
+      2. Explicit leading thinking-process prose blocks
+      3. Leading numbered plans followed by an explicit final answer
     """
     if not text:
         return text
@@ -284,24 +345,19 @@ def strip_thinking(text: str) -> str:
     # leaks verbatim because the closed-tag regex above never matches it.
     cleaned = re.sub(r"<think>.*\Z", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
 
-    # 2. "Here's a thinking process…" / "**Thinking…**" narrative blocks
-    cleaned = re.sub(
-        r"(?:Here['\u2019]?s a thinking process.*?\n|\*{0,2}Thinking.*?\*{0,2}\n)"
-        r"(?:.*?\n)*?(?=\n[A-Z\u0102\u00ce\u0218\u021a\u00c2]|\Z)",
-        "",
-        cleaned,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
+    # 2. Explicit leading thinking-process narrative blocks
+    prose = _ThinkingProseFilter()
+    cleaned = prose.feed(cleaned) + prose.flush()
 
-    # 3. Leading numbered-step blocks (stop at first blank line after steps).
+    # 3. Leading numbered plans with an explicit final-answer delimiter.
     # Each step line is newline-bounded ([ \t] then [^\n]*) so the pattern stays
     # linear — the old `\d+\.\s+.+` let `\s+` span newlines and overlap `.+`,
     # which CodeQL flagged as a super-linear (ReDoS-prone) regex (#1).
     cleaned = re.sub(
-        r"^(?:\d+\.[ \t][^\n]*\n)+\n",
+        r"\A(?:\d+\.[ \t][^\n]*\n)+\n(?=Final answer[:.])",
         "",
         cleaned,
-        flags=re.MULTILINE,
+        flags=re.IGNORECASE,
     )
 
     return cleaned.strip()
@@ -323,6 +379,7 @@ class ThinkingStreamFilter:
     def __init__(self):
         self._in_think: bool = False
         self._buf: str = ""
+        self._prose = _ThinkingProseFilter()
 
     def feed(self, chunk: str) -> str:
         self._buf += chunk
@@ -358,7 +415,7 @@ class ThinkingStreamFilter:
                         self._buf = self._buf[safe_len:]
                     break
 
-        return "".join(out_parts)
+        return self._prose.feed("".join(out_parts))
 
     def flush(self) -> str:
         """Return any remaining buffer after stream ends (skip if in think block)."""
@@ -366,7 +423,7 @@ class ThinkingStreamFilter:
             return ""
         remainder = self._buf
         self._buf = ""
-        return remainder
+        return self._prose.feed(remainder) + self._prose.flush()
 
 
 # ── Async-safe token emitter ──────────────────────────────────────────────────
@@ -1006,6 +1063,20 @@ class OllamaBackend(LLMBackend):
     # translation lives in tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
 
+    @staticmethod
+    def supports_no_think(metadata: object) -> bool:
+        if not isinstance(metadata, dict):
+            return False
+        thinking = metadata.get("thinking")
+        values = thinking.get("values") if isinstance(thinking, dict) else None
+        return isinstance(values, list) and any(value is False for value in values)
+
+    def _apply_no_think(self, payload: dict, model: str) -> None:
+        from .request_context import ollama_no_think_bound
+
+        if ollama_no_think_bound(self, ollama_wire_model(model)):
+            payload["think"] = False
+
     def __init__(self, base_url: str = "http://localhost:11434", num_ctx: int = 0, *,
                  trust_env: bool = True):
         self.num_ctx = max(0, int(num_ctx or 0))
@@ -1090,6 +1161,7 @@ class OllamaBackend(LLMBackend):
         }
         if json_schema is not None:     # H440: Ollama's structured output
             payload["format"] = json_schema
+        self._apply_no_think(payload, model)
         try:
             resp = await self.client.post("/api/generate", json=payload)
             resp.raise_for_status()
@@ -1141,6 +1213,7 @@ class OllamaBackend(LLMBackend):
         }
         if tools:
             payload["tools"] = [tool.as_openai() for tool in tools]
+        self._apply_no_think(payload, model)
         try:
             resp = await self.client.post("/api/chat", json=payload)
             resp.raise_for_status()
@@ -1188,6 +1261,7 @@ class OllamaBackend(LLMBackend):
                 "temperature": temperature,
             },
         }
+        self._apply_no_think(payload, model)
         emitted = ""
         reasoning_full = ""
         finish = None
@@ -1239,7 +1313,12 @@ class OllamaBackend(LLMBackend):
             if on_token:
                 await _emit(on_token, rg.feed(remainder))
 
-        answer = self._finalize_stream(emitted, reasoning_full, finish, model)
+        # An explicit native disable request never turns a structured reasoning
+        # field into the user's answer if the server ignores that request.
+        answer = self._finalize_stream(
+            emitted, reasoning_full if payload.get("think") is not False or finish == "length" else "",
+            finish, model,
+        )
         if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
             await _emit(on_token, rg.release(answer))
         if usage is not None and not usage_failed:

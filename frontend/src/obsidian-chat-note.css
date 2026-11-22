@@ -1,0 +1,17 @@
+.obsidian-chat-note { width:min(540px, calc(100vw - 24px)); max-height:calc(100dvh - 24px); overflow-y:auto; box-sizing:border-box; padding:20px; border:1px solid var(--panel-line); border-radius:8px; background:var(--void); color:var(--ink); }
+.obsidian-chat-note::backdrop { background:rgba(0,0,0,.72); }
+.obsidian-chat-note header, .obsidian-chat-note-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.obsidian-chat-note h2 { margin:0; font-size:18px; }
+.obsidian-chat-note p { color:var(--ink-2); }
+.obsidian-chat-note dl { margin:0 0 16px; overflow-wrap:anywhere; }
+.obsidian-chat-note dl div { display:grid; grid-template-columns:5rem minmax(0,1fr); gap:8px; margin:4px 0; }
+.obsidian-chat-note dt { color:var(--ink-2); }
+.obsidian-chat-note dd { margin:0; }
+.obsidian-chat-note label { display:grid; gap:6px; margin:12px 0; }
+.obsidian-chat-note input, .obsidian-chat-note textarea { width:100%; box-sizing:border-box; color:var(--ink); background:var(--panel); border:1px solid var(--panel-line); border-radius:4px; padding:8px; font:inherit; }
+.obsidian-chat-note textarea { min-height:12rem; resize:vertical; white-space:pre-wrap; }
+.obsidian-chat-note [role="alert"] { color:var(--amber); }
+.obsidian-chat-note [role="status"] { overflow-wrap:anywhere; }
+.obsidian-chat-note a { color:var(--accent-light); }
+.obsidian-chat-note-actions { justify-content:flex-end; flex-wrap:wrap; margin-top:16px; }
+@media(max-width:390px) { .obsidian-chat-note { padding:12px; } }

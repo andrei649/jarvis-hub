@@ -45,9 +45,11 @@ async def memory(req: Request):
         return JSONResponse({"error": "not initialized"}, status_code=503)
     from agents.core.foreign_history import http_owner_guard
     await http_owner_guard(orch.checkpoints, orch.session_id, req)
+    from agents import web
+    owner_options = {"include_board_sources": True} if web._web_principal(req).admin else {}
     try:
         history = await bounded(
-            orch.memory.get_history(orch.session_id, last_n=20),
+            orch.memory.get_history(orch.session_id, last_n=20, **owner_options),
             what="memory.get_history",
         )
     except BackendTimeout as exc:

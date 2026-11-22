@@ -21,8 +21,6 @@ import contextlib
 import json
 import logging
 import re
-import shutil
-import tempfile
 import time
 from collections import deque
 from collections.abc import Callable
@@ -30,6 +28,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from agents.core.browser_profile import create_owned_profile, remove_owned_profile
 from agents.core.browser_transport import (
     ALLOWED_SCHEMES,
     BrowserTransportRefused,
@@ -138,6 +137,7 @@ class PlaywrightBrowserDriver:
         self._transport: PinnedResolver | None = None
         self._launched_hosts: frozenset[str] = frozenset()
         self._profile_dir: Path | None = None
+        self._profile_identity: dict | None = None
         self.blocked_requests: deque[dict] = deque(maxlen=_BLOCK_LOG_SIZE)
         self._start_lock = asyncio.Lock()
         self._playwright = None
@@ -324,6 +324,11 @@ class PlaywrightBrowserDriver:
         return self._profile_dir
 
     @property
+    def profile_identity(self) -> dict | None:
+        """Stable identity of the owned disposable profile for journal recovery."""
+        return self._profile_identity
+
+    @property
     def owned_browser_identity(self) -> tuple[int, float] | None:
         """PID and creation time of the native Chrome root for this fresh profile."""
         return self._owned_browser_identity
@@ -445,7 +450,7 @@ class PlaywrightBrowserDriver:
                     self._launched_hosts = frozenset(self._transport.pinned_hosts())
                 # A fresh, dedicated profile per run: cookies, storage, and history
                 # never touch (or leak from) the owner's own browser profile.
-                self._profile_dir = Path(tempfile.mkdtemp(prefix=PROFILE_PREFIX))
+                self._profile_dir, self._profile_identity = create_owned_profile()
                 if self._ownership_observer is not None:
                     await self._ownership_observer('profile', self._profile_dir, self._owned_child)
                 self._context = await browser_type.launch_persistent_context(
@@ -619,17 +624,11 @@ class PlaywrightBrowserDriver:
                 failures.append('browser_lifetime_unverified')
         if not failures and self._profile_dir is not None:
             directory = self._profile_dir
-            if not directory.name.startswith(PROFILE_PREFIX):
-                failures.append('profile_owner_unverified')
+            if await asyncio.to_thread(remove_owned_profile, directory, self._profile_identity):
+                self._profile_dir = None
+                self._profile_identity = None
             else:
-                try:
-                    await asyncio.to_thread(shutil.rmtree, directory)
-                except FileNotFoundError:
-                    self._profile_dir = None
-                except Exception:
-                    failures.append('profile_remove_unverified')
-                else:
-                    self._profile_dir = None
+                failures.append('profile_remove_unverified')
         if failures:
             raise PlaywrightDriverError('browser_cleanup_unverified:' + ','.join(failures))
         self._launched_hosts = frozenset()

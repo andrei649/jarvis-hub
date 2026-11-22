@@ -1652,6 +1652,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/canvas/office-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Canvas Office Preview
+         * @description Read an owner-supplied Office file without saving or sending it to a model.
+         */
+        post: operations["canvas_office_preview_api_canvas_office_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/canvas/blender-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Canvas Blender Preview
+         * @description Read the project's library inventory with the hub's installed Blender.
+         */
+        post: operations["canvas_blender_preview_api_canvas_blender_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/canvas/blender-export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Canvas Blender Export
+         * @description Download a native editable Blender mesh from a bounded OBJ subset.
+         */
+        post: operations["canvas_blender_export_api_canvas_blender_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/canvas": {
         parameters: {
             query?: never;
@@ -2199,6 +2259,23 @@ export interface paths {
          * @description Write a new note into the configured vault inbox.
          */
         post: operations["os_brain_capture_api_os_brain_capture_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/brain/chat-note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Os Brain Chat Note */
+        post: operations["os_brain_chat_note_api_os_brain_chat_note_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4434,6 +4511,47 @@ export interface paths {
          *     `install` can restore it.
          */
         post: operations["marketplace_uninstall_api_skills_marketplace_uninstall_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/procedures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Procedure
+         * @description Submit one owner-edited, single-agent procedure for quarantined skill review.
+         *
+         *     Retries with the same request_id and content return the pending skill's registry name.
+         *     A changed body or an already decided procedure returns 409.
+         */
+        post: operations["submit_procedure_api_skills_procedures_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/procedures/revision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Procedure Revision */
+        get: operations["get_procedure_revision_api_skills_procedures_revision_get"];
+        put?: never;
+        /** Submit Procedure Revision */
+        post: operations["submit_procedure_revision_api_skills_procedures_revision_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7186,6 +7304,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/kanban/board-note/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Board Note Preview */
+        post: operations["board_note_preview_api_kanban_board_note_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hermes/status": {
         parameters: {
             query?: never;
@@ -9725,6 +9860,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory/core/facts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chat Saved Facts
+         * @description The one curated store the owner chose when replacing a saved fact from chat.
+         */
+        get: operations["chat_saved_facts_api_memory_core_facts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/core/undo": {
         parameters: {
             query?: never;
@@ -12011,6 +12166,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/opinions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Agent Opinions
+         * @description Ask two active agents the same text-only question without starting a task or chat.
+         */
+        post: operations["agent_opinions_api_agents_opinions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/{agent_id}/soul": {
         parameters: {
             query?: never;
@@ -13435,6 +13610,26 @@ export interface paths {
          * @description Select and recap without changing the shared active/default session.
          */
         post: operations["resolve_session_sessions_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Session Messages
+         * @description Find retained user/assistant turns; project only current owner-readable text.
+         */
+        post: operations["search_session_messages_sessions_search_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17351,6 +17546,38 @@ export interface components {
             /** Soul */
             soul?: string | null;
         };
+        /** AgentOpinion */
+        AgentOpinion: {
+            /** Agent */
+            agent: string;
+            /** Ok */
+            ok: boolean;
+            /** Text */
+            text?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Route */
+            route?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** AgentOpinionsBody */
+        AgentOpinionsBody: {
+            /** Question */
+            question: string;
+            /** Agents */
+            agents: string[];
+            /**
+             * Allow Cloud
+             * @default false
+             */
+            allow_cloud: boolean;
+        };
+        /** AgentOpinionsResponse */
+        AgentOpinionsResponse: {
+            /** Opinions */
+            opinions: components["schemas"]["AgentOpinion"][];
+        };
         /** AgentRenameBody */
         AgentRenameBody: {
             /** Name */
@@ -17490,6 +17717,55 @@ export interface components {
             origin: string;
             /** Approval Deadline At */
             approval_deadline_at?: string | null;
+        };
+        /** BlenderPreview */
+        BlenderPreview: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "blend";
+            /** Segments */
+            segments: components["schemas"]["OfficePreviewSegment"][];
+            /** Total Segments */
+            total_segments: number;
+            /** Thumbnail Png */
+            thumbnail_png?: string | null;
+        };
+        /** BoardNotePreviewBody */
+        BoardNotePreviewBody: {
+            /** References */
+            references: components["schemas"]["BoardReference"][];
+        };
+        /** BoardReference */
+        BoardReference: {
+            /** Board */
+            board: string;
+            /** Task Id */
+            task_id: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "result" | "latest_summary";
+            /** Sha256 */
+            sha256: string;
+            /** Excerpt */
+            excerpt: string;
+        };
+        /** BoardSource */
+        BoardSource: {
+            /** Board */
+            board: string;
+            /** Task Id */
+            task_id: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "result" | "latest_summary";
+            /** Sha256 */
+            sha256: string;
         };
         /** BrowserCheckBody */
         BrowserCheckBody: {
@@ -17794,6 +18070,37 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** ChatNoteBody */
+        ChatNoteBody: {
+            /** Targetid */
+            targetId: string;
+            /** Requestid */
+            requestId: string;
+            /** Title */
+            title: string;
+            /** Content */
+            content: string;
+        };
+        /** ChatNoteReceipt */
+        ChatNoteReceipt: {
+            /**
+             * Ok
+             * @constant
+             */
+            ok: true;
+            /** Relpath */
+            relPath: string;
+            source: components["schemas"]["ChatNoteSource"] | null;
+        };
+        /** ChatNoteSource */
+        ChatNoteSource: {
+            /** Vault */
+            vault: string;
+            /** File */
+            file: string;
+            /** Readable */
+            readable: boolean;
+        };
         /** ChatRequest */
         ChatRequest: {
             /** Message */
@@ -17814,6 +18121,19 @@ export interface components {
             tool_events: boolean;
             /** Attachments */
             attachments?: components["schemas"]["ChatAttachment"][] | null;
+            /**
+             * Require Full Attachments
+             * @default false
+             */
+            require_full_attachments: boolean;
+            history_reference?: components["schemas"]["HistoryReference"] | null;
+            /** Board References */
+            board_references?: components["schemas"]["BoardReference"][] | null;
+            /**
+             * Allow Board Cloud
+             * @default false
+             */
+            allow_board_cloud: boolean;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -17821,6 +18141,10 @@ export interface components {
             reply: string;
             /** Session Id */
             session_id?: string | null;
+            /** History Source Used */
+            history_source_used?: boolean | null;
+            /** Board Sources */
+            board_sources?: components["schemas"]["BoardSource"][] | null;
             /** Model Calls */
             model_calls?: components["schemas"]["ModelCall"][] | null;
             /** Usage */
@@ -18658,6 +18982,22 @@ export interface components {
              */
             confirm: boolean;
         };
+        /** HistoryReference */
+        HistoryReference: {
+            /** Session Id */
+            session_id: string;
+            /** Turn */
+            turn: number;
+            /** Revision */
+            revision: string;
+            /** Excerpt */
+            excerpt: string;
+            /**
+             * Allow Cloud
+             * @default false
+             */
+            allow_cloud: boolean;
+        };
         /** HookBody */
         HookBody: {
             /** Event */
@@ -19381,6 +19721,27 @@ export interface components {
             /** Redirect Uri */
             redirect_uri?: string | null;
         };
+        /** OfficePreview */
+        OfficePreview: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "docx" | "xlsx";
+            /** Segments */
+            segments: components["schemas"]["OfficePreviewSegment"][];
+            /** Total Segments */
+            total_segments: number;
+        };
+        /** OfficePreviewSegment */
+        OfficePreviewSegment: {
+            /** Label */
+            label: string;
+            /** Text */
+            text: string;
+            /** Truncated */
+            truncated: boolean;
+        };
         /** OperatorPlanBody */
         OperatorPlanBody: {
             /** Goal */
@@ -19651,6 +20012,59 @@ export interface components {
              */
             operation: "run" | "pause" | "resume" | "pin" | "unpin" | "adopt" | "restore" | "archive" | "prune" | "backup" | "rollback" | "purge";
             args?: components["schemas"]["CuratorArgs"];
+        };
+        /** ProcedureBody */
+        ProcedureBody: {
+            /** Agent */
+            agent: string;
+            /** Description */
+            description: string;
+            /** Steps */
+            steps: string[];
+            /** Request Id */
+            request_id: string;
+        };
+        /** ProcedureRevisionAccepted */
+        ProcedureRevisionAccepted: {
+            /** Proposal Id */
+            proposal_id: string;
+            /** Skill */
+            skill: string;
+        };
+        /** ProcedureRevisionBody */
+        ProcedureRevisionBody: {
+            /** Agent */
+            agent: string;
+            /** Command */
+            command: string;
+            /** Steps */
+            steps: string[];
+            /** Base Hash */
+            base_hash: string;
+        };
+        /** ProcedureRevisionSurface */
+        ProcedureRevisionSurface: {
+            /** Skill */
+            skill: string;
+            /** Steps */
+            steps: string[];
+            /** Base Hash */
+            base_hash: string;
+        };
+        /** ProcedureSuccess */
+        ProcedureSuccess: {
+            /**
+             * Ok
+             * @constant
+             */
+            ok: true;
+            /**
+             * Pending
+             * @constant
+             */
+            pending: true;
+            /** Skill */
+            skill: string;
         };
         /** PromoteRequest */
         PromoteRequest: {
@@ -20003,6 +20417,23 @@ export interface components {
              */
             note: string;
         };
+        /** SavedChatFact */
+        SavedChatFact: {
+            /** Entry Id */
+            entry_id: string;
+            /**
+             * Store
+             * @enum {string}
+             */
+            store: "memory" | "user";
+            /** Value */
+            value: string;
+        };
+        /** SavedChatFacts */
+        SavedChatFacts: {
+            /** Entries */
+            entries: components["schemas"]["SavedChatFact"][];
+        };
         /**
          * ScreenReflexBody
          * @description Bytes-only contract: base64 image data, never a filesystem path.
@@ -20020,6 +20451,40 @@ export interface components {
              * @default answer
              */
             mode: string;
+        };
+        /** SearchSessionHit */
+        SearchSessionHit: {
+            /** Session Id */
+            session_id: string;
+            /** Turn */
+            turn: number;
+            /** Role */
+            role: string;
+            /** Timestamp */
+            timestamp: string | null;
+            /** Agent Id */
+            agent_id: string | null;
+            /** Snippet */
+            snippet: string;
+        };
+        /** SearchSessionsRequest */
+        SearchSessionsRequest: {
+            /** Query */
+            query: string;
+            /**
+             * Limit
+             * @default 20
+             */
+            limit: number;
+        };
+        /** SearchSessionsResponse */
+        SearchSessionsResponse: {
+            /** Hits */
+            hits: components["schemas"]["SearchSessionHit"][];
+            /** Truncated */
+            truncated: boolean;
+            /** Stopped By */
+            stopped_by: string | null;
         };
         /** SecretBody */
         SecretBody: {
@@ -20159,6 +20624,8 @@ export interface components {
             tier: "admin";
             /** Usage */
             usage: string;
+            /** Editable Procedure */
+            editable_procedure?: boolean | null;
         };
         /**
          * SkillBatchBody
@@ -23795,6 +24262,89 @@ export interface operations {
             };
         };
     };
+    canvas_office_preview_api_canvas_office_preview_post: {
+        parameters: {
+            query: {
+                kind: "docx" | "xlsx";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfficePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    canvas_blender_preview_api_canvas_blender_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlenderPreview"];
+                };
+            };
+        };
+    };
+    canvas_blender_export_api_canvas_blender_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "text/plain": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/x-blender": string;
+                };
+            };
+        };
+    };
     canvas_list_api_canvas_get: {
         parameters: {
             query?: {
@@ -24572,6 +25122,8 @@ export interface operations {
         parameters: {
             query?: {
                 relPath?: string;
+                targetId?: string | null;
+                q?: string;
             };
             header?: never;
             path?: never;
@@ -24650,6 +25202,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    os_brain_chat_note_api_os_brain_chat_note_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatNoteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatNoteReceipt"];
                 };
             };
             /** @description Validation Error */
@@ -28007,6 +28592,104 @@ export interface operations {
             };
         };
     };
+    submit_procedure_api_skills_procedures_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProcedureBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcedureSuccess"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_procedure_revision_api_skills_procedures_revision_get: {
+        parameters: {
+            query: {
+                agent: string;
+                command: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcedureRevisionSurface"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_procedure_revision_api_skills_procedures_revision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProcedureRevisionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcedureRevisionAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_pending_skills_api_skills_pending_get: {
         parameters: {
             query?: never;
@@ -28159,7 +28842,9 @@ export interface operations {
     };
     skill_proposals_api_skills_proposals_get: {
         parameters: {
-            query?: never;
+            query?: {
+                focus?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -28173,6 +28858,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -32693,6 +33387,39 @@ export interface operations {
             };
         };
     };
+    board_note_preview_api_kanban_board_note_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardNotePreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     status_api_hermes_status_get: {
         parameters: {
             query?: never;
@@ -36810,6 +37537,37 @@ export interface operations {
             };
         };
     };
+    chat_saved_facts_api_memory_core_facts_get: {
+        parameters: {
+            query: {
+                store: "memory" | "user";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedChatFacts"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     memory_core_undo_api_memory_core_undo_post: {
         parameters: {
             query?: never;
@@ -39917,6 +40675,39 @@ export interface operations {
             };
         };
     };
+    agent_opinions_api_agents_opinions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentOpinionsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOpinionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_agent_soul_api_agents__agent_id__soul_get: {
         parameters: {
             query?: never;
@@ -41901,6 +42692,39 @@ export interface operations {
             };
         };
     };
+    search_session_messages_sessions_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchSessionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchSessionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_session_sessions_import_post: {
         parameters: {
             query?: never;
@@ -42195,6 +43019,7 @@ export interface operations {
         parameters: {
             query?: {
                 download?: boolean;
+                references?: boolean;
             };
             header?: never;
             path: {

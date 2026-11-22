@@ -178,6 +178,12 @@ Standalone routes are listed below. The hub exposes the vault through `/api/os/s
 `/api/os/brain`, `/api/os/brain/note`, `/api/os/brain/retrieve` and
 `POST /api/os/brain/capture`. Workshop edits use `POST /api/os/workshop/edit`.
 
+The hub's note search ranks the full body of each eligible Markdown note and
+returns up to four matching excerpts, each at most 1,500 characters. Its note
+reader accepts the same question in `q` to open a 6,000-character window around
+a late match. A nonzero `start` gives the window's zero-based character offset.
+Omit `q` for the opening of the note.
+
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/status` | GET | Providers, active engine, resolved `vaultPath` / `nervaPath` (`?refresh=1` re-probes) |

@@ -14,7 +14,7 @@ from typing import Any
 from . import quick_commands, settings_db
 from .channels.native_metadata import name_allowed
 from .commands import ALIASES, CommandRegistry
-from .skills import bundles, slash_load, switches
+from .skills import bundles, procedure_revision, slash_load, switches
 
 MAX_ROWS = 256
 MAX_SKILL_CANDIDATES = 512
@@ -150,7 +150,10 @@ def project(registry: CommandRegistry, loader: Any, *, slots: int, agent: str | 
             if len(rows) >= slots:
                 truncated = True
                 break
-            rows.append(_row("skill", name, f"/{name}"))
+            row = _row("skill", name, f"/{name}")
+            if agent and procedure_revision.candidate(loader, skill, agent):
+                row["editable_procedure"] = True
+            rows.append(row)
     finally:
         switches.reset_turn_channel(token)
     if collisions:

@@ -13,6 +13,7 @@ from .conversation_clock import CLOCK_UNSET, CompactionClockRefused
 from .env_config import env_int
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from .llm.physical_local import hard_local_agent_call, hard_local_synthesis
+from .reply_language import append_reply_language
 from .security import bind_guardrails
 from .security.quarantine import (
     collapse_whitespace,
@@ -913,12 +914,13 @@ class Agent:
             skill_hint = ("If this task produced a reusable procedure, end your response with "
                           "'[learn: task description | step1,step2,step3 | command_name]' "
                           "to propose it for review. ")
-        return (
+        prompt = (
             f"{skills_block}{agent_block}{rag_block}"
             f"User said: {text}\n"
             f"Respond as {self.name}.\n\n"
             f"{skill_hint}You can also hand off to another agent with '[handoff:agent_id]'."
         )
+        return append_reply_language(prompt, context.get("_reply_language"))
 
     @staticmethod
     def _note_archive_recall(basis: str, wrapped=None) -> None:
@@ -966,6 +968,8 @@ class Agent:
                                 usage_sink=None, session_id=None, effective_window=None,
                                 clock_snapshot=CLOCK_UNSET, prepared_route=None,
                                 cached_input_tokens=0) -> str:
+        from contextlib import nullcontext
+
         from .channels.session_lifecycle import session_activity_callback
         from .conversation_clock import capture_clock, clock_scope
         from .llm.request_context import current_session, session_scope
@@ -1026,6 +1030,35 @@ class Agent:
                 window_tokens=effective_window.tokens if effective_window is not None else None,
                 max_tokens=max_tokens,
             )
+        from .llm.base import OllamaBackend
+        from .llm.data_handling import physical_request_guard_active
+        from .llm.physical_local import ollama_local_selector, physical_local_required
+        from .llm.request_context import (
+            job_reasoning_active,
+            primary_ollama_no_think,
+            selected_reasoning,
+        )
+
+        no_think_scope = nullcontext()
+        from .security.guardrails import GuardrailsEngine
+
+        native = backend._backend if type(backend) is GuardrailsEngine else backend
+        if (type(native) is OllamaBackend and not physical_request_guard_active()
+                and not job_reasoning_active() and selected_reasoning(None) == "none"):
+            check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
+            if callable(check):
+                check(backend, model)
+                wire_model = ollama_local_selector(model) if physical_local_required() else model
+                from .llm.vision_capability import read_local_model_metadata
+
+                probed_client, probed_base_url = native.client, native.base_url
+                probed_client_base_url = str(probed_client.base_url)
+                metadata = await read_local_model_metadata(
+                    native, wire_model, check=lambda: check(backend, model))
+                if (native.client is probed_client and native.base_url == probed_base_url
+                        and str(native.client.base_url) == probed_client_base_url
+                        and native.supports_no_think(metadata)):
+                    no_think_scope = primary_ollama_no_think(native, wire_model)
         sink = usage_sink if usage_sink is not None else current_observer()
         reported_prompt_usage = []
         if compaction is not None and compaction.session_id == sid and compaction.enabled:
@@ -1043,15 +1076,16 @@ class Agent:
               text_usage_scope(None),
               trajectory.capture(agent_id=getattr(self, "id", ""), model=model, system=system,
                                  prompt=prompt) as recorded):
-            response = await self._generate_response(
-                backend, model, prompt, system, max_tokens, temperature,
-                on_token=on_token, wall_seconds=wall_seconds,
-                usage_sink=observer if sink is not None else None,
-                effective_window=effective_window,
-                prepared_route=prepared_route,
-                cached_input_tokens=cached_input_tokens,
-                compaction=compaction if compaction is not None and compaction.session_id == sid else None,
-            )
+            with no_think_scope:
+                response = await self._generate_response(
+                    backend, model, prompt, system, max_tokens, temperature,
+                    on_token=on_token, wall_seconds=wall_seconds,
+                    usage_sink=observer if sink is not None else None,
+                    effective_window=effective_window,
+                    prepared_route=prepared_route,
+                    cached_input_tokens=cached_input_tokens,
+                    compaction=compaction if compaction is not None and compaction.session_id == sid else None,
+                )
             if egress_scrubber is not None and raw_on_token is not None:
                 flushed_tail = egress_scrubber.flush()
                 if flushed_tail:
@@ -1256,6 +1290,7 @@ class Agent:
 
     async def process(self, text: str, context: dict, *, prepared=None) -> str:
         system_prompt = self.system_prompt()
+        system_prompt = append_reply_language(system_prompt, (context or {}).get("_reply_language"))
         model = self.default_model()
 
         if not self.llm_router:
@@ -1444,20 +1479,20 @@ class Agent:
         model = self.config.get("model", "google/gemma-4-31b-a4b")
         system_prompt = self.system_prompt()
 
+        from .cognition.honesty import in_character_directive, preserve_deliverable_language_directive
         if in_character:
-            directive = (
-                "Weave these specialist answers into one coherent reply, but PRESERVE each "
-                "specialist's distinct voice and attribute their contributions in character. "
-                "Be honest and direct — do not flatter, over-agree, or reverse a correct claim "
-                "to please. Use the user's language."
-            )
+            directive = in_character_directive()
         else:
-            directive = "Be concise. Use the user's language. Do not mention internal agent IDs."
+            directive = ("Be concise. Do not mention internal agent IDs. "
+                         + preserve_deliverable_language_directive())
         prompt = (
             f"Synthesize the following specialist responses into a single, coherent reply for the user:\n"
             f"{agent_reports}\n\n"
             f"{directive}"
         )
+        reply_language = (getattr(intent, "context", None) or {}).get("_reply_language")
+        system_prompt = append_reply_language(system_prompt, reply_language)
+        prompt = append_reply_language(prompt, reply_language)
 
         # SEC-B1 / the adversarial audit's §15.4 finding. The prompt built above embeds
         # every contributor's RAW output, and this method then routed as `self.id` —

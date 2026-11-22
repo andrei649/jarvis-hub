@@ -1,4 +1,5 @@
 """Request-local conversation identity shared by provider adapters."""
+import asyncio
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -40,6 +41,22 @@ class _ReasoningFrame:
 
 _reasoning: ContextVar[_ReasoningFrame | None] = ContextVar('invocation_reasoning', default=None)
 _job_reasoning: ContextVar[_ReasoningFrame | None] = ContextVar('required_job_reasoning', default=None)
+_job_scope: ContextVar[bool] = ContextVar('job_reasoning_scope_active', default=False)
+
+
+@dataclass(frozen=True)
+class _PrimaryOllama:
+    backend: object
+    model: str
+    lifetime: _ReasoningLifetime
+    task: object
+    client: object
+    base_url: object
+    client_base_url: object
+
+
+_primary_ollama: ContextVar[_PrimaryOllama | None] = ContextVar(
+    'primary_ollama_no_think', default=None)
 
 
 def ensure_reasoning_active():
@@ -53,6 +70,36 @@ def selected_reasoning(default):
     ensure_reasoning_active()
     frame = _reasoning.get()
     return frame.effort if frame is not None and frame.effort is not None else default
+
+
+@contextmanager
+def primary_ollama_no_think(backend: object, model: str):
+    lifetime = _ReasoningLifetime()
+    token = _primary_ollama.set(_PrimaryOllama(
+        backend, model, lifetime, asyncio.current_task(), backend.client,
+        backend.base_url, str(backend.client.base_url)))
+    try:
+        yield
+    finally:
+        lifetime.active = False
+        _primary_ollama.reset(token)
+
+
+def ollama_no_think_bound(backend: object, model: str) -> bool:
+    frame = _primary_ollama.get()
+    return bool(frame and frame.backend is backend and frame.model == model
+                and frame.lifetime.is_active() and frame.task is asyncio.current_task()
+                and frame.client is backend.client and frame.base_url == backend.base_url
+                and frame.client_base_url == str(backend.client.base_url))
+
+
+@contextmanager
+def without_primary_ollama():
+    token = _primary_ollama.set(None)
+    try:
+        yield
+    finally:
+        _primary_ollama.reset(token)
 
 
 @contextmanager
@@ -83,20 +130,28 @@ def required_job_reasoning() -> str | None:
     return frame.effort if frame is not None else None
 
 
+def job_reasoning_active() -> bool:
+    return _job_scope.get()
+
+
 @contextmanager
 def job_reasoning_scope(effort: str | None):
     """Apply a job pin without letting a nested absent job shed its parent pin."""
-    inherited = _job_reasoning.get()
-    if effort is None and inherited is not None:
-        required_job_reasoning()
-        yield
-        return
-    with reasoning_scope(effort):
-        token = _job_reasoning.set(_reasoning.get() if effort is not None else None)
-        try:
+    scope_token = _job_scope.set(True)
+    try:
+        inherited = _job_reasoning.get()
+        if effort is None and inherited is not None:
+            required_job_reasoning()
             yield
-        finally:
-            _job_reasoning.reset(token)
+            return
+        with reasoning_scope(effort):
+            token = _job_reasoning.set(_reasoning.get() if effort is not None else None)
+            try:
+                yield
+            finally:
+                _job_reasoning.reset(token)
+    finally:
+        _job_scope.reset(scope_token)
 
 
 # H681 — per-request generation overrides for a delegated sub-agent. A child can ask

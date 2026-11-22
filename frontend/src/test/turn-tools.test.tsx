@@ -71,6 +71,15 @@ describe('browser chat shows what the turn ran and what it queued', () => {
 });
 
 describe('mergeToolEvent', () => {
+  it('does not mark informational tool events or statuses as completed calls', () => {
+    let cards = mergeToolEvent([], { event: 'tool_started', tool: 'web_search', call_id: 'a' });
+    cards = mergeToolEvent(cards, { event: 'tool_result_untrusted', tool: 'web_search', call_id: 'a', status: 'done' });
+    expect(cards[0].state).toBe('running');
+    cards = mergeToolEvent(cards, { event: 'tool_heartbeat', tool: 'web_search', call_id: 'a', status: 'ok' });
+    expect(cards[0].state).toBe('running');
+    cards = mergeToolEvent(cards, { event: 'tool_result', tool: 'web_search', call_id: 'a', status: 'ok' });
+    expect(cards[0].state).toBe('done');
+  });
   it('keeps a finished call finished on a late heartbeat and bounds the list', () => {
     let cards = mergeToolEvent([], { event: 'tool_result', tool: 't', call_id: 'a' });
     cards = mergeToolEvent(cards, { event: 'tool_heartbeat', tool: 't', call_id: 'a' });

@@ -12,9 +12,9 @@ import json
 import re
 import sqlite3
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing, contextmanager, suppress
+from contextlib import closing, contextmanager, nullcontext, suppress
 from contextvars import copy_context
 from dataclasses import asdict, replace
 from email import policy
@@ -31,11 +31,13 @@ from agents.core.commands import Principal
 from agents.core.file_tools import FileScope, FileScopeError
 
 from . import dispatch_store, projects
+from .chat_sources import BoardReference, recorded_source
 from .cli_upstream.board_selection import select_board
 from .context import kanban_scope, require_context, require_mutation
 from .task_creation import create_task as create_scoped_task
 from .upstream import kanban_db as kb
 from .upstream import kanban_diagnostics as kd
+from .upstream.compat import normalize_profile_name
 from .workspaces import _git_root
 
 router = APIRouter()
@@ -88,16 +90,22 @@ def _board(raw: str | None, *, must_exist: bool = True) -> str:
 
 
 @contextmanager
-def _conn(raw: str | None = None, *, mutate: bool = False) -> Iterator[tuple[str, sqlite3.Connection]]:
-    _scope(mutate=mutate)
+def _conn(raw: str | None = None, *, mutate: bool = False, read_only: bool = False) -> Iterator[tuple[str, sqlite3.Connection]]:
+    context = _scope(mutate=mutate)
     board = _board(raw)
-    expected = (_scope().home.expanduser().resolve() / "kanban.db" if board == kb.DEFAULT_BOARD
+    expected = (context.home.expanduser().resolve() / "kanban.db" if board == kb.DEFAULT_BOARD
                 else kb.board_dir(board) / "kanban.db")
     if kb.kanban_db_path(board).resolve() != expected:
         raise _error(403, "board database escapes the scoped data home")
     try:
-        with kb.scoped_current_board(board), closing(kb.connect(board=board)) as conn:
-            yield board, conn
+        if read_only and not expected.is_file():
+            raise _error(404, "board database not found")
+        scope = kanban_scope(replace(context, can_mutate=False)) if read_only else nullcontext()
+        with scope, kb.scoped_current_board(board):
+            with closing(kb.connect(board=board)) as conn:
+                if read_only:
+                    conn.execute("BEGIN")
+                yield board, conn
     except (ValueError, PermissionError) as exc:
         raise _error(400 if isinstance(exc, ValueError) else 403, str(exc)) from exc
 
@@ -107,6 +115,42 @@ def _task(conn, task_id: str):
     if task is None:
         raise _error(404, f"task {task_id} not found")
     return task
+
+
+def verify_chat_sources(references: list[BoardReference]) -> list[dict]:
+    _verified_chat_rows(references)
+    return [ref.model_dump(exclude={"excerpt"}) for ref in references]
+
+
+def _verified_chat_rows(references: list[BoardReference]):
+    tasks = [None] * len(references)
+    for board in dict.fromkeys(ref.board for ref in references):
+        with _conn(board, read_only=True) as (_, conn):
+            for index, ref in enumerate(references):
+                if ref.board != board:
+                    continue
+                task = _task(conn, ref.task_id)
+                current = recorded_source(task.result, kb.latest_summary(conn, task.id))
+                if (task.status != "done" or current is None or current[0] != ref.source
+                        or current[2] != ref.sha256 or not ref.excerpt.strip() or ref.excerpt not in current[1]):
+                    raise _error(409, "board_source_changed")
+                tasks[index] = task
+    return list(zip(references, tasks, strict=True))
+
+
+def preview_board_note(references: list[BoardReference]) -> dict[str, str]:
+    sections = []
+    for ref, task in _verified_chat_rows(references):
+        payload = (f"Task: {json.dumps(task.title, ensure_ascii=False)}\n"
+                   f"Source: {'Recorded result' if ref.source == 'result' else 'Latest summary'}\n"
+                   f"SHA-256: {ref.sha256}\nExcerpt:\n{ref.excerpt}")
+        fence = "`" * max(3, max((len(run) for run in re.findall(r"`+", payload)), default=0) + 1)
+        sections.append(f"## {ref.board}/{ref.task_id}\n\n{fence}text\n{payload}\n{fence}")
+    content = ("# Board results\n\nSelected excerpts from completed tasks. "
+               "SHA-256 identifies each full recorded source.\n\n" + "\n\n".join(sections) + "\n")
+    if len(content) > 100_000:
+        raise _error(413, "board_note_too_large")
+    return {"title": "Board results", "content": content}
 
 
 def _run(conn, run_id: int):
@@ -239,7 +283,7 @@ def get_board(tenant: str | None = None, include_archived: bool = False, board: 
 @router.get("/tasks/{task_id}")
 def get_task(task_id: str, board: str | None = None, run_state_type: str | None = None,
              run_state_name: str | None = None):
-    with _conn(board) as (_slug, conn):
+    with _conn(board, read_only=True) as (_slug, conn):
         if (run_state_type is None) != (run_state_name is None) or run_state_type not in (None, "status", "outcome"):
             raise _error(400, "run_state_type and run_state_name must be paired; type is status or outcome")
         task = _task(conn, task_id)
@@ -248,6 +292,8 @@ def get_task(task_id: str, board: str | None = None, run_state_type: str | None 
         summaries = kb.latest_summaries(conn, links["children"])
         view = _task_view(task, summary=kb.latest_summary(conn, task_id),
                           run_start=kb.current_run_started_ats(conn, [task_id]).get(task_id))
+        if task.status == "done" and (source := recorded_source(task.result, view["latest_summary"])):
+            view["board_source_sha256"] = source[2]
         view["recoverable_run_id"] = dispatch_store.recoverable_run_id(conn, task)
         task_diags = _diagnostics(conn, [task_id]).get(task_id, [])
         if task_diags:
@@ -1042,7 +1088,17 @@ def switch_board(slug: str):
 @router.get("/profiles")
 def profiles():
     _scope()
-    _unavailable("profile inventory")
+    agents = getattr(get_orch(), "agents", None)
+    if not isinstance(agents, Mapping):
+        raise _error(503, "live agent roster unavailable")
+    return {
+        "profiles": [
+            {"name": name, "is_default": False, "description": "", "description_auto": False}
+            for name in sorted(name for name in agents
+                               if isinstance(name, str) and name.strip() and name == normalize_profile_name(name))
+        ],
+        "editable": False,
+    }
 
 
 @router.patch("/profiles/{profile_name}")

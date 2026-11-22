@@ -46,6 +46,52 @@ describe('Kanban task drawer', () => {
     expect(pending.textContent).not.toContain('147');
   });
 
+  it('discusses only completed outputs by board and task ID without changing a task', async () => {
+    const onDiscussResult = vi.fn();
+    vi.mocked(api.fetchTask).mockResolvedValue({ ...detail,
+      task: { ...detail.task, status: 'done', result: 'Private **result**' },
+      child_results: [
+        { id: 'child-result', title: 'Done result', status: 'done', result: 'Child secret' },
+        { id: 'child-summary', title: 'Done summary', status: 'done', latest_summary: 'Summary secret' },
+        { id: 'unfinished', title: 'Running result', status: 'running', result: 'Draft secret' },
+        { id: 'empty', title: 'Empty result', status: 'done', result: '  ' },
+      ],
+    });
+    render(<TaskDrawer {...props} onDiscussResult={onDiscussResult} />);
+    const buttons = await screen.findAllByRole('button', { name: 'Discuss result in Chat' });
+    expect(buttons).toHaveLength(3);
+    fireEvent.click(buttons[0]);
+    fireEvent.click(within(screen.getByRole('article', { name: 'Done result' })).getByRole('button', { name: 'Discuss result in Chat' }));
+    fireEvent.click(within(screen.getByRole('article', { name: 'Done summary' })).getByRole('button', { name: 'Discuss result in Chat' }));
+    expect(onDiscussResult.mock.calls).toEqual([
+      [{ board: 'alpha', taskId: 't_1' }],
+      [{ board: 'alpha', taskId: 'child-result' }],
+      [{ board: 'alpha', taskId: 'child-summary' }],
+    ]);
+    expect(within(screen.getByRole('article', { name: 'Running result' })).queryByRole('button', { name: 'Discuss result in Chat' })).toBeNull();
+    expect(within(screen.getByRole('article', { name: 'Empty result' })).queryByRole('button', { name: 'Discuss result in Chat' })).toBeNull();
+    expect(api.patchTask).not.toHaveBeenCalled();
+    expect(api.addComment).not.toHaveBeenCalled();
+  });
+
+  it('offers no discussion without completed output and labels the action in Romanian', async () => {
+    const language = document.documentElement.lang;
+    document.documentElement.lang = 'ro';
+    try {
+      const onDiscussResult = vi.fn();
+      vi.mocked(api.fetchTask).mockResolvedValue({ ...detail, task: { ...detail.task, status: 'done', latest_summary: '  ' } });
+      const view = render(<TaskDrawer {...props} onDiscussResult={onDiscussResult} />);
+      await screen.findByRole('dialog', { name: 'Task details' });
+      expect(screen.queryByRole('button', { name: 'Discută rezultatul în Chat' })).toBeNull();
+      vi.mocked(api.fetchTask).mockResolvedValue({ ...detail, task: { ...detail.task, status: 'done', latest_summary: 'Final' } });
+      view.rerender(<TaskDrawer {...props} id="t_2" onDiscussResult={onDiscussResult} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Discută rezultatul în Chat' }));
+      expect(onDiscussResult).toHaveBeenCalledWith({ board: 'alpha', taskId: 't_2' });
+    } finally {
+      document.documentElement.lang = language;
+    }
+  });
+
   it('posts a body-only comment and refreshes the detail', async () => {
     vi.mocked(api.addComment).mockResolvedValue({ok:true});
     render(<TaskDrawer {...props} />);

@@ -3,7 +3,7 @@ import { PowerChip, usePower } from './power-chip';
 import { PressureBanner, usePressure } from './pressure-banner';
 import {describeImages,restoreVisionTurn} from './vision-turn';
 import type {VisionDraft} from './composer-images';
-import type { VaultExcerpt } from './composer-vault';
+import type { components } from './api/schema.gen';
 import { useAppearance } from './appearance';
 import { appUrl, logicalPath } from './base-path';
 /* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
@@ -29,17 +29,21 @@ import { ShortcutsPanel } from './shortcuts-panel';
 import { PointerOverlay } from './pointer';
 import { PetCompanionOverlay, type AgentPetState } from './panels/pets';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
+import { historySourceLabel, type HistoryReference } from './chat-history-search';
 import { useVoice } from './voice';
 import { noticeMessages } from './turn-notices';
-import { turnOutcome, type TurnOutcome } from './turn-outcome';
+import { toolActivity, turnOutcome, type TurnOutcome } from './turn-outcome';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { STATUS_CHROME_UNKNOWN } from './api/status-chrome';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
-import { postStream, apiGet, apiPost, apiFetchOnce } from './api/client';
+import { postStream, apiGet, apiPost, apiFetchOnce, getToken, getAdminToken } from './api/client';
+import { csrfToken, isNetworkedOrigin, loadOwnerSession, onOwnerSession, ownerSession } from './api/owner-session';
 import { pendingQuestion, PendingQuestion, type Question, type QuestionAnswer } from './pending-question';
 import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import type { WorkshopRef } from './workshop-projects';
+import type { BoardReference, BoardResultRef } from './composer-board-result';
+import { boardSources } from './board-sources';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 import { useDemoMode } from './demo-mode';
@@ -47,10 +51,15 @@ import { DesktopControls, notifyDesktopConversation, useDesktopConversation, use
 import { useListeningIndicator } from './listening';
 import { SessionRecovery } from './session-recovery';
 import { modelCalls } from './model-call-provenance';
+import { RoutingPolicyLabel, selectableChatAgents } from './chat-routing-policy';
 
 import { shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './onboarding-state';
 import { useHudRoute, navigateHud, closeHudOverlay, parseHudRoute } from './hud-routing';
 import { RouteBoundary } from './route-boundary';
+
+type ChatAttachment = components['schemas']['ChatAttachment'];
+type HistorySend = { reference: HistoryReference; role: 'user' | 'assistant'; onResult: (ok: boolean, reason?: string) => void };
+type BoardSend = { boardReferences: BoardReference[]; allowBoardCloud: boolean };
 
 const AgentsMode = lazy(() => import('./modes').then(m => ({ default: m.AgentsMode })));
 const Dossier = lazy(() => import('./modes').then(m => ({ default: m.Dossier })));
@@ -73,17 +82,40 @@ const FirstRunGate = lazy(() => import('./gap').then(m => ({ default: m.FirstRun
 const ProjectsMode = lazy(() => import('./gap').then(m => ({ default: m.ProjectsMode })));
 
 const CHAT_SESSION_KEY = 'nerva.chat.session_id';
+const CHAT_RECIPIENT_KEY = 'nerva.chat.recipient';
+const recipientPrincipal = () => JSON.stringify([getToken(), getAdminToken(), ownerSession()?.signed_in ? csrfToken() : '']);
+type SavedRecipient = { agent: string; session: string | null; credential: string };
+function savedRecipient(): SavedRecipient | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(CHAT_RECIPIENT_KEY) || 'null');
+    return value && typeof value.agent === 'string' && typeof value.credential === 'string'
+      && (value.session === null || typeof value.session === 'string') ? value : null;
+  } catch { return null; }
+}
+async function recipientCredential(): Promise<string> {
+  if (isNetworkedOrigin() && !getToken() && !ownerSession()) await loadOwnerSession();
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(recipientPrincipal()));
+  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+}
 function savedChatSession(): string | null {
   try { return sessionStorage.getItem(CHAT_SESSION_KEY); } catch { return null; }
 }
-function visibleTurns(turns: any[]): any[] {
+export function visibleTurns(turns: any[]): any[] {
   return turns.map((tn: any) => {
     const ts = fmtTimeShort(new Date(tn.timestamp || Date.now()));
     const calls = tn.role === 'assistant' ? modelCalls(tn.model_calls) : [];
+    const activity = tn.role === 'assistant' && !('foreign_origin' in tn) && !('tainted' in tn)
+      && typeof tn.agent_id === 'string' && tn.agent_id.trim()
+      ? toolActivity(tn.tool_activity) : null;
+    const ownerTurn = tn.role === 'user' && !('foreign_origin' in tn) && !('tainted' in tn);
+    const source = ownerTurn ? historySourceLabel(tn.history_source) : null;
     return tn.role === 'user'
-      ? { role: 'user', text: tn.content, ts }
+      ? { role: 'user', text: tn.content, ts, ...(source ? { attachmentNames: [source] } : {}),
+        ...(ownerTurn ? { boardSources: boardSources(tn.board_sources) } : {}) }
       : restoreVisionTurn(tn,ts) || { role: 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts,
-        ...(calls.length ? { prov: { models: calls } } : {}) };
+        _unattributed: tn.role !== 'assistant' || typeof tn.agent_id !== 'string' || !tn.agent_id.trim(),
+        ...(calls.length ? { prov: { models: calls } } : {}),
+        ...(activity ? { toolActivity: activity } : {}) };
   });
 }
 
@@ -143,8 +175,13 @@ function App({ floating = false, shortcuts, onWorld }: {
     else closeHudOverlay();
   }, []);
   useEffect(() => { const handoff = () => setMode('chat'); window.addEventListener('nerva-desktop-handoff', handoff); return () => window.removeEventListener('nerva-desktop-handoff', handoff); }, []);
-  const [agents, setAgents] = useState(demo ? V2.AGENTS : []);
-  const [activeId, setActiveId] = useState('jarvis');
+  const [agents, setAgents] = useState<any[]>(demo ? V2.AGENTS : []);
+  const initialRecipient = useRef(savedRecipient());
+  const [activeId, setActiveId] = useState(initialRecipient.current ? '' : 'jarvis');
+  const [recipientReady, setRecipientReady] = useState(!initialRecipient.current);
+  const recipientGeneration = useRef(0);
+  const recipientSelected = useRef(!!initialRecipient.current);
+  const recipientPrincipalAtChoice = useRef(recipientPrincipal());
   const [focusId, setFocusId] = useState(null);
   const [messages, setMessages] = useState<any[]>(demo ? V2.SEED_MESSAGES : []);
   const [currentOutcome, setCurrentOutcome] = useState<TurnOutcome | null>(null);
@@ -154,6 +191,27 @@ function App({ floating = false, shortcuts, onWorld }: {
   const selectedSessionId = useCallback(() => sessionId.current, []);
   const sessionActivityGeneration = useCallback(() =>
     `${sessionGeneration.current}:${turnEpoch.current}:${nextTextTurn.current}:${latestTextTurn.current}`, []);
+  const rememberRecipient = useCallback((id: string) => {
+    const generation = ++recipientGeneration.current;
+    recipientSelected.current = id !== 'jarvis';
+    recipientPrincipalAtChoice.current = recipientPrincipal();
+    setActiveId(id); setRecipientReady(true);
+    try { sessionStorage.removeItem(CHAT_RECIPIENT_KEY); } catch { /* storage unavailable */ }
+    if (demo || id === 'jarvis') return;
+    try { sessionStorage.setItem(CHAT_RECIPIENT_KEY, JSON.stringify({ agent: id, session: sessionId.current, credential: '' })); } catch { /* storage unavailable */ }
+    void recipientCredential().then(credential => {
+      if (generation === recipientGeneration.current) {
+        try { sessionStorage.setItem(CHAT_RECIPIENT_KEY, JSON.stringify({ agent: id, session: sessionId.current, credential })); } catch { /* storage unavailable */ }
+      }
+    }).catch(() => {});
+  }, [demo]);
+  const clearRecipient = useCallback(() => {
+    ++recipientGeneration.current;
+    initialRecipient.current = null;
+    recipientSelected.current = false;
+    try { sessionStorage.removeItem(CHAT_RECIPIENT_KEY); } catch { /* storage unavailable */ }
+    setActiveId(''); setRecipientReady(false);
+  }, []);
   const selectSession = useCallback((id: string, turns?: any[]) => {
     // Convert a supplied snapshot before touching the selected id or its storage.
     // A malformed server response must not leave a half-applied recovery.
@@ -161,15 +219,66 @@ function App({ floating = false, shortcuts, onWorld }: {
     sessionGeneration.current++;
     sessionRecovery.current?.allowExplicitSelection(id);
     if (id !== sessionId.current || turns) setCurrentOutcome(null);
+    if (recipientSelected.current && id !== sessionId.current && (sessionId.current || turns)) {
+      clearRecipient();
+    } else if (!sessionId.current) {
+      const saved = savedRecipient();
+      if (saved?.session === null) {
+        try { sessionStorage.setItem(CHAT_RECIPIENT_KEY, JSON.stringify({ ...saved, session: id })); } catch { /* storage unavailable */ }
+      }
+    }
     sessionId.current = id;
     setActiveSessionId(id);
     try { sessionStorage.setItem(CHAT_SESSION_KEY, id); } catch { /* storage unavailable */ }
     if (mappedTurns) setMessages(mappedTurns);
-  }, []);
+  }, [clearRecipient]);
+  useEffect(() => {
+    const saved = initialRecipient.current;
+    if (!saved || demo || !agents.some(agent => agent.rosterSource === 'api')) return;
+    const generation = recipientGeneration.current;
+    void recipientCredential().then(credential => {
+      if (generation !== recipientGeneration.current || !initialRecipient.current) return;
+      initialRecipient.current = null;
+      if (saved.credential === credential && (saved.session === sessionId.current || saved.session === null)
+        && selectableChatAgents(agents, false).some(agent => agent.id === saved.agent)) {
+        recipientSelected.current = true;
+        recipientPrincipalAtChoice.current = recipientPrincipal();
+        setActiveId(saved.agent); setRecipientReady(true);
+      } else {
+        clearRecipient();
+      }
+    }).catch(() => { setRecipientReady(false); });
+  }, [agents, demo, clearRecipient]);
+  useEffect(() => {
+    let credential = recipientPrincipal();
+    let discoveringOwner = isNetworkedOrigin() && !getToken() && !ownerSession();
+    const check = () => {
+      const next = recipientPrincipal();
+      if (next === credential) return;
+      credential = next;
+      if (discoveringOwner && ownerSession() && !getToken()) {
+        discoveringOwner = false;
+        if (recipientSelected.current && !initialRecipient.current) recipientPrincipalAtChoice.current = next;
+        return;
+      }
+      if (initialRecipient.current) return; // first owner-session discovery is checked by restoration
+      clearRecipient();
+    };
+    const off = onOwnerSession(check);
+    window.addEventListener('storage', check);
+    window.addEventListener('focus', check);
+    return () => { off(); window.removeEventListener('storage', check); window.removeEventListener('focus', check); };
+  }, [clearRecipient]);
+  useEffect(() => {
+    if (demo || initialRecipient.current || activeId === 'jarvis' || !activeId ||
+      !agents.some(agent => agent.rosterSource === 'api') ||
+      selectableChatAgents(agents, false).some(agent => agent.id === activeId)) return;
+    clearRecipient();
+  }, [activeId, agents, demo, clearRecipient]);
   const sessionRecovery = useRef<SessionRecovery | null>(null);
   if (!sessionRecovery.current) {
     sessionRecovery.current = new SessionRecovery(
-      () => apiGet('/memory'),
+      () => apiGet('/memory', { admin: true }),
       (snapshot) => selectSession(snapshot.session, snapshot.turns),
     );
   }
@@ -198,8 +307,16 @@ function App({ floating = false, shortcuts, onWorld }: {
   useDesktopDecisionNotifications(!floating && !demo);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
+  const inspectBlend = useRef<((file: File) => boolean) | null>(null);
   const [projectForChat, setProjectForChat] = useState<WorkshopRef | null>(null);
   useLayoutEffect(() => setProjectForChat(null), [activeId, activeSessionId]);
+  const [boardResultForChat, setBoardResultForChat] = useState<BoardResultRef | null>(null);
+  useLayoutEffect(() => setBoardResultForChat(null), [activeId, activeSessionId, demo]);
+  useLayoutEffect(() => { if (route.mode !== 'chat') setBoardResultForChat(null); }, [route.mode]);
+  const discussBoardResult = (ref: BoardResultRef) => {
+    setBoardResultForChat(ref);
+    setMode('chat');
+  };
   // bumped after every successful explicit save so the Artifacts tab refetches
   const [artifactsRefresh, setArtifactsRefresh] = useState(0);
   const bumpArtifacts = useCallback(() => setArtifactsRefresh((n) => n + 1), []);
@@ -321,12 +438,12 @@ function App({ floating = false, shortcuts, onWorld }: {
       latestTextTurn.current === expectedLatestTextTurn &&
       !turnBusy.current && textTurns.current.size === 0;
     const history = savedId
-      ? apiPost('/sessions/resume', { session_id: savedId }).catch(async (error) => {
+      ? apiPost('/sessions/resume', { session_id: savedId }, { admin: true }).catch(async (error) => {
           const healed = await sessionRecovery.current?.recover(savedId, error, isCurrent);
           if (healed) return null;  // the shared recovery committed the current session + transcript
           throw error;              // transient, protected or stale: preserve selection and messages
         })
-      : apiGet('/memory');
+      : apiGet('/memory', { admin: true });
     history
       .then((r: any) => {
         if (!r || !isCurrent()) return;
@@ -455,17 +572,25 @@ function App({ floating = false, shortcuts, onWorld }: {
   // H5.16: runTurn is defined before useVoice (which takes runTurn as onTurn), so
   // the token->TTS forward goes through a ref, assigned right after the hook runs.
   const voiceRef = useRef(null);
-  const runTurn = useCallback((text:string, source:'typed'|'voice'='typed', excerpts?:VaultExcerpt[]) => new Promise<string>((resolve) => {
+  const runTurn = useCallback((text:string, source:'typed'|'voice'='typed', excerpts?:ChatAttachment[], directReply=false, history?:HistorySend, onAdmitted?: () => void,
+    board?: BoardSend & { onFinished: (ok: boolean) => void }) => new Promise<string>((resolve) => {
+    if (recipientSelected.current && recipientPrincipalAtChoice.current !== recipientPrincipal()) { clearRecipient(); resolve(''); return; }
+    if (!demo && (!recipientReady || (activeId !== 'jarvis' && !selectableChatAgents(agents, false).some(agent => agent.id === activeId)))) { resolve(''); return; }
     if (turnBusy.current || (source==='voice' && (thinking || textTurns.current.size>0)) || (thinking && textTurns.current.size===0)) { resolve(''); return; }
     const id=++nextTextTurn.current, epoch=turnEpoch.current;
     latestTextTurn.current=id;
     setCurrentOutcome(null);
     timers.current.forEach(clearTimeout); timers.current = [];
     const ctl = new AbortController();
-    let streamed='', closed=false;
+    let streamed='', closed=false, referenceReported=false, admitted=false, boardReported=false, boardAccepted=false;
+    const reportReference = (ok: boolean) => { if (history && !referenceReported) { referenceReported=true; history.onResult(ok); } };
+    const reportBoard = (ok: boolean) => { if (board && !boardReported) { boardReported=true; board.onFinished(ok); } };
     const settle=(reply:string)=>{
       if(closed)return;
       closed=true;
+      if (board && !boardAccepted) setMessages(messages => messages.filter(message => message._turnId !== id && message._boardTurnId !== id));
+      reportBoard(false);
+      if (onAdmitted && !admitted) setMessages(messages => messages.filter(message => message._draftTurnId !== id && message._turnId !== id));
       textTurns.current.delete(id);
       if(questionTurn.current===id){questionTurn.current=null;setQuestion(null);}
       if(textTurns.current.size===0 && !turnBusy.current)setThinking(null);
@@ -474,16 +599,24 @@ function App({ floating = false, shortcuts, onWorld }: {
     textTurns.current.set(id,{controller:ctl,settle});
     // Reserve the reply bubble now: a queued request may emit start after a newer one.
     setMessages((m) => [...m,
-      { role: 'user', text, ts: fmtTimeShort(new Date()), ...(excerpts?.length ? { vaultNames: excerpts.map(note => note.name) } : {}) },
+      { role: 'user', text, ts: fmtTimeShort(new Date()), ...(onAdmitted ? { _draftTurnId: id } : {}), ...(board ? { _boardTurnId: id } : {}), ...(history ? { _historyTurnId: id, attachmentNames: [historySourceLabel({ ...history.reference, role: history.role })].filter(Boolean) } : excerpts?.length ? { attachmentNames: excerpts.map(item => item.name) } : {}) },
       { role: 'agent', who: activeId, role_label: '', ts: fmtTimeShort(new Date()), text: '', _turnId:id },
     ]);
     setCenterTab('conversation');
     setThinking({ label: t.think + ' · routing', route: null });
     const updateBubble=(change:(message:any)=>any)=>setMessages((messages)=>messages.map(message=>message._turnId===id?change(message):message));
     postStream('/chat/stream', { message: text, agent: activeId, tool_events: true,
+      ...(source==='typed' && directReply && !text.trim().startsWith('/') ? { reasoning: 'none' } : {}),
       ...(excerpts?.length ? { attachments: excerpts } : {}),
+      ...(onAdmitted && excerpts?.length ? { require_full_attachments: true } : {}),
+      ...(board ? { board_references: board.boardReferences, ...(board.allowBoardCloud ? { allow_board_cloud: true } : {}) } : {}),
+      ...(history ? { history_reference: history.reference } : {}),
       ...(sessionId.current ? { session_id: sessionId.current } : {}) }, (evt) => {
       if(closed||epoch!==turnEpoch.current||ctl.signal.aborted)return;
+      if (onAdmitted && !admitted && ['start','token','end'].includes(evt.type)) {
+        admitted = true;
+        onAdmitted();
+      }
       if (evt.type === 'start') {
         if(id===latestTextTurn.current)setThinking({ label: t.think, route: [String(evt.agent || activeId).toUpperCase()] });
         updateBubble(message=>({...message,who:evt.agent||activeId}));
@@ -503,7 +636,32 @@ function App({ floating = false, shortcuts, onWorld }: {
       } else if (evt.type === 'outcome_progress') {
         if (id === latestTextTurn.current) setCurrentOutcome(turnOutcome(evt.outcome));
       } else if (evt.type === 'end') {
+        if (board) {
+          const recorded = boardSources(evt.board_sources);
+          const used = Array.isArray(evt.board_sources) && recorded.length === board.boardReferences.length &&
+            recorded.every((item, index) => item.board === board.boardReferences[index].board &&
+              item.task_id === board.boardReferences[index].task_id && item.source === board.boardReferences[index].source &&
+              item.sha256 === board.boardReferences[index].sha256);
+          if (!used) {
+            setMessages(messages => [...messages.filter(message => message._turnId !== id && message._boardTurnId !== id),
+              { role: 'agent', who: 'system', text: lang === 'ro' ? '⚠ Sursa din tablou nu a fost folosită. Pasajele rămân pregătite.' : '⚠ The board source was not used. Your reviewed passages remain staged.', ts: fmtTimeShort(new Date()) }]);
+            reportBoard(false); settle(''); return;
+          }
+          setMessages(messages => messages.map(message => message._boardTurnId === id ? { ...message, boardSources: recorded } : message));
+          boardAccepted = true;
+          reportBoard(true);
+        }
+        const referenceUsed = evt.history_source_used === true && typeof evt.session_id === 'string';
+        reportReference(referenceUsed);
+        if (history && !referenceUsed) {
+          setMessages(messages => [...messages.filter(message => message._turnId !== id && message._historyTurnId !== id), { role: 'agent', who: 'system',
+            role_label: '', ts: fmtTimeShort(new Date()), text: lang === 'ro'
+              ? '⚠ Sursa conversației nu a putut fi folosită. Ciorna și pasajul sunt păstrate; revizuiește sursa înainte de o nouă trimitere.'
+              : '⚠ The chat source could not be used. Your draft and passage are preserved; review the source before sending again.' }]);
+          settle(''); return;
+        }
         const finalText = typeof evt.text === 'string' ? evt.text : streamed;
+        const activity = text.trim().startsWith('/') || evt.agent === 'system' ? null : toolActivity(evt.outcome?.tools);
         const calls = modelCalls(evt.model_calls);
         const receipt = calls.length ? { prov: { models: calls } } : {};
         const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;
@@ -513,7 +671,7 @@ function App({ floating = false, shortcuts, onWorld }: {
         if (changed && ['/new', '/reset', '/undo'].includes(text.trim())) {
           if (text.trim() === '/undo') {
             const commandEpoch = turnEpoch.current;
-            apiPost('/sessions/resume', { session_id: evt.session_id })
+            apiPost('/sessions/resume', { session_id: evt.session_id }, { admin: true })
               .then((r: any) => {
                 if (sessionId.current === evt.session_id && turnEpoch.current === commandEpoch && Array.isArray(r?.turns)) {
                   selectSession(evt.session_id, r.turns);
@@ -521,9 +679,11 @@ function App({ floating = false, shortcuts, onWorld }: {
               })
               .catch(() => {});
           }
-          setMessages([{ role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: finalText, _complete: true, ...receipt }]);
+          setMessages([{ role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: finalText, _complete: true,
+            toolActivity: activity, ...receipt }]);
         } else {
-          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId,approvals:approvalIds(evt.pending_approvals),_complete:true,...receipt}));
+          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId,approvals:approvalIds(evt.pending_approvals),
+            toolActivity:activity,_complete:true,...receipt}));
         }
         // H674: what the owner should know beside the reply (e.g. the summary was deferred).
         const notes = noticeMessages(evt, fmtTimeShort(new Date()));
@@ -535,16 +695,38 @@ function App({ floating = false, shortcuts, onWorld }: {
           if(id===latestTextTurn.current)setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
         }).catch(() => {});
       }
-    }, { signal: ctl.signal }).then(() => {
+    }, { signal: ctl.signal, admin: !!history || !!board }).then(() => {
       // EOF without an end frame must still release the composer and voice promise.
+      reportReference(false);
       settle(streamed);
     }).catch((err) => {
+      reportReference(false);
       if(closed||epoch!==turnEpoch.current){settle(streamed);return;}
       if(!closed && epoch===turnEpoch.current && id===latestTextTurn.current)setCurrentOutcome(null);
+      if (history && err?.name !== 'AbortError') {
+        setMessages(messages => [...messages.filter(message => message._turnId !== id && message._historyTurnId !== id), { role: 'agent', who: 'system',
+          role_label: '', ts: fmtTimeShort(new Date()), text: lang === 'ro'
+            ? '⚠ Sursa conversației a fost refuzată sau s-a schimbat. Ciorna și pasajul sunt păstrate; revizuiește din nou.'
+            : '⚠ The chat source was refused or changed. Your draft and passage are preserved; review it again.' }]);
+        settle(''); return;
+      }
       // A user Stop (AbortError) is a clean outcome, not a failure: the partial
       // text already streamed into the bubble stays, no error notice — and the
       // server's disconnect path guarantees no partial is persisted to memory.
       if (err && err.name === 'AbortError') { settle(streamed); return; }
+      if (onAdmitted && err?.status === 413 && err?.body?.detail === 'attachment_limit') {
+        setMessages(m => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()),
+          text: lang === 'ro' ? 'Pasajele depășesc limita pentru atașamente. Scurtează selecția sau elimină o referință @file și retrimite.'
+            : 'The passages exceed the attachment limit. Shorten a selection or remove an @file reference and send again.' }]);
+        settle(''); return;
+      }
+      if (err?.body?.detail === 'chat_agent_unavailable') {
+        setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()),
+          text: lang === 'ro'
+            ? '⚠ Agentul selectat nu mai este disponibil. Reîmprospătează pagina, alege un agent activ și trimite din nou.'
+            : '⚠ The selected agent is no longer available. Refresh the page, choose an enabled agent, and send again.' }]);
+        settle('');return;
+      }
       // HONESTY: never fabricate a reply. The staged mock is for DEMO only; otherwise
       // surface the real failure (e.g. no model loaded / backend offline).
       if (demo && textTurns.current.size===1) {
@@ -553,7 +735,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
       settle('');
     });
-  }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, runMock, demo, thinking, selectSession]);
+  }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, agents, recipientReady, runMock, demo, thinking, selectSession, lang, clearRecipient]);
 
   const runVision=useCallback(async(text:string,draft:VisionDraft)=>{
     if(turnBusy.current||thinking||textTurns.current.size>0)return;
@@ -584,9 +766,17 @@ function App({ floating = false, shortcuts, onWorld }: {
   },[]);
   const selectAgent=useCallback((id:string)=>{
     if(id!==activeId)stopTurn();
-    setActiveId(id);setDossier(id);
-  },[activeId,stopTurn]);
-  const submit=useCallback((text:string,vision?:VisionDraft,excerpts?:VaultExcerpt[])=>{
+    rememberRecipient(id);setDossier(id);
+  },[activeId,stopTurn,rememberRecipient]);
+  const selectChatAgent=useCallback((id:string)=>{
+    if(!demo && !selectableChatAgents(agents, false).some(agent => agent.id === id)) return;
+    if(id!==activeId)stopTurn();
+    rememberRecipient(id);
+  },[activeId,agents,demo,stopTurn,rememberRecipient]);
+  const submit=useCallback((text:string,vision?:VisionDraft,excerpts?:ChatAttachment[],directReply=false,options?:HistorySend | { awaitAdmission: true } | BoardSend)=>{
+    const history = options && 'reference' in options ? options : undefined;
+    if (recipientSelected.current && recipientPrincipalAtChoice.current !== recipientPrincipal()) { clearRecipient(); return false; }
+    if (!demo && (!recipientReady || (activeId !== 'jarvis' && !selectableChatAgents(agents, false).some(agent => agent.id === activeId)))) return false;
     if(turnBusy.current || (vision && (thinking||textTurns.current.size>0)) || (thinking && textTurns.current.size===0))return false;
     if(!demo&&vision?.review_token && (vision.session_id!==sessionId.current || vision.agent!==activeId))return false;
     if(vision)void runVision(text,vision);
@@ -594,10 +784,26 @@ function App({ floating = false, shortcuts, onWorld }: {
       const now=Date.now();
       if(lastTypedSubmit.current.text===text && now-lastTypedSubmit.current.at<500)return false;
       lastTypedSubmit.current={text,at:now};
-      void runTurn(text, 'typed', excerpts);
+      if (options && 'boardReferences' in options) return new Promise<boolean>(resolve => {
+        const finish = (ok: boolean) => {
+          if (!ok && lastTypedSubmit.current.at === now && lastTypedSubmit.current.text === text) lastTypedSubmit.current = {text:'',at:0};
+          resolve(ok);
+        };
+        void runTurn(text, 'typed', undefined, directReply, undefined, undefined,
+          { ...options, onFinished: finish }).catch(() => finish(false));
+      });
+      if (options && 'awaitAdmission' in options && excerpts?.length) return new Promise<boolean>(resolve => {
+        let admitted = false;
+        const finish = () => {
+          if (!admitted && lastTypedSubmit.current.at === now && lastTypedSubmit.current.text === text) lastTypedSubmit.current = {text:'',at:0};
+          resolve(admitted);
+        };
+        void runTurn(text, 'typed', excerpts, directReply, history, () => { admitted = true; resolve(true); }).then(finish, finish);
+      });
+      void runTurn(text, 'typed', excerpts, directReply, history);
     }
     return true;
-  },[runTurn,runVision,thinking,activeId]);
+  },[runTurn,runVision,thinking,activeId,agents,demo,recipientReady,clearRecipient]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
   const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: (text:string)=>runTurn(text,'voice') });
   useListeningIndicator(demo, voice.active);   // H222: the tray says when Nerva is listening
@@ -619,6 +825,8 @@ function App({ floating = false, shortcuts, onWorld }: {
     setAgents([]);
     baseAgents.current = [];
     setActiveId('jarvis');
+    setRecipientReady(true);
+    recipientSelected.current = false;
     setFocusId(null);
     setMessages([]);
     setThinking(null);
@@ -645,7 +853,12 @@ function App({ floating = false, shortcuts, onWorld }: {
   const previousDemo = useRef(demo);
   useLayoutEffect(() => {
     if (previousDemo.current && !demo) clearDemoDerivedState();
-    else if (!previousDemo.current && demo) stopTurn();
+    else if (!previousDemo.current && demo) {
+      stopTurn(); ++recipientGeneration.current;
+      try { sessionStorage.removeItem(CHAT_RECIPIENT_KEY); } catch { /* storage unavailable */ }
+      initialRecipient.current = null;
+      recipientSelected.current = false;
+    }
     previousDemo.current = demo;
   }, [clearDemoDerivedState, demo, stopTurn]);
   const exitDemo = useCallback(() => {
@@ -734,6 +947,10 @@ function App({ floating = false, shortcuts, onWorld }: {
           ? 'finishing'
           : 'idle';
   const petStandalone = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('pet_overlay') === '1';
+  const recipientStatus = demo || (recipientReady && (!recipientSelected.current || recipientPrincipalAtChoice.current === recipientPrincipal()) &&
+    (activeId === 'jarvis' || selectableChatAgents(agents, false).some(agent => agent.id === activeId)))
+    ? 'ready' : (initialRecipient.current || !agents.some(agent => agent.rosterSource === 'api')) ? 'checking' : 'choose';
+  const canContinueHistory = () => !turnBusy.current && textTurns.current.size === 0;
 
   if (petStandalone) return (
     <div {...rootAttrs} style={{ padding: 12, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -747,7 +964,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     {questionPanel}
     <SafeModeBanner state={safeMode} />
     {demo && <DemoBanner onExit={exitDemo} />}
-    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} />
+    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} agents={agents} demo={demo} onSelectAgent={selectChatAgent} recipientStatus={recipientStatus} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} canContinue={canContinueHistory} />
     {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
   </div></RouteBoundary>;
 
@@ -804,13 +1021,21 @@ function App({ floating = false, shortcuts, onWorld }: {
                       <button className={'center-tab' + (centerTab === 'artifacts' ? ' active' : '')} onClick={() => setCenterTab('artifacts')}>{artifactsTabLabel(lang)}</button>
                     </div>
                     {centerTab === 'conversation'
-                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} onArtifactSaved={demo ? undefined : bumpArtifacts} exportAllowed={!demo} lang={lang} t={t} />
+                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} onArtifactSaved={demo ? undefined : bumpArtifacts} exportAllowed={!demo}
+                          messageActionsAllowed={!demo} messageScope={`${activeId}:${activeSessionId || ''}`} lang={lang} t={t} />
                       : centerTab === 'cognition'
                         ? <CognitionStream trace={trace} t={t} />
                         : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} exportAllowed={!demo}
+                            onInspectBlend={file => {
+                              if (!inspectBlend.current?.(file)) return false;
+                              setCenterTab('conversation');
+                              return true;
+                            }}
                             onDiscussProject={project => { setProjectForChat(project); setCenterTab('conversation'); }} />}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power}
-                      projectForChat={projectForChat} onProjectReviewed={() => setProjectForChat(null)} />
+                    {centerTab === 'conversation' && <div className="cockpit-routing-policy"><RoutingPolicyLabel selected={demo ? V2.AGENTS.find(a => a.id === activeId) : agents.find(a => a.id === activeId && a.rosterSource === 'api')} demo={demo} lang={lang}/></div>}
+                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} lang={lang} demo={demo} agent={activeId} recipientStatus={recipientStatus} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power}
+                      agents={agents} inspectBlend={inspectBlend} projectForChat={projectForChat} onProjectReviewed={() => setProjectForChat(null)}
+                      turnActive={!!thinking} canContinue={canContinueHistory} />
                   </div>
                 </div>
                 <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
@@ -826,13 +1051,15 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             ) : mode === 'chat' ? (
               <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} />
+                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} agents={agents} demo={demo} onSelectAgent={selectChatAgent} recipientStatus={recipientStatus} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power}
+                  boardResultForChat={boardResultForChat} onBoardResultReviewed={() => setBoardResultForChat(null)} canContinue={canContinueHistory} />
               </div>
             ) : (
               <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <LiveSourceChip state={liveSourceState(mode, demo, liveModes.live, MODE_LIVE_KEYS)} />
                 <div style={{ flex: 1, minHeight: 0 }}>
-                  {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: selectAgent })}
+                  {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: selectAgent,
+                    onDiscussResult: demo ? undefined : discussBoardResult })}
                 </div>
               </div>
             )}
@@ -972,7 +1199,7 @@ function modeComponent(mode, t, ctx) {
   // Projects is a workspace surface (Rooms + Missions + activity timeline). Its panels
   // each fetch real endpoints and render honest empty states with no seed corpus, so it
   // renders always — you must be able to create your first room before any data exists.
-  if (mode === 'projects') return <ProjectsMode t={t} />;
+  if (mode === 'projects') return <ProjectsMode t={t} onDiscussResult={ctx?.onDiscussResult} />;
   const keys = MODE_LIVE_KEYS[mode];
   // Honest gate: show real content only in DEMO, or when this mode's source is live.
   const isLive = demo || (keys && live && keys.some((k) => live[k]));

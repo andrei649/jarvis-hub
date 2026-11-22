@@ -156,7 +156,7 @@ class WindowsHistoryFs:
     def __init__(self, api=None):
         self.api = _Win32Api() if api is None else api
 
-    def _check(self, raw: int, *, directory: bool, volume: bytes | None = None) -> WinStamp:
+    def verified_stamp(self, raw: int, *, directory: bool, volume: bytes | None = None) -> WinStamp:
         stamp = self.api.stamp(raw)
         if (stamp.is_directory is not directory or stamp.delete_pending
                 or stamp.attributes & _FILE_ATTRIBUTE_REPARSE_POINT or stamp.reparse_tag):
@@ -176,7 +176,7 @@ class WindowsHistoryFs:
             fs_name, flags = self.api.volume_info(current.raw)
             if fs_name != "NTFS" or flags & 0x8 == 0:
                 raise WindowsFsRefusal("unsupported_volume")
-            root = self._check(current.raw, directory=True)
+            root = self.verified_stamp(current.raw, directory=True)
             volume = root.identity.volume_serial
             for part in parts:
                 raw_child = self.api.open_child(current.raw, part, True)
@@ -184,7 +184,7 @@ class WindowsHistoryFs:
                     raise WindowsFsRefusal("root_missing")
                 child = _RawOwner(self.api, raw_child)
                 owned.append(child)
-                stamp = self._check(child.raw, directory=True, volume=volume)
+                stamp = self.verified_stamp(child.raw, directory=True, volume=volume)
                 current.close()
                 owned.remove(current)
                 current = child
@@ -238,7 +238,7 @@ class WindowsHistoryFs:
             return None
         owner = _RawOwner(self.api, raw)
         try:
-            stamp = self._check(owner.raw, directory=directory,
+            stamp = self.verified_stamp(owner.raw, directory=directory,
                                 volume=parent.stamp.identity.volume_serial)
             result = HeldHandle(self.api, owner.raw, stamp)
             owner.raw = None
@@ -262,12 +262,12 @@ class WindowsHistoryFs:
         if (file.raw is None or file.stamp.is_directory or type(cap) is not int
                 or not 0 <= cap <= _MAX_READ):
             raise WindowsFsRefusal("invalid_read")
-        before = self._check(file.raw, directory=False,
+        before = self.verified_stamp(file.raw, directory=False,
                              volume=file.stamp.identity.volume_serial)
         if before.links != 1 or before.size > cap:
             raise WindowsFsRefusal("read_too_large")
         data = self.api.read(file.raw, cap + 1)
-        after = self._check(file.raw, directory=False,
+        after = self.verified_stamp(file.raw, directory=False,
                             volume=file.stamp.identity.volume_serial)
         if len(data) != before.size or len(data) > cap or after != before:
             raise WindowsFsRefusal("read_changed")

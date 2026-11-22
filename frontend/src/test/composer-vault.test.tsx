@@ -79,7 +79,7 @@ it('sends only checked excerpts and clears them before another turn', async () =
   render(<InputBar {...props} onSubmit={submit}/>);
   expect(search.mock.calls.length).toBe(0);
   await review();
-  expect(screen.getByText(excerpt.text)).toBeTruthy();
+  expect(screen.getByText(excerpt.text).closest('details')?.open).toBe(true);
   expect(submit).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Send' }));
   await waitFor(() => expect(submit).toHaveBeenCalledWith('Workshop plans', undefined, [excerpt]));
@@ -88,6 +88,90 @@ it('sends only checked excerpts and clears them before another turn', async () =
   fireEvent.change(screen.getByPlaceholderText('Message'), { target: { value: 'Hello' } });
   fireEvent.click(screen.getByRole('button', { name: 'Send' }));
   expect(submit).toHaveBeenLastCalledWith('Hello');
+});
+
+it('includes a checked note path in the saved message only after explicit consent', async () => {
+  const submit = vi.fn();
+  vi.stubGlobal('fetch', vi.fn(async () => sourced()));
+  render(<InputBar {...props} onSubmit={submit}/>);
+  await review();
+  const path = screen.getByRole('checkbox', {name:/Include note path in message.*Projects\/Workshop\.md/}) as HTMLInputElement;
+  expect(path.checked).toBe(false);
+  expect(screen.getByText('Projects/Workshop.md', {selector:'code'})).toBeTruthy();
+  fireEvent.click(path);
+  fireEvent.click(screen.getByRole('button', {name:'Send'}));
+  await waitFor(() => expect(submit).toHaveBeenCalledWith(
+    'Workshop plans\n\nObsidian note path: Projects/Workshop.md', undefined, [excerpt]));
+  fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'Next message'}});
+  fireEvent.click(screen.getByRole('button', {name:'Send'}));
+  expect(submit).toHaveBeenLastCalledWith('Next message');
+});
+
+it('keeps path consent independent for two checked notes', async () => {
+  const otherSource = {...source, file:'Archive/Workshop.md'};
+  const submit = vi.fn();
+  vi.stubGlobal('fetch', vi.fn(async () => sourced([excerpt, other], {
+    [excerpt.name]: source, [other.name]: otherSource,
+  })));
+  render(<InputBar {...props} onSubmit={submit}/>);
+  await review();
+  fireEvent.click(screen.getByRole('checkbox', {name:other.name}));
+  const paths = screen.getAllByRole('checkbox', {name:/Include note path in message/}) as HTMLInputElement[];
+  fireEvent.click(paths[0]);
+  fireEvent.click(paths[1]);
+  expect(paths.map(path => path.checked)).toEqual([true, true]);
+  fireEvent.click(screen.getByRole('button', {name:'Send'}));
+  await waitFor(() => expect(submit).toHaveBeenCalledWith(
+    'Workshop plans\n\nObsidian note path: Projects/Workshop.md\nObsidian note path: Archive/Workshop.md',
+    undefined, [excerpt, other]));
+});
+
+it('keeps the full draft when adding the note path exceeds the chat message limit', async () => {
+  const submit = vi.fn();
+  vi.stubGlobal('fetch', vi.fn(async () => sourced()));
+  render(<InputBar {...props} onSubmit={submit}/>);
+  fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'x'.repeat(4070)}});
+  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  fireEvent.click(await screen.findByRole('checkbox', {name:excerpt.name}));
+  fireEvent.click(screen.getByRole('checkbox', {name:/Include note path in message/}));
+  fireEvent.click(screen.getByRole('button', {name:'Send'}));
+  await screen.findByText(/too long/i);
+  expect(submit).not.toHaveBeenCalled();
+  expect((screen.getByPlaceholderText('Message') as HTMLInputElement).value).toHaveLength(4070);
+  expect((screen.getByRole('checkbox', {name:/Include note path in message/}) as HTMLInputElement).checked).toBe(true);
+});
+
+it('clears path consent when the note is deselected or its source changes', async () => {
+  const submit = vi.fn();
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sourced())
+    .mockResolvedValueOnce(sourced([excerpt], {[excerpt.name]: {...source, file:'Other.md'}})));
+  render(<InputBar {...props} onSubmit={submit}/>);
+  await review();
+  fireEvent.click(screen.getByRole('checkbox', {name:/Include note path in message/}));
+  fireEvent.click(screen.getByRole('checkbox', {name:excerpt.name}));
+  expect(screen.queryByRole('checkbox', {name:/Include note path in message/})).toBeNull();
+  fireEvent.click(screen.getByRole('checkbox', {name:excerpt.name}));
+  expect((screen.getByRole('checkbox', {name:/Include note path in message/}) as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(screen.getByRole('checkbox', {name:/Include note path in message/}));
+  fireEvent.click(screen.getByRole('button', {name:'Send'}));
+  await screen.findByText(/changed or became unavailable/i);
+  expect(submit).not.toHaveBeenCalled();
+  expect(screen.queryByRole('checkbox', {name:/Include note path in message/})).toBeNull();
+});
+
+it('does not carry an opted-in note path into another session while send is pending', async () => {
+  let respond!: (response: Response) => void;
+  const submit = vi.fn();
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(sourced())
+    .mockImplementationOnce(() => new Promise<Response>(resolve => {respond = resolve;})));
+  const view = render(<InputBar {...props} onSubmit={submit} sessionId="first"/>);
+  await review();
+  fireEvent.click(screen.getByRole('checkbox', {name:/Include note path in message/}));
+  fireEvent.click(screen.getByRole('button', {name:'Send'}));
+  view.rerender(<InputBar {...props} onSubmit={submit} sessionId="next"/>);
+  await act(async () => respond(sourced()));
+  expect(submit).not.toHaveBeenCalled();
+  expect(screen.queryByRole('checkbox', {name:/Include note path in message/})).toBeNull();
 });
 
 it('requires a fresh selection when a checked note changed or became private', async () => {
@@ -130,6 +214,8 @@ it('links only validated sources and does not read notes during lookup', async (
     .toBe('obsidian://open?vault=My%20Vault&file=Projects%2FWorkshop.md');
   expect(screen.getAllByRole('link', {name:'Open in Obsidian'})).toHaveLength(2);
   expect(screen.getAllByRole('button', {name:'Choose passage'})).toHaveLength(1);
+  fireEvent.click(screen.getByRole('checkbox', {name:'Private note'}));
+  expect(screen.queryByRole('checkbox', {name:/Include note path in message/})).toBeNull();
   expect(request).toHaveBeenCalledTimes(1);
 });
 
@@ -177,6 +263,32 @@ it('uses displayed textarea offsets for a later passage after CRLF and lone CR l
   fireEvent.click(screen.getByRole('button', {name:'Send'}));
   await waitFor(() => expect(submit).toHaveBeenCalledWith('Workshop plans', undefined,
     [{name:source.file, text:chosen}]));
+});
+
+it('opens the search match in a long note and checks that location before sending', async () => {
+  const query = 'spectroscope calibration';
+  const body = 'Spectroscope calibration uses the indigo reference.';
+  const sources = { [excerpt.name]: source };
+  let start = 8200;
+  const request = vi.fn(async (url: string) => url.includes('/brain/note?')
+    ? new Response(JSON.stringify({ok: true, body, start}))
+    : sourced([{name: excerpt.name, text: body}], sources));
+  const submit = vi.fn();
+  vi.stubGlobal('fetch', request);
+  render(<InputBar {...props} onSubmit={submit}/>);
+  fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:query}});
+  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  fireEvent.click(await screen.findByRole('button', {name:'Choose passage'}));
+  const field = await screen.findByRole('textbox', {name:/Select text from this note .*8,201/}) as HTMLTextAreaElement;
+  field.setSelectionRange(body.indexOf('indigo'), body.indexOf('indigo') + 6);
+  fireEvent.click(screen.getByRole('button', {name:'Use selected passage'}));
+  start += 80;
+  fireEvent.click(screen.getByRole('button', {name:'Send'}));
+  expect(await screen.findByText(/A selected note changed/)).toBeTruthy();
+  expect(submit).not.toHaveBeenCalled();
+  const reads = request.mock.calls.map(([url]) => url).filter(url => url.includes('/brain/note?'));
+  expect(reads).toHaveLength(2);
+  for (const url of reads) expect(new URL(url, 'http://hub').searchParams.get('q')).toBe(query);
 });
 
 it('deselects a passage when its source is missing on recheck', async () => {

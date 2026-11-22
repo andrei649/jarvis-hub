@@ -5,6 +5,7 @@ token budget mid-thought had its raw chain-of-thought surfaced as the answer
 (and persisted to memory), instead of being suppressed.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -13,7 +14,7 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from core.llm.base import (
-    THINKING_EXHAUSTED_REPLY, LLMBackend, LMStudioBackend, OllamaBackend,
+    THINKING_EXHAUSTED_REPLY, LLMBackend, LMStudioBackend, OllamaBackend, ThinkingStreamFilter,
     strip_thinking,
 )
 from core.llm.anthropic import ClaudeBackend
@@ -104,6 +105,51 @@ def test_strip_plain_passthrough():
 def test_strip_leading_numbered_steps():
     # a leading numbered-step block terminated by a blank line is dropped
     assert strip_thinking("1. Plan it\n2. Execute\n\nFinal answer.") == "Final answer."
+
+
+def test_strip_preserves_numbered_steps_inside_answer():
+    answer = "Here is the sequence:\n1. First step.\n2. Second step.\n\nFinal answer."
+    assert strip_thinking(answer) == answer
+
+
+def test_strip_preserves_leading_answer_steps_and_code():
+    answer = "1. Open the project.\n2. Run it.\n\nYou are done."
+    code = "Here is the example:\n```text\n1. First.\n2. Second.\n\nDone.\n```"
+    assert strip_thinking(answer) == answer
+    assert strip_thinking(code) == code
+
+
+def test_strip_thinking_prose_requires_an_explicit_heading():
+    answer = "Thinking about the API, I suggest this:\nKeep the current route.\n\nDone."
+    assert strip_thinking(answer) == answer
+    assert strip_thinking("**Thinking:**\nPrivate steps.\n\nFinal answer.") == "Final answer."
+
+
+def test_strip_explicit_thinking_headings_and_unterminated_prose():
+    for header in ("**Thinking**", "**Thinking...**", "Thinking…", "Thinking:"):
+        for newline in ("\n", "\r\n"):
+            assert strip_thinking(f"{header}{newline}Private steps.{newline}{newline}Answer.") == "Answer."
+            assert strip_thinking(f"{header}{newline}Private steps.") == ""
+    assert strip_thinking("\n\n**Thinking**\nPrivate steps.\n\nAnswer.") == "Answer."
+    assert strip_thinking("\n\nThinking about the API.\n\nAnswer.") == "Thinking about the API.\n\nAnswer."
+
+
+def test_stream_releases_ordinary_thinking_prose_before_newline():
+    stream = ThinkingStreamFilter()
+    first = stream.feed("Thinking about the API is ordinary answer prose with no newline yet.")
+    assert first
+    assert first + stream.flush() == "Thinking about the API is ordinary answer prose with no newline yet."
+    stream = ThinkingStreamFilter()
+    assert stream.feed("\n\nThinking about the API is also ordinary answer prose.")
+
+
+def test_stream_does_not_retain_long_hidden_thinking_prose():
+    stream = ThinkingStreamFilter()
+    assert stream.feed("**Thinking**\n") == ""
+    for _ in range(1000):
+        assert stream.feed("private reasoning continues ") == ""
+        assert len(stream._prose._pending) <= 4
+    assert stream.feed("\n\nAnswer.") + stream.flush() == "Answer."
 
 
 def test_strip_numbered_steps_redos_safe():
@@ -239,6 +285,39 @@ async def test_ollama_stream_reads_its_native_thinking_key():
     out = await b.generate_stream("m", "hi")
     assert out == THINKING_EXHAUSTED_REPLY
     assert "let me reason" not in out
+
+
+async def test_ollama_stream_keeps_numbered_steps_in_answer():
+    answer = "Here is the sequence:\n1. First step.\n2. Second step.\n\nFinal answer."
+    raw = "<think>private reasoning</think>" + answer
+    lines = [json.dumps({"response": raw[i:i + 7]}) for i in range(0, len(raw), 7)]
+    lines.append(json.dumps({"response": "", "done": True, "done_reason": "stop"}))
+    backend = OllamaBackend()
+    backend.client = _FakeStreamClient(lines)
+    tokens, on_token = _collect()
+
+    result = await backend.generate_stream("m", "hi", on_token=on_token)
+
+    assert result == answer
+    assert "".join(tokens) == answer
+
+
+async def test_ollama_stream_never_emits_explicit_thinking_prose():
+    for raw, answer in (
+        ("**Thinking**\nPrivate steps.\n\nAnswer.", "Answer."),
+        ("**Thinking...**\nPrivate steps.\n\nAnswer.", "Answer."),
+        ("\n\n**Thinking**\r\nPrivate steps.\r\n\r\nAnswer.", "Answer."),
+        ("Here's a thinking process about the task:\nPrivate steps.\n\nAnswer.", "Answer."),
+        ("Thinking…\r\nPrivate steps.", ""),
+    ):
+        lines = [json.dumps({"response": raw[i:i + 3]}) for i in range(0, len(raw), 3)]
+        lines.append(json.dumps({"response": "", "done": True, "done_reason": "stop"}))
+        backend = OllamaBackend()
+        backend.client = _FakeStreamClient(lines)
+        tokens, on_token = _collect()
+
+        assert await backend.generate_stream("m", "hi", on_token=on_token) == answer
+        assert "".join(tokens) == answer
 
 
 # ── Cloud backends (Gemini / Claude) parity ──────────────────────────────

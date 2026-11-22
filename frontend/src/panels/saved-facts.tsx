@@ -5,14 +5,88 @@ import { inpS, taS } from '../panel-kit';
 
 type Store = 'memory' | 'user';
 type Fact = { entry_id: string; store: Store; value: string };
+type FactResult = { ok: boolean; changed: boolean; entry?: Fact };
 const PATH = '/api/dashboard/today/entries';
 const label = (store: Store) => store === 'memory' ? 'Agent notes' : 'User profile';
 const factLength = (value: string) => Array.from(value.trim()).length;
+const patchFact = (entry: Fact, value: string, admin: boolean) =>
+  apiPatch<FactResult>(`${PATH}/${encodeURIComponent(entry.entry_id)}`, { value }, { admin });
 const reason = (error: unknown) => {
   const e = error as { status?: number; body?: { reason?: unknown; detail?: unknown } };
   const detail = e?.body?.detail || e?.body?.reason;
   return `${e?.status ? ` (${e.status})` : ''}${typeof detail === 'string' ? ` · ${detail.slice(0, 160)}` : ''}`;
 };
+
+type MemoryView = {
+  busy: boolean;
+  canSave: boolean;
+  setBusy: (value: boolean) => void;
+  setMessage: (value: string) => void;
+  onSaved: (entry?: Fact) => void;
+};
+type ChatState = { draft: string; store: Store; busy: boolean; setDraft: (value: string) => void;
+  setStore: (value: Store) => void; setBusy: (value: boolean) => void };
+
+/** A chat save uses the current chat credentials and never reads the shared rings. */
+export function SaveFactForm({ initialDraft = '', memoryView, chatState }: { initialDraft?: string; memoryView?: MemoryView; chatState?: ChatState }) {
+  const [localStore, setLocalStore] = useState<Store>('memory');
+  const [localDraft, setLocalDraft] = useState(initialDraft);
+  const [saved, setSaved] = useState<Fact | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState('');
+  const store = chatState?.store ?? localStore;
+  const draft = chatState?.draft ?? localDraft;
+  const setStore = chatState?.setStore ?? setLocalStore;
+  const setDraft = chatState?.setDraft ?? setLocalDraft;
+  const draftLength = factLength(draft);
+  const busy = memoryView?.busy ?? chatState?.busy ?? saving;
+  const setBusy = memoryView?.setBusy ?? chatState?.setBusy ?? setSaving;
+  const setMessage = memoryView?.setMessage ?? setNotice;
+  const canSubmit = !busy && (memoryView?.canSave ?? true) && draftLength > 0 && draftLength <= 300 && draft.trim() !== saved?.value;
+
+  const save = async () => {
+    if (!canSubmit) return;
+    setBusy(true); setMessage('');
+    try {
+      const value = draft.trim();
+      const result = saved ? await patchFact(saved, value, false) :
+        await apiPost<FactResult>(PATH, { store, value }, { admin: memoryView !== undefined });
+      if (result?.ok === true && result.changed === false) {
+        setMessage(saved ? 'No change to the saved fact.' : 'Fact already saved; nothing changed.');
+        memoryView?.onSaved();
+        return;
+      }
+      const entry = result?.entry;
+      if (result?.ok !== true || result.changed !== true || !entry?.entry_id || entry.store !== store || typeof entry.value !== 'string') {
+        setMessage(saved ? 'Fact was not corrected.' : 'Fact was not saved.');
+        return;
+      }
+      memoryView?.onSaved(entry);
+      if (!memoryView) setSaved(entry);
+      setDraft(memoryView ? '' : entry.value);
+      setMessage(`${saved ? 'Corrected' : 'Saved'} fact in ${label(entry.store)}. New conversations can include it when automatic memory is on.`);
+    } catch (error) { setMessage(`${saved ? 'Correction' : 'Save'} refused${reason(error)}. The draft is still here.`); }
+    finally { setBusy(false); }
+  };
+
+  return <>
+    <p style={{ fontSize: 12, margin: '0 0 8px' }}>Saved facts are shared across agents. With automatic memory on, new owner chats can include them on the selected local or cloud model.</p>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'end' }}>
+      <label style={{ fontSize: 11, flex: '1 1 120px' }}>Save in
+        <select aria-label="Save in" value={store} disabled={busy || !!saved} tabIndex={0} onChange={e => setStore(e.target.value as Store)} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+          <option value="memory">Agent notes</option><option value="user">User profile</option>
+        </select>
+      </label>
+      <label style={{ fontSize: 11, flex: '3 1 220px', minWidth: 0 }}>Fact to save
+        <textarea aria-label="Fact to save" value={draft} disabled={busy} tabIndex={0} onChange={e => setDraft(e.target.value)} rows={2} style={{ ...taS, display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} />
+      </label>
+      <button className="tool-btn" disabled={!canSubmit} onClick={save}>{saved ? 'Save correction' : 'Save fact'}</button>
+    </div>
+    {draftLength > 300 && <div role="status">{draftLength}/300 characters · shorten the fact to save.</div>}
+    {notice && <p role="status" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>{notice}</p>}
+  </>;
+}
+
 
 /** Owner-selected, curated facts. This list never reads skills or the broader search index. */
 export function SavedFacts() {
@@ -21,14 +95,11 @@ export function SavedFacts() {
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState(false);
   const [refresh, setRefresh] = useState(0);
-  const [store, setStore] = useState<Store>('memory');
-  const [draft, setDraft] = useState('');
   const [editing, setEditing] = useState<Fact | null>(null);
   const [correction, setCorrection] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [undo, setUndo] = useState<string | null>(null);
-  const draftLength = factLength(draft);
   const correctionLength = factLength(correction);
 
   useEffect(() => {
@@ -49,32 +120,13 @@ export function SavedFacts() {
     return () => { live = false; };
   }, [refresh]);
 
-  const save = async () => {
-    const value = draft.trim();
-    if (!value || draftLength > 300 || injected === false || busy) return;
-    setBusy(true); setMessage('');
-    try {
-      const result = await apiPost<{ ok: boolean; changed: boolean; entry?: Fact }>(PATH, { store, value }, { admin: true });
-      if (!result?.ok || !result.changed || !result.entry?.entry_id) {
-        setMessage(result?.ok && !result.changed ? 'Fact already saved; nothing changed.' : 'Fact was not saved.');
-        if (result?.ok && !result.changed) setRefresh(n => n + 1);
-        return;
-      }
-      setFacts(current => [...current.filter(f => f.entry_id !== result.entry!.entry_id), result.entry!]);
-      setUndo(null);
-      setDraft('');
-      setMessage(`Saved fact in ${label(result.entry.store)}. New conversations can include it when automatic memory is on.`);
-    } catch (error) { setMessage(`Save refused${reason(error)}. The draft is still here.`); }
-    finally { setBusy(false); }
-  };
 
   const correct = async (fact: Fact) => {
     const value = correction.trim();
     if (!value || correctionLength > 300 || busy) return;
     setBusy(true); setMessage('');
     try {
-      const result = await apiPatch<{ ok: boolean; changed: boolean; entry?: Fact }>(
-        `${PATH}/${encodeURIComponent(fact.entry_id)}`, { value }, { admin: true });
+      const result = await patchFact(fact, value, true);
       if (!result?.ok || !result.changed || !result.entry?.entry_id) {
         setMessage(result?.ok && !result.changed ? 'No change to the saved fact.' : 'Fact was not corrected.');
         return;
@@ -132,20 +184,13 @@ export function SavedFacts() {
 
   return <section aria-label="Saved facts" style={{ border: '1px solid var(--panel-line)', borderRadius: 'var(--radius)', padding: 14, background: 'var(--surface-2)', marginBottom: 'var(--gap)' }}>
     <div className="dl" style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-2)', marginBottom: 8 }}>Saved facts</div>
-    <p style={{ fontSize: 12, margin: '0 0 8px' }}>Saved facts can enter new owner chats on the selected local or cloud model.</p>
     {injected === false && <p role="status" style={{ fontSize: 12, color: 'var(--amber)', margin: '0 0 8px' }}>Automatic memory is off; new saves are unavailable. Existing facts remain stored.</p>}
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'end' }}>
-      <label style={{ fontSize: 11, flex: '1 1 120px' }}>Save in
-        <select aria-label="Save in" value={store} disabled={busy} tabIndex={0} onChange={e => setStore(e.target.value as Store)} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
-          <option value="memory">Agent notes</option><option value="user">User profile</option>
-        </select>
-      </label>
-      <label style={{ fontSize: 11, flex: '3 1 220px', minWidth: 0 }}>Fact to save
-        <textarea aria-label="Fact to save" value={draft} disabled={busy} tabIndex={0} onChange={e => setDraft(e.target.value)} rows={2} style={{ ...taS, display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} />
-      </label>
-      <button className="tool-btn" disabled={busy || loading || injected === false || draftLength === 0 || draftLength > 300} onClick={save}>Save fact</button>
-    </div>
-    {draftLength > 300 && <div role="status">{draftLength}/300 characters · shorten the fact to save.</div>}
+    <SaveFactForm memoryView={{ busy, canSave: !loading && !readError && injected === true, setBusy, setMessage,
+      onSaved: entry => {
+        if (!entry) { setRefresh(n => n + 1); return; }
+        setFacts(current => [...current.filter(f => f.entry_id !== entry.entry_id), entry]);
+        setUndo(null);
+      } }} />
     {message && <p role="status" style={{ fontSize: 11, color: /refused|not saved|not corrected/i.test(message) ? 'var(--amber)' : 'var(--accent-light)' }}>{message}</p>}
     {undo && <button className="tool-btn" disabled={busy} aria-label="Undo forgotten fact" onClick={undoForget}>Undo forgotten fact</button>}
     <div style={{ marginTop: 12, fontSize: 11, color: 'var(--ink-2)' }}>{loading ? 'Loading saved facts…' : readError ? 'Saved facts unavailable. Try again.' : facts.length ? `${facts.length} saved fact${facts.length === 1 ? '' : 's'}` : 'No saved facts.'}</div>

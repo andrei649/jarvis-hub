@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ServerProvider, useServer } from '../../mobile/src/context/ServerContext';
 import { AppearanceProvider } from '../../mobile/src/context/AppearanceContext';
@@ -68,4 +68,27 @@ it('explains the native JetBrains fallback and read-only synchronization in Sett
   await waitFor(()=>expect(getByText(/JetBrains Mono.*platform monospace/)).toBeTruthy());
   expect(getByText(/Appearance.*synced/)).toBeTruthy();
   expect(getByText(/Change appearance in the browser/)).toBeTruthy();
+});
+
+it('keeps primary destinations reachable and opens secondary destinations from More', async () => {
+  const { container } = render(<App />);
+  expect(container.querySelectorAll('[aria-label$=" tab"]').length).toBe(3);
+  for (const label of ['Chat tab', 'Tasks tab', 'Skills tab', 'More destinations']) {
+    const button = screen.getByLabelText(label);
+    expect(JSON.parse(button.getAttribute('data-native-style') || '{}').minHeight).toBeGreaterThanOrEqual(44);
+  }
+  fireEvent.click(screen.getByLabelText('More destinations'));
+  expect(screen.getByLabelText('Open Settings')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Open Settings'));
+  expect(screen.queryByLabelText('Close More menu')).toBeNull();
+  fireEvent.click(screen.getByLabelText('More destinations'));
+  expect(screen.getByLabelText('Open Settings, current destination')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Close More menu'));
+  expect(screen.queryByLabelText('Open Settings, current destination')).toBeNull();
+  fireEvent.click(screen.getByLabelText('More destinations'));
+  fireEvent.click(screen.getByLabelText('Open Memory'));
+  fireEvent.click(screen.getByLabelText('Skills tab'));
+  fireEvent.click(screen.getByLabelText('Chat tab'));
+  await waitFor(() => expect(screen.getByText('No hub connected')).toBeTruthy());
+  expect(screen.getByText('Jarvis')).toBeTruthy();
 });

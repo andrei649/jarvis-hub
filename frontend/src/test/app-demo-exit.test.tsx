@@ -12,7 +12,8 @@ vi.mock('../api/loaders', async (importOriginal) => {
   return { ...actual, loadJarvisData: mocks.loadJarvisData };
 });
 
-vi.mock('../api/client', () => ({
+vi.mock('../api/client', async importOriginal => ({
+  ...await importOriginal<typeof import('../api/client')>(),
   apiGet: mocks.apiGet,
   postStream: vi.fn(),
 }));

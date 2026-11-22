@@ -6,9 +6,9 @@ import type { KanbanBoard } from './panels/kanban/types';
 import * as api from './panels/kanban/api';
 
 vi.mock('./panels/kanban/api', () => ({
-  fetchBoards: vi.fn(), fetchBoard: vi.fn(), fetchProjects: vi.fn(), fetchProfiles: vi.fn(), fetchOrchestration: vi.fn(),
+  fetchBoards: vi.fn(), fetchBoard: vi.fn(), fetchProjects: vi.fn(), fetchProfiles: vi.fn(), fetchAssignees: vi.fn(), fetchOrchestration: vi.fn(),
   createKanbanSocket: vi.fn(), createTask: vi.fn(), patchTask: vi.fn(), bulkTasks: vi.fn(), deleteTask: vi.fn(),
-  createBoard: vi.fn(), updateBoard: vi.fn(), deleteBoard: vi.fn(), dispatch: vi.fn(), fetchTask: vi.fn(), fetchLog: vi.fn(), addComment: vi.fn(), uploadAttachment: vi.fn(), downloadAttachment: vi.fn(), fetchActiveWorkers: vi.fn(),
+  createBoard: vi.fn(), updateBoard: vi.fn(), deleteBoard: vi.fn(), dispatch: vi.fn(), fetchTask: vi.fn(), fetchLog: vi.fn(), addComment: vi.fn(), uploadAttachment: vi.fn(), downloadAttachment: vi.fn(), fetchActiveWorkers: vi.fn(), reassignTask: vi.fn(), updateProfileDescription: vi.fn(),
 }));
 const board = (title: string, cursor = 4): KanbanBoard => ({ columns: [
   { name: 'triage', tasks: [{ id: 't_1', title, status: 'triage', priority: 2 }] },
@@ -24,6 +24,7 @@ beforeEach(() => {
   vi.mocked(api.fetchBoard).mockImplementation(async (slug) => board(slug === 'beta' ? 'Beta card' : 'Alpha card'));
   vi.mocked(api.fetchProjects).mockResolvedValue({ projects: [{ id: 'p1', slug: 'repo', name: 'Repo', primary_path: '/repo' }] });
   vi.mocked(api.fetchProfiles).mockResolvedValue({ profiles: [] });
+  vi.mocked(api.fetchAssignees).mockResolvedValue({ assignees: [] });
   vi.mocked(api.fetchOrchestration).mockRejectedValue(new Error('503 adapter unavailable'));
   vi.mocked(api.fetchActiveWorkers).mockResolvedValue({ workers: [], count: 0, checked_at: 1 });
   vi.mocked(api.createKanbanSocket).mockReturnValue({ close: vi.fn(), socket: {} as WebSocket });
@@ -31,6 +32,85 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('Kanban board', () => {
+  it('assigns native registered profiles on new and existing tasks without offering unsupported profile edits', async () => {
+    vi.mocked(api.fetchProfiles).mockResolvedValue({ profiles: [
+      { name: 'frigga', is_default: true, description: '', description_auto: false },
+      { name: 'ultron', is_default: false, description: 'Review code', description_auto: false },
+    ], editable: false });
+    vi.mocked(api.fetchAssignees).mockResolvedValue({ assignees: [{ name: 'former-worker', on_disk: false, counts: {} }] });
+    vi.mocked(api.fetchTask).mockResolvedValue({ task: { id: 't_1', title: 'Alpha card', status: 'triage', assignee: 'former-worker' }, comments: [], events: [], attachments: [], links: { parents: [], children: [] }, runs: [] });
+    vi.mocked(api.createTask).mockResolvedValue({ task: { id: 't_2', title: 'Native task', status: 'triage' } });
+    vi.mocked(api.reassignTask).mockResolvedValue({ ok: true, task_id: 't_1', assignee: 'ultron' });
+    render(<KanbanView />);
+    await screen.findByText('Alpha card');
+    fireEvent.click(screen.getByRole('button', { name: 'Orchestration' }));
+    expect(await screen.findByText('Registered profiles')).toBeTruthy();
+    expect(screen.getByText('Review code')).toBeTruthy();
+    expect(screen.queryByLabelText('Profile description ultron')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Auto-describe ultron' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /new task in triage/i }));
+    const dialog = screen.getByRole('dialog', { name: 'New task' });
+    expect(within(dialog).getByRole('option', { name: 'former-worker' })).toBeTruthy();
+    expect(within(dialog).getByRole('option', { name: 'Unassigned' })).toBeTruthy();
+    fireEvent.change(within(dialog).getByLabelText('Title'), { target: { value: 'Native task' } });
+    fireEvent.change(within(dialog).getByLabelText('Assignee'), { target: { value: 'ultron' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create task' }));
+    await waitFor(() => expect(api.createTask).toHaveBeenCalledWith('alpha', expect.objectContaining({ assignee: 'ultron' })));
+    fireEvent.click(screen.getByText('Alpha card'));
+    const assign = await screen.findByLabelText('Assign profile');
+    expect(within(assign).getByRole('option', { name: 'former-worker' })).toBeTruthy();
+    vi.mocked(api.reassignTask).mockRejectedValueOnce(new Error('Task is already claimed'));
+    fireEvent.change(assign, { target: { value: 'ultron' } });
+    await screen.findByText('Task is already claimed');
+    expect((assign as HTMLSelectElement).value).toBe('former-worker');
+    fireEvent.change(assign, { target: { value: 'ultron' } });
+    await waitFor(() => expect(api.reassignTask).toHaveBeenCalledTimes(2));
+    expect(api.reassignTask).toHaveBeenLastCalledWith('alpha', 't_1', { profile: 'ultron' });
+  });
+
+  it('keeps legacy profile description controls when editable is omitted', async () => {
+    vi.mocked(api.fetchProfiles).mockResolvedValue({ profiles: [{ name: 'frigga', is_default: true, description: 'Build', description_auto: false }] });
+    render(<KanbanView />);
+    await screen.findByText('Alpha card');
+    fireEvent.click(screen.getByRole('button', { name: 'Orchestration' }));
+    expect(await screen.findByLabelText('Profile description frigga')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Auto-describe frigga' })).toBeTruthy();
+  });
+
+  it('reports profile load refusal separately from orchestration while retaining task-only assignees', async () => {
+    vi.mocked(api.fetchProfiles).mockRejectedValue(new Error('native roster offline'));
+    vi.mocked(api.fetchAssignees).mockResolvedValue({ assignees: [{ name: 'former-worker', on_disk: false, counts: {} }] });
+    render(<KanbanView />);
+    await screen.findByText('Alpha card');
+    expect(await screen.findByText(/Agent profiles unavailable: native roster offline/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /new task in triage/i }));
+    expect(within(screen.getByRole('dialog', { name: 'New task' })).getByRole('option', { name: 'former-worker' })).toBeTruthy();
+  });
+
+  it('offers assignees already on the board when the separate assignee list is unavailable', async () => {
+    vi.mocked(api.fetchBoard).mockResolvedValue({ ...board('Alpha card'), assignees: ['task-only'] });
+    vi.mocked(api.fetchAssignees).mockRejectedValue(new Error('assignee endpoint unavailable'));
+    render(<KanbanView />);
+    await screen.findByText('Alpha card');
+    fireEvent.click(screen.getByRole('button', { name: /new task in triage/i }));
+    expect(within(screen.getByRole('dialog', { name: 'New task' })).getByRole('option', { name: 'task-only' })).toBeTruthy();
+  });
+
+  it('ignores an older profile response after a newer roster refresh', async () => {
+    let resolveOld!: (value: Awaited<ReturnType<typeof api.fetchProfiles>>) => void;
+    vi.mocked(api.fetchProfiles)
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
+      .mockResolvedValue({ profiles: [{ name: 'ultron', is_default: false, description: '', description_auto: false }], editable: false });
+    vi.mocked(api.updateProfileDescription).mockResolvedValue({ ok: true });
+    render(<KanbanView />);
+    await screen.findByText('Alpha card');
+    fireEvent.click(screen.getByRole('button', { name: 'Orchestration' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save profile default' }));
+    expect(await screen.findByText('Registered profiles')).toBeTruthy();
+    resolveOld({ profiles: [{ name: 'legacy', is_default: true, description: '', description_auto: false }] });
+    await waitFor(() => expect(screen.queryByLabelText('Profile description legacy')).toBeNull());
+    expect(screen.getByText('ultron')).toBeTruthy();
+  });
   it('uses the donor heartbeat threshold and queued Triage state', () => {
     const now = Date.now() / 1000;
     expect(arcState({ id: 'a', title: 'A', status: 'running', last_heartbeat_at: now - 100 })).toBe('running');
@@ -102,6 +182,53 @@ describe('Kanban board', () => {
     expect(within(workers).queryByText('agent-a')).toBeNull();
     expect(screen.getByText('API ready')).toBeTruthy();
     expect(screen.getByText('UI verified')).toBeTruthy();
+  });
+
+  it('shows each finished worker output on its own card as concurrent workers finish separately', async () => {
+    let phase = 0;
+    const longResult = `Agent A delivered ${'proof '.repeat(50)}`;
+    vi.mocked(api.fetchBoard).mockImplementation(async () => ({ ...board('Alpha card'), columns: [
+      { name: 'running', tasks: [
+        ...(phase === 0 ? [{ id: 't_a', title: 'Same title', status: 'running', assignee: 'agent-a', body: 'A instructions', current_run_id: 11 }] : []),
+        ...(phase < 2 ? [{ id: 't_b', title: 'Same title', status: 'running', assignee: 'agent-b', body: 'B instructions', current_run_id: 12 }] : []),
+      ] },
+      { name: 'done', tasks: [
+        ...(phase > 0 ? [{ id: 't_a', title: 'Same title', status: 'done', assignee: 'agent-a', body: 'A instructions', result: longResult, latest_summary: 'A summary' }] : []),
+        ...(phase > 1 ? [{ id: 't_b', title: 'Same title', status: 'done', assignee: 'agent-b', body: 'B instructions', latest_summary: 'B summary' }] : []),
+        { id: 't_empty', title: 'No output', status: 'done', assignee: 'agent-c', body: 'C instructions' },
+      ] },
+    ] }));
+    vi.mocked(api.fetchActiveWorkers).mockImplementation(async () => ({ workers: [
+      ...(phase === 0 ? [{ run_id: 11, task_id: 't_a', task_title: 'Same title', task_status: 'running', profile: 'agent-a' }] : []),
+      ...(phase < 2 ? [{ run_id: 12, task_id: 't_b', task_title: 'Same title', task_status: 'running', profile: 'agent-b' }] : []),
+    ], count: phase === 0 ? 2 : phase === 1 ? 1 : 0, checked_at: phase + 1 }));
+    render(<KanbanView />);
+    expect((await screen.findByTestId('lane-running')).textContent).toContain('A instructions');
+    expect(screen.getByTestId('lane-running').textContent).toContain('B instructions');
+    const done = await screen.findByTestId('lane-done');
+    expect(within(done).getByText('No result recorded')).toBeTruthy();
+    expect(within(done).queryByText('C instructions')).toBeNull();
+    phase = 1;
+    const socketCalls = vi.mocked(api.createKanbanSocket).mock.calls;
+    const frame = socketCalls[socketCalls.length - 1]?.[2];
+    frame?.({ cursor: 5, events: [{ id: 5, task_id: 't_a' }] });
+    await waitFor(() => expect(within(done).getAllByText('Same title')).toHaveLength(1));
+    const a = within(done).getByText('Same title').closest('article')!;
+    expect(a.textContent).toContain('agent-a');
+    expect(a.textContent).toContain('Result');
+    expect(a.textContent).toContain('Agent A delivered');
+    expect(a.textContent).not.toContain('A summary');
+    expect(a.textContent).not.toContain('A instructions');
+    expect(a.querySelector('.kb-card-summary')?.textContent?.length).toBeLessThanOrEqual(201);
+    phase = 2;
+    frame?.({ cursor: 6, events: [{ id: 6, task_id: 't_b' }] });
+    await waitFor(() => expect(within(done).getAllByText('Same title')).toHaveLength(2));
+    const cards = within(done).getAllByText('Same title').map(title => title.closest('article')!);
+    const b = cards.find(card => card.textContent?.includes('agent-b'))!;
+    expect(b.textContent).toContain('Latest summary');
+    expect(b.textContent).toContain('B summary');
+    expect(b.textContent).not.toContain('B instructions');
+    expect(a.textContent).toContain('Agent A delivered');
   });
 
   it('ignores an older worker response and clears active rows on the latest refusal', async () => {

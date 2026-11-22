@@ -49,11 +49,13 @@ function moveCard(board: KanbanBoard, id: string, status: string): KanbanBoard {
   return { ...board, columns: board.columns.map(c => ({ ...c, tasks: c.name === status ? [moved!, ...c.tasks.filter(t => t.id !== id)] : c.tasks.filter(t => t.id !== id) })) };
 }
 
-export function KanbanView() {
+export function KanbanView({ onDiscussResult }: { onDiscussResult?: (ref: { board: string; taskId: string }) => void } = {}) {
   const [slug, setSlugState] = useState(initialSlug);
   const [boards, setBoards] = useState<BoardsResponse | null>(null);
   const [board, setBoard] = useState<KanbanBoard | null>(null);
   const [profiles, setProfiles] = useState<KanbanProfile[]>([]);
+  const [profilesEditable, setProfilesEditable] = useState(true);
+  const [profilesError, setProfilesError] = useState('');
   const [knownAssignees, setKnownAssignees] = useState<KanbanAssignee[]>([]);
   const [stats, setStats] = useState<KanbanStats | null>(null);
   const [activeWorkers, setActiveWorkers] = useState<ActiveWorkersResponse | null>(null);
@@ -77,6 +79,7 @@ export function KanbanView() {
   const generation = useRef(0);
   const boardRequest = useRef(0);
   const workersRequest = useRef(0);
+  const profilesRequest = useRef(0);
   const boardRef = useRef<KanbanBoard | null>(null);
   const cursorRef = useRef(0);
   const socketRef = useRef<{close: () => void} | null>(null);
@@ -89,7 +92,7 @@ export function KanbanView() {
   const setSlug = (next: string) => {
     slugRef.current = next; saveSlug(next); setSlugState(next);
     boardRequest.current++; workersRequest.current++;
-    setBoard(null); setStats(null); setActiveWorkers(null); setWorkersState('loading'); setBoardDiagnostics(null);
+    setBoard(null); setKnownAssignees([]); setStats(null); setActiveWorkers(null); setWorkersState('loading'); setBoardDiagnostics(null);
     setSelected(new Set()); setOpenId(null); setAddStatus(null); setError(''); setNotice('');
   };
   const sameScope = (forSlug: string, forGeneration: number) =>
@@ -101,11 +104,18 @@ export function KanbanView() {
     return result;
   }, []);
   const reloadProfiles = useCallback(async () => {
+    const request = ++profilesRequest.current;
     try {
       const r = await api.fetchProfiles();
+      if (request !== profilesRequest.current) return;
       setProfiles(r.profiles || []);
+      setProfilesEditable(r.editable !== false);
+      setProfilesError('');
     } catch (e) {
-      setAuxiliaryError(errText(e));
+      if (request !== profilesRequest.current) return;
+      setProfiles([]);
+      setProfilesEditable(false);
+      setProfilesError(errText(e));
     }
   }, []);
   const reloadModelOptions = useCallback(async () => {
@@ -125,7 +135,7 @@ export function KanbanView() {
       if (!slug || !result.boards.some(b => b.slug === slug)) setSlug(result.current || result.boards[0]?.slug || 'default');
     }).catch(e => live && setError(errText(e)));
     api.fetchProjects().then(r => { if (live) setProjects(r.projects || []); }).catch(e => { if (live) setAuxiliaryError(errText(e)); });
-    api.fetchProfiles().then(r => { if (live) setProfiles(r.profiles || []); }).catch(e => { if (live) setAuxiliaryError(errText(e)); });
+    void reloadProfiles();
     api.fetchOrchestration().then(r => { if (live) setOrchestration(r); }).catch(e => { if (live) setAuxiliaryError(errText(e)); });
     if ('fetchConfig' in api) {
       api.fetchConfig().then(r => { if (live) { setConfig(r); setConfigError(''); } }).catch(e => { if (live) setConfigError(errText(e)); });
@@ -133,7 +143,7 @@ export function KanbanView() {
     if ('fetchModelOptions' in api) {
       api.fetchModelOptions().then(r => { if (live) { setModelOptions(r); setModelOptionsError(''); } }).catch(e => { if (live) setModelOptionsError(errText(e)); });
     }
-    return () => { live = false; };
+    return () => { live = false; profilesRequest.current++; };
   // Initial metadata; board refreshes below.
   }, []);
 
@@ -347,9 +357,9 @@ export function KanbanView() {
         </li>)}</ul> : <span className="kb-muted">No active diagnostics</span>}
       </div>
     </div>}
-    <BoardCanvas board={board} meta={activeMeta} profiles={profiles} knownAssignees={knownAssignees} orchestration={orchestration} config={config} configError={configError} auxiliaryError={auxiliaryError} selected={selected} onSelect={setSelected} onOpen={setOpenId} onAdd={setAddStatus} onMove={onMove} onDelete={onDelete} onBulk={onBulk} onBulkDelete={onBulkDelete} onDispatch={onDispatch} archived={archived} onArchived={setArchived} onRefreshProfiles={reloadProfiles} />
-    {addStatus && <NewTaskDialog target={addStatus} board={activeMeta} slug={activeSlug} profiles={profiles} knownAssignees={knownAssignees} orchestration={orchestration} modelOptions={modelOptions} modelOptionsError={modelOptionsError} parents={allTasks} onClose={() => { if (sameScope(activeSlug, viewGeneration)) setAddStatus(null); }} onCreated={async () => { if (sameScope(activeSlug, viewGeneration)) { setAddStatus(null); await loadBoard(activeSlug); } }} />}
-    {openId && <TaskDrawer slug={activeSlug} id={openId} columns={columns} profiles={profiles} knownAssignees={knownAssignees} allTasks={allTasks} modelOptions={modelOptions} modelOptionsError={modelOptionsError} onRefreshModelOptions={reloadModelOptions} onOpen={id => { if (sameScope(activeSlug, viewGeneration)) setOpenId(id); }} onClose={() => { if (sameScope(activeSlug, viewGeneration)) setOpenId(current => current === openId ? null : current); }} onChanged={() => sameScope(activeSlug, viewGeneration) ? loadBoard(activeSlug) : undefined} />}
+    <BoardCanvas board={board} meta={activeMeta} profiles={profiles} profilesEditable={profilesEditable} profilesError={profilesError} knownAssignees={knownAssignees} orchestration={orchestration} config={config} configError={configError} auxiliaryError={auxiliaryError} selected={selected} onSelect={setSelected} onOpen={setOpenId} onAdd={setAddStatus} onMove={onMove} onDelete={onDelete} onBulk={onBulk} onBulkDelete={onBulkDelete} onDispatch={onDispatch} archived={archived} onArchived={setArchived} onRefreshProfiles={reloadProfiles} />
+    {addStatus && <NewTaskDialog target={addStatus} board={activeMeta} slug={activeSlug} profiles={profiles} knownAssignees={knownAssignees} existingAssignees={board?.assignees} orchestration={orchestration} modelOptions={modelOptions} modelOptionsError={modelOptionsError} parents={allTasks} onClose={() => { if (sameScope(activeSlug, viewGeneration)) setAddStatus(null); }} onCreated={async () => { if (sameScope(activeSlug, viewGeneration)) { setAddStatus(null); await loadBoard(activeSlug); } }} />}
+    {openId && <TaskDrawer slug={activeSlug} id={openId} columns={columns} profiles={profiles} knownAssignees={knownAssignees} allTasks={allTasks} modelOptions={modelOptions} modelOptionsError={modelOptionsError} onRefreshModelOptions={reloadModelOptions} onOpen={id => { if (sameScope(activeSlug, viewGeneration)) setOpenId(id); }} onClose={() => { if (sameScope(activeSlug, viewGeneration)) setOpenId(current => current === openId ? null : current); }} onChanged={() => sameScope(activeSlug, viewGeneration) ? loadBoard(activeSlug) : undefined} onDiscussResult={onDiscussResult} />}
   </section>;
 }
 export default KanbanView;

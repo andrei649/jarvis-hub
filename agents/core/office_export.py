@@ -25,6 +25,59 @@ def _cells(line: str) -> list[str]:
     return [part.strip() for part in line.strip().strip("|").split("|")]
 
 
+def _add_inline_strong(paragraph, text: str) -> None:
+    # shortcut: only inline **strong** is styled; extend here if more Markdown styles are needed.
+    if "**" not in text:
+        paragraph.add_run(text)
+        return
+    code_ends = {}
+    next_tick = {}
+    for match in reversed(list(re.finditer(r"`+", text))):
+        width = match.end() - match.start()
+        if width in next_tick:
+            code_ends[match.start()] = next_tick[width]
+        next_tick[width] = match.end()
+    plain: list[str] = []
+    pending: list[str] | None = None
+    runs: list[tuple[str, bool]] = []
+    index = 0
+    while index < len(text):
+        if text.startswith("\\**", index):
+            (pending if pending is not None else plain).append("**")
+            index += 3
+        elif text.startswith("\\`", index) and index + 1 in code_ends:
+            (pending if pending is not None else plain).append("`")
+            index += 2
+        elif index in code_ends:
+            end = code_ends[index]
+            (pending if pending is not None else plain).append(text[index:end])
+            index = end
+        elif text.startswith("**", index):
+            if pending is None:
+                pending = []
+            else:
+                strong = "".join(pending)
+                if strong and not strong[0].isspace() and not strong[-1].isspace():
+                    if plain:
+                        runs.append(("".join(plain), False))
+                        plain = []
+                    runs.append((strong, True))
+                    pending = None
+                else:
+                    plain.extend(["**", *pending])
+                    pending = []
+            index += 2
+        else:
+            (pending if pending is not None else plain).append(text[index])
+            index += 1
+    if pending is not None:
+        plain.extend(["**", *pending])
+    if plain:
+        runs.append(("".join(plain), False))
+    for value, strong in runs:
+        paragraph.add_run(value).bold = True if strong else None
+
+
 def create_docx(text: str) -> bytes:
     """Build a readable Word document from bounded plain or simple Markdown text."""
     if not isinstance(text, str) or not text or len(text) > 65536 or not _valid_xml(text):
@@ -39,7 +92,7 @@ def create_docx(text: str) -> bytes:
 
     def flush() -> None:
         if paragraph:
-            document.add_paragraph("\n".join(paragraph))
+            _add_inline_strong(document.add_paragraph(), "\n".join(paragraph))
             paragraph.clear()
 
     index = 0
@@ -63,7 +116,7 @@ def create_docx(text: str) -> bytes:
             run.font.size = Pt(9)
         elif heading:
             flush()
-            document.add_heading(heading.group(2), level=len(heading.group(1)))
+            _add_inline_strong(document.add_heading(level=len(heading.group(1))), heading.group(2))
         elif index + 1 < len(lines) and "|" in line and _TABLE_RULE.match(lines[index + 1]):
             flush()
             headers = _cells(line)
@@ -76,13 +129,13 @@ def create_docx(text: str) -> bytes:
             width = max(map(len, values_by_row))
             if width > 64 or width * len(values_by_row) > 4096:
                 for values in values_by_row:
-                    document.add_paragraph(" | ".join(values))
+                    _add_inline_strong(document.add_paragraph(), " | ".join(values))
             else:
                 table = document.add_table(rows=len(values_by_row), cols=width)
                 table.style = "Table Grid"
                 for row_num, (table_row, values) in enumerate(zip(table.rows, values_by_row, strict=True)):
                     for cell, value in zip(table_row.cells, values, strict=False):
-                        cell.text = value
+                        _add_inline_strong(cell.paragraphs[0], value)
                         if row_num == 0:
                             for run in cell.paragraphs[0].runs:
                                 run.bold = True
@@ -90,9 +143,9 @@ def create_docx(text: str) -> bytes:
         elif item:
             flush()
             if item.group(1):
-                document.add_paragraph(item.group(3), style="List Bullet")
+                _add_inline_strong(document.add_paragraph(style="List Bullet"), item.group(3))
             else:
-                document.add_paragraph(f"{item.group(2)}. {item.group(3)}")
+                _add_inline_strong(document.add_paragraph(), f"{item.group(2)}. {item.group(3)}")
         else:
             paragraph.append(line)
         index += 1

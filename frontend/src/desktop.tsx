@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { apiGet, apiPost } from './api/client';
 import { fmtTimeShort } from './primitives';
+import { boardSources } from './board-sources';
 import type { SessionRecovery } from './session-recovery';
 
 type Action = 'show' | 'hide' | 'reset' | 'handoff' | 'drag' | 'resize';
@@ -46,14 +47,15 @@ export function useDesktopConversation(setMessages: (messages: any[]) => void, b
       const request = ++sync.current.generation;
       const selected = selectedSessionId();
       const capturedActivity = activityGeneration?.();
-      const history = selected ? apiPost('/sessions/resume', { session_id: selected }) : apiGet('/memory');
+      const history = selected ? apiPost('/sessions/resume', { session_id: selected }, { admin: true }) : apiGet('/memory', { admin: true });
       history.then((r: any) => {
         if (!active || sync.current.busy || request !== sync.current.generation ||
             selected !== selectedSessionId() ||
             (capturedActivity !== undefined && capturedActivity !== activityGeneration?.()) ||
             !Array.isArray(r?.turns)) return;
         sync.current.pending = false;
-        setMessages(r.turns.map((tn: any) => ({ role: tn.role === 'user' ? 'user' : 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts: fmtTimeShort(new Date(tn.timestamp || Date.now())) })));
+        setMessages(r.turns.map((tn: any) => ({ role: tn.role === 'user' ? 'user' : 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts: fmtTimeShort(new Date(tn.timestamp || Date.now())),
+          ...(tn.role === 'user' && !('foreign_origin' in tn) && !('tainted' in tn) ? { boardSources: boardSources(tn.board_sources) } : {}) })));
       }).catch((error: unknown) => {
         if (!selected || !recovery) return;
         void recovery.recover(selected, error, () => active && !sync.current.busy &&

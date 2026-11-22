@@ -1,22 +1,111 @@
 # HUD v2 — Remaining work (next PR)
 
+## Search chat history
+
+Owners can find retained messages from the Chat and Cockpit composer using
+**Search chat history**. Reviewing a result opens its exact saved turn, including
+turns older than the recent recap. **Continue this conversation** selects the session.
+**Use in this chat** attaches an eligible passage to the current draft and keeps
+its recipient. Sending rechecks the source. The saved question carries a citation.
+Native Chat offers the same action through **History → Search messages**. The
+citation is also visible in the mobile chat after reconnecting to the same account.
+
 ## Saved facts in Memory
 
 The live Memory view lists the curated Agent notes and User profile. An owner
 can save, correct or forget an exact entry and undo a removal. A fresh owner conversation can
 include those facts in its selected model's prompt. The built-in memory switch
-controls inclusion. The native mobile client still lacks this editor.
+controls inclusion. In live Chat and Cockpit, **Remember message** opens an editable
+copy of the user's text. An explicit save uses the credentials of that chat.
+In web and native Chat, **Replace a saved fact** shows the chosen store so the
+owner can select a previous entry and review its replacement. The editor keeps
+the correction draft if the selected entry changes elsewhere. A new owner
+conversation can use the revised fact. The original message stays in history.
+
+## Save a reply to Obsidian
+
+Chat and Cockpit let the owner review a completed reply, edit the title and
+body, and save the note in the connected vault inbox. The dialog obtains the
+destination from `GET /api/os/status` and submits the reviewed text through
+`POST /api/os/brain/chat-note`. The receipt shows the relative note path and
+offers a native Obsidian link when the vault and filename support one.
+
+## Kanban tasks from chat
+
+Chat and Cockpit can turn a user message or a completed assistant reply into a
+triage card. The owner chooses a board and edits the text before saving. Attached
+vault excerpts and images stay out of the draft. Creating the card does not run a worker.
+
+From Projects, **Discuss result in Chat** opens a completed task for review.
+Chat and Cockpit also offer a board picker. The owner chooses the full result
+or a passage for one message, with the latest summary labelled when used.
+Saved questions in the web HUD link to verified board sources. The owner can
+open each current result and see whether the full output has changed since
+the original send. A revoked or missing source leaves the current draft intact.
 
 ## Models called for a reply
+
+In focused and floating Chat, the agent picker lists enabled agents from the
+authenticated roster. Switching recipients preserves the draft. After a page
+reload, the same tab restores the recipient for that conversation when the
+hub confirms the agent is still available. Chat and the Cockpit conversation
+show the selected agent's routing policy before sending.
+An older hub can omit the policy, in which case the HUD shows **Unknown**.
+
+**Compare agents** opens from a plain text draft in Chat and Cockpit. Pick two
+enabled agents, review the question and see each result under its own name.
+The comparison starts when you submit the dialog and keeps the chat draft intact.
+Use **Save to Obsidian** on an answer to review it in the vault note editor.
+Its saved path appears on that answer's card.
+
+Choose **Direct reply** before sending a text message to ask a supported model to
+skip extended thinking for that reply. The composer resets the choice after sending.
 
 The chat shows the measured provider and model beside a reply when the hub has
 a complete per-turn record. The details list includes each distinct pair. The
 same record travels with the saved assistant turn. The separate cognition panel
 remains a hub-wide view. Older turns can have no model record.
 
-## Office downloads in chat
+Chat and Cockpit also show the hub's measured agent tool executions beside the
+reply. Queued and failed attempts have separate counts. The counts stay with
+the original reply when another turn finishes and when the owner reopens a
+saved native conversation with recorded counts. Imported history, older replies
+and turns marked untrusted can lack a saved measurement.
 
-The live HUD exports completed assistant replies as Word documents. Each Markdown
+## Editable Blender meshes
+
+Chat and Cockpit also offer **Make editable Blender model**. A supported OBJ
+reply shows a projected mesh and object counts. Its review dialog also works on
+narrow screens and flags inconsistent face winding or a closed shell facing inward.
+An owner can download it as
+a native Blender project through the connected hub. Native Chat still needs
+the preview and file-sharing controls.
+
+## Office documents in chat
+
+Chat and Cockpit accept Word (.docx) and Excel (.xlsx) files for preview on
+the hub through `POST /api/canvas/office-preview`. Owners can review selections
+from multiple documents, remove individual passages and compare the retained
+passages in a single message. Each selection carries its filename and, for an
+Excel workbook, the sheet name. A comparison that exceeds the combined
+attachment budget can be shortened and retried.
+Native mobile document selection and review remain open.
+
+Chat and Cockpit also inspect native Blender projects. Artifacts opens the
+same review in Chat. Choosing **Inspect with Blender** sends the project to the
+owner's hub. The owner can preview an embedded thumbnail when available and
+attach selected inventory text to the conversation.
+
+Chat and Cockpit also read Godot scenes, GDScript and `project.godot` in the
+browser. Owners can attach a selected source passage and download individual
+Godot scene or script blocks from a completed reply.
+
+The **Photoshop** action under a completed reply in Chat and Cockpit opens a
+local composition preview. The downloaded PSD contains editable title and body
+text and an optional image layer. Oversized text can be edited before download.
+
+The live HUD exports completed assistant replies as Word documents. Bold
+phrases in the answer become editable bold text in Word. Each Markdown
 table can be downloaded as a separate Excel worksheet. Canvas markdown and table
 cards also offer the applicable download. These actions use the authenticated
 `POST /api/canvas/export`. The response goes directly to the browser and creates
@@ -36,11 +125,14 @@ comments use `GET /api/os/workshop/projects` and `GET /api/os/workshop/project`
 to open a version, review it for one message, or draft a task handoff. The text composer
 calls `/api/os/brain/retrieve` for scoped note excerpts. A result can open its
 canonical note in Obsidian. For an indexed, readable source, the composer uses
-`/api/os/brain/note` to review and recheck the selected passage.
+`/api/os/brain/note` with the search question to open the matching part of
+a long note. It checks the text and its position again before sending. During review
+the sender can include the relative note path as text in the saved message.
 `/api/os/status`, `/api/os/brain` and `POST /api/os/brain/capture` still have callers only in
 `apps/jarvis-os/public/js/api.js`, so the gate labels those routes
-`HUD_GAP:jarvis-os`. Mobile still lacks these surfaces
-(BACKLOG H18.38). No native client is delivered by this repair.
+`HUD_GAP:jarvis-os`. Native Chat also uses `/api/os/brain/retrieve` to review and
+recheck excerpts before sending them with a question. Vault graph navigation,
+passage selection and inbox capture remain open on mobile (BACKLOG H18.38).
 
 Standalone AI Connections and its default-off cloud chat consent are confined to
 the standalone server. Hub `/os` hides those settings and uses the hub's separate
@@ -59,7 +151,15 @@ H079 single-skill slash loads and `/commands [page]` use existing chat surfaces.
 The live chat composer’s Skills button lists approved skills for the selected agent.
 Its review action drafts `/refine` with an optional focus. The owner can read the
 proposed instructions in Console → Pending skills, approve that version, and select
-the skill in another chat. Selecting a skill preserves the current task text.
+the skill in another chat. The picker shows the recipient and searches the loaded
+catalog by name. Selecting a skill preserves the current task text. Changing
+recipients drops the selected skill prefix and retains the edited task.
+On a completed reply, **Teach skill** lets the owner edit a procedure for the replying
+agent. The review link opens that procedure in Console even when the queue exceeds
+ten entries. Approval signs the version the owner inspected. To revise a procedure
+learned from a reply, select **Edit steps** in the agent’s Skills picker. The Console
+link opens the proposed diff. The current instructions remain active until approval
+and application succeed.
 Local V24 extends the HUD command catalog with owner-only quick commands,
 web-enabled unambiguous skills and explicit `/bundle <slug>` entries. It shows fixed
 metadata and partial/truncated notices without executing or loading skill bodies.
@@ -258,6 +358,12 @@ it refreshes on the authenticated board event WebSocket, reconnects and polls.
 The active-worker list opens each current task directly. A prerequisite task
 shows its children's saved results, or their latest run summaries when the
 worker left the result field empty.
+Completed board cards also show a result excerpt with its source. Chat and
+Cockpit can compare passages from several completed tasks in one turn. Each
+passage keeps its board and task ID, and all selected sources are rechecked
+before the chat request starts.
+The same selection can be saved directly to the connected Obsidian inbox.
+The owner reviews the passages and their source fingerprints in the note editor.
 There is no tenant configuration UI yet.
 Approved worker intake (`POST /api/autonomy/kanban/dispatch`) is available through
 `AutonomyControlPanel` (`frontend/src/panels/autonomy-legacy.tsx`), the admin API
@@ -287,7 +393,9 @@ review before another dispatch. Durable history remains available for older atte
 The drawer also offers task reassignment/estimate/specify/decompose and home-channel subscriptions;
 board switcher, telemetry and orchestration views consume board switch/export/import,
 assignees, stats, active workers, diagnostics, runtime config, model options, draft
-estimation and profile description controls. URL attachment review, backend Nerva
+estimation and profile descriptions. The Nerva board reads registered agents for task
+assignment; profile descriptions can be edited only on backends that support edits.
+URL attachment review, backend Nerva
 adapters for the 503-gated worker/config/archive routes, and native board/worker
 controls remain open. This is not full Hermes parity.
 
@@ -1005,6 +1113,11 @@ Console → Admin → Custom Endpoints now provides durable named `custom:<key>`
 The new panel is a local implementation, with synthetic owner/Kernel/Vault/DNS/HTTP and mounted frontend checks. It does not close the separate signed-package HUD controls above, native-mobile configuration, live endpoint/device acceptance or the broader H361/H633 requirements. Capability proof classification and complete batch integration remain explicit gates.
 
 ## Governed browser sessions — local integration (2026-10-29)
+
+On 2026-11-22 an isolated native Windows host completed a signed one-shot action
+and a separately approved session action against a loopback fixture. After the
+owner process exited, a fresh coordinator reclaimed Chrome, its controller and its
+private profile. An unrelated process survived recovery.
 
 Operator retains one-shot approval and adds fresh-profile start/act/close, bounded owner session/ref display and later browser-task outcome. The three session/task/close routes require the owner admin credential; generic availability remains user-tier. Grounded refs, scroll/back/press, frame/focus/native form semantics, current registration and exact per-step Kernel receipts are implemented. Local Chrome coverage includes unchanged-registration lifetime and changed-control native/journal cleanup. Console/get_images now add bounded completed-task untrusted observations through separate owner-approved reads, with conservative console invalidation and atomic image row/ref semantics. Vision/dialog/JS/CDP, other engines, real profiles, recording/spill, mobile controls and owner-host/live-platform acceptance remain required separately.
 

@@ -29,6 +29,7 @@ class ShortcutSummary(BaseModel):
     description: str
     tier: Literal["admin"]
     usage: str
+    editable_procedure: bool | None = None
 
 
 class CommandCatalog(BaseModel):

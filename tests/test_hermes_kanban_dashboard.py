@@ -30,6 +30,30 @@ def _client(home: Path, *, board: str = "default", mutate: bool = True):
     return TestClient(app)
 
 
+def test_profiles_list_registered_dispatch_agents_read_only(tmp_path, monkeypatch):
+    client = _client(tmp_path, mutate=False)
+    agents = {"ultron": object(), "jarvis": object(), "frigga": object(),
+              " Jarvis ": object(), "": object(), "   ": object(), None: object()}
+    monkeypatch.setattr(dashboard_api, "get_orch", lambda: SimpleNamespace(agents=agents))
+    response = client.get("/api/kanban/profiles")
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "profiles": [
+            {"name": name, "is_default": False, "description": "", "description_auto": False}
+            for name in ("frigga", "jarvis", "ultron")
+        ],
+        "editable": False,
+    }
+    assert client.patch("/api/kanban/profiles/jarvis", json={"description": "change"}).status_code == 403
+    assert _client(tmp_path).patch("/api/kanban/profiles/jarvis", json={"description": "change"}).status_code == 503
+    monkeypatch.setattr(dashboard_api, "get_orch", lambda: None)
+    assert client.get("/api/kanban/profiles").status_code == 503
+    assert client.get("/api/kanban/profiles").json()["detail"] == "live agent roster unavailable"
+    app = FastAPI()
+    app.include_router(dashboard_api.router, prefix="/api/kanban")
+    assert TestClient(app).get("/api/kanban/profiles").status_code == 403
+
+
 def test_active_workers_includes_two_current_native_runs_and_excludes_stale_runs(tmp_path, monkeypatch):
     client = _client(tmp_path)
     controller = KanbanDispatcher(SimpleNamespace(), home=tmp_path)

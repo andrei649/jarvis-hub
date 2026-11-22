@@ -13,7 +13,7 @@ import { appUrl, internalLink } from './base-path';
      load with referrerPolicy="no-referrer";
    - nothing here auto-saves — a reply is persisted only on a user click. */
 import { BinaryArtifacts } from './panels/binary-artifacts';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiDelete } from './api/client';
 import { Markdown } from './markdown';
 import { OfficeExportButton } from './office-export';
@@ -205,14 +205,16 @@ function ArtifactCard({ el, L, onPin, onDelete, lang, exportAllowed }) {
 }
 
 /* ── the Artifacts center-tab panel ──────────────────────────────────────── */
-function ArtifactsPanel({ refreshKey = 0, lang, exportAllowed = true, onDiscussProject }: {
+function ArtifactsPanel({ refreshKey = 0, lang, exportAllowed = true, onDiscussProject, onInspectBlend }: {
   refreshKey?: number; lang?: string; exportAllowed?: boolean; onDiscussProject?: (project: WorkshopRef) => void;
+  onInspectBlend?: (file: File) => boolean;
 }) {
   const L = labels(lang);
   const [els, setEls] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const blendPicker = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     setLoading(true); setLoadErr(null); setActionErr(null);
@@ -247,6 +249,21 @@ function ArtifactsPanel({ refreshKey = 0, lang, exportAllowed = true, onDiscussP
         <a className="tool-btn" href={appUrl('/os/?studio=robot')} target="_blank" rel="noreferrer">
           {lang === 'ro' ? 'Deschide atelierul 3D' : 'Open 3D workshop'}
         </a>
+        {exportAllowed && onInspectBlend && <>
+          <input hidden type="file" ref={blendPicker} accept=".blend" aria-label={lang === 'ro' ? 'Alege un proiect Blender' : 'Choose a Blender project'}
+            onChange={event => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file) return;
+              if (!/\.blend$/i.test(file.name)) { setActionErr(lang === 'ro' ? 'Alege un fișier .blend.' : 'Choose a .blend file.'); return; }
+              if (!onInspectBlend(file)) setActionErr(lang === 'ro'
+                ? 'Încheie sau elimină atașamentul sau comanda din ciornă, apoi alege din nou proiectul.'
+                : 'Finish or remove the current attachment or slash command, then choose the project again.');
+            }}/>
+          <button type="button" className="tool-btn" onClick={() => blendPicker.current?.click()}>
+            {lang === 'ro' ? 'Inspectează un fișier Blender' : 'Inspect Blender file'}
+          </button>
+        </>}
         <button className="tool-btn" onClick={load} title="refresh artifacts">↻ {L.refresh}</button>
       </div>
       {exportAllowed && <WorkshopProjects lang={lang} actionLabel={lang === 'ro' ? 'Discută în chat' : 'Discuss in chat'}

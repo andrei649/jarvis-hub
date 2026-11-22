@@ -49,6 +49,7 @@ RULES = [
     # remaining note/capture controls stay in the separate browser page.
     ("/api/os/brain/retrieve", "cockpit"),
     ("/api/os/brain/note", "cockpit"),
+    ("/api/kanban/board-note/preview", "cockpit"),
     ("/api/os/workshop/project", "cockpit"),  # GET project and projects; saving stays in /os.
     # Separate /os client exists, but HUD V2 has no native entry/control for
     # the rest: docs/design/HUD_V2_REMAINING.md and mobile/PARITY.md.
@@ -82,6 +83,7 @@ RULES = [
     ("/chat", "cockpit"),
     ("/api/status", "cockpit"),
     ("/status", "cockpit"),
+    ("/api/agents/opinions", "cockpit"),
     ("/api/agents", "agents"),
     ("/agents", "agents"),
     ("/dashboard", "cockpit"),
@@ -824,7 +826,7 @@ def test_mounted_kanban_composed_callers_are_accounted_for():
     host = files["frontend/src/gap.tsx"]
     view = files["frontend/src/panels/kanban/KanbanView.tsx"]
     drawer = files["frontend/src/panels/kanban/drawer.tsx"]
-    assert "<KanbanView />" in host and "createKanbanSocket(" in view
+    assert re.search(r"<KanbanView\b", host) and "createKanbanSocket(" in view
     assert "const root = '/api/kanban'" in transport
     assert "root + '/events'" in transport and "new WebSocket(kanbanEventsUrl" in transport
     assert "unlinkPath(" in transport and re.search(r"\bremoveLink\(", drawer)
@@ -836,7 +838,10 @@ def test_mounted_kanban_composed_callers_are_accounted_for():
         assert path in routes, f"{path} is no longer a server route"
         assert expression in transport, f"{path} transport expression changed"
         assert re.search(rf"\b{re.escape(function)}\(", client), f"{path} lost its mounted UI call"
-        assert not _has_caller(path, blob), f"{path} became literal; remove computed classification"
+        # A static URL ends at its delimiter. /board-note/preview cannot call /board.
+        literal = (_has_caller(path, blob) if "{" in path else
+                   re.search(re.escape(path) + r"""(?=/?['"`?#])""", blob))
+        assert not literal, f"{path} became literal; remove computed classification"
         assert path in COMPUTED_URL_CALLERS, f"{path} is absent from computed callers"
         assert path not in UNCALLED_BACKLOG, f"{path} still claims no client caller"
 

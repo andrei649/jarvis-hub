@@ -553,7 +553,7 @@ def _settle(living: Any) -> None:
                               "read memory again and retry")
 
 
-def _read_rings(living: Any) -> None:
+def _read_rings(living: Any, *, only: str | None = None) -> None:
     """A read's reread (H423 review): each ring strictly, under its lock, so a hand edit
     that cannot be read back is reported (``memory_drift_unreadable``) instead of read as
     an empty ring; one that reads back exactly is taken, as a write would. A ring whose
@@ -563,8 +563,8 @@ def _read_rings(living: Any) -> None:
     from .cognition.memory import CoreMemoryDrift, CoreMemoryLocked
 
     unreadable: list[str] = []
-    for target, attr in TARGETS.items():
-        ring = getattr(living, attr)
+    for target in (TARGETS if only is None else (only,)):
+        ring = getattr(living, TARGETS[target])
         if callable(getattr(ring, "sync_from_disk", None)):
             try:
                 ring.sync_from_disk()

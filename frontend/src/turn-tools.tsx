@@ -16,8 +16,8 @@ export type ToolCard = { key: string; tool: string; state: 'requested' | 'runnin
 const MAX_CARDS = 24;
 
 function stateOf(event: string, status: unknown, prior?: ToolCard['state']): ToolCard['state'] {
-  if (event === 'tool_failed' || status === 'failed' || status === 'error') return 'failed';
-  if (event === 'tool_result' || event === 'tool_result_untrusted' || status === 'done' || status === 'ok' || status === 'completed') return 'done';
+  if (event === 'tool_failed') return 'failed';
+  if (event === 'tool_result') return status === 'failed' || status === 'error' ? 'failed' : 'done';
   if (event === 'tool_loop_repeated' || event === 'tool_loop_failing' || event === 'tool_cap_reached') return 'stopped';
   if (event === 'tool_started' || event === 'tool_heartbeat' || status === 'running') return 'running';
   return prior || 'requested';

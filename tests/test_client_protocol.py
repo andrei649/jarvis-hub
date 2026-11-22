@@ -81,7 +81,7 @@ def test_openapi_schemas_media_and_handler_gaps_are_honest():
     # ChatAttachment: G11 review M2's editor content beside the prompt (ChatRequest.attachments).
     assert set(schemas) == {
         "ChatRequest", "ChatAttachment", "ChatResponse", "TurnNotice", "TurnOutcome", "TurnCompletion",
-        "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation", "TurnRecall", "TurnUsageDetail",
+        "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation", "TurnRecall", "TurnUsageDetail", "ModelCall",
     }
     assert schemas["ChatRequest"] == source["components"]["schemas"]["ChatRequest"]
     assert schemas["ChatAttachment"] == source["components"]["schemas"]["ChatAttachment"]
@@ -90,8 +90,10 @@ def test_openapi_schemas_media_and_handler_gaps_are_honest():
     assert schemas["ChatResponse"] == source["components"]["schemas"]["ChatResponse"]
     assert schemas["TurnNotice"] == source["components"]["schemas"]["TurnNotice"]
     for name in ("TurnOutcome", "TurnCompletion", "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation",
-                 "TurnRecall", "TurnUsageDetail"):
+                 "TurnRecall", "TurnUsageDetail", "ModelCall"):
         assert schemas[name] == source["components"]["schemas"][name]
+    assert set(schemas["ModelCall"]["required"]) == {"provider", "model"}
+    assert set(schemas["ModelCall"]["properties"]) == {"provider", "model"}
     # H220: current-turn usage preserves uncertainty and qualified cost provenance.
     detail = schemas["TurnUsageDetail"]["properties"]
     assert set(detail) == {

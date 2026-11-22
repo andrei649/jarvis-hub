@@ -10,10 +10,12 @@ import importlib.util
 import json
 import keyword
 import logging
+import os
 import re
 import stat
 import tempfile
 import threading
+import unicodedata
 import weakref
 from collections import OrderedDict
 from collections.abc import Sequence
@@ -1572,14 +1574,37 @@ class SkillLoader:
 
         return None
 
-    def generate_skill(self, *args, procedure_agents: Sequence[str] | None = None, **kwargs) -> Optional[str]:
+    def generate_skill(self, *args, procedure_agents: Sequence[str] | None = None,
+                       procedure_request: tuple[str, str] | None = None, **kwargs) -> Optional[str]:
         """Generate a new skill (see :meth:`_generate_skill`). A generation that fails after
         its usage row was written puts the sidecar back as it was: no stray agent row."""
         with self._generation_lock:
             self._creation_undo = None
+            self._generation_reserved_dir = None
+            self._generation_reserved_identity = None
             try:
-                return self._generate_skill(*args, procedure_agents=procedure_agents, **kwargs)
+                return self._generate_skill(*args, procedure_agents=procedure_agents,
+                                            procedure_request=procedure_request, **kwargs)
             except Exception:
+                folder = self._generation_reserved_dir if procedure_request is not None else None
+                if folder is not None:
+                    try:
+                        current = folder.stat()
+                        files = list(folder.iterdir())
+                        if (not folder.is_symlink()
+                                and folder.resolve() == folder.parent.resolve() / folder.name
+                                and self._generation_reserved_identity == (current.st_dev, current.st_ino)
+                                and current.st_ino != 0
+                                and not (folder / "SKILL.md").exists()
+                                and all(item.is_file() and not item.is_symlink()
+                                        and item.name in {"PROCEDURE_REQUEST", "PROCEDURE_REQUEST.tmp",
+                                                          "PENDING_REVIEW", "SKILL.md.tmp"}
+                                        for item in files)):
+                            for item in files:
+                                item.unlink()
+                            folder.rmdir()
+                    except OSError:
+                        logger.warning("incomplete procedure folder could not be released", exc_info=True)
                 undo, self._creation_undo = self._creation_undo, None
                 put_back = getattr(self._usage, "put_back", None)
                 if undo is not None and callable(put_back):
@@ -1589,6 +1614,9 @@ class SkillLoader:
                         logger.warning("the usage row of a skill that was not generated could not be removed",
                                        exc_info=True)
                 raise
+            finally:
+                self._generation_reserved_dir = None
+                self._generation_reserved_identity = None
 
     def _generate_skill(
         self,
@@ -1600,6 +1628,7 @@ class SkillLoader:
         write_origin: str = "learning",
         *,
         procedure_agents: Sequence[str] | None = None,
+        procedure_request: tuple[str, str] | None = None,
     ) -> Optional[str]:
         """
         Generate a new skill from a successful agent task completion.
@@ -1621,7 +1650,13 @@ class SkillLoader:
         ):
             logger.warning("Skill procedure generation refused: invalid agent scope")
             return None
-        skill_name = self._name_from_task(task_description)
+        if procedure_request is not None and (procedure_agents is None
+                or len(procedure_request) != 2
+                or not all(isinstance(part, str) and re.fullmatch(r"[0-9a-f]{32}" if i == 0 else r"[0-9a-f]{64}", part)
+                           for i, part in enumerate(procedure_request))):
+            return None
+        skill_name = (f"procedure_{procedure_request[0]}" if procedure_request is not None
+                      else self._name_from_task(task_description))
         # Generated skills are personal content — they land in the user data
         # home when one is active (falling back to the bundled tree in dev).
         skill_dir = _writable_skills_dir() / skill_name
@@ -1666,19 +1701,25 @@ class SkillLoader:
         usage = ("After owner approval, read and follow the steps below."
                  if procedure else "Agent-generated skill from successful task completion.")
         commands = "" if procedure else f"## Commands\n- `{cmd} <input>` — {task_description}\n\n"
+        requirements = "" if procedure else f"**Requires:**\n\n{task_description}\n\n"
 
-        skill_md = f"""# {skill_name.replace("_", " ").title()}
+        if procedure_request is not None:
+            folded = unicodedata.normalize("NFKD", task_description).encode("ascii", "ignore").decode("ascii")
+            readable = self._name_from_task(folded).rsplit("_", 1)[0]
+            if readable == "custom":
+                readable = f"procedure_{agent_id}"
+            suffix = hashlib.sha256(procedure_request[0].encode("ascii")).hexdigest()[:12]
+            display_name = f"{readable.replace('_', ' ').title()[:45].rstrip()} {suffix}"
+        else:
+            display_name = skill_name.replace("_", " ").title()
+        skill_md = f"""# {display_name}
 
 > {task_description}
 
 **Version:** 0.1.0
 **Author:** jarvis-agent:{agent_id}
 **Agents:** {declared_agents}
-**Requires:**
-
-{task_description}
-
-## Usage
+{requirements}## Usage
 {usage}
 
 {commands}## Steps
@@ -1729,6 +1770,10 @@ class SkillLoader:
             skill_dir.mkdir(parents=True, exist_ok=False)
         except FileExistsError:
             return None
+        if procedure_request is not None:
+            self._generation_reserved_dir = skill_dir
+            reserved = skill_dir.stat()
+            self._generation_reserved_identity = (reserved.st_dev, reserved.st_ino)
         settle = getattr(self._usage, "settle_created", None)
         if callable(settle):
             try:
@@ -1742,13 +1787,22 @@ class SkillLoader:
                     logger.warning("could not release reserved skill folder %r", skill_name, exc_info=True)
                 return None
         pending_marker = skill_dir / "PENDING_REVIEW"
+        if procedure_request is not None:
+            receipt_tmp = skill_dir / "PROCEDURE_REQUEST.tmp"
+            receipt_tmp.write_text(f"{procedure_request[0]}\n{procedure_request[1]}\n", encoding="ascii")
+            os.replace(receipt_tmp, skill_dir / "PROCEDURE_REQUEST")
         if procedure:
             # A concurrent discovery must never see a readable procedure before quarantine.
             pending_marker.write_text(
                 f"agent={agent_id}\ntask={task_description}\n"
                 f"generated={datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
         # The bytes checked, never text mode: Windows would write every '\n' as '\r\n'.
-        (skill_dir / "SKILL.md").write_bytes(skill_md.encode("utf-8"))
+        if procedure:
+            manifest_tmp = skill_dir / "SKILL.md.tmp"
+            manifest_tmp.write_bytes(skill_md.encode("utf-8"))
+            os.replace(manifest_tmp, skill_dir / "SKILL.md")
+        else:
+            (skill_dir / "SKILL.md").write_bytes(skill_md.encode("utf-8"))
 
         # The shape below is the loader's contract, not decoration:
         #   * a command function takes (args, context=None) — Skill.execute() dispatches

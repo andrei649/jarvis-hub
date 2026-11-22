@@ -8,9 +8,7 @@ import logging
 import os
 import re
 import secrets
-import shutil
 import stat
-import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,10 +30,27 @@ MAX_IMAGE_BYTES = 8_000
 IDLE_SECONDS = 300.0
 LIFETIME_SECONDS = 600.0
 logger = logging.getLogger('jarvis.browser.session')
+_WINDOWS = os.name == 'nt'
 
 
 class SessionRefused(ValueError):
     """Bounded refusal; never includes page text, profile paths or request URLs."""
+
+
+def _is_playwright_driver(command: list[str]) -> bool:
+    if _WINDOWS:
+        parts = [arg.replace('\\', '/').lower() for arg in command]
+        return (len(parts) >= 3 and parts[0].endswith('/node.exe')
+                and parts[-2].endswith('/playwright/driver/package/cli.js')
+                and parts[-1] == 'run-driver')
+    return any('playwright/driver' in arg for arg in command)
+
+
+def _windows_chrome_process(process) -> bool:
+    from .browser_runtime import _chrome_binary
+
+    chrome = _chrome_binary()
+    return bool(chrome and Path(process.exe()) == Path(chrome))
 
 
 _SEMANTICS = """(e) => {
@@ -383,8 +398,8 @@ class BrowserSession:
         return entry.handle
 
 
-class BrowserOwnershipJournal:
-    """Atomic private evidence for only the fresh profiles launched by this runtime."""
+class _PosixJournal:
+    """Atomic owner-only records on POSIX filesystems."""
 
     def __init__(self, root: Path):
         self.root = root
@@ -443,16 +458,15 @@ class BrowserOwnershipJournal:
     def remove(self, sid: str) -> None:
         self._file(sid).unlink(missing_ok=True)
 
-    @staticmethod
-    def profile_owned(raw: str) -> Path | None:
-        from .browser_playwright import PROFILE_PREFIX
 
-        path = Path(raw)
-        root = Path(tempfile.gettempdir()).resolve()
-        if (path.parent.resolve() != root or not path.name.startswith(PROFILE_PREFIX)
-                or path.is_symlink()):
-            return None
-        return path
+if os.name == 'nt':
+    from .browser_windows_journal import WindowsJournal as _JournalStorage
+else:
+    _JournalStorage = _PosixJournal
+
+
+class BrowserOwnershipJournal(_JournalStorage):
+    """Record a dedicated browser's owners and reconcile them after restart."""
 
     @staticmethod
     def _refuse_reap(path: Path, reason: str) -> bool:
@@ -462,11 +476,16 @@ class BrowserOwnershipJournal:
 
     async def reap_entry(self, path: Path) -> bool:
         """Only verified native PID/start/profile tuples may be terminated."""
+        from .browser_profile import guard_owned_profile, remove_owned_profile
+
+        held = contextlib.ExitStack()
         try:
             record = self.read(path)
-            profile = self.profile_owned(record['profile'])
-            if profile is None:
-                return self._refuse_reap(path, 'profile not owned')
+            profile = Path(record['profile'])
+            identity = record.get('profile_identity')
+            if os.name == 'nt' and not identity:
+                return self._refuse_reap(path, 'profile identity missing')
+            present = held.enter_context(guard_owned_profile(profile, identity)) is not None
             native = record['native']
             # None: the owner died between the 'profile' and 'native' journal writes, while
             # Chrome was launching. Nothing native was recorded to verify; the profile sweep
@@ -499,7 +518,8 @@ class BrowserOwnershipJournal:
                 launch = psutil.Process(controller[0])
                 if launch.create_time() != controller[1] or not launch.is_running():
                     launch = None
-                elif not any('playwright/driver' in arg for arg in launch.cmdline()):
+                elif (not _is_playwright_driver(command := launch.cmdline())
+                      or (os.name == 'nt' and Path(launch.exe()) != Path(command[0]))):
                     return self._refuse_reap(path, 'controller is not a playwright driver')
             except psutil.NoSuchProcess:
                 pass
@@ -519,10 +539,14 @@ class BrowserOwnershipJournal:
                         process = candidate
                 except psutil.NoSuchProcess:
                     pass
+            if not present and (process is not None or launch is not None):
+                return self._refuse_reap(path, 'profile missing with a live recorded process')
             if process is not None:
                 try:
                     if marker not in process.cmdline():
                         return self._refuse_reap(path, 'native identity changed (marker not in argv)')
+                    if os.name == 'nt' and not _windows_chrome_process(process):
+                        return self._refuse_reap(path, 'native is not the configured Chrome')
                     if not ('chrome' in Path(process.exe()).name.lower()
                             or 'chromium' in Path(process.exe()).name.lower()):
                         return self._refuse_reap(path, f'native is not chrome ({process.exe()})')
@@ -549,6 +573,9 @@ class BrowserOwnershipJournal:
             prefix = str(profile) + os.sep
 
             def _references(cmdline) -> bool:
+                if os.name == 'nt':
+                    return any(arg == marker or arg == '--database=' + str(profile / 'Crashpad')
+                               for arg in cmdline or [])
                 return any(arg == marker or prefix in arg for arg in cmdline or [])
 
             for _round in range(3):  # the last round must find none
@@ -556,6 +583,8 @@ class BrowserOwnershipJournal:
                 for item in psutil.process_iter(['pid', 'cmdline']):
                     try:
                         if item.pid != os.getpid() and _references(item.info.get('cmdline')):
+                            if not present or (os.name == 'nt' and not _windows_chrome_process(item)):
+                                return self._refuse_reap(path, 'profile referenced by an unverified process')
                             stragglers.append(item)
                     except psutil.NoSuchProcess:
                         continue
@@ -573,11 +602,12 @@ class BrowserOwnershipJournal:
                 await asyncio.to_thread(psutil.wait_procs, alive, timeout=2)
             else:
                 return self._refuse_reap(path, 'profile-referencing process survived')
+            held.close()
             for attempt in range(3):
-                if not profile.exists():
-                    break
                 try:
-                    await asyncio.to_thread(shutil.rmtree, profile)
+                    if not await asyncio.to_thread(remove_owned_profile, profile, identity):
+                        return self._refuse_reap(path, 'profile identity changed before removal')
+                    break
                 except OSError:
                     if attempt == 2:
                         return self._refuse_reap(path, 'profile removal failed')
@@ -588,3 +618,5 @@ class BrowserOwnershipJournal:
             logger.warning('browser orphan reap of %s refused: unexpected error', path.name,
                            exc_info=True)
             return False
+        finally:
+            held.close()

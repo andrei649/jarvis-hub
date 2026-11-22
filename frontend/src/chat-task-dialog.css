@@ -1,0 +1,53 @@
+.chat-task-dialog {
+  max-height: 90vh;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding: 20px;
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius);
+  background: var(--void-2);
+  color: var(--ink);
+  color-scheme: dark;
+  font: 14px/1.45 var(--font-ui);
+}
+
+.chat-task-dialog::backdrop { background: rgba(0, 0, 0, .72); }
+.chat-task-dialog h2 { margin: 0 0 16px; font-size: 18px; }
+.chat-task-dialog form { display: grid; gap: 14px; min-width: 0; }
+.chat-task-dialog label { display: grid; gap: 6px; min-width: 0; font-weight: 500; }
+.chat-task-dialog p { margin: 0; }
+.chat-task-dialog [role="status"] { display: block; overflow-wrap: anywhere; }
+.chat-task-dialog [role="alert"] { color: var(--red); overflow-wrap: anywhere; }
+
+.chat-task-dialog :is(input, select, textarea) {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius);
+  background: var(--void);
+  color: var(--ink);
+  font: inherit;
+}
+
+.chat-task-dialog textarea { min-height: 132px; resize: vertical; }
+.chat-task-dialog select option { background: var(--void); color: var(--ink); }
+.chat-task-dialog :is(input, select, textarea):disabled { color: var(--ink-2); opacity: 1; }
+.chat-task-dialog footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+.chat-task-dialog button {
+  min-height: 44px;
+  min-width: 96px;
+  padding: 10px 14px;
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.2;
+}
+
+.chat-task-dialog button[type="submit"] { background: var(--accent-light); color: var(--void); border-color: var(--accent-light); font-weight: 600; }
+.chat-task-dialog button:disabled { background: var(--surface-2); color: var(--ink-2); cursor: not-allowed; opacity: 1; }
+.chat-task-dialog :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }

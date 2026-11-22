@@ -71,6 +71,7 @@ type DrawerProps = {
   allTasks?: KanbanTask[]; modelOptions?: KanbanModelOptionsResponse | null; modelOptionsError?: string;
   onRefreshModelOptions?: () => Promise<void> | void;
   onOpen: (id: string) => void; onClose: () => void; onChanged: () => Promise<unknown> | void;
+  onDiscussResult?: (ref: { board: string; taskId: string }) => void;
 };
 export function TaskDrawer(props: DrawerProps) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -82,9 +83,11 @@ export function TaskDrawer(props: DrawerProps) {
 }
 function TaskDetails({
   slug, id, columns, profiles, knownAssignees = [], allTasks = [], modelOptions = null, modelOptionsError = '',
-  onRefreshModelOptions, onOpen, onClose, onChanged, comment, updateDraft,
+  onRefreshModelOptions, onOpen, onClose, onChanged, onDiscussResult, comment, updateDraft,
 }: DrawerProps & { comment:string; updateDraft: (change: (previous: string) => string) => void }) {
   const k = useKanban();
+  const discussLabel = typeof document !== 'undefined' && document.documentElement.lang.toLowerCase().startsWith('ro')
+    ? 'Discută rezultatul în Chat' : 'Discuss result in Chat';
   const [detail, setDetail] = useState<KanbanTaskDetail | null>(null);
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('comments'); const [busy, setBusy] = useState(false);
@@ -268,6 +271,8 @@ function TaskDetails({
         <Section title="Description">{editBody ? <form onSubmit={e => { e.preventDefault(); void patch({body: bodyDraft}).then(ok => { if (ok) setEditBody(false); }); }}><textarea aria-label="Edit description" value={bodyDraft} onChange={e => setBodyDraft(e.target.value)} /><footer><button type="button" onClick={() => setEditBody(false)}>Cancel</button><button type="submit" disabled={busy}>Save description</button></footer></form> : <><div className="kb-markdown">{task.body ? <Markdown text={task.body} className="md" /> : <span className="kb-muted">No description</span>}</div><button type="button" onClick={() => setEditBody(true)}>Edit description</button></>}</Section>
         {task.result && <Section title="Result"><Markdown text={task.result} className="md kb-markdown" /></Section>}
         {task.latest_summary && <Section title="Latest summary"><Markdown text={task.latest_summary} className="md kb-markdown" /></Section>}
+        {onDiscussResult && task.status === 'done' && (task.result?.trim() || task.latest_summary?.trim()) &&
+          <button type="button" onClick={() => onDiscussResult({ board: slug, taskId: id })}>{discussLabel}</button>}
         {!!detail.child_results?.length && <Section title="Child results"><div className="kb-feed">
           {detail.child_results.map(child => {
             const output = child.result?.trim() ? child.result : child.latest_summary;
@@ -278,6 +283,8 @@ function TaskDetails({
               </div>
               {output && <><small>{output === child.result ? 'Result' : 'Latest run summary'}</small>
                 <Markdown text={output} className="md kb-markdown" /></>}
+              {onDiscussResult && child.status === 'done' && output?.trim() &&
+                <button type="button" onClick={() => onDiscussResult({ board: slug, taskId: child.id })}>{discussLabel}</button>}
             </article>;
           })}
         </div></Section>}
@@ -317,8 +324,7 @@ function TaskDetails({
       <aside className="kb-drawer-aside">
         <Section title="Status"><label>Status<select aria-label="Status" value={task.status} disabled={busy} onChange={e => { if (isLockedTarget(e.target.value)) { setError('That lane is managed by the worker workflow.'); return; } void patch({status:e.target.value}); }}>{columns.map(c => <option key={c} value={c} disabled={isLockedTarget(c) && c !== task.status}>{columnLabel(k,c)}</option>)}</select></label></Section>
         <Section title="Assignee">
-          <div>{task.assignee || 'Unassigned'}</div>
-          <select aria-label="Assign profile" value={reassignTarget} disabled={busy} onChange={e => { setReassignTarget(e.target.value); submitReassign(e.target.value); }}>
+          <select aria-label="Assign profile" value={task.assignee || ''} disabled={busy} onChange={e => { setReassignTarget(e.target.value); submitReassign(e.target.value); }}>
             <option value="">Unassigned</option>
             {assigneeOptions.map(name => <option key={name} value={name}>{name}</option>)}
           </select>
@@ -376,7 +382,7 @@ function TaskDetails({
           <input aria-label="Worker action reason" value={workerReason} onChange={e => setWorkerReason(e.target.value)} placeholder="Reason (optional)" />
           <div className="kb-inline-actions">
             {activeRun && <button type="button" disabled={busy} onClick={recover}>Check and recover interrupted run</button>}
-            <button type="button" disabled={busy} onClick={() => submitReassign(reassignTarget)}>Reassign</button>
+            <button type="button" disabled={busy} onClick={() => submitReassign(reassignTarget)}>{reassignTarget === (task.assignee || '') ? 'Reassign' : reassignTarget ? `Retry assigning to ${reassignTarget}` : 'Retry unassigning'}</button>
             <button type="button" disabled={busy} onClick={() => void runTaskEstimate()}>Estimate</button>
             <button type="button" disabled={busy} onClick={() => void mutate(() => api.specifyTask(slug, id))}>Specify</button>
             <button type="button" disabled={busy} onClick={() => void mutate(() => api.decomposeTask(slug, id))}>Decompose</button>

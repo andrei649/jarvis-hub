@@ -357,7 +357,8 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
 
     reassignMode = '200';
     fireEvent.change(within(dialog).getByLabelText('Worker action reason'), { target: { value: 'handoff' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Reassign' }));
+    expect((within(dialog).getByLabelText('Assign profile') as HTMLSelectElement).value).toBe('coder');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retry assigning to researcher' }));
     await waitFor(() => expect(within(dialog).getByRole('status').textContent).toContain('Reassigned to researcher.'));
     expect(calls.filter(c => c.method === 'POST' && c.url === '/api/kanban/tasks/t_run/reassign?board=alpha').pop()?.body).toEqual({
       profile: 'researcher',

@@ -35,7 +35,7 @@ beforeEach(() => {
   vi.stubGlobal('XMLHttpRequest', ChatXHR);
   vi.stubGlobal('fetch', vi.fn(async (url: string) => String(url).includes('/active-images')
     ? reply({ session_id: 'selected', images: [] }) : String(url).endsWith('/selected-prepare') ? reply(review)
-      : String(url).endsWith('/api/commands') ? reply({ ok: true, commands: [command] }) : reply({ agents: [] })));
+      : new URL(url).pathname === '/api/commands' ? reply({ ok: true, commands: [command] }) : reply({ agents: [] })));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 

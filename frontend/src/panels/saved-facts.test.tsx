@@ -2,7 +2,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
-import { SavedFacts } from './saved-facts';
+import { SaveFactForm, SavedFacts } from './saved-facts';
 
 vi.mock('../api/client', () => ({ apiDelete: vi.fn(), apiGet: vi.fn(), apiPatch: vi.fn(), apiPost: vi.fn() }));
 
@@ -15,6 +15,52 @@ beforeEach(() => {
 });
 
 describe('SavedFacts', () => {
+  it('reviews only the selected message and saves the edited fact with the chat credentials', async () => {
+    vi.mocked(apiPost).mockResolvedValue({ ok: true, changed: true, entry });
+    render(<SaveFactForm initialDraft="My draft contains extra details." />);
+    const draft = screen.getByRole('textbox', { name: 'Fact to save' }) as HTMLTextAreaElement;
+    expect(draft.value).toBe('My draft contains extra details.');
+    expect(apiGet).not.toHaveBeenCalled();
+    expect(apiPost).not.toHaveBeenCalled();
+    fireEvent.change(draft, { target: { value: entry.value } });
+    fireEvent.change(screen.getByLabelText('Save in'), { target: { value: 'user' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save fact' }));
+    await screen.findByText(/Saved fact in User profile/);
+    expect(apiPost).toHaveBeenCalledExactlyOnceWith('/api/dashboard/today/entries',
+      { store: 'user', value: entry.value }, { admin: false });
+    const correction = screen.getByRole('button', { name: 'Save correction' }) as HTMLButtonElement;
+    expect(correction.disabled).toBe(true);
+    expect(draft.value).toBe(entry.value);
+    expect((screen.getByLabelText('Save in') as HTMLSelectElement).disabled).toBe(true);
+    vi.mocked(apiPatch).mockResolvedValue({ ok: true, changed: true, entry: { ...entry, value: 'Herbal tea', entry_id: 'user:next' } });
+    fireEvent.change(draft, { target: { value: 'Herbal tea' } });
+    fireEvent.click(correction);
+    await screen.findByText(/Corrected fact in User profile/);
+    expect(apiPatch).toHaveBeenCalledExactlyOnceWith('/api/dashboard/today/entries/user%3Aabc',
+      { value: 'Herbal tea' }, { admin: false });
+    vi.mocked(apiPatch).mockRejectedValueOnce(Object.assign(new Error('changed'), { status: 409 }));
+    fireEvent.change(draft, { target: { value: 'Latest edit' } });
+    fireEvent.click(correction);
+    await screen.findByText(/Correction refused \(409\)/);
+    expect(vi.mocked(apiPatch).mock.lastCall?.[0]).toBe('/api/dashboard/today/entries/user%3Anext');
+    expect(draft.value).toBe('Latest edit');
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(apiGet).not.toHaveBeenCalled();
+  });
+
+  it('keeps the selected text editable after a refused chat save and never retries as an admin', async () => {
+    vi.mocked(apiPost).mockRejectedValue(Object.assign(new Error('refused'), { status: 403 }));
+    render(<SaveFactForm initialDraft={'😀'.repeat(301)} />);
+    expect((screen.getByRole('button', { name: 'Save fact' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Fact to save'), { target: { value: 'Keep this draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save fact' }));
+    await screen.findByText(/Save refused \(403\)/);
+    expect((screen.getByLabelText('Fact to save') as HTMLTextAreaElement).value).toBe('Keep this draft');
+    expect(apiPost).toHaveBeenCalledExactlyOnceWith('/api/dashboard/today/entries',
+      { store: 'memory', value: 'Keep this draft' }, { admin: false });
+    expect(apiGet).not.toHaveBeenCalled();
+  });
+
   it('reads only the two curated stores and explicitly saves an agent note', async () => {
     vi.mocked(apiPost).mockResolvedValue({ ok: true, changed: true, entry: { entry_id: 'memory:new', store: 'memory', value: 'Use short answers' } });
     render(<SavedFacts />);
