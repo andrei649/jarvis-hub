@@ -12,7 +12,6 @@ from agents.core.routers._deps import user_guard
 from agents.core.workspace.extract import Extracted, ExtractionError, Segment
 from tests.fixtures.workspace import samples
 
-
 URL = "/api/canvas/office-preview"
 HEADERS = {"Content-Type": "application/octet-stream"}
 
@@ -25,7 +24,29 @@ def test_docx_preview_uses_real_extractor_and_bounds_codepoints():
     assert response.headers["Cache-Control"].startswith("no-cache, no-store")
     assert response.json() == {"kind": "docx", "segments": [{
         "label": "Document", "text": "Ț😀" * 6000, "truncated": True,
+        "offset": 0, "total_characters": 12020,
     }], "total_segments": 1}
+
+
+def test_docx_preview_can_review_end_without_returning_neighbors():
+    text = "😀" * 12000 + "PRIVATE-NEIGHBOR " + "Ț" * 12980 + " SELECT-ME"
+    data = samples.build_docx(samples.docx_paragraph(text))
+    response = TestClient(web.app).post(URL, params={"kind": "docx", "offset": 24000},
+                                        content=data, headers=HEADERS)
+    assert response.status_code == 200
+    segment = response.json()["segments"][0]
+    assert segment["offset"] == 24000
+    assert segment["total_characters"] == len(text)
+    assert "SELECT-ME" in segment["text"]
+    assert "PRIVATE-NEIGHBOR" not in segment["text"]
+    assert len(segment["text"]) <= 12000
+
+
+@pytest.mark.parametrize("offset", [-1, 1, 10_000_001])
+def test_docx_preview_rejects_invalid_offset(offset):
+    response = TestClient(web.app).post(URL, params={"kind": "docx", "offset": offset},
+                                        content=samples.build_docx(), headers=HEADERS)
+    assert response.status_code == 422
 
 
 def test_xlsx_preview_keeps_headers_and_real_sheet_names():

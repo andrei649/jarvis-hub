@@ -19741,6 +19741,10 @@ export interface components {
             text: string;
             /** Truncated */
             truncated: boolean;
+            /** Offset */
+            offset?: number | null;
+            /** Total Characters */
+            total_characters?: number | null;
         };
         /** OperatorPlanBody */
         OperatorPlanBody: {
@@ -24266,6 +24270,7 @@ export interface operations {
         parameters: {
             query: {
                 kind: "docx" | "xlsx";
+                offset?: number;
             };
             header?: never;
             path?: never;

@@ -5,7 +5,7 @@ import { isNetworkedOrigin, loadOwnerSession, onOwnerSession, ownerSession } fro
 import './composer-office.css';
 
 type Kind = 'docx' | 'xlsx' | 'blend' | 'godot';
-type Segment = { label: string; text: string; truncated: boolean };
+type Segment = { label: string; text: string; truncated: boolean; offset?: number; total_characters?: number };
 type Preview = { kind: Kind; segments: Segment[]; total_segments: number; thumbnail_png?: string | null };
 export type OfficeAttachment = { name: string; text: string };
 type OfficeEntry = { attachment: OfficeAttachment; file: File; kind: Kind; preview: Preview; index: number };
@@ -40,7 +40,11 @@ function validPreview(data: unknown, kind: Kind): data is Preview {
   if (kind === 'blend' && result.thumbnail_png != null && !validThumbnail(result.thumbnail_png)) return false;
   return result.segments.every(item => item && typeof item === 'object' && !Array.isArray(item) &&
     typeof item.label === 'string' && !!clean(item.label) && length(item.label) <= 200 && !/[\u0000-\u001f\u007f]/.test(item.label) &&
-    typeof item.text === 'string' && (kind === 'blend' || !!item.text.trim()) && length(item.text) <= 12000 && typeof item.truncated === 'boolean');
+    typeof item.text === 'string' && (kind === 'blend' || !!item.text.trim()) && length(item.text) <= 12000 && typeof item.truncated === 'boolean' &&
+    (item.offset === undefined && item.total_characters === undefined || kind === 'docx' &&
+      Number.isInteger(item.offset) && item.offset >= 0 && item.offset % 12000 === 0 &&
+      Number.isInteger(item.total_characters) && item.total_characters <= 10_000_000 &&
+      item.total_characters > item.offset && item.offset + length(item.text) <= item.total_characters));
 }
 
 function attachmentName(fileName: string, segment: Segment, kind: Kind): string {
@@ -73,7 +77,7 @@ const labels = {
     noSelection: 'Select text in the preview, or attach all shown text.', selected: 'Passage attached to this message.',
     remove: 'Remove passage', bounds: 'The connected hub reads this file for preview. On Transmit, the selected agent receives only the attached passage, not the original file.',
     truncated: 'This preview is truncated.', included: 'Selected passage to send', unavailable: 'Close the image or vault review before attaching a document.',
-    sheets: 'sheets', sections: 'sections', characters: 'characters', done: 'Done reviewing', review: 'Review attached passage',
+    sheets: 'sheets', sections: 'sections', characters: 'characters', pageOf: 'Page', of: 'of', previousPage: 'Previous page', nextPage: 'Next page', done: 'Done reviewing', review: 'Review attached passage',
     addAnother: 'Add another document', staged: 'Passages selected for this message', maxCount: 'You can attach up to 8 passages. Remove one before adding another.',
     maxBytes: 'A passage may use up to 64,000 UTF-8 bytes; all passages together may use up to 128,000 bytes.',
     duplicate: 'This file and sheet already have a passage. Review that passage or choose a distinct source.', cancel: 'Keep selected passages', limits: '64,000 UTF-8 bytes per passage; 128,000 bytes total', officeOnly: 'Add another document accepts DOCX or XLSX. Your selected passages are still here.' },
@@ -89,7 +93,7 @@ const labels = {
     noSelection: 'Selectează textul din previzualizare sau atașează tot textul afișat.', selected: 'Pasaj atașat acestui mesaj.',
     remove: 'Elimină pasajul', bounds: 'Hubul conectat citește fișierul pentru previzualizare. La trimitere, agentul selectat primește doar pasajul atașat, nu fișierul original.',
     truncated: 'Această previzualizare este trunchiată.', included: 'Pasajul selectat pentru trimitere', unavailable: 'Închide previzualizarea imaginilor sau a notițelor înainte de a atașa un document.',
-    sheets: 'foi', sections: 'secțiuni', characters: 'caractere', done: 'Am terminat revizuirea', review: 'Revizuiește pasajul atașat',
+    sheets: 'foi', sections: 'secțiuni', characters: 'caractere', pageOf: 'Pagina', of: 'din', previousPage: 'Pagina precedentă', nextPage: 'Pagina următoare', done: 'Am terminat revizuirea', review: 'Revizuiește pasajul atașat',
     addAnother: 'Adaugă alt document', staged: 'Pasaje selectate pentru acest mesaj', maxCount: 'Poți atașa cel mult 8 pasaje. Elimină unul înainte de a adăuga altul.',
     maxBytes: 'Un pasaj poate avea cel mult 64.000 de octeți UTF-8; toate pasajele împreună pot avea cel mult 128.000 de octeți.',
     duplicate: 'Acest fișier și această foaie au deja un pasaj. Revizuiește pasajul sau alege altă sursă.', cancel: 'Păstrează pasajele selectate', limits: '64.000 octeți UTF-8 per pasaj; 128.000 de octeți în total', officeOnly: 'Poți adăuga doar DOCX sau XLSX. Pasajele selectate sunt păstrate.' },
@@ -173,6 +177,36 @@ export function useOfficeDocument(agent: string, session: string, demo: boolean,
       if (request === serial.current) { pending.current = null; setBusy(false); }
     }
   }
+  async function pageDocx(offset: number) {
+    if (!file || kind !== 'docx' || !preview || busy || !readyToSend()) return;
+    pending.current?.abort();
+    const controller = new AbortController();
+    const request = ++serial.current;
+    pending.current = controller;
+    setBusy(true); setStatus(l.loading);
+    try {
+      const response = await apiPostOfficePreview(file, 'docx', controller.signal, offset);
+      if (!response.ok) throw new Error(String(response.status));
+      const body = await response.text();
+      if (body.length > 2_000_000) throw new Error('shape');
+      const data: unknown = JSON.parse(body);
+      if (!validPreview(data, 'docx') || data.segments[0].offset !== offset ||
+          data.segments[0].total_characters !== preview.segments[0].total_characters) throw new Error('shape');
+      if (fileCredentials.current !== credentials()) { clear(); return; }
+      if (request === serial.current && !controller.signal.aborted) {
+        setPreview(data); setIndex(0); setAttachment(null); setStatus('');
+      }
+    } catch (error) {
+      if (fileCredentials.current !== credentials()) { clear(); return; }
+      if (request === serial.current && !controller.signal.aborted) {
+        const code = error instanceof Error ? error.message : '';
+        if (code === '401' || code === '403') { clear(); setExpanded(true); setStatus(l.auth); return; }
+        setStatus(code === '429' ? l.busy : code === 'shape' ? l.invalid : l.failed);
+      }
+    } finally {
+      if (request === serial.current) { pending.current = null; setBusy(false); }
+    }
+  }
   function choose(selected: File | undefined) {
     if (!selected || blocked || demo) return;
     if (fileCredentials.current && fileCredentials.current !== credentials()) { clear(); return; }
@@ -236,6 +270,7 @@ export function useOfficeDocument(agent: string, session: string, demo: boolean,
     reopen: () => { if (entries.length) edit(entries.length - 1); else if (readyToSend()) setExpanded(true); },
     retry: () => { if (file && !busy) void load(file, kind); },
     inspect: () => { if (file && kind === 'blend' && !busy && !preview) void load(file, kind); },
+    pageDocx: (offset: number) => { void pageDocx(offset); },
     select: (next: number) => { if (readyToSend()) { setIndex(next); setAttachment(null); setStatus(''); } },
     useSelection: () => { const area = passage.current; setPassage(area?.value.slice(area.selectionStart, area.selectionEnd) || ''); },
     useShown: () => setPassage(preview?.segments[index].text || '') };
@@ -297,13 +332,21 @@ export function OfficeReview({ draft }: { draft: OfficeDraft }) {
         </select>
       </label>
       <p>{draft.preview.segments.length} / {draft.preview.total_segments} {draft.kind === 'xlsx' ? draft.labels.sheets : draft.labels.sections} · {length(segment!.text).toLocaleString()} / 12,000 {draft.labels.characters}
-        {segment!.truncated && <> · {draft.labels.truncated}</>}</p>
+        {segment!.truncated && (draft.kind !== 'docx' || segment!.offset === undefined) && <> · {draft.labels.truncated}</>}</p>
+      {draft.kind === 'docx' && segment!.offset !== undefined && segment!.total_characters !== undefined &&
+        <div className="office-review-actions">
+          <button type="button" className="tool-btn" disabled={draft.busy || segment!.offset === 0}
+            onClick={() => draft.pageDocx(segment!.offset! - 12000)}>{draft.labels.previousPage}</button>
+          <span>{draft.labels.pageOf} {segment!.offset / 12000 + 1} {draft.labels.of} {Math.ceil(segment!.total_characters / 12000)}</span>
+          <button type="button" className="tool-btn" disabled={draft.busy || !segment!.truncated}
+            onClick={() => draft.pageDocx(segment!.offset! + 12000)}>{draft.labels.nextPage}</button>
+        </div>}
       <label>{draft.labels.select}
         <textarea ref={draft.passage} readOnly rows={7} value={segment!.text}/>
       </label>
       <div className="office-review-actions">
-        <button type="button" className="tool-btn" onClick={draft.useSelection}>{draft.labels.useSelection}</button>
-        <button type="button" className="tool-btn" onClick={draft.useShown}>{draft.labels.useShown}</button>
+        <button type="button" className="tool-btn" disabled={draft.busy} onClick={draft.useSelection}>{draft.labels.useSelection}</button>
+        <button type="button" className="tool-btn" disabled={draft.busy} onClick={draft.useShown}>{draft.labels.useShown}</button>
       </div>
       {draft.attachment && <div className="office-selected"><strong>{draft.labels.included}: {draft.attachment.name}</strong>
         <p>{draft.attachment.text}</p>

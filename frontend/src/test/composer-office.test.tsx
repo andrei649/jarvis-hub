@@ -268,6 +268,63 @@ it('previews raw bytes, selects a literal sheet passage, and sends only after Tr
   expect(screen.queryByRole('dialog', { name: 'Attach document' })).toBeNull();
 });
 
+it('pages a long DOCX, sends only reviewed Unicode selection, and keeps the draft on cancel', async () => {
+  const privateText = 'PRIVATE-NEIGHBOR';
+  const target = 'Ț😀 SELECT-ME';
+  const fetcher = vi.fn(async (url: string) => {
+    const offset = Number(new URL(url, 'http://local').searchParams.get('offset') || 0);
+    const text = offset === 24000 ? `${privateText} ${target}` : offset === 12000 ? 'middle page' : 'first page';
+    return preview('docx', [{ label: 'Document', text, truncated: offset < 24000,
+      offset, total_characters: 25000 }]);
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const submit = vi.fn();
+  const { container } = render(<InputBar onSubmit={submit} t={t} selectedTurn sessionId="s1"/>);
+  fireEvent.change(screen.getByPlaceholderText('Message'), { target: { value: 'Summarize my selection' } });
+  choose(container, officeFile('Long.docx'));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Next page' })).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  await waitFor(() => expect((screen.getByRole('textbox', { name: 'Select a passage' }) as HTMLTextAreaElement).value).toBe('middle page'));
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  const area = await screen.findByRole('textbox', { name: 'Select a passage' }) as HTMLTextAreaElement;
+  await waitFor(() => expect(area.value).toContain(target));
+  expect(fetcher.mock.calls[2][0]).toBe('/api/canvas/office-preview?kind=docx&offset=24000');
+  area.setSelectionRange(area.value.indexOf(target), area.value.indexOf(target) + target.length);
+  fireEvent.click(screen.getByRole('button', { name: 'Attach selected text' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Done reviewing' }));
+  expect((screen.getByPlaceholderText('Message') as HTMLInputElement).value).toBe('Summarize my selection');
+  fireEvent.click(screen.getByRole('button', { name: 'Review attached passage' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Close document preview' }));
+  expect((screen.getByPlaceholderText('Message') as HTMLInputElement).value).toBe('Summarize my selection');
+  fireEvent.click(screen.getByRole('button', { name: 'Transmit' }));
+  expect(submit).toHaveBeenCalledExactlyOnceWith('Summarize my selection', undefined,
+    [{ name: 'Long.docx', text: target }], false, { awaitAdmission: true });
+  expect(JSON.stringify(submit.mock.calls)).not.toContain(privateText);
+});
+
+it('ignores a late DOCX page after cancelling review', async () => {
+  let resolvePage!: (response: Response) => void;
+  const fetcher = vi.fn().mockResolvedValueOnce(preview('docx', [{ label: 'Document', text: 'first', truncated: true,
+    offset: 0, total_characters: 25000 }]))
+    .mockImplementationOnce(() => new Promise<Response>(resolve => { resolvePage = resolve; }));
+  vi.stubGlobal('fetch', fetcher);
+  const submit = vi.fn();
+  const { container } = render(<InputBar onSubmit={submit} t={t}/>);
+  fireEvent.change(screen.getByPlaceholderText('Message'), { target: { value: 'Keep this draft' } });
+  choose(container, officeFile('Long.docx'));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Next page' })).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  const signal = (fetcher.mock.calls[1] as [string, RequestInit])[1].signal!;
+  fireEvent.click(screen.getByRole('button', { name: 'Close document preview' }));
+  expect(signal.aborted).toBe(true);
+  await act(async () => resolvePage(preview('docx', [{ label: 'Document', text: 'PRIVATE-NEIGHBOR', truncated: false,
+    offset: 12000, total_characters: 25000 }])));
+  expect(screen.queryByRole('dialog', { name: 'Attach document' })).toBeNull();
+  expect((screen.getByPlaceholderText('Message') as HTMLInputElement).value).toBe('Keep this draft');
+  expect(submit).not.toHaveBeenCalled();
+});
+
 it('rejects wrong shapes and size before any model attachment, then allows retry', async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(preview('docx')).mockResolvedValueOnce(preview());
   vi.stubGlobal('fetch', fetcher);

@@ -45,7 +45,7 @@ function needsOwnerSession(method: string): boolean {
  * It shares the HUD's header credentials, but never prompts, follows redirects,
  * or retries a mutation. Callers bound and validate the response body. */
 export function apiFetchOnce(path: string, opts: {
-  method?: 'GET' | 'POST'; body?: unknown; admin?: boolean; signal?: AbortSignal; accept?: string;
+  method?: 'GET' | 'POST' | 'DELETE'; body?: unknown; admin?: boolean; signal?: AbortSignal; accept?: string;
 } = {}): Promise<Response> {
   if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || /[\u0000-\u0020\u007f]/.test(path)) {
     return Promise.reject(new Error('same-origin path required'));
@@ -59,11 +59,11 @@ export function apiFetchOnce(path: string, opts: {
 }
 
 /** One-attempt, same-origin Office preview. The raw file carries no local name or path. */
-export async function apiPostOfficePreview(file: File, kind: 'docx' | 'xlsx', signal: AbortSignal): Promise<Response> {
+export async function apiPostOfficePreview(file: File, kind: 'docx' | 'xlsx', signal: AbortSignal, offset = 0): Promise<Response> {
   if (needsOwnerSession('POST')) await loadOwnerSession();
   const headers = buildHeaders(false, 'POST');
   headers['Content-Type'] = 'application/octet-stream';
-  return fetch(appUrl(`/api/canvas/office-preview?kind=${kind}`), {
+  return fetch(appUrl(`/api/canvas/office-preview?kind=${kind}${offset ? `&offset=${offset}` : ''}`), {
     method: 'POST', headers, body: file, signal, redirect: 'error',
     credentials: 'same-origin', cache: 'no-store',
   });

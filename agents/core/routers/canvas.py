@@ -28,6 +28,8 @@ class OfficePreviewSegment(BaseModel):
     label: str
     text: str
     truncated: bool
+    offset: int | None = None
+    total_characters: int | None = None
 
 
 class OfficePreview(BaseModel):
@@ -129,10 +131,12 @@ async def canvas_export(request: Request):
 )
 async def canvas_office_preview(request: Request, kind: str = Query(..., json_schema_extra={
     "enum": ["docx", "xlsx"],
-})):
+}), offset: int = 0):
     """Read an owner-supplied Office file without saving or sending it to a model."""
     if kind not in ("docx", "xlsx"):
         return nocache_json({"error": "Choose docx or xlsx"}, 422)
+    if offset < 0 or offset > extract.MAX_TEXT_CHARS or offset % 12000 or (kind != "docx" and offset):
+        return nocache_json({"error": "Invalid preview offset"}, 422)
     if request.headers.get("content-type", "").partition(";")[0].strip().lower() != "application/octet-stream":
         return nocache_json({"error": "Expected application/octet-stream"}, 415)
     if not _preview_slots.acquire(blocking=False):
@@ -159,12 +163,15 @@ async def canvas_office_preview(request: Request, kind: str = Query(..., json_sc
         segments = [segment.text for segment in extracted.segments if segment.text.strip()]
         if not segments:
             return nocache_json({"error": "No readable content"}, 422)
+        if kind == "docx" and offset >= len(segments[0]):
+            return nocache_json({"error": "Invalid preview offset"}, 422)
         return nocache_json({
             "kind": kind,
             "segments": [{
                 "label": "Document" if kind == "docx" else text.partition("\n")[0].removeprefix("## "),
-                "text": text[:12000],
-                "truncated": len(text) > 12000,
+                "text": text[offset:offset + 12000],
+                "truncated": len(text) > offset + 12000,
+                **({"offset": offset, "total_characters": len(text)} if kind == "docx" else {}),
             } for text in segments[:32]],
             "total_segments": len(segments),
         })

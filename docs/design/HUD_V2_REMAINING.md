@@ -21,6 +21,8 @@ In web and native Chat, **Replace a saved fact** shows the chosen store so the
 owner can select a previous entry and review its replacement. The editor keeps
 the correction draft if the selected entry changes elsewhere. A new owner
 conversation can use the revised fact. The original message stays in history.
+The same dialog can forget a selected Agent notes or User profile entry after
+confirmation. It offers undo for the confirmed removal until the rings change.
 
 ## Save a reply to Obsidian
 
@@ -60,6 +62,9 @@ Its saved path appears on that answer's card.
 
 Choose **Direct reply** before sending a text message to ask a supported model to
 skip extended thinking for that reply. The composer resets the choice after sending.
+For an ordinary text turn, a local Ollama model that spends its entire budget
+thinking can retry once in Direct reply mode when the same model supports it.
+Turn usage includes both generations.
 
 The chat shows the measured provider and model beside a reply when the hub has
 a complete per-turn record. The details list includes each distinct pair. The
@@ -89,6 +94,8 @@ from multiple documents, remove individual passages and compare the retained
 passages in a single message. Each selection carries its filename and, for an
 Excel workbook, the sheet name. A comparison that exceeds the combined
 attachment budget can be shortened and retried.
+Long Word documents can be paged in 12,000-character windows. Changing the
+preview page leaves the chat draft intact. Only attached passages go to the agent.
 Native mobile document selection and review remain open.
 
 Chat and Cockpit also inspect native Blender projects. Artifacts opens the

@@ -26,6 +26,8 @@ destinations, including Settings, Memory and Approvals.
   or **User profile**, then tap **Save fact**. Saving uses the owner access configured
   for this chat. To update an older preference, tap **Replace a saved fact**,
   choose its current wording in that store, and tap **Save correction**.
+  To remove a preference, tap **Forget a saved fact**, choose its exact wording
+  and confirm. **Undo forget** restores it while the saved facts still match.
   To find an older message, tap **History → Search messages**, enter words from
   the message and submit. Tap **Review source** to read the full saved turn,
   then **Continue this conversation** to reopen that chat. Your typed message

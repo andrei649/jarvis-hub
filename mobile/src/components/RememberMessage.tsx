@@ -1,7 +1,7 @@
 import { Text, TextInput } from './ThemedText';
 import React, { useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { listChatFacts, saveChatFact, type CuratedFact, type FactStore } from '../api/client';
+import { forgetChatFact, listChatFacts, saveChatFact, undoChatFact, type CuratedFact, type FactStore } from '../api/client';
 import type { ServerConfig } from '../storage/settings';
 import { useThemeStyles, type Theme } from '../theme';
 
@@ -17,6 +17,9 @@ export function RememberMessage({ text, config, onClose }: {
   const [draft, setDraft] = useState(text);
   const [saved, setSaved] = useState<CuratedFact | null>(null);
   const [replacing, setReplacing] = useState(false);
+  const [forgetting, setForgetting] = useState(false);
+  const [confirmingForget, setConfirmingForget] = useState(false);
+  const [undo, setUndo] = useState<{ ref: string; fact: CuratedFact } | null>(null);
   const [entries, setEntries] = useState<CuratedFact[]>([]);
   const [selected, setSelected] = useState<CuratedFact | null>(null);
   const [busy, setBusy] = useState(false);
@@ -30,15 +33,18 @@ export function RememberMessage({ text, config, onClose }: {
   const target = saved ?? selected;
   const normalized = value.replace(/[\s\u0085\u001c-\u001f]+/gu, ' ').trim();
   const duplicate = replacing && entries.some(entry => entry.entry_id !== target?.entry_id && entry.value === normalized);
-  const canSave = !busy && (!replacing || !!target) && length > 0 && length <= 300
+  const canSave = !forgetting && !busy && (!replacing || !!target) && length > 0 && length <= 300
     && !!normalized && normalized !== target?.value && !duplicate;
 
-  const refresh = async (selectedStore = store) => {
+  const refresh = async (selectedStore = store, forget = forgetting) => {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     setLoading(true);
     setReplacing(true);
+    setForgetting(forget);
+    setConfirmingForget(false);
+    setUndo(null);
     setSelected(null);
     setEntries([]);
     setNotice('');
@@ -91,6 +97,53 @@ export function RememberMessage({ text, config, onClose }: {
     }
   };
 
+  const forget = async () => {
+    if (!forgetting || !confirmingForget || !selected || selected.store !== store || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setNotice('');
+    try {
+      const result = await forgetChatFact(config, store, selected.entry_id);
+      if (!aliveRef.current) return;
+      setEntries(current => current.filter(entry => entry.entry_id !== selected.entry_id));
+      setSelected(null);
+      setUndo(result.undoRef ? { ref: result.undoRef, fact: selected } : null);
+      setNotice(`Removed from ${label(store)} for new chats. Existing chats and notes may still contain it.${result.undoRef ? '' : ' Undo is unavailable.'}`);
+    } catch (error) {
+      if (!aliveRef.current) return;
+      const status = (error as { status?: number })?.status;
+      setSelected(null);
+      setEntries([]);
+      setNotice(`${status === 404 || status === 409 ? 'This saved fact changed or is unavailable.'
+        : status === 401 || status === 403 ? 'Owner access is required.' : 'Removal could not be verified.'} Refresh saved facts and choose the current entry. Your draft is still here.`);
+    } finally {
+      busyRef.current = false;
+      if (aliveRef.current) { setBusy(false); setConfirmingForget(false); }
+    }
+  };
+
+  const restore = async () => {
+    if (!undo || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await undoChatFact(config, undo.ref);
+      if (!aliveRef.current) return;
+      setEntries(current => [...current.filter(entry => entry.entry_id !== undo.fact.entry_id), undo.fact]);
+      setNotice(`Restored to ${label(undo.fact.store)}. New chats can use this fact when automatic memory is on.`);
+      setUndo(null);
+    } catch {
+      if (!aliveRef.current) return;
+      setUndo(null);
+      setSelected(null);
+      setEntries([]);
+      setNotice('Undo could not be confirmed. Refresh saved facts to check the current entry. Your draft is still here.');
+    } finally {
+      busyRef.current = false;
+      if (aliveRef.current) { setBusy(false); setConfirmingForget(false); }
+    }
+  };
+
   return <Modal visible transparent animationType="fade" onRequestClose={onClose}>
     <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.sheet} accessibilityViewIsModal>
@@ -101,67 +154,97 @@ export function RememberMessage({ text, config, onClose }: {
               <Text style={styles.close}>Close</Text>
             </Pressable>
           </View>
-          <Text style={styles.explanation}>{replacing
+          <Text style={styles.explanation}>{forgetting
+            ? 'Choose one saved fact to remove from shared memory for future chats. Your draft and chat message stay unchanged.'
+            : replacing
             ? 'Replace one saved fact. Your chat message stays unchanged.'
             : 'Edit the fact before saving it for future chats. Saved facts are shared across agents. With automatic memory on, new owner chats can include them on the selected local or cloud model.'}</Text>
-          <Text style={styles.fieldLabel}>Save in</Text>
+          <Text style={styles.fieldLabel}>{replacing ? 'Saved fact store' : 'Save in'}</Text>
           <View style={styles.stores}>
             {(['memory', 'user'] as FactStore[]).map(option => <Pressable key={option}
               style={[styles.store, store === option && styles.storeSelected]}
               disabled={busy || !!saved} onPress={() => {
                 if (store === option) return;
                 setStore(option);
-                if (replacing) void refresh(option);
+                if (replacing) void refresh(option, forgetting);
               }} accessibilityRole="radio"
               accessibilityState={{ checked: store === option, disabled: busy || !!saved }}
               accessibilityLabel={label(option)}>
               <Text style={styles.storeText}>{label(option)}</Text>
             </Pressable>)}
           </View>
-          {!saved && !replacing && <Pressable onPress={() => void refresh()} disabled={busy}
-            accessibilityRole="button" accessibilityLabel="Replace a saved fact">
-            <Text style={styles.link}>Replace a saved fact in {label(store)}</Text>
-          </Pressable>}
+          {!saved && !replacing && <View style={styles.actions}>
+            <Pressable onPress={() => void refresh(store, false)} disabled={busy}
+              accessibilityRole="button" accessibilityLabel="Replace a saved fact">
+              <Text style={styles.link}>Replace a saved fact in {label(store)}</Text>
+            </Pressable>
+            <Pressable onPress={() => void refresh(store, true)} disabled={busy}
+              accessibilityRole="button" accessibilityLabel="Forget a saved fact">
+              <Text style={styles.link}>Forget a saved fact in {label(store)}</Text>
+            </Pressable>
+          </View>}
           {replacing && !saved && <>
             <View style={styles.actions}>
-              <Pressable onPress={() => selected ? setSelected(null) : void refresh()} disabled={busy}
+              <Pressable onPress={() => {
+                if (selected) { setSelected(null); setConfirmingForget(false); }
+                else void refresh(store, forgetting);
+              }} disabled={busy}
                 accessibilityRole="button" accessibilityLabel={selected ? 'Choose another fact' : 'Refresh saved facts'}>
                 <Text style={styles.link}>{selected ? 'Choose another fact' : 'Refresh saved facts'}</Text>
               </Pressable>
-              <Pressable onPress={() => { setReplacing(false); setSelected(null); setEntries([]); setNotice(''); }}
+              <Pressable onPress={() => { setReplacing(false); setForgetting(false); setConfirmingForget(false); setUndo(null); setSelected(null); setEntries([]); setNotice(''); }}
                 disabled={busy} accessibilityRole="button" accessibilityLabel="Save as new fact">
                 <Text style={styles.link}>Save as new fact</Text>
               </Pressable>
             </View>
             {selected ? <>
-              <Text style={styles.fieldLabel}>Original saved fact</Text>
+              <Text style={styles.fieldLabel}>Original saved fact in {label(selected.store)}</Text>
               <ScrollView style={styles.original} contentContainerStyle={styles.originalContent} nestedScrollEnabled>
                 <Text style={styles.storeText}>{selected.value}</Text>
               </ScrollView>
             </> : loading ? <Text style={styles.notice}>Loading saved facts…</Text> : entries.length === 0
               ? <Text style={styles.notice}>No saved facts available in {label(store)}.</Text>
-              : entries.map(entry => <Pressable key={entry.entry_id} onPress={() => { setSelected(entry); setNotice(''); }}
+              : entries.map(entry => <Pressable key={entry.entry_id} onPress={() => { setSelected(entry); setConfirmingForget(false); setNotice(''); }}
                 accessibilityRole="radio" accessibilityState={{ checked: false }}
-                accessibilityLabel={`Replace: ${entry.value}`} style={styles.choice}>
+                accessibilityLabel={`${forgetting ? 'Forget' : 'Replace'}: ${entry.value}`} style={styles.choice}>
                 <Text style={styles.storeText}>{entry.value}</Text>
               </Pressable>)}
-            {duplicate && <Text style={styles.warning}>That fact is already saved in this store.</Text>}
+            {!forgetting && duplicate && <Text style={styles.warning}>That fact is already saved in this store.</Text>}
           </>}
-          <Text style={styles.fieldLabel}>{replacing ? 'Replacement fact' : 'Fact to save'}</Text>
+          {!forgetting && <><Text style={styles.fieldLabel}>{replacing ? 'Replacement fact' : 'Fact to save'}</Text>
           <TextInput style={styles.input} value={draft} onChangeText={setDraft} multiline
             editable={!busy} textAlignVertical="top" placeholder="A short fact for future chats"
             placeholderTextColor={theme.textDim} accessibilityLabel={replacing ? 'Replacement fact' : 'Fact to save'} />
           <Text style={[styles.count, length > 300 && styles.warning]} accessibilityLiveRegion="polite">
             {length}/300 characters{length > 300 ? ' · shorten the fact to save.' : ''}
-          </Text>
+          </Text></>}
           {notice ? <Text style={styles.notice} accessibilityRole="alert">{notice}</Text> : null}
         </ScrollView>
         <View style={styles.footer}>
-          <Pressable style={[styles.button, !canSave && styles.buttonDisabled]}
+          {forgetting ? <>
+            {selected && (confirmingForget ? <>
+              <Text style={styles.warning}>Remove this exact fact from {label(selected.store)}? Existing chats and notes may still contain it.</Text>
+              <Pressable style={styles.button} onPress={() => void forget()} disabled={busy}
+                accessibilityRole="button" accessibilityLabel="Confirm forget">
+                <Text style={styles.buttonText}>{busy ? 'Removing…' : 'Confirm forget'}</Text>
+              </Pressable>
+              <Pressable onPress={() => setConfirmingForget(false)} disabled={busy}
+                accessibilityRole="button" accessibilityLabel="Cancel forget">
+                <Text style={styles.link}>Cancel</Text>
+              </Pressable>
+            </> : <Pressable style={styles.button} onPress={() => setConfirmingForget(true)} disabled={busy}
+              accessibilityRole="button" accessibilityLabel="Forget selected fact">
+              <Text style={styles.buttonText}>Forget selected fact</Text>
+            </Pressable>)}
+            {undo && <Pressable onPress={() => void restore()} disabled={busy}
+              accessibilityRole="button" accessibilityLabel="Undo forget">
+              <Text style={styles.link}>Undo forget</Text>
+            </Pressable>}
+          </> : <Pressable style={[styles.button, !canSave && styles.buttonDisabled]}
             onPress={() => void save()} disabled={!canSave} accessibilityRole="button"
             accessibilityLabel={target ? 'Save correction' : replacing ? 'Choose a saved fact first' : 'Save fact'}>
             <Text style={styles.buttonText}>{loading ? 'Loading…' : busy ? 'Saving…' : target ? 'Save correction' : replacing ? 'Choose a saved fact' : 'Save fact'}</Text>
-          </Pressable>
+          </Pressable>}
         </View>
       </View>
     </KeyboardAvoidingView>

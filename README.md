@@ -5,7 +5,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-37653-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-37681-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -98,7 +98,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **37,653** · frontend **3,562** · mobile **531**. Route surface: **947**.
+Generated test matrix: backend **37,681** · frontend **3,577** · mobile **535**. Route surface: **947**.
 <!-- project-status:run:end -->
 
 **One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
@@ -208,7 +208,10 @@ message. Edit the text and choose **Agent notes** or **User profile**. To update
 an earlier preference, choose **Replace a saved fact**, select the old wording,
 then confirm the correction. For a new fact, choose **Save fact**. New owner
 conversations can use the correction when automatic memory is on. The original
-message stays in chat history.
+message stays in chat history. To remove a shared preference, choose **Forget a
+saved fact**, select its store and wording, and confirm. **Undo forget** can
+restore it while the saved facts still match the state after removal. Chat
+transcripts and Obsidian notes have their own copies.
 To ask about an existing note, type a question and tap **Obsidian notes**. Review
 the matching passages from your connected hub and choose **Send with notes**.
 The search can find a lesson near the end of a long note even when the title
@@ -235,8 +238,9 @@ booking date from an Excel sheet, then ask how many days apart they are.
 Each passage is labeled with its filename and, for Excel, its sheet. Use
 **Review attached passage** to change a selection from the same source. The hub opens each
 file for preview. The selected agent receives the labeled passages.
-The preview shows up to 32 nonempty worksheets and the first 12,000
-characters of each sheet or Word document. Choose **Download Word** below
+In a long Word document, choose **Next page** or **Previous page** to review
+12,000 characters at a time. Excel previews show up to 32 nonempty worksheets
+and the first 12,000 characters of each. Choose **Download Word** below
 the completed reply to save the comparison as an editable document.
 
 ### Edit an agent reply in Photoshop
@@ -420,7 +424,7 @@ Details: [`apps/jarvis-os/README.md`](apps/jarvis-os/README.md).
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **37,653** · frontend **3,562** · mobile **531** · **947** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `3a482575ec9d`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **37,681** · frontend **3,577** · mobile **535** · **947** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `3a482575ec9d`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for evidence-based situational awareness, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

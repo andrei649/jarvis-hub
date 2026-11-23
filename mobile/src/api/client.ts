@@ -1033,6 +1033,31 @@ export async function saveChatFact(
   } };
 }
 
+export async function forgetChatFact(
+  config: ServerConfig, store: FactStore, entryId: string,
+): Promise<{ undoRef: string | null }> {
+  if (store !== 'memory' && store !== 'user'
+    || typeof entryId !== 'string' || !new RegExp(`^memory:${store}:[0-9a-f]{16}$`).test(entryId)) {
+    throw new ApiError('Invalid fact entry ID');
+  }
+  const raw = await request<unknown>(config, 'DELETE',
+    `/api/dashboard/today/entries/${entryId}`, undefined, { admin: true, factWrite: true });
+  if (!isRecord(raw) || raw.ok !== true || raw.deleted !== entryId || raw.store !== store) {
+    throw new ApiError('Invalid forget fact response');
+  }
+  return { undoRef: typeof raw.undo_ref === 'string' && /^[0-9a-f]{16}$/.test(raw.undo_ref)
+    ? raw.undo_ref : null };
+}
+
+export async function undoChatFact(config: ServerConfig, ref: string): Promise<void> {
+  if (typeof ref !== 'string' || !/^[0-9a-f]{16}$/.test(ref)) throw new ApiError('Invalid undo ref');
+  const raw = await request<unknown>(config, 'POST', '/api/memory/core/undo', { ref },
+    { admin: true, factWrite: true });
+  if (!isRecord(raw) || raw.ok !== true || raw.ref !== ref) {
+    throw new ApiError('Invalid undo fact response');
+  }
+}
+
 // ── Knowledge Graph ──────────────────────────────────────────────
 
 export type KnowledgeEntity = {

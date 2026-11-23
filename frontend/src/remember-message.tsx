@@ -1,7 +1,8 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { apiGet, apiPatch } from './api/client';
+import { apiFetchOnce, apiGet, apiPatch } from './api/client';
 import { SaveFactForm } from './panels/saved-facts';
 import { inpS, taS } from './panel-kit';
+import { ConfirmAction, RISK_TIER } from './confirm';
 
 type Store = 'memory' | 'user';
 type Fact = { entry_id: string; store: Store; value: string };
@@ -9,7 +10,8 @@ const PATH = '/api/dashboard/today/entries';
 const idFor = (store: Store) => new RegExp(`^memory:${store}:[0-9a-f]{16}$`);
 const normalized = (value: string) => value.trim().replace(/[\s\u0085\u001c-\u001f]+/gu, ' ');
 
-function ReplaceFact({ draft, setDraft, store, setStore, busy, setBusy }: {
+function EditSavedFact({ forgetting, draft, setDraft, store, setStore, busy, setBusy }: {
+  forgetting: boolean;
   draft: string; setDraft: (value: string) => void; store: Store; setStore: (value: Store) => void;
   busy: boolean; setBusy: (value: boolean) => void;
 }) {
@@ -19,6 +21,8 @@ function ReplaceFact({ draft, setDraft, store, setStore, busy, setBusy }: {
   const [notice, setNotice] = useState('');
   const [needsReload, setNeedsReload] = useState(false);
   const [reload, setReload] = useState(0);
+  const [undo, setUndo] = useState<{ ref: string; fact: Fact } | null>(null);
+  const storeLabel = store === 'memory' ? 'Agent notes' : 'User profile';
   const old = facts.find(fact => fact.entry_id === selected);
   const value = normalized(draft);
   const length = Array.from(draft.trim()).length;
@@ -91,16 +95,62 @@ function ReplaceFact({ draft, setDraft, store, setStore, busy, setBusy }: {
     } finally { setBusy(false); }
   };
 
+  const forget = async () => {
+    if (!old || busy || loading || needsReload) return;
+    setBusy(true);
+    setUndo(null);
+    setNotice('');
+    let status = 0;
+    try {
+      const response = await apiFetchOnce(`${PATH}/${encodeURIComponent(old.entry_id)}`, { method: 'DELETE', admin: false });
+      status = response.status;
+      const result = response.ok ? await response.json() : null;
+      if (result?.ok !== true || result.deleted !== old.entry_id || result.store !== store) {
+        throw new Error('Unconfirmed removal');
+      }
+      setFacts(current => current.filter(fact => fact.entry_id !== old.entry_id));
+      const canUndo = typeof result.undo_ref === 'string' && /^[0-9a-f]{16}$/.test(result.undo_ref);
+      if (canUndo) setUndo({ ref: result.undo_ref, fact: old });
+      setNotice(`Removed from ${storeLabel} for new chats. Existing chats and Obsidian notes may still contain it.${canUndo ? '' : ' Undo is unavailable.'}`);
+    } catch {
+      const reason = [401, 403].includes(status) ? 'The hub refused permission to forget this fact.'
+        : [404, 409].includes(status) ? 'This saved fact changed or is unavailable.' : 'Removal could not be verified.';
+      setFacts([]);
+      setNeedsReload(true);
+      setNotice(`${reason} Reload saved facts before choosing again.`);
+    } finally { setSelected(''); setBusy(false); }
+  };
+
+  const restore = async () => {
+    if (!undo || busy) return;
+    setBusy(true);
+    let status = 0;
+    try {
+      const response = await apiFetchOnce('/api/memory/core/undo', { method: 'POST', body: { ref: undo.ref }, admin: false });
+      status = response.status;
+      const result = response.ok ? await response.json() : null;
+      if (result?.ok !== true || result.ref !== undo.ref) throw new Error('Unconfirmed undo');
+      setFacts(current => [...current.filter(fact => fact.entry_id !== undo.fact.entry_id), undo.fact]);
+      setNotice(`Restored to ${storeLabel}. New chats can use this fact when automatic memory is on.`);
+    } catch {
+      setSelected('');
+      setNeedsReload(true);
+      setNotice([404, 409].includes(status)
+        ? 'Undo is no longer available for this change. Reload saved facts to check the current entry.'
+        : 'Undo could not be confirmed. Reload saved facts to check the current entry.');
+    } finally { setUndo(null); setBusy(false); }
+  };
+
   return <div style={{ display: 'grid', gap: 14, minWidth: 0, marginTop: 16 }}>
-    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>Select the exact saved fact to replace. Review the original and replacement before saving.</p>
+    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>{forgetting ? 'Choose one fact to remove from shared memory for future chats.' : 'Select the exact saved fact to replace. Review the original and replacement before saving.'}</p>
     <label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 12, fontWeight: 600 }}>Saved fact store
-      <select aria-label="Saved fact store" value={store} disabled={busy} onChange={e => { setStore(e.target.value as Store); setSelected(''); }} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, minHeight: 44, boxSizing: 'border-box', fontSize: 13 }}>
+      <select aria-label="Saved fact store" value={store} disabled={busy} onChange={e => { setStore(e.target.value as Store); setSelected(''); setUndo(null); }} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, minHeight: 44, boxSizing: 'border-box', fontSize: 13 }}>
         <option value="memory">Agent notes</option><option value="user">User profile</option>
       </select>
     </label>
     <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
-    {loading ? <p role="status" style={{ margin: 0 }}>Loading saved facts…</p> : !facts.length && !needsReload ? <p role="status" style={{ margin: 0 }}>No saved facts in this store.</p> : <label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 12, fontWeight: 600 }}>Saved fact to replace
-      <select aria-label="Saved fact to replace" value={selected} disabled={busy || !facts.length || needsReload} onChange={e => setSelected(e.target.value)} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, minHeight: 44, boxSizing: 'border-box', fontSize: 13 }}>
+    {loading ? <p role="status" style={{ margin: 0 }}>Loading saved facts…</p> : !facts.length && !needsReload ? <p role="status" style={{ margin: 0 }}>No saved facts in this store.</p> : <label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 12, fontWeight: 600 }}>Saved fact to {forgetting ? 'forget' : 'replace'}
+      <select value={selected} disabled={busy || !facts.length || needsReload} onChange={e => setSelected(e.target.value)} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, minHeight: 44, boxSizing: 'border-box', fontSize: 13 }}>
         <option value="">Select a saved fact</option>
         {facts.map(fact => <option key={fact.entry_id} value={fact.entry_id}>{fact.value}</option>)}
       </select>
@@ -111,21 +161,26 @@ function ReplaceFact({ draft, setDraft, store, setStore, busy, setBusy }: {
       <strong style={{ display: 'block', fontSize: 12 }}>Original saved fact</strong>
       <output style={{ display: 'block', marginTop: 6, fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{old.value}</output>
     </div>}
-    <label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 12, fontWeight: 600 }}>Replacement fact
+    {!forgetting && <><label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 12, fontWeight: 600 }}>Replacement fact
       <textarea aria-label="Replacement fact" value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} rows={3} style={{ ...taS, display: 'block', width: '100%', minHeight: 96, boxSizing: 'border-box', resize: 'vertical', fontSize: 13, lineHeight: 1.5 }} />
     </label>
     {length > 300 && <p role="status" style={{ margin: 0 }}>{length}/300 characters · shorten the fact to save.</p>}
-    {old && duplicate && <p role="status" style={{ margin: 0 }}>That fact is already saved in this store.</p>}
+    {old && duplicate && <p role="status" style={{ margin: 0 }}>That fact is already saved in this store.</p>}</>}
     {notice && <p role="status" style={{ margin: 0, lineHeight: 1.5 }}>{notice}</p>}
-    <button type="button" className="tool-btn" disabled={!canSave} onClick={save}
-      style={{ minHeight: 44, paddingInline: 16, justifySelf: 'start', background: canSave ? 'var(--accent)' : undefined, color: canSave ? 'var(--void)' : undefined, fontWeight: 700 }}>Save replacement</button>
+    {forgetting ? <>
+      {old && <ConfirmAction key={old.entry_id} tier={RISK_TIER.REVERSIBLE} label="Forget fact" armedLabel="Confirm forget"
+        cancelLabel="Cancel" prompt={<span style={{ overflowWrap: 'anywhere' }}>Remove “{old.value}” from {storeLabel}? Existing chats and Obsidian notes may still contain it.</span>}
+        disabled={busy || loading || needsReload} block onConfirm={forget}/>}
+      {undo && <button type="button" className="tool-btn" disabled={busy || loading} onClick={restore}>Undo forget</button>}
+    </> : <button type="button" className="tool-btn" disabled={!canSave} onClick={save}
+      style={{ minHeight: 44, paddingInline: 16, justifySelf: 'start', background: canSave ? 'var(--accent)' : undefined, color: canSave ? 'var(--void)' : undefined, fontWeight: 700 }}>Save replacement</button>}
   </div>;
 }
 
 export function RememberMessageDialog({ text, opener, onClose }: { text: string; opener: HTMLElement; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const title = useId();
-  const [replacing, setReplacing] = useState(false);
+  const [mode, setMode] = useState<'save' | 'replace' | 'forget'>('save');
   const [draft, setDraft] = useState(text);
   const [store, setStore] = useState<Store>('memory');
   const [busy, setBusy] = useState(false);
@@ -141,16 +196,18 @@ export function RememberMessageDialog({ text, opener, onClose }: { text: string;
     onCancel={e => { e.preventDefault(); onClose(); }}
     onKeyDown={e => {
       e.stopPropagation();
-      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+      if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); onClose(); }
     }}>
     <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
       <h2 id={title} style={{ margin: 0, fontSize: 18 }}>Remember message</h2>
       <button type="button" className="tool-btn" onClick={onClose} style={{ minHeight: 44, minWidth: 44 }}>Close</button>
     </header>
-    <button type="button" className="tool-btn" disabled={busy} onClick={() => setReplacing(!replacing)} style={{ minHeight: 44, marginTop: 12 }}>
-      {replacing ? 'Save a new fact' : 'Replace a saved fact'}
-    </button>
-    {replacing ? <ReplaceFact draft={draft} setDraft={setDraft} store={store} setStore={setStore} busy={busy} setBusy={setBusy} /> : <>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+      {mode !== 'save' && <button type="button" className="tool-btn" disabled={busy} onClick={() => setMode('save')} style={{ minHeight: 44 }}>Save a new fact</button>}
+      {mode !== 'replace' && <button type="button" className="tool-btn" disabled={busy} onClick={() => setMode('replace')} style={{ minHeight: 44 }}>Replace a saved fact</button>}
+      {mode !== 'forget' && <button type="button" className="tool-btn" disabled={busy} onClick={() => setMode('forget')} style={{ minHeight: 44 }}>Forget a saved fact</button>}
+    </div>
+    {mode !== 'save' ? <EditSavedFact key={mode} forgetting={mode === 'forget'} draft={draft} setDraft={setDraft} store={store} setStore={setStore} busy={busy} setBusy={setBusy} /> : <>
       <p style={{ fontSize: 12 }}>Edit the fact before saving it for future chats.</p>
       <SaveFactForm chatState={{ draft, store, busy, setDraft, setStore, setBusy }} />
     </>}

@@ -112,7 +112,7 @@ it('selects a legacy saved fact before PATCH, without sending a duplicate POST o
   expect(listInit.headers).toMatchObject({ 'X-User-Token': 'user', 'X-Admin-Token': 'owner' });
   expect((screen.getByLabelText('Choose a saved fact first') as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByLabelText(/^Replace: Legacy /));
-  expect(screen.getByText('Original saved fact')).toBeTruthy();
+  expect(screen.getByText('Original saved fact in User profile')).toBeTruthy();
   expect(screen.getByText(/^Legacy /)).toBeTruthy();
   expect(screen.queryByLabelText(/^Replace: Legacy /)).toBeNull();
   expect(screen.getByLabelText('Replacement fact')).toBeTruthy();
@@ -165,12 +165,12 @@ it('prevents replacement with another selected-store fact and does not PATCH', a
     : response({ agents: [] }));
   fireEvent.click(screen.getByLabelText('Replace a saved fact'));
   fireEvent.click(await screen.findByLabelText('Replace: Old preference'));
-  expect(screen.getByText('Original saved fact')).toBeTruthy();
+  expect(screen.getByText('Original saved fact in User profile')).toBeTruthy();
   fireEvent.click(screen.getByLabelText('Choose another fact'));
   expect(screen.getByLabelText('Replace: Other preference')).toBeTruthy();
   expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/memory/core/facts'))).toHaveLength(1);
   fireEvent.click(screen.getByLabelText('Replace: Other preference'));
-  expect(screen.getByText('Original saved fact')).toBeTruthy();
+  expect(screen.getByText('Original saved fact in User profile')).toBeTruthy();
   fireEvent.click(screen.getByLabelText('Choose another fact'));
   fireEvent.click(screen.getByLabelText('Replace: Old preference'));
   fireEvent.change(input, { target: { value: 'Other\u0085preference' } });
@@ -219,6 +219,143 @@ it('keeps the draft on owner refusal and validates 300 Unicode code points befor
   await screen.findByText(/Save refused: Owner access is required/);
   expect(input.value).toBe('😀'.repeat(300));
   expect(screen.getByText('Original question')).toBeTruthy();
+});
+
+it('forgets only the selected fact after a second confirmation, while cancel keeps the unsent draft', async () => {
+  mount(); const input = await open();
+  fireEvent.change(input, { target: { value: 'My unsent draft' } });
+  fireEvent.click(screen.getByLabelText('User profile'));
+  fetchMock.mockImplementation(async (url: string) => String(url).includes('/api/memory/core/facts')
+    ? response({ entries: [{ entry_id: id1, store: 'user', value: 'Exact saved preference' },
+      { entry_id: id2, store: 'user', value: 'Other preference' }] })
+    : String(url).includes(entryPath)
+      ? response({ ok: true, deleted: id1, store: 'user', undo_ref: '0123456789abcdef' })
+      : response({ agents: [] }));
+  fireEvent.click(screen.getByLabelText('Forget a saved fact'));
+  expect(await screen.findByLabelText('Forget: Exact saved preference')).toBeTruthy();
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).includes(entryPath))).toHaveLength(0);
+  fireEvent.click(screen.getByLabelText('Forget: Exact saved preference'));
+  expect(screen.getByText('Original saved fact in User profile')).toBeTruthy();
+  expect(screen.getByText('Exact saved preference')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Forget selected fact'));
+  expect(screen.getByText(/Remove this exact fact from User profile/)).toBeTruthy();
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).includes(entryPath))).toHaveLength(0);
+  fireEvent.click(screen.getByLabelText('Cancel forget'));
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).includes(entryPath))).toHaveLength(0);
+  fireEvent.click(screen.getByLabelText('Forget selected fact'));
+  fireEvent.click(screen.getByLabelText('Confirm forget'));
+  await screen.findByText(/Removed from User profile for new chats/);
+  const writes = fetchMock.mock.calls.filter(([url]) => String(url).includes(entryPath));
+  expect(writes).toHaveLength(1);
+  expect(writes[0][0]).toBe(`https://hub.test${entryPath}/${id1}`);
+  expect(writes[0][1]).toMatchObject({ method: 'DELETE', redirect: 'error', credentials: 'omit',
+    headers: { Accept: 'application/json', 'X-User-Token': 'user', 'X-Admin-Token': 'owner' } });
+  expect(writes[0][1].body).toBeUndefined();
+  expect(screen.getByText('Original question')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Save as new fact'));
+  expect((screen.getByLabelText('Fact to save') as HTMLTextAreaElement).value).toBe('My unsent draft');
+});
+
+it('undoes a confirmed deletion with its exact ref, and hides undo when the hub omits it', async () => {
+  mount(); await open();
+  fireEvent.click(screen.getByLabelText('User profile'));
+  let includeRef = true;
+  fetchMock.mockImplementation(async (url: string) => String(url).includes('/api/memory/core/facts')
+    ? response({ entries: [{ entry_id: id1, store: 'user', value: 'Recoverable fact' }] })
+    : String(url).includes(entryPath)
+      ? response({ ok: true, deleted: id1, store: 'user', ...(includeRef ? { undo_ref: '0123456789abcdef' } : {}) })
+      : String(url).endsWith('/api/memory/core/undo') ? response({ ok: true, ref: '0123456789abcdef',
+        private_memory: 'must not appear' }) : response({ agents: [] }));
+  fireEvent.click(screen.getByLabelText('Forget a saved fact'));
+  fireEvent.click(await screen.findByLabelText('Forget: Recoverable fact'));
+  fireEvent.click(screen.getByLabelText('Forget selected fact'));
+  fireEvent.click(screen.getByLabelText('Confirm forget'));
+  fireEvent.click(await screen.findByLabelText('Undo forget'));
+  await screen.findByText(/Restored to User profile/);
+  const [undoUrl, undoInit] = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/memory/core/undo'))!;
+  expect(undoUrl).toBe('https://hub.test/api/memory/core/undo');
+  expect(undoInit).toMatchObject({ method: 'POST', body: JSON.stringify({ ref: '0123456789abcdef' }),
+    redirect: 'error', credentials: 'omit' });
+  expect(screen.queryByText('must not appear')).toBeNull();
+  expect(screen.queryByLabelText('Confirm forget')).toBeNull();
+  includeRef = false;
+  fireEvent.click(screen.getByLabelText('Forget: Recoverable fact'));
+  fireEvent.click(screen.getByLabelText('Forget selected fact'));
+  fireEvent.click(screen.getByLabelText('Confirm forget'));
+  await screen.findByText(/Undo is unavailable/);
+  expect(screen.queryByLabelText('Undo forget')).toBeNull();
+});
+
+it('clears undo and the armed confirmation when restoration is stale', async () => {
+  mount(); await open();
+  fireEvent.click(screen.getByLabelText('User profile'));
+  fetchMock.mockImplementation(async (url: string) => String(url).includes('/api/memory/core/facts')
+    ? response({ entries: [{ entry_id: id1, store: 'user', value: 'Maybe restored' }] })
+    : String(url).includes(entryPath)
+      ? response({ ok: true, deleted: id1, store: 'user', undo_ref: '0123456789abcdef' })
+      : String(url).endsWith('/api/memory/core/undo') ? response({ reason: 'memory_changed_meanwhile' }, 409)
+        : response({ agents: [] }));
+  fireEvent.click(screen.getByLabelText('Forget a saved fact'));
+  fireEvent.click(await screen.findByLabelText('Forget: Maybe restored'));
+  fireEvent.click(screen.getByLabelText('Forget selected fact'));
+  fireEvent.click(screen.getByLabelText('Confirm forget'));
+  fireEvent.click(await screen.findByLabelText('Undo forget'));
+  await screen.findByText(/Undo could not be confirmed. Refresh saved facts/);
+  expect(screen.queryByLabelText('Undo forget')).toBeNull();
+  expect(screen.queryByLabelText('Confirm forget')).toBeNull();
+  expect(screen.queryByLabelText('Forget: Maybe restored')).toBeNull();
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/memory/core/undo'))).toHaveLength(1);
+  fireEvent.click(screen.getByLabelText('Refresh saved facts'));
+  expect(await screen.findByLabelText('Forget: Maybe restored')).toBeTruthy();
+});
+
+it('requires a fresh selection after a stale DELETE and never retries the old ID', async () => {
+  mount(); const input = await open();
+  fireEvent.change(input, { target: { value: 'Unsent draft stays' } });
+  fireEvent.click(screen.getByLabelText('User profile'));
+  let currentId = id1;
+  let deletions = 0;
+  fetchMock.mockImplementation(async (url: string) => String(url).includes('/api/memory/core/facts')
+    ? response({ entries: [{ entry_id: currentId, store: 'user', value: 'Changing fact' }] })
+    : String(url).includes(entryPath) ? ++deletions === 1 ? response({ reason: 'memory_no_match' }, 404)
+      : response({ ok: true, deleted: id2, store: 'user' }) : response({ agents: [] }));
+  fireEvent.click(screen.getByLabelText('Forget a saved fact'));
+  fireEvent.click(await screen.findByLabelText('Forget: Changing fact'));
+  fireEvent.click(screen.getByLabelText('Forget selected fact'));
+  fireEvent.click(screen.getByLabelText('Confirm forget'));
+  await screen.findByText(/Refresh saved facts and choose the current entry/);
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).includes(entryPath))).toHaveLength(1);
+  expect(screen.queryByLabelText('Confirm forget')).toBeNull();
+  currentId = id2;
+  fireEvent.click(screen.getByLabelText('Refresh saved facts'));
+  fireEvent.click(await screen.findByLabelText('Forget: Changing fact'));
+  fireEvent.click(screen.getByLabelText('Forget selected fact'));
+  fireEvent.click(screen.getByLabelText('Confirm forget'));
+  await screen.findByText(/Removed from User profile for new chats/);
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).includes(entryPath)).map(([url]) => url))
+    .toEqual([`https://hub.test${entryPath}/${id1}`, `https://hub.test${entryPath}/${id2}`]);
+  fireEvent.click(screen.getByLabelText('Save as new fact'));
+  expect((screen.getByLabelText('Fact to save') as HTMLTextAreaElement).value).toBe('Unsent draft stays');
+});
+
+it('ignores a forget receipt that arrives after the chat changes hub', async () => {
+  mount(); await open();
+  fireEvent.click(screen.getByLabelText('User profile'));
+  let release!: (value: ReturnType<typeof response>) => void;
+  fetchMock.mockImplementation((url: string) => String(url).includes('/api/memory/core/facts')
+    ? Promise.resolve(response({ entries: [{ entry_id: id1, store: 'user', value: 'Old hub fact' }] }))
+    : String(url).includes(entryPath) ? new Promise(resolve => { release = resolve; })
+      : Promise.resolve(response({ agents: [] })));
+  fireEvent.click(screen.getByLabelText('Forget a saved fact'));
+  fireEvent.click(await screen.findByLabelText('Forget: Old hub fact'));
+  fireEvent.click(screen.getByLabelText('Forget selected fact'));
+  fireEvent.click(screen.getByLabelText('Confirm forget'));
+  await waitFor(() => expect(release).toBeDefined());
+  await act(async () => server.updateConfig({ ...config, baseUrl: 'https://other.test' }));
+  expect(screen.queryByLabelText('Undo forget')).toBeNull();
+  await act(async () => release(response({ ok: true, deleted: id1, store: 'user', undo_ref: '0123456789abcdef' })));
+  expect(screen.queryByText(/Removed from User profile/)).toBeNull();
+  expect(screen.queryByLabelText('Undo forget')).toBeNull();
 });
 
 it('closes the editor when the agent or session changes, then ignores a save completed on another hub', async () => {

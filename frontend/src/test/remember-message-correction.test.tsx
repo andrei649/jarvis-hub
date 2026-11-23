@@ -1,10 +1,10 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { apiGet, apiPatch } from '../api/client';
+import { apiFetchOnce, apiGet, apiPatch } from '../api/client';
 import { RememberMessageDialog } from '../remember-message';
 
-vi.mock('../api/client', () => ({ apiGet: vi.fn(), apiPatch: vi.fn(), apiPost: vi.fn() }));
+vi.mock('../api/client', () => ({ apiFetchOnce: vi.fn(), apiGet: vi.fn(), apiPatch: vi.fn(), apiPost: vi.fn() }));
 
 const old = { entry_id: 'memory:user:0123456789abcdef', store: 'user', value: 'I live in Cluj.' };
 const later = { entry_id: 'memory:user:fedcba9876543210', store: 'user', value: 'I live in Iași.' };
@@ -23,6 +23,79 @@ function open() {
   fireEvent.click(screen.getByRole('button', { name: 'Replace a saved fact' }));
   return { ...view, opener };
 }
+
+async function openForget() {
+  vi.mocked(apiGet).mockResolvedValue({ entries: [old, later] });
+  render(<RememberMessageDialog text="Keep this draft." opener={document.createElement('button')} onClose={() => {}} />);
+  fireEvent.change(screen.getByRole('combobox', { name: 'Save in' }), { target: { value: 'user' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Forget a saved fact' }));
+  await screen.findByRole('option', { name: old.value });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Saved fact to forget' }), { target: { value: old.entry_id } });
+  fireEvent.click(screen.getByRole('button', { name: 'Forget fact' }));
+}
+
+describe('Forget a saved fact from chat', () => {
+  it('requires fresh confirmation for the exact selection and preserves the draft on cancel', async () => {
+    await openForget();
+    expect(apiGet).toHaveBeenCalledExactlyOnceWith('/api/memory/core/facts?store=user', readOptions);
+    expect(screen.getByRole('group', { name: 'confirming Forget fact' }).textContent).toContain(old.value);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Saved fact to forget' }), { target: { value: later.entry_id } });
+    expect(screen.queryByRole('button', { name: 'Confirm forget' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Forget fact' }));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Confirm forget' }), { key: 'Escape' });
+    expect(screen.queryByRole('button', { name: 'Confirm forget' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Forget fact' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(apiFetchOnce).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save a new fact' }));
+    expect((screen.getByRole('textbox', { name: 'Fact to save' }) as HTMLTextAreaElement).value).toBe('Keep this draft.');
+  });
+
+  it('removes only the confirmed fact, and restores it with its own undo reference', async () => {
+    const ref = '0123abcd0123abcd';
+    vi.mocked(apiFetchOnce)
+      .mockResolvedValueOnce(Response.json({ ok: true, deleted: old.entry_id, store: 'user', undo_ref: ref }))
+      .mockResolvedValueOnce(Response.json({ ok: true, ref, memory: ['private other ring'] }));
+    await openForget();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm forget' }));
+    await screen.findByText(/Removed from User profile/);
+    expect(apiFetchOnce).toHaveBeenCalledExactlyOnceWith('/api/dashboard/today/entries/memory%3Auser%3A0123456789abcdef',
+      { method: 'DELETE', admin: false });
+    expect(screen.queryByRole('option', { name: old.value })).toBeNull();
+    expect(screen.getByRole('option', { name: later.value })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo forget' }));
+    await screen.findByText(/Restored to User profile/);
+    expect(apiFetchOnce).toHaveBeenLastCalledWith('/api/memory/core/undo', { method: 'POST', body: { ref }, admin: false });
+    expect(screen.getByRole('option', { name: old.value })).toBeTruthy();
+    expect(screen.queryByText('private other ring')).toBeNull();
+  });
+
+  it.each([[409, {}], [200, { ok: true, ref: 'a different removal' }]])('does not restore a fact on a stale or mismatched undo receipt (%s)', async (status, body) => {
+    vi.mocked(apiFetchOnce)
+      .mockResolvedValueOnce(Response.json({ ok: true, deleted: old.entry_id, store: 'user', undo_ref: '0123abcd0123abcd' }))
+      .mockResolvedValueOnce(Response.json(body, { status: Number(status) }));
+    await openForget();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm forget' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo forget' }));
+    await screen.findByText(/Reload saved facts to check the current entry/);
+    expect(screen.queryByRole('option', { name: old.value })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Undo forget' })).toBeNull();
+    expect(apiFetchOnce).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [404, {}], [409, {}], [403, {}], [200, { ok: true, deleted: later.entry_id, store: 'user' }],
+  ])('requires a new selection after a refused or unverified delete (%s)', async (status, body) => {
+    vi.mocked(apiFetchOnce).mockResolvedValue(Response.json(body, { status: Number(status) }));
+    await openForget();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm forget' }));
+    await screen.findByText(/Reload saved facts before choosing again/);
+    expect(screen.queryByRole('button', { name: 'Confirm forget' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Undo forget' })).toBeNull();
+    expect(screen.queryByText(/Removed from User profile/)).toBeNull();
+    expect(apiFetchOnce).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('Remember message correction', () => {
   it('reads only the selected curated ring after the explicit action and patches the selected ID', async () => {

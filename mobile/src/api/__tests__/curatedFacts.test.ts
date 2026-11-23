@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { ApiError, listChatFacts, saveChatFact } from '../client';
+import { ApiError, forgetChatFact, listChatFacts, saveChatFact, undoChatFact } from '../client';
 
 const config = { baseUrl: 'hub.local', token: ' user-token ', adminToken: ' admin-token ' };
 const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
@@ -204,5 +204,58 @@ describe('saveChatFact', () => {
     await expect(saveChatFact(config, 'user', 'București')).rejects.toMatchObject({
       message: 'Invalid saved fact response',
     });
+  });
+});
+
+describe('forgetChatFact and undoChatFact', () => {
+  it('deletes only the chosen fact with owner credentials and returns only its undo ref', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+      ok: true, deleted: oldId, store: 'user', undo_ref: '0123456789abcdef',
+      unrelated_memory: 'must not leave the client',
+    }) } as Response);
+    await expect(forgetChatFact(config, 'user', oldId)).resolves.toEqual({ undoRef: '0123456789abcdef' });
+    expect(mockFetch).toHaveBeenCalledWith(`http://hub.local/api/dashboard/today/entries/${oldId}`,
+      expect.objectContaining({ method: 'DELETE', body: undefined, redirect: 'error', credentials: 'omit',
+        headers: expect.objectContaining({ 'X-User-Token': 'user-token', 'X-Admin-Token': 'admin-token' }) }));
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms a matching deletion even when undo is unavailable', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+      ok: true, deleted: oldId, store: 'user', undo_ref: 'invalid',
+    }) } as Response);
+    await expect(forgetChatFact(config, 'user', oldId)).resolves.toEqual({ undoRef: null });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a foreign ID, an unconfirmed deletion, and a stale selection without retry', async () => {
+    await expect(forgetChatFact(config, 'user', 'memory:memory:0123456789abcdef'))
+      .rejects.toBeInstanceOf(ApiError);
+    expect(mockFetch).not.toHaveBeenCalled();
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+      ok: true, deleted: newId, store: 'user', undo_ref: '0123456789abcdef',
+    }) } as Response);
+    await expect(forgetChatFact(config, 'user', oldId)).rejects.toMatchObject({
+      message: 'Invalid forget fact response',
+    });
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ reason: 'memory_changed_meanwhile' }) } as Response);
+    await expect(forgetChatFact(config, 'user', oldId)).rejects.toMatchObject({ status: 409 });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('undoes one confirmed ref with the same policy and validates the receipt', async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+      ok: true, ref: '0123456789abcdef', other_memory: 'hidden',
+    }) } as Response);
+    await expect(undoChatFact(config, '0123456789abcdef')).resolves.toBeUndefined();
+    expect(mockFetch).toHaveBeenCalledWith('http://hub.local/api/memory/core/undo',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ ref: '0123456789abcdef' }),
+        redirect: 'error', credentials: 'omit',
+        headers: expect.objectContaining({ 'X-User-Token': 'user-token', 'X-Admin-Token': 'admin-token' }) }));
+    await expect(undoChatFact(config, 'bad/ref')).rejects.toBeInstanceOf(ApiError);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ok: true, ref: 'fedcba9876543210' }) } as Response);
+    await expect(undoChatFact(config, '0123456789abcdef')).rejects.toMatchObject({ message: 'Invalid undo fact response' });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });
