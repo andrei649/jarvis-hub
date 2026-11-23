@@ -3,6 +3,7 @@ base.py — Abstract LLM backend interface with streaming support.
 Supports LM Studio (OpenAI-compatible API) and Ollama.
 """
 
+import asyncio
 import inspect
 import json
 import logging
@@ -1056,6 +1057,10 @@ class LMStudioBackend(LLMBackend):
 
 # ── Ollama ────────────────────────────────────────────────────────────────────
 
+class _OllamaReasoningExhausted(Exception):
+    """A completed primary text request spent its budget before emitting an answer."""
+
+
 class OllamaBackend(LLMBackend):
     """Ollama local server."""
 
@@ -1076,6 +1081,49 @@ class OllamaBackend(LLMBackend):
 
         if ollama_no_think_bound(self, ollama_wire_model(model)):
             payload["think"] = False
+
+    async def verified_no_think(self, wire_model, check, *, recovery=False):
+        from .vision_capability import read_local_model_metadata
+
+        client, endpoint, client_url = self.client, self.base_url, str(self.client.base_url)
+        check()
+        metadata = await read_local_model_metadata(self, wire_model, check=check)
+        return (self.client is client and self.base_url == endpoint and str(client.base_url) == client_url
+                and self.supports_no_think(metadata)
+                and (not recovery or not (metadata.get("remote_model") or metadata.get("remote_host"))))
+
+    async def recover_primary_text(self, wire_model, send, check, deadline):
+        from .data_handling import DataHandlingRefused
+        from .direct_transport import require_direct_async_transport
+        from .request_context import primary_ollama_bound, primary_ollama_request
+
+        with primary_ollama_request(self, wire_model, no_think=False):
+            try:
+                return await send()
+            except _OllamaReasoningExhausted:
+                pass
+            loop = asyncio.get_running_loop()
+            if (deadline is not None and loop.time() >= deadline) or wire_model.endswith(":cloud"):
+                return THINKING_EXHAUSTED_REPLY
+            async with asyncio.timeout_at(deadline):
+                if not await self.verified_no_think(wire_model, check, recovery=True):
+                    return THINKING_EXHAUSTED_REPLY
+                if not primary_ollama_bound(self, wire_model, no_think=False):
+                    return THINKING_EXHAUSTED_REPLY
+                client = self.client
+                expected = client.build_request("POST", "/api/generate").url
+
+                def same_request(request):
+                    if (not primary_ollama_bound(self, wire_model, no_think=True)
+                            or request.method != "POST" or request.url != expected):
+                        raise DataHandlingRefused("Ollama recovery route changed")
+                    require_direct_async_transport(client, request.url)
+                    body = json.loads(request.content)
+                    if body.get("model") != wire_model or body.get("think") is not False:
+                        raise DataHandlingRefused("Ollama recovery request changed")
+
+                with primary_ollama_request(self, wire_model, no_think=True):
+                    return await send(request_check=same_request)
 
     def __init__(self, base_url: str = "http://localhost:11434", num_ctx: int = 0, *,
                  trust_env: bool = True):
@@ -1180,11 +1228,17 @@ class OllamaBackend(LLMBackend):
                 # Match the stream's native/proxy fields without exposing reasoning
                 # on a clean stop: Ollama's non-stream path never returned it.
                 reasoning = data.get("thinking") or data.get("reasoning_content") or ""
-                if strip_thinking(reasoning).strip():
+                if isinstance(reasoning, str) and reasoning.strip():
                     report_text_usage(ollama_usage(data))
+                    from .request_context import primary_ollama_bound
+                    if (data.get("done") is True and "error" not in data and data.get("type") != "error"
+                            and primary_ollama_bound(self, payload["model"], no_think=False)):
+                        raise _OllamaReasoningExhausted()
                     return THINKING_EXHAUSTED_REPLY
             report_text_usage(ollama_usage(data))
             return answer
+        except _OllamaReasoningExhausted:
+            raise
         except Exception as e:
             if _schema_refused(self, model, json_schema, e):
                 raise JsonSchemaRejected("Ollama refused the JSON schema") from e
@@ -1269,6 +1323,7 @@ class OllamaBackend(LLMBackend):
         usage_failed = False
         sf = ThinkingStreamFilter()
         rg = RepetitionStreamGuard()   # H393: never paint a loop live
+        saw_native_thinking = False
         try:
             async with self.client.stream("POST", "/api/generate", json=payload) as resp:
                 resp.raise_for_status()
@@ -1285,15 +1340,17 @@ class OllamaBackend(LLMBackend):
                             # reasoning_content is the OpenAI-style spelling some
                             # proxies use. Reading both is what lets the exhausted-
                             # thinking guard fire on a real Ollama stream (5c).
-                            reasoning = data.get("thinking") or data.get("reasoning_content") or ""
+                            native_thinking = data.get("thinking")
+                            if isinstance(native_thinking, str) and native_thinking.strip():
+                                saw_native_thinking = True
+                            elif not saw_native_thinking:
+                                reasoning_full += data.get("reasoning_content") or ""
                             if content:
                                 safe = sf.feed(content)
                                 if safe:
                                     emitted += safe
                                     if on_token:
                                         await _emit(on_token, rg.feed(safe))
-                            if reasoning:
-                                reasoning_full += reasoning
                             if data.get("done") is True:
                                 usage = ollama_usage(data)
                                 finish = data.get("done_reason") or finish
@@ -1313,14 +1370,18 @@ class OllamaBackend(LLMBackend):
             if on_token:
                 await _emit(on_token, rg.feed(remainder))
 
-        # An explicit native disable request never turns a structured reasoning
-        # field into the user's answer if the server ignores that request.
-        answer = self._finalize_stream(
-            emitted, reasoning_full if payload.get("think") is not False or finish == "length" else "",
-            finish, model,
-        )
+        # Ollama's native thinking is private. Some compatible proxies put
+        # their completed answer in reasoning_content, which has a separate contract.
+        exhausted = finish == "length" and not emitted.strip() and (saw_native_thinking or bool(reasoning_full.strip()))
+        proxy_fallback = (not saw_native_thinking and finish == "stop" and not usage_failed
+                          and payload.get("think") is not False)
+        answer = (THINKING_EXHAUSTED_REPLY if exhausted else
+                  self._finalize_stream(emitted, reasoning_full if proxy_fallback else "", finish, model))
         if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
             await _emit(on_token, rg.release(answer))
         if usage is not None and not usage_failed:
             report_text_usage(usage)
+        from .request_context import primary_ollama_bound
+        if exhausted and not usage_failed and primary_ollama_bound(self, payload["model"], no_think=False):
+            raise _OllamaReasoningExhausted()
         return answer

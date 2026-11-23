@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from agents.core.agent import Agent
-from agents.core.llm.base import OllamaBackend
+from agents.core.llm.base import THINKING_EXHAUSTED_REPLY, OllamaBackend
 from agents.core.llm.request_context import (
     primary_ollama_no_think,
     reasoning_scope,
@@ -111,6 +111,234 @@ async def test_explicit_stream_never_replays_ignored_native_reasoning():
         assert answer == ""
         assert emitted == []
         assert [body for path, body in seen if path == "/api/generate"][0]["think"] is False
+    finally:
+        await backend.aclose()
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("reasoning", ["private chain", "Thinking Process:\nprivate chain"])
+async def test_default_primary_retries_once_without_thinking_after_context_exhaustion(stream, reasoning):
+    seen = []
+
+    def answer(request):
+        body = json.loads(request.content)
+        seen.append((request.url.path, body))
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"thinking": {"values": [False, "low"]}})
+        if body.get("think") is False:
+            result = {"response": "answer", "done": True, "done_reason": "stop",
+                      "prompt_eval_count": 11, "eval_count": 3}
+        else:
+            result = {"response": "", "thinking": reasoning, "done": True,
+                      "done_reason": "length", "prompt_eval_count": 10, "eval_count": 64}
+        return (httpx.Response(200, text=json.dumps(result) + "\n") if stream
+                else httpx.Response(200, json=result))
+
+    backend = OllamaBackend("http://127.0.0.1:11434", trust_env=False)
+    backend.client = httpx.AsyncClient(
+        transport=httpx.MockTransport(answer), base_url="http://127.0.0.1:11434")
+    emitted, usage = [], []
+    try:
+        result = await _agent().generate_response(
+            backend, "model", "hello", "system", 64, 0.2,
+            on_token=emitted.append if stream else None, usage_sink=usage.append,
+        )
+        assert result == "answer"
+        assert emitted == (["answer"] if stream else [])
+        assert [path for path, _ in seen] == ["/api/generate", "/api/show", "/api/generate"]
+        first, second = (body for path, body in seen if path == "/api/generate")
+        assert "think" not in first and second["think"] is False
+        assert {key: value for key, value in first.items() if key != "think"} == {
+            key: value for key, value in second.items() if key != "think"}
+        assert [(row.input_tokens, row.output_tokens) for row in usage] == [(10, 64), (11, 3)]
+        assert sum(row.input_tokens for row in usage) == 21
+        assert sum(row.output_tokens for row in usage) == 67
+    finally:
+        await backend.aclose()
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_default_primary_unsupported_disable_keeps_single_exhausted_attempt(stream):
+    exhausted = {"response": "", "thinking": "private chain", "done": True,
+                 "done_reason": "length"}
+    backend, seen = _backend(["low"], [exhausted] if stream else exhausted)
+    emitted = []
+    try:
+        result = await _agent().generate_response(
+            backend, "model", "hello", "system", 64, 0.2,
+            on_token=emitted.append if stream else None,
+        )
+        assert result == THINKING_EXHAUSTED_REPLY
+        assert emitted == []
+        assert [path for path, _ in seen] == ["/api/generate", "/api/show"]
+        assert "think" not in seen[0][1]
+    finally:
+        await backend.aclose()
+
+
+async def test_explicit_reasoning_does_not_trigger_default_retry():
+    backend, seen = _backend([False], {"response": "", "thinking": "private chain",
+                                         "done": True, "done_reason": "length"})
+    try:
+        with reasoning_scope("low"):
+            await _agent().generate_response(backend, "model", "hello", "system", 64, 0.2)
+        assert [path for path, _ in seen] == ["/api/generate"]
+        assert "think" not in seen[0][1]
+    finally:
+        await backend.aclose()
+
+
+@pytest.mark.parametrize("response", [
+    {"response": THINKING_EXHAUSTED_REPLY, "done": True, "done_reason": "stop"},
+    {"response": "", "thinking": "private chain", "done": True, "done_reason": "stop"},
+    {"response": "", "done": True, "done_reason": "length"},
+])
+async def test_default_primary_does_not_retry_without_reasoning_exhaustion(response):
+    backend, seen = _backend([False], response)
+    try:
+        result = await _agent().generate_response(backend, "model", "hello", "system", 64, 0.2)
+        assert result == response["response"]
+        assert [path for path, _ in seen] == ["/api/generate"]
+    finally:
+        await backend.aclose()
+
+
+async def test_clean_stop_native_thinking_stays_private_in_stream():
+    backend, seen = _backend([False], [{"response": "", "thinking": "private chain",
+                                        "done": True, "done_reason": "stop"}])
+    emitted = []
+    try:
+        result = await _agent().generate_response(
+            backend, "model", "hello", "system", 64, 0.2, on_token=emitted.append)
+        assert result == ""
+        assert emitted == []
+        assert [path for path, _ in seen] == ["/api/generate"]
+    finally:
+        await backend.aclose()
+
+
+async def test_failed_native_generation_does_not_probe_or_retry():
+    seen = []
+
+    def fail(request):
+        seen.append(request.url.path)
+        return httpx.Response(503)
+
+    backend = OllamaBackend("http://127.0.0.1:11434", trust_env=False)
+    backend.client = httpx.AsyncClient(
+        transport=httpx.MockTransport(fail), base_url="http://127.0.0.1:11434")
+    try:
+        result = await _agent().generate_response(backend, "model", "hello", "system", 64, 0.2)
+        assert result.startswith("⚠️")
+        assert seen == ["/api/generate"]
+    finally:
+        await backend.aclose()
+
+
+@pytest.mark.parametrize("route_change", ["metadata names a remote model", "endpoint changes"])
+async def test_default_retry_keeps_the_original_local_route(route_change):
+    requests = []
+    backend = OllamaBackend("http://127.0.0.1:11434", trust_env=False)
+
+    def reply(request):
+        requests.append(request.url.path)
+        if request.url.path == "/api/show":
+            metadata = {"thinking": {"values": [False]}}
+            if route_change == "endpoint changes":
+                backend.base_url = "http://localhost:11434"
+            else:
+                metadata["remote_model"] = "hosted"
+            return httpx.Response(200, json=metadata)
+        return httpx.Response(200, json={"response": "", "thinking": "internal",
+                                          "done": True, "done_reason": "length"})
+
+    await backend.client.aclose()
+    backend.client = httpx.AsyncClient(transport=httpx.MockTransport(reply), base_url=backend.base_url)
+    try:
+        answer = await _agent().generate_response(backend, "model", "hi", "", 64, 0.2)
+        assert answer == THINKING_EXHAUSTED_REPLY
+        assert requests == ["/api/generate", "/api/show"]
+    finally:
+        await backend.aclose()
+
+
+async def test_incomplete_native_stream_does_not_probe_or_retry():
+    backend, seen = _backend([False], [{"thinking": "private chain", "done": False}])
+    emitted = []
+    try:
+        result = await _agent().generate_response(
+            backend, "model", "hello", "system", 64, 0.2, on_token=emitted.append)
+        assert result == ""
+        assert emitted == []
+        assert [path for path, _ in seen] == ["/api/generate"]
+    finally:
+        await backend.aclose()
+
+
+async def test_tool_turn_exhaustion_does_not_retry_primary_generate():
+    from agents.core.agent_runtime import AgentToolRuntime
+    from agents.core.tool_rpc import ToolRPCServer
+
+    backend, seen = _backend([False], {"message": {"content": "", "thinking": "private chain"},
+                                        "done": True, "done_reason": "length"})
+    server = ToolRPCServer()
+    server.register_tool("unused", lambda args: pytest.fail("unexpected tool execution"),
+                         input_schema={"type": "object", "properties": {}})
+    agent = _agent()
+    agent.tool_runtime = AgentToolRuntime(server, enabled=lambda: True)
+    agent.tool_event_sink = lambda event: None
+    try:
+        assert await agent.generate_response(
+            backend, "model", "hello", "system", 64, 0.2) == THINKING_EXHAUSTED_REPLY
+        assert [path for path, _ in seen] == ["/api/chat"]
+        assert "think" not in seen[0][1]
+    finally:
+        await backend.aclose()
+
+
+async def test_default_primary_retries_at_most_once_when_disable_is_ignored():
+    exhausted = {"response": "", "thinking": "private chain", "done": True,
+                 "done_reason": "length", "prompt_eval_count": 10, "eval_count": 64}
+    backend, seen = _backend([False], exhausted)
+    usage = []
+    try:
+        result = await _agent().generate_response(
+            backend, "model", "hello", "system", 64, 0.2, usage_sink=usage.append)
+        assert result == THINKING_EXHAUSTED_REPLY
+        assert [path for path, _ in seen] == ["/api/generate", "/api/show", "/api/generate"]
+        assert [body.get("think") for path, body in seen if path == "/api/generate"] == [None, False]
+        assert [(row.input_tokens, row.output_tokens) for row in usage] == [(10, 64), (10, 64)]
+    finally:
+        await backend.aclose()
+
+
+async def test_default_primary_does_not_retry_after_turn_deadline():
+    exhausted = {"response": "", "thinking": "private chain", "done": True,
+                 "done_reason": "length"}
+    backend, seen = _backend([False], exhausted)
+    try:
+        result = await _agent().generate_response(
+            backend, "model", "hello", "system", 64, 0.2, wall_seconds=0)
+        assert result == THINKING_EXHAUSTED_REPLY
+        assert [path for path, _ in seen] == ["/api/generate"]
+    finally:
+        await backend.aclose()
+
+
+async def test_auxiliary_agent_generation_does_not_retry_primary_disable(monkeypatch):
+    from agents.core.llm import data_handling
+
+    exhausted = {"response": "", "thinking": "private chain", "done": True,
+                 "done_reason": "length"}
+    backend, seen = _backend([False], exhausted)
+    monkeypatch.setattr(data_handling, "authorize", lambda *args, **kwargs: None)
+    try:
+        with data_handling.auxiliary_request_scope(SimpleNamespace(), backend, "model", role="review"):
+            result = await _agent().generate_response(
+                backend, "model", "hello", "system", 64, 0.2)
+        assert result == THINKING_EXHAUSTED_REPLY
+        assert [path for path, _ in seen] == ["/api/generate"]
+        assert "think" not in seen[0][1]
     finally:
         await backend.aclose()
 

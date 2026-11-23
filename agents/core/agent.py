@@ -968,7 +968,10 @@ class Agent:
                                 usage_sink=None, session_id=None, effective_window=None,
                                 clock_snapshot=CLOCK_UNSET, prepared_route=None,
                                 cached_input_tokens=0) -> str:
+        import asyncio
         from contextlib import nullcontext
+
+        deadline = asyncio.get_running_loop().time() + wall_seconds if wall_seconds is not None else None
 
         from .channels.session_lifecycle import session_activity_callback
         from .conversation_clock import capture_clock, clock_scope
@@ -1040,25 +1043,22 @@ class Agent:
         )
 
         no_think_scope = nullcontext()
+        recoverable_ollama = None
         from .security.guardrails import GuardrailsEngine
 
         native = backend._backend if type(backend) is GuardrailsEngine else backend
-        if (type(native) is OllamaBackend and not physical_request_guard_active()
-                and not job_reasoning_active() and selected_reasoning(None) == "none"):
+        if type(native) is OllamaBackend and not physical_request_guard_active() and not job_reasoning_active():
             check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
             if callable(check):
-                check(backend, model)
-                wire_model = ollama_local_selector(model) if physical_local_required() else model
-                from .llm.vision_capability import read_local_model_metadata
+                from .llm.model_roles import public_local_origin
 
-                probed_client, probed_base_url = native.client, native.base_url
-                probed_client_base_url = str(probed_client.base_url)
-                metadata = await read_local_model_metadata(
-                    native, wire_model, check=lambda: check(backend, model))
-                if (native.client is probed_client and native.base_url == probed_base_url
-                        and str(native.client.base_url) == probed_client_base_url
-                        and native.supports_no_think(metadata)):
+                effort = selected_reasoning(None)
+                wire_model = ollama_local_selector(model) if physical_local_required() else model
+                if effort == "none" and await native.verified_no_think(wire_model, lambda: check(backend, model)):
                     no_think_scope = primary_ollama_no_think(native, wire_model)
+                elif (effort is None and public_local_origin(native.base_url)
+                      and getattr(native.client, "base_url", None)):
+                    recoverable_ollama = (native, wire_model, deadline)
         sink = usage_sink if usage_sink is not None else current_observer()
         reported_prompt_usage = []
         if compaction is not None and compaction.session_id == sid and compaction.enabled:
@@ -1085,6 +1085,7 @@ class Agent:
                     prepared_route=prepared_route,
                     cached_input_tokens=cached_input_tokens,
                     compaction=compaction if compaction is not None and compaction.session_id == sid else None,
+                    **({"recoverable_ollama": recoverable_ollama} if recoverable_ollama else {}),
                 )
             if egress_scrubber is not None and raw_on_token is not None:
                 flushed_tail = egress_scrubber.flush()
@@ -1159,6 +1160,7 @@ class Agent:
         prepared_route=None,
         cached_input_tokens=0,
         compaction=None,
+        recoverable_ollama=None,
     ) -> str:
         """Generate through the optional tool loop or the legacy backend path.
 
@@ -1257,36 +1259,32 @@ class Agent:
 
         check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
         guard = (lambda: check(backend, model)) if callable(check) else None
-        with text_usage_scope(usage_sink), physical_request_scope(guard):
-            if callable(check):
-                check(backend, model)
-            if on_token and hasattr(backend, "generate_stream"):
-                response = await backend.generate_stream(
-                    model=model,
-                    prompt=prompt,
-                    system=system,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    on_token=on_token,
-                )
-                steering.acknowledge()
-                note_plain_response(response)
-                return response
+        streaming = on_token and hasattr(backend, "generate_stream")
+        generate = backend.generate_stream if streaming else backend.generate
+        options = {"on_token": on_token} if streaming else {}
 
-            response = await backend.generate(
-                model=model,
-                prompt=prompt,
-                system=system,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-            steering.acknowledge()
-            if on_token:
-                emitted = on_token(response)
-                if inspect.isawaitable(emitted):
-                    await emitted
-            note_plain_response(response)
-            return response
+        async def send(*, request_check=None):
+            if request_check is not None:
+                check_final_request(prompt)
+            with physical_request_scope(guard, request_check=request_check):
+                if guard:
+                    guard()
+                return await generate(model=model, prompt=prompt, system=system, max_tokens=max_tokens,
+                                      temperature=temperature, **options)
+
+        with text_usage_scope(usage_sink):
+            if recoverable_ollama:
+                native, wire_model, deadline = recoverable_ollama
+                response = await native.recover_primary_text(wire_model, send, guard, deadline)
+            else:
+                response = await send()
+        steering.acknowledge()
+        if on_token and not streaming:
+            emitted = on_token(response)
+            if inspect.isawaitable(emitted):
+                await emitted
+        note_plain_response(response)
+        return response
 
     async def process(self, text: str, context: dict, *, prepared=None) -> str:
         system_prompt = self.system_prompt()
@@ -1479,7 +1477,11 @@ class Agent:
         model = self.config.get("model", "google/gemma-4-31b-a4b")
         system_prompt = self.system_prompt()
 
-        from .cognition.honesty import in_character_directive, preserve_deliverable_language_directive
+        from .cognition.honesty import (
+            in_character_directive,
+            preserve_deliverable_language_directive,
+        )
+
         if in_character:
             directive = in_character_directive()
         else:

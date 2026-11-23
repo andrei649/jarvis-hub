@@ -53,6 +53,7 @@ class _PrimaryOllama:
     client: object
     base_url: object
     client_base_url: object
+    no_think: bool
 
 
 _primary_ollama: ContextVar[_PrimaryOllama | None] = ContextVar(
@@ -73,11 +74,11 @@ def selected_reasoning(default):
 
 
 @contextmanager
-def primary_ollama_no_think(backend: object, model: str):
+def primary_ollama_request(backend: object, model: str, *, no_think: bool):
     lifetime = _ReasoningLifetime()
     token = _primary_ollama.set(_PrimaryOllama(
         backend, model, lifetime, asyncio.current_task(), backend.client,
-        backend.base_url, str(backend.client.base_url)))
+        backend.base_url, str(backend.client.base_url), no_think))
     try:
         yield
     finally:
@@ -85,12 +86,20 @@ def primary_ollama_no_think(backend: object, model: str):
         _primary_ollama.reset(token)
 
 
-def ollama_no_think_bound(backend: object, model: str) -> bool:
+def primary_ollama_no_think(backend: object, model: str):
+    return primary_ollama_request(backend, model, no_think=True)
+
+
+def primary_ollama_bound(backend: object, model: str, *, no_think: bool) -> bool:
     frame = _primary_ollama.get()
-    return bool(frame and frame.backend is backend and frame.model == model
+    return bool(frame and frame.no_think == no_think and frame.backend is backend and frame.model == model
                 and frame.lifetime.is_active() and frame.task is asyncio.current_task()
                 and frame.client is backend.client and frame.base_url == backend.base_url
                 and frame.client_base_url == str(backend.client.base_url))
+
+
+def ollama_no_think_bound(backend: object, model: str) -> bool:
+    return primary_ollama_bound(backend, model, no_think=True)
 
 
 @contextmanager
