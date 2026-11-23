@@ -46,6 +46,7 @@ import re
 import shutil
 import sqlite3
 import sys
+import tempfile
 import threading
 import time
 import tomllib
@@ -900,30 +901,56 @@ def _safe_within_install(target: Path, install_root_dir: Path) -> bool:
     """True only when *target* and every ancestor up to *install_root_dir* are non-symlinks
     and resolve strictly inside *install_root_dir*."""
     try:
-        if install_root_dir.is_symlink() or not install_root_dir.is_dir():
-            return False
         resolved_root = install_root_dir.resolve(strict=True)
-        if target.is_symlink() or not target.exists():
+        rel = target.relative_to(install_root_dir)
+        if not rel.parts:
             return False
-        resolved_target = target.resolve(strict=True)
-        rel = resolved_target.relative_to(resolved_root)
+        target.resolve(strict=True).relative_to(resolved_root)
         cur = install_root_dir
-        for part in rel.parts:
-            cur = cur / part
-            if cur.is_symlink():
+        for part in ("", *rel.parts):
+            cur /= part
+            if part == ".." or cur.is_symlink() or cur.is_junction():
                 return False
-        return True
+        return install_root_dir.is_dir()
     except (OSError, ValueError):
         return False
 
 
 def _copy_file_restricted(src: Path, dst: Path) -> None:
+    from agents.core.persistence.private_file import atomic_private_write
+
     dst.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    data = src.read_bytes()
-    fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    os.fchmod(fd, 0o600)
-    with os.fdopen(fd, "wb") as fh:
-        fh.write(data)
+
+    def write(stage: Path) -> None:
+        with src.open("rb") as source, stage.open("wb") as backup:
+            shutil.copyfileobj(source, backup)
+            backup.flush()
+            os.fsync(backup.fileno())
+
+    atomic_private_write(dst, write, exclusive=True)
+
+
+def _file_stamp(path: Path) -> tuple[int, ...]:
+    info = path.lstat()
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def _archive_members(path: Path, root: Path) -> tuple[dict[Path, tuple[int, ...]], list[Path]]:
+    files = {}
+    directories = []
+    pending = [path]
+    while pending:
+        child = pending.pop()
+        if not _safe_within_install(child, root):
+            raise ValueError("unsafe_path")
+        if child.is_file():
+            files[child] = _file_stamp(child)
+        elif child.is_dir():
+            directories.append(child)
+            pending.extend(child.iterdir())
+        else:
+            raise ValueError("unsafe_path")
+    return files, directories
 
 
 def cleanup_source(
@@ -940,8 +967,8 @@ def cleanup_source(
     - **Confirmation required**: ``dry_run=False`` without ``confirm=True`` refuses
       (``ok=False, reason="confirm_required"``) with zero writes.
     - **Targeted & recoverable**: archives migrated files and skill directories into
-      ``<archive_dir>/<source>/<timestamp>/...`` (``0o600`` file permissions) and removes
-      only the migrated artefacts inside ``source.root``, leaving unrelated files untouched.
+      a fresh private backup below ``<archive_dir>/<source>``. Cleanup starts once
+      every file has been archived and the originals still match the inventory.
     """
     from agents.core.paths import data_path
 
@@ -955,23 +982,7 @@ def cleanup_source(
     for p in source.skill_dirs:
         candidates.append(("skills", p))
 
-    if dry_run:
-        items = []
-        for section, path in candidates:
-            if _safe_within_install(path, source.root):
-                items.append({"section": section, "path": str(path), "status": "would_archive"})
-            else:
-                items.append({"section": section, "path": str(path), "status": "refused", "reason": "unsafe_path"})
-        return {
-            "ok": True,
-            "source": source.source,
-            "root": str(source.root),
-            "dry_run": True,
-            "archive_dir": None,
-            "items": items,
-        }
-
-    if not confirm:
+    if not dry_run and not confirm:
         return {
             "ok": False,
             "reason": "confirm_required",
@@ -986,67 +997,83 @@ def cleanup_source(
         }
 
     base_archive = Path(archive_dir) if archive_dir is not None else data_path("imports", "cleanup_backups")
-    if base_archive.exists() and base_archive.is_symlink():
+    if any(p.is_symlink() or p.is_junction() for p in (base_archive, *base_archive.parents, base_archive / source.source)):
         return {
             "ok": False,
             "reason": "symlinked_archive_dir",
             "source": source.source,
             "root": str(source.root),
-            "dry_run": False,
+            "dry_run": dry_run,
             "archive_dir": None,
             "items": [],
         }
 
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    dest_root = base_archive / source.source / f"{stamp}-{os.getpid()}"
-    dest_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    resolved_install = source.root.resolve()
-
+    parent = base_archive / source.source
     items: list[dict[str, Any]] = []
+    files = {}
+    directories = set()
     for section, path in candidates:
+        item = {"section": section, "path": str(path)}
+        items.append(item)
         if not _safe_within_install(path, source.root):
-            items.append({"section": section, "path": str(path), "status": "refused", "reason": "unsafe_path"})
+            item.update(status="refused", reason="unsafe_path")
             continue
-        rel = path.resolve().relative_to(resolved_install)
-        archived_target = dest_root / rel
-        if path.is_dir():
-            # Copy plain files inside the skill directory, skipping symlinks, then remove them.
-            copied_any = False
-            for child in sorted(path.rglob("*")):
-                if child.is_symlink():
-                    continue
-                if child.is_file() and _safe_within_install(child, source.root):
-                    child_rel = child.resolve().relative_to(resolved_install)
-                    _copy_file_restricted(child, dest_root / child_rel)
-                    copied_any = True
-            if copied_any:
-                shutil.rmtree(path)
-                items.append({
-                    "section": section,
-                    "path": str(path),
-                    "archived_to": str(archived_target),
-                    "status": "archived_and_removed",
-                })
-            else:
-                items.append({"section": section, "path": str(path), "status": "skipped", "reason": "empty_dir"})
-        else:
-            _copy_file_restricted(path, archived_target)
-            path.unlink()
-            items.append({
-                "section": section,
-                "path": str(path),
-                "archived_to": str(archived_target),
-                "status": "archived_and_removed",
-            })
+        if path.is_dir() and parent.resolve().is_relative_to(path.resolve()):
+            item.update(status="refused", reason="archive_inside_source")
+            continue
+        try:
+            members, folders = _archive_members(path, source.root)
+        except (OSError, ValueError):
+            item.update(status="refused", reason="unsafe_path")
+            continue
+        if not members:
+            item.update(status="skipped", reason="empty_dir")
+            continue
+        files.update(members)
+        directories.update(folders)
+        item["status"] = "would_archive" if dry_run else "pending"
 
-    return {
-        "ok": True,
-        "source": source.source,
-        "root": str(source.root),
-        "dry_run": False,
-        "archive_dir": str(dest_root),
-        "items": items,
-    }
+    report = {"ok": False, "source": source.source, "root": str(source.root),
+              "dry_run": dry_run, "archive_dir": None, "items": items}
+    if any(item["status"] == "refused" for item in items):
+        return {**report, "reason": "unsafe_cleanup"}
+    if dry_run or not files:
+        return {**report, "ok": True}
+
+    phase = "archive_failed"
+    try:
+        parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        dest_root = Path(tempfile.mkdtemp(prefix=stamp + "-", dir=parent))
+        report["archive_dir"] = str(dest_root)
+        for directory in sorted(directories, key=lambda d: len(d.parts)):
+            (dest_root / directory.relative_to(source.root)).mkdir(parents=True, exist_ok=True, mode=0o700)
+        for path, original in files.items():
+            if not _safe_within_install(path, source.root) or _file_stamp(path) != original:
+                return {**report, "reason": "source_changed"}
+            _copy_file_restricted(path, dest_root / path.relative_to(source.root))
+        # Complete every backup before removing the first original.
+        if any(not _safe_within_install(path, source.root) or _file_stamp(path) != original
+               for path, original in files.items()):
+            return {**report, "reason": "source_changed"}
+        for item in items:
+            if item["status"] == "pending":
+                item.update(status="archived", archived_to=str(dest_root / Path(item["path"]).relative_to(source.root)))
+        phase = "cleanup_incomplete"
+        for path, original in files.items():
+            if not _safe_within_install(path, source.root) or _file_stamp(path) != original:
+                return {**report, "reason": "source_changed"}
+            path.unlink()
+        for directory in sorted(directories, key=lambda d: len(d.parts), reverse=True):
+            if not _safe_within_install(directory, source.root):
+                return {**report, "reason": "source_changed"}
+            directory.rmdir()  # A newly arrived file stays in place.
+    except OSError:
+        return {**report, "reason": phase}
+    for item in items:
+        if item["status"] == "archived":
+            item["status"] = "archived_and_removed"
+    return {**report, "ok": True}
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -1230,9 +1257,9 @@ async def _main_async(args) -> int:
         ]
         if args.json:
             print(json.dumps(cleanup_reports, indent=2, ensure_ascii=False))
-            return 0
+            return 0 if all(rep["ok"] for rep in cleanup_reports) else 1
         for rep in cleanup_reports:
-            mode = "DRY RUN" if rep["dry_run"] else "CLEANED UP"
+            mode = rep.get("reason") or ("DRY RUN" if rep["dry_run"] else "CLEANED UP")
             print(f"→ {rep['source']} at {rep['root']} [{mode}]")
             for item in rep["items"]:
                 print(f"  {item['section']:8s} {item['status']}  {item['path']}")
@@ -1240,7 +1267,7 @@ async def _main_async(args) -> int:
                 print(f"  archived backup: {rep['archive_dir']}")
         if dry:
             print("  (nothing removed — re-run with --cleanup --apply --confirm to archive & remove)")
-        return 0
+        return 0 if all(rep["ok"] for rep in cleanup_reports) else 1
 
     secret_store = None
     pending_store = None

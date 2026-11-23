@@ -209,9 +209,9 @@ def run(ns: argparse.Namespace, ctx) -> int:
             return 2
         if getattr(ns, "json", False):
             ctx.dump(reports)
-            return 0
+            return 0 if all(rep["ok"] for rep in reports) else 1
         for rep in reports:
-            mode = "DRY RUN" if rep["dry_run"] else "CLEANED UP"
+            mode = rep.get("reason") or ("DRY RUN" if rep["dry_run"] else "CLEANED UP")
             ctx.say(f"→ {rep['source']} at {rep['root']} [{mode}]")
             for item in rep["items"]:
                 ctx.say(f"  {item['section']:8s} {item['status']}  {item['path']}")
@@ -219,6 +219,6 @@ def run(ns: argparse.Namespace, ctx) -> int:
                 ctx.say(f"  archived backup: {rep['archive_dir']}")
         if dry:
             ctx.say("  (dry-run only — re-run with `--apply --confirm` to archive & remove)")
-        return 0
+        return 0 if all(rep["ok"] for rep in reports) else 1
 
     raise argparse.ArgumentTypeError("unknown import operation")

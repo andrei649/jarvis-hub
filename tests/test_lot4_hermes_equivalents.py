@@ -1049,6 +1049,13 @@ async def test_h012_codex_migration_cleanup_and_nerva_import_cli(
     assert code != 0 and "confirm" in err.lower()
     assert (codex / "AGENTS.md").exists()
 
+    code, out, _ = _run_cli(
+        ["import", "cleanup", "--from", "codex", "--home", str(fake_home), "--apply", "--confirm",
+         "--archive-dir", str(codex / "skills" / "sql-audit" / "backup"), "--json"], env=env,
+    )
+    assert code != 0 and json.loads(out)[0]["ok"] is False
+    assert (codex / "AGENTS.md").exists() and not (codex / "skills" / "sql-audit" / "backup").exists()
+
     # Confirmed cleanup archives migrated artefacts (0o600) and removes ONLY migrated files!
     code, out, _ = _run_cli(
         ["import", "cleanup", "--from", "codex", "--home", str(fake_home), "--apply", "--confirm", "--json"],
