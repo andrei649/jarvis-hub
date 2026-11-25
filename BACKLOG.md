@@ -253,10 +253,13 @@
 
 **Open follow-ups**
 
-- [ ] ⬜ **NWS-8 — native OIDC sign-in.** SSO works only through a trusted proxy today (oauth2-proxy in front
+- [x] ✅ **NWS-8 — native OIDC sign-in.** *Closed without building, 2026-11-25: the owner moved sign-in
+  and connector work to standalone products (`docs/decisions/2026-11-25-nerva-finish-line.md`). The trusted-proxy
+  path below stays as it is.* SSO works only through a trusted proxy today (oauth2-proxy in front
   of Caddy, pilot guide §11). An in-app OIDC client (discovery, PKCE, ID-token validation, group → role
   mapping) removes the extra hop. Gated on D3 in the kickoff record.
-- [ ] ⬜ **NWS-9 — MCP-first business connectors.** Knowledge comes only from uploaded documents. ERP, CRM,
+- [x] ✅ **NWS-9 — MCP-first business connectors.** *Closed without building, 2026-11-25: connectors are
+  developed as standalone products outside this repository (same decision).* Knowledge comes only from uploaded documents. ERP, CRM,
   accounting and e-Factura through MCP servers are the next slice (spec §0, D4); gated on the owner's answers
   to D1–D4.
 - [ ] ⬜ **NWS-10 — OCR for scanned PDFs.** On `main` via #1321 (967bcaba, 2026-11-01); built 2026-10-28: default-off

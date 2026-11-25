@@ -1,5 +1,5 @@
 {
-  "active_agents": 18,
+  "active_agents": 17,
   "horizon_totals": {
     "blocked": 1,
     "delivered": 0,
@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "075f0c14c19853013914275d90a7bcf050736962",
+  "latest_ci_commit": "84215ba336938f7b70ebbba13fe4574d2f751711",
   "open_release_gates": [
     {
       "id": "A1",
@@ -222,11 +222,11 @@
       "status": "🟡 **partial (owner, 2026-08-28)** — landing half moving; the 60s demo cut is the remaining piece. Not a 1.0 blocker (GTM, not proof)"
     }
   ],
-  "routes": 950,
+  "routes": 939,
   "tests": {
-    "backend": 38268,
-    "frontend": 5027,
-    "mobile": 535
+    "backend": 37913,
+    "frontend": 5002,
+    "mobile": 522
   },
   "version": "1.0.0"
 }

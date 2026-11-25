@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { loadWorldIntelligence } from './api/signalLayer';
 
 function SubH({ children, style }: { children?: any; style?: any }) { return <div className="sub-h" style={style}>{children}</div>; }
@@ -52,13 +52,15 @@ function SignalLayerDown({ onRetry }) {
 
 export function WorldIntelligencePanel() {
   const [state, setState] = useState({ loading: true, data: null, error: '' });
+  // A reply that lands after the panel is gone must not write state.
+  const mounted = useRef(true);
   const load = () => {
     setState(prev => ({ ...prev, loading: true, error: '' }));
     loadWorldIntelligence()
-      .then(data => setState({ loading: false, data, error: data.errors.length ? data.errors.join(' · ') : '' }))
-      .catch(error => setState({ loading: false, data: null, error: error.message || String(error) }));
+      .then(data => { if (mounted.current) setState({ loading: false, data, error: data.errors.length ? data.errors.join(' · ') : '' }); })
+      .catch(error => { if (mounted.current) setState({ loading: false, data: null, error: error.message || String(error) }); });
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { mounted.current = true; load(); return () => { mounted.current = false; }; }, []);
 
   const data = state.data || {};
   const health = data.health || {};
