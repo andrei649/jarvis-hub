@@ -5,6 +5,11 @@
    chips --n-r-pill; the live-run arc around a card stays concentric with it (--n-r-2 plus its
    2px inset). */
 .nerva-kanban { --kb-bg: var(--void); --kb-panel: var(--void-2); --kb-card: var(--surface-2); --kb-border: var(--ink-4); --kb-text: var(--ink); --kb-muted: var(--ink-2); --kb-accent: var(--accent); color: var(--kb-text); background: var(--kb-bg); min-height: 40rem; width: 100%; padding: 1.1rem; font-size: var(--n-fs-ui); line-height: 1.4; }
+/* In an area page (Work › Projects) the board is a register's peer: it takes the look's panel treatment.
+   Its own ground (--void, the bridge's --n-bg) is the page ground, and it leaned on the area column's old
+   fill for its well; with the column transparent (frame.css) it floated with no container. A card in the
+   card looks; in the rule looks the panel values are no fill and a 0 border, so nothing moves there. */
+.n-areapage__main .nerva-kanban { background: var(--n-panel-bg); border: var(--n-panel-border); border-radius: var(--n-panel-radius); box-shadow: var(--n-panel-shadow); }
 .nerva-kanban * { box-sizing: border-box; }
 .nerva-kanban button, .nerva-kanban input, .nerva-kanban select, .nerva-kanban textarea { font: inherit; }
 .nerva-kanban button { border: 1px solid var(--kb-border); border-radius: var(--n-r-control); color: var(--kb-text); background: var(--kb-panel); padding: .35rem .65rem; cursor: pointer; }

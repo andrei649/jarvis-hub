@@ -30,7 +30,7 @@ import asyncio
 import logging
 import socket
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import IntEnum
 from typing import Callable, Optional
 
@@ -220,7 +220,7 @@ class ProactiveObserver:
         self.worker = worker
         self.probes = probes or []
         self.recovery_notices = recovery_notices
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._state: dict[str, bool] = {}     # key → last-known healthy
         self._last_signals: dict[str, Signal] = {}
         self._since: dict[str, str] = {}      # key → ISO time it flipped to unhealthy
@@ -249,7 +249,7 @@ class ProactiveObserver:
         return findings
 
     def _now_iso(self) -> str:
-        return self._clock().astimezone(timezone.utc).isoformat(timespec="seconds")
+        return self._clock().astimezone(UTC).isoformat(timespec="seconds")
 
     def _gather(self) -> "list[Signal]":
         signals: list[Signal] = []

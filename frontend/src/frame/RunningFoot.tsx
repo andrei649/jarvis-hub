@@ -123,6 +123,12 @@ export const RunningFoot = memo(function RunningFoot({ hub, lang, demo, turns, s
           painted on an ordinary screen): in full from 2200px, below it the session count drops its
           window from the line and keeps it in its title. */}
       <div className="n-runfoot__group" role="group" aria-label={s.channelsGroup} data-runfoot="channels">
+        {/* Over the demo sample the hub's channels and sessions are not drawn: they are live
+            readings, and the page says it shows seeded data, not the hub. */}
+        {demo ? <span className="n-runfoot__item" data-chrome="gateway" data-state="demo">
+          <span className="n-runfoot__key">{s.channels}</span>
+          <SourceLabel reading={{ state: 'demo', lastGoodAt: null }} lang={lang} />
+        </span> : <>
         <span className="n-runfoot__item" data-chrome="gateway" data-state={gw.state}
           title={gw.running.length ? gw.running.join(', ') : undefined}>
           <span className="n-runfoot__key">{s.channels}</span>
@@ -144,6 +150,7 @@ export const RunningFoot = memo(function RunningFoot({ hub, lang, demo, turns, s
             </span>
           );
         })()}
+        </>}
       </div>
       <div className="n-runfoot__group" data-runfoot="keys" data-show-from="xl">
         <KeyHint lang={lang} chord={chord} />
