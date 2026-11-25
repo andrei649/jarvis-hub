@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from contextlib import suppress
 from types import SimpleNamespace
 
 import httpx
@@ -146,10 +147,9 @@ async def test_internal_retry_is_refused_before_second_http_send(monkeypatch):
 
         async def generate(self, model, question, **kwargs):
             await self.client.post("/v1/chat/completions", json={"model": model})
-            try:
+            # An adapter may swallow an HTTP refusal and return a stale reply.
+            with suppress(Exception):
                 await self.client.post("/v1/chat/completions", json={"model": model})
-            except Exception:
-                pass  # An adapter may swallow an HTTP refusal and return a stale reply.
             return "stale reply"
 
     backend = RetryingBackend()
@@ -244,10 +244,8 @@ async def test_timeout_cancels_member_and_blocks_a_late_send(monkeypatch):
             try:
                 await asyncio.Event().wait()
             except asyncio.CancelledError:
-                try:
+                with suppress(Exception):
                     await self.client.post("/v1/chat/completions", json={"model": model})
-                except Exception:
-                    pass
                 raise
 
     monkeypatch.setattr(agent_opinions, "_preflight", lambda backend, **kw: backend)

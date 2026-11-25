@@ -10,7 +10,6 @@ from agents.core.kanban.context import KanbanContext, kanban_scope
 from agents.core.kanban.upstream import kanban_db as kb
 from tests.test_session_transcript import client, host, seed
 
-
 OWNER = {"X-Admin-Token": "owner-secret"}
 
 
@@ -38,8 +37,8 @@ def boards(host, monkeypatch):
                 if field == "latest_summary":
                     conn.execute("INSERT INTO task_runs (task_id,status,started_at,summary) VALUES (?,?,?,?)", (task, "done", 100, whole))
                 conn.commit()
-                refs.append(dict(board=board, task_id=task, source=field, excerpt=excerpt,
-                                 sha256=hashlib.sha256(whole.encode()).hexdigest()))
+                refs.append({"board": board, "task_id": task, "source": field, "excerpt": excerpt,
+                             "sha256": hashlib.sha256(whole.encode()).hexdigest()})
     return orch, home, refs, client(monkeypatch, orch)
 
 
@@ -96,7 +95,7 @@ async def test_source_denials_and_digest_race_never_start_a_turn(boards, path):
         calls.append(args)
         return "unexpected"
     orch.handle_input = orch.handle_input_stream = handle
-    body = dict(message="Compare", session_id="destination", agent="frigga", board_references=refs)
+    body = {"message": "Compare", "session_id": "destination", "agent": "frigga", "board_references": refs}
     assert http.post(path, json=body, headers={"X-User-Token": "guest-secret"}).status_code == 403
     for patch, code in (({"agent": "jarvis"}, 403), ({"message": "/new"}, 400),
                         ({"board_references": [refs[0], refs[0]]}, 422),
@@ -133,7 +132,7 @@ async def test_shared_attachment_budget_refuses_entire_reviewed_send(boards, mon
     # Simulate two ordinary @file references already occupying the common byte budget.
     monkeypatch.setattr(context_refs, "expand", lambda text: context_refs.attach_editor_content(
         None, text, [{"name": name, "text": "x" * 64_000} for name in ("first", "second")]))
-    r = http.post(path, headers=OWNER, json=dict(message="Compare", agent="frigga",
-        session_id="destination", board_references=refs))
+    r = http.post(path, headers=OWNER, json={"message": "Compare", "agent": "frigga",
+                                             "session_id": "destination", "board_references": refs})
     assert r.status_code == 413 and "attachment_limit" in r.json()["detail"]
     assert not captured and len(orch.memory.conversation.sessions["destination"]) == 2

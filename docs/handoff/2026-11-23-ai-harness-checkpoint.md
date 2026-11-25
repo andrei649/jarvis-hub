@@ -1,5 +1,14 @@
 # Reluarea lucrului la Nerva
 
+## Reluare pe 25 noiembrie — PR #1380
+
+Proprietarul a autorizat publicarea și integrarea după CI verde. Reparația pornește de la `77d6db88`. Pe Linux au trecut cele 3.577 de teste HUD și ambele verificări TypeScript. Ambele bundle-uri reconstruite coincid cu cele din Git. Pe Windows au trecut 96 de teste de izolare a vaultului. Contul local nu a putut crea linkurile simbolice necesare celorlalte două cazuri. Verificarea GitHub cere executarea lor.
+
+### Probleme deschise în afara reparației
+
+- Pe Windows, exportul CLI al unei transcrieri într-un fișier se oprește la verificarea `os.fchmod`. Testul de integrare `test_cli_hubclient_through_asgi_reads_real_retained_storage` reproduce problema și exista pe `main` înaintea acestui PR. Pentru închidere, exportul trebuie să creeze atomic un fișier privat și să păstreze intactă orice destinație deja existentă.
+- Pe `main` la `fba0345b`, verificarea OpenAPI raportează diferențe în tipurile generate, iar testul Workspace pentru streaming nu observă afișarea progresivă a răspunsului. Confirmarea necesită trecerea ambelor verificări pe noul commit din `main`. [CI](https://github.com/andrei649/jarvis-hub/actions/runs/45593832593) · [HUD E2E](https://github.com/andrei649/jarvis-hub/actions/runs/45593832666)
+
 ## Checkpoint pentru 24 noiembrie
 
 Lucrul la harness este în pauză până la reluarea de către proprietar. Branch-ul este `codex/harness-agent-selector`. Punctul de plecare al acestui lot a fost `7f8c12ca05b2d58db5bac3be79c10172cc8fe286`.
@@ -26,7 +35,7 @@ Pentru inventarul exact al celor 315 fișiere modificate, rulează `git show --s
 
 Lucrul a continuat de la `7f8c12ca` pe același branch.
 
-- Chatul și streamingul au recuperat răspunsul pe modelul fizic `andrei-fast:latest:local`. Cererea cu plafon de 64 de tokeni s-a încheiat cu `done_reason=length` și zero caractere vizibile. După verificarea capabilității, aceeași cerere cu `think=false` a produs răspunsul sintetic corect în 8 tokeni. În ambele cazuri, utilizarea raportată însumează 72 de tokeni generați în două apeluri locale. Direct reply explicit și o cerere reușită cu buget automat au folosit câte un singur apel. Dovezile pe mașina de lucru sunt în `memory_logs/selector-qa/local-empty-recovery/run-3468375a/`.
+- Chatul și streamingul au recuperat răspunsul de la modelul local. Cererea cu plafon de 64 de tokeni s-a încheiat cu `done_reason=length` și zero caractere vizibile. După verificarea capabilității, aceeași cerere cu `think=false` a produs răspunsul sintetic corect în 8 tokeni. În ambele cazuri, utilizarea raportată însumează 72 de tokeni generați în două apeluri locale. Direct reply explicit și o cerere reușită cu buget automat au folosit câte un singur apel. Dovezile pe mașina de lucru sunt în `memory_logs/selector-qa/local-empty-recovery/run-3468375a/`.
 - În Chat și Cockpit poți parcurge un document Word în pagini de câte 12.000 de caractere și poți atașa o clauză de la final. În Chrome, pe un document sintetic cu 25.081 de caractere, selecția de la poziția 24.020 a ajuns singură în atașamentul primit de furnizorul de test. Anularea a păstrat ciorna și a produs zero cereri de chat. Proba acoperă Chat la 1.440 px și Cockpit la 390 px. Dovezile sunt în `memory_logs/selector-qa/word-passage-pages/acceptance.json`.
 - Au trecut cele 3.564 de teste HUD, verificarea TypeScript, ambele builduri web și cele 506 teste backend selectate pe Linux. Colectarea Linux a găsit 37.675 de cazuri și un modul omis. La rularea pe Windows, testul de arhivare după importul unui profil Codex s-a oprit inițial la `os.fchmod` în `scripts/nerva_import.py`. Corecția este verificată în checkpointul curent. Testul a folosit un profil sintetic. Rapoartele sunt în `memory_logs/selector-qa/resumed-harness/`.
 

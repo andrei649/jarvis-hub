@@ -1551,11 +1551,11 @@ def _submit_procedure(orch, loader, body: ProcedureBody):
                 logger.warning("Procedure request receipt could not be saved", exc_info=True)
                 return False
 
-        if intent_digest == digest and recorded_digest is None and destination.is_dir() \
-                and not (destination / "SKILL.md").exists():
-            if not _recover_interrupted_procedure(destination, body.request_id, digest):
-                return _procedure_reply({"error": "procedure generation is incomplete",
-                                         "reason": "procedure_unavailable"}, 503)
+        if (intent_digest == digest and recorded_digest is None and destination.is_dir()
+                and not (destination / "SKILL.md").exists()
+                and not _recover_interrupted_procedure(destination, body.request_id, digest)):
+            return _procedure_reply({"error": "procedure generation is incomplete",
+                                     "reason": "procedure_unavailable"}, 503)
         candidates = [*archive.glob(f"{slug}-*"), destination] if archive.is_dir() else [destination]
         for candidate in candidates:
             if not candidate.exists() and not candidate.is_symlink():

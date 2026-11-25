@@ -252,3 +252,20 @@ remains pending after the follow-up push. No workflow/security settings, merge,
 ready promotion, deploy, credentials or real-data activation changed. See
 [exact count evidence](../../reviews/2026-11-17-jarvis-os-count.md). Rollback is a
 revert of this count follow-up commit.
+
+## 2026-11-25 — harness PR #1380 CI repair
+
+The HUD compiles shared TypeScript using its own configuration in a frontend-only
+install. Both typechecks, all 3,577 Vitest cases and both committed bundle comparisons
+passed on isolated Linux. Ruff and baseline Bandit passed. The profile launcher
+rejects a relative interpreter and its regression checks fixed arguments, filtered
+environment, shell-free execution and foreground interrupt handling. Bandit findings
+B404, B606 and B603 were reviewed at the three individual launcher lines. The
+baseline and workflow are unchanged. The vault containment run passed 96 cases on
+local Windows and skipped two requiring symlink privileges. GitHub covers those two.
+
+The Linux collection matched the tracked 37,681 outcomes (37,680 tests plus one
+collection skip). Hosted verification is the next step. The current
+[handoff](../2026-11-23-ai-harness-checkpoint.md) records the separate Windows
+transcript export and main-branch CI findings. Revert the CI repair commit to roll
+back this unit.

@@ -1926,7 +1926,7 @@ def _attach_editor_attachments(req: ChatRequest, expansion):
         added = expansion.attached[before:]
         if (len(added) != len(req.attachments)
                 or any(row["truncated"] or row["text"] != item.text
-                       for row, item in zip(added, req.attachments))):
+                       for row, item in zip(added, req.attachments, strict=True))):
             raise HTTPException(status_code=413, detail="attachment_limit")
     return expansion
 

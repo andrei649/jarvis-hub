@@ -6,7 +6,6 @@ from agents.core import context_refs
 from agents.core.memory import conversation, persistence
 from agents.core.session_continuation import seed_json
 
-
 BOARD_SOURCE = {"board": "default", "task_id": "t_1", "source": "latest_summary",
                 "sha256": "a" * 64}
 

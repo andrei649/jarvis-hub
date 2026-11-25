@@ -5,7 +5,6 @@ import sys
 
 import bpy
 
-
 CATEGORIES = ("scenes", "objects", "meshes", "materials", "collections", "cameras", "lights", "actions")
 
 

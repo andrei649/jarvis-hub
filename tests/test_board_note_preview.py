@@ -11,19 +11,17 @@ from agents.core.kanban.upstream import kanban_db as kb
 from tests.test_board_chat_reference_api import OWNER, boards
 from tests.test_session_transcript import host
 
-
 PATH = "/api/kanban/board-note/preview"
 
 
 def test_preview_keeps_selected_text_literal_and_source_identity(boards, monkeypatch):
     orch, home, refs, http = boards
     excerpt = "**bold**\r\n```\r\n<script>alert(1)</script>\r\n[link](https://example.test)"
-    with kanban_scope(KanbanContext(home, "owner", can_mutate=True)):
-        with kb.connect(board="north") as conn:
-            whole = "private neighbor\r\n" + excerpt + "\r\nprivate tail"
-            conn.execute("UPDATE tasks SET title=?, result=? WHERE id=?",
-                         ("**Actual**\n# heading", whole, refs[0]["task_id"]))
-            conn.commit()
+    with kanban_scope(KanbanContext(home, "owner", can_mutate=True)), kb.connect(board="north") as conn:
+        whole = "private neighbor\r\n" + excerpt + "\r\nprivate tail"
+        conn.execute("UPDATE tasks SET title=?, result=? WHERE id=?",
+                     ("**Actual**\n# heading", whole, refs[0]["task_id"]))
+        conn.commit()
     refs[0].update(excerpt=excerpt, sha256=hashlib.sha256(whole.encode()).hexdigest())
     orch.handle_input = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("model called"))
     open_board = kb.connect
@@ -80,7 +78,7 @@ def test_preview_rejects_invalid_and_oversize_payloads(boards):
     too_many_bytes.append({**refs[0], "task_id": "other", "excerpt": "x" * 50_000})
     assert http.post(PATH, headers=OWNER, json={"references": too_many_bytes}).status_code == 413
     with kanban_scope(KanbanContext(home, "owner", can_mutate=True)):
-        for board, ref in zip(("north", "south"), refs):
+        for board, ref in zip(("north", "south"), refs, strict=True):
             with kb.connect(board=board) as conn:
                 whole = "x" * 50_000 + ref["excerpt"]
                 conn.execute("UPDATE tasks SET result=? WHERE id=?", (whole, ref["task_id"]))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
+import subprocess  # nosec B404  # Windows waits for this checkout's foreground hub.
 import sys
 from pathlib import Path
 
@@ -51,14 +51,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Checkout: {ROOT}\nProfile:  {data_root(env)}", flush=True)
     if args.check:
         return 0
+    if not sys.executable or not Path(sys.executable).is_absolute():
+        parser.error("An absolute path to the running Python interpreter is required.")
     command = [sys.executable, "-s", str(ROOT / "serve.py")]
     if args.safe_mode:
         command.append("--safe-mode")
     if os.name != "nt":
         os.chdir(ROOT)
-        os.execve(sys.executable, command, env)
+        os.execve(sys.executable, command, env)  # nosec B606  # Current interpreter with fixed checkout argv.
     # Ctrl+C goes to both Windows console processes. Let the hub finish its own shutdown.
-    with subprocess.Popen(command, cwd=ROOT, env=env) as hub:
+    with subprocess.Popen(command, cwd=ROOT, env=env, shell=False) as hub:  # nosec B603  # Fixed argv, no shell.
         while True:
             try:
                 return hub.wait()

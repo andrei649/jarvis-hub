@@ -11,7 +11,6 @@ import agents.web as web
 from agents.core import blender_export, blender_preview
 from agents.core.routers import canvas
 
-
 URL = "/api/canvas/blender-export"
 OBJ = b"v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n"
 
@@ -44,7 +43,7 @@ def test_download_and_fixed_failures(monkeypatch, owner_headers):
     assert response.headers["cache-control"] == "no-store"
     for error, status in ((blender_preview.BlenderUnavailable, 503),
                           (blender_export.BlenderBuildError, 503)):
-        def fail(_):
+        def fail(_, error=error):
             raise error("private path C:/secret")
         monkeypatch.setattr(blender_export, "export_obj", fail)
         response = client.post(URL, content=OBJ, headers=owner_headers)

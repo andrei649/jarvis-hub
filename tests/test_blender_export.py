@@ -8,7 +8,6 @@ import pytest
 from agents.core import blender_export as export
 from agents.core import blender_preview as preview
 
-
 OBJ = b"""# global vertices\nv 0 0 0\nv 2 0 0\nv 0 3 0\nv 0 0 4\no Roof\nf 1 2 3 # same winding\ng Side\nf -4 -3 -1\n"""
 
 

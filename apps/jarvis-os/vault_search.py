@@ -1,8 +1,8 @@
 """Whole-word ranking for the local Obsidian graph. Results retain their source paths."""
 import re
 import unicodedata
-from collections import Counter, deque
 from array import array
+from collections import Counter, deque
 
 _WORDS = re.compile(r"\b(?:prj-[0-9]{3}|ws-[a-z0-9]+(?:-[a-z0-9]+)*)\b|[^\W_]+")
 _STOP = {

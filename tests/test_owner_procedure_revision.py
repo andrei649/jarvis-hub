@@ -7,13 +7,13 @@ from fastapi.testclient import TestClient
 
 from agents.core.autonomy.action_approvals import ActionApprovalQueue
 from agents.core.commands import CommandRegistry
-from agents.core.skills import bundles, loader as loader_mod
+from agents.core.skills import bundles
+from agents.core.skills import loader as loader_mod
 from agents.core.skills.approval import SkillApprovalStore
 from agents.core.skills.curator import SkillCurator
 from agents.core.skills.loader import SkillLoader
 from agents.core.skills.proposals import SkillProposalStore
 from agents.core.skills.usage import SkillUsageStore
-
 
 HEADERS = {"X-Admin-Token": "owner-token"}
 CREATE = {"agent": "frigga", "description": "Review the service log",

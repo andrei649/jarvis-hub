@@ -1,10 +1,10 @@
 """An owner-edited reply enters the existing skill quarantine exactly once."""
 
-from types import SimpleNamespace
-from pathlib import Path
 import hashlib
 import json
 import shutil
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,8 +12,7 @@ from fastapi.testclient import TestClient
 from agents.core.skills import loader as loader_mod
 from agents.core.skills.approval import SkillApprovalStore
 from agents.core.skills.loader import SkillLoader
-from agents.core.skills.usage import SkillUsageStore, WRITE_REVIEWED_REPLY
-
+from agents.core.skills.usage import WRITE_REVIEWED_REPLY, SkillUsageStore
 
 TOKEN = "procedure-test-admin"
 BODY = {"agent": "pepper", "description": "Triage the service log",

@@ -24,8 +24,8 @@ def main():
         bpy.context.view_layer.objects.active = obj
     low = [min(point[axis] for point in points) for axis in range(3)]
     high = [max(point[axis] for point in points) for axis in range(3)]
-    center = [(a + b) / 2 for a, b in zip(low, high)]
-    distance = max(max(b - a for a, b in zip(low, high)) * 2, 0.1)
+    center = [(a + b) / 2 for a, b in zip(low, high, strict=True)]
+    distance = max(max(b - a for a, b in zip(low, high, strict=True)) * 2, 0.1)
     for screen in bpy.data.screens:
         for area in screen.areas:
             if area.type == "VIEW_3D":

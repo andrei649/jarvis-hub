@@ -17,6 +17,7 @@ import time
 import zlib
 from pathlib import Path
 
+from .env_config import env_str
 
 MAX_BYTES = 64 * 1024 * 1024
 CATEGORIES = ("scenes", "objects", "meshes", "materials", "collections", "cameras", "lights", "actions")
@@ -36,11 +37,11 @@ class BlenderPreviewError(ValueError):
 
 def _blender_binary() -> Path | None:
     # The override is host configuration only; upload data never chooses an executable.
-    configured = os.environ.get("NERVA_BLENDER_EXECUTABLE")
+    configured = env_str("NERVA_BLENDER_EXECUTABLE")
     if configured:
         candidates = [Path(configured)]
     elif os.name == "nt":
-        root = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Blender Foundation"
+        root = Path(env_str("PROGRAMFILES", r"C:\Program Files")) / "Blender Foundation"
         candidates = sorted(root.glob("Blender */blender.exe"), reverse=True)
     else:
         candidates = [Path("/usr/bin/blender"), Path("/usr/local/bin/blender"),
@@ -148,7 +149,7 @@ def _child_env(scratch: Path, binary: Path) -> dict[str, str]:
            "BLENDER_USER_DATAFILES": str(scratch), "BLENDER_SYSTEM_SCRIPTS": "",
            "PATH": str(binary.parent) if os.name == "nt" else "/usr/bin:/bin"}
     if os.name == "nt":
-        env["SystemRoot"] = os.environ.get("SystemRoot", r"C:\Windows")
+        env["SystemRoot"] = env_str("SYSTEMROOT", r"C:\Windows")
         env["WINDIR"] = env["SystemRoot"]
     return env
 
@@ -199,7 +200,7 @@ async def _run_windows_job(command: list[str], scratch: Path, env: dict[str, str
                 output_bytes += len(chunk)
                 if output_bytes > 64 * 1024:
                     raise BlenderPreviewError("Blender output exceeded limit")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
     finally:
         await owner.terminate_and_drain()

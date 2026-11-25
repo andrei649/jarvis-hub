@@ -8,22 +8,20 @@ from contextlib import nullcontext
 
 from agents.core.channels.outbound_safety import sanitize_outbound
 from agents.core.env_config import env_flag
-from agents.core.llm.base import LMStudioBackend, OllamaBackend, is_degraded_reply
-from agents.core.reply_language import append_reply_language, requested_reply_language
 from agents.core.llm.anthropic import ClaudeBackend
+from agents.core.llm.base import LMStudioBackend, OllamaBackend, is_degraded_reply
 from agents.core.llm.data_handling import physical_request_scope
 from agents.core.llm.direct_transport import require_direct_async_transport
 from agents.core.llm.gemini import GeminiBackend
 from agents.core.llm.hybrid_router import LOCAL_ONLY_AGENTS
 from agents.core.llm.model_roles import public_local_origin, same_origin
-from agents.core.llm.physical_local import physical_local_scope
-from agents.core.llm.physical_local import ollama_local_selector
+from agents.core.llm.physical_local import ollama_local_selector, physical_local_scope
 from agents.core.llm.providers import ProviderProfile
 from agents.core.llm.request_context import primary_ollama_no_think
 from agents.core.llm.vision_capability import read_local_model_metadata
+from agents.core.reply_language import append_reply_language, requested_reply_language
 from agents.core.security.guardrails import GuardrailsEngine
 from agents.core.turn_usage import model_calls_from_snapshot, model_usage_scope, turn_usage_scope
-
 
 _TIMEOUT_S = 120
 _MAX_TOKENS = 1024
@@ -83,7 +81,9 @@ async def run_opinions(router, question: str, agents: list[str], *, allow_cloud:
     labels = labels or {}
 
     async def one(agent_id: str) -> dict:
-        failed = lambda reason: {"agent": agent_id, "ok": False, "reason": reason}
+        def failed(reason: str) -> dict:
+            return {"agent": agent_id, "ok": False, "reason": reason}
+
         try:
             if is_disconnected is not None and await is_disconnected():
                 return failed("disconnected")
@@ -150,10 +150,13 @@ async def run_opinions(router, question: str, agents: list[str], *, allow_cloud:
                                 no_think = primary_ollama_no_think(native, wire_model)
                             if _preflight(backend, local=True) is not native:
                                 raise ValueError("comparison backend changed")
-                        with physical_request_scope(check, request_check=one_send):
-                            with model_usage_scope(model=selected_model, route=route, agent_id=agent_id), no_think:
-                                answer = await backend.generate(selected_model, question, system=system,
-                                                                max_tokens=_MAX_TOKENS)
+                        with (
+                            physical_request_scope(check, request_check=one_send),
+                            model_usage_scope(model=selected_model, route=route, agent_id=agent_id),
+                            no_think,
+                        ):
+                            answer = await backend.generate(selected_model, question, system=system,
+                                                            max_tokens=_MAX_TOKENS)
                 receipt = model_calls_from_snapshot(usage.snapshot())
             if count != 1 or not isinstance(answer, str) or not answer.strip() or is_degraded_reply(answer):
                 return failed("generation_failed")

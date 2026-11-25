@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+from contextlib import nullcontext
 
 import pytest
 
@@ -40,7 +41,7 @@ def test_missing_root_and_private_atomic_round_trip(tmp_path):
     assert journal.entries() == []
 
 
-def test_invalid_and_ambiguous_records_refuse(tmp_path):
+def test_invalid_and_ambiguous_records_refuse(tmp_path, monkeypatch):
     journal = WindowsJournal(tmp_path / "journal")
     with pytest.raises(ValueError):
         journal.write("../wrong", {})
@@ -55,6 +56,9 @@ def test_invalid_and_ambiguous_records_refuse(tmp_path):
             journal.read(path)
     with pytest.raises(ValueError):
         journal.read(tmp_path / "outside.json")
+    monkeypatch.setattr(journal, "_root", lambda *, create: nullcontext(None))
+    with pytest.raises(OSError, match="root_missing"):
+        journal.write(SID, {})
 
 
 def test_transient_rename_conflict_retries_and_failed_write_preserves_old_record(tmp_path, monkeypatch):

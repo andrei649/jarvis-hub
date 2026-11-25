@@ -259,7 +259,8 @@ class WindowsJournal:
             raise ValueError("journal record too large")
         json.loads(data, object_pairs_hook=_json_pairs)
         with self._root(create=True) as root:
-            assert root is not None
+            if root is None:
+                raise WindowsFsRefusal("root_missing")
             existing = self.fs.open_child(root, name, directory=False)
             if existing is not None:
                 with existing:

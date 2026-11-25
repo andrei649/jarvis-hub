@@ -41,6 +41,7 @@ def test_tool_activity_rejects_malformed_and_untrusted_rows(bad):
 
 def test_continuation_seed_drops_injected_activity():
     import json
+
     from agents.core.session_continuation import seed_json
 
     seed = [{"role": "assistant", "content": "answer", "agent_id": "jarvis",

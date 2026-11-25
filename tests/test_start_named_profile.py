@@ -53,9 +53,20 @@ def test_check_prints_selected_paths_without_reading_dotenv_or_starting_the_hub(
 
 
 def test_normal_launch_runs_this_checkout_and_forwards_safe_mode(tmp_path, monkeypatch):
-    profile = tmp_path / "hub-profiles" / "studio"
+    profile = tmp_path / "hub & echo injected-profiles" / "studio"
     profile.mkdir(parents=True)
+    monkeypatch.setenv("JARVIS_HOST", "ambient.invalid")
+    monkeypatch.setenv("PYTHONPATH", str(profile))
+    env = start_profile.profile_environment(profile)
+    assert env["JARVIS_HOST"] == "127.0.0.1" and "PYTHONPATH" not in env
     expected = [sys.executable, "-s", str(start_profile.ROOT / "serve.py"), "--safe-mode"]
+    with monkeypatch.context() as unsafe:
+        unsafe.setattr(sys, "executable", "untrusted-python")
+        unsafe.setattr(start_profile.subprocess, "Popen", lambda *a, **kw: pytest.fail("started hub"))
+        unsafe.setattr(start_profile.os, "execve", lambda *a: pytest.fail("started hub"))
+        with pytest.raises(SystemExit) as refused:
+            start_profile.main([str(profile)])
+        assert refused.value.code == 2
     if os.name == "nt":
         hub = MagicMock()
         hub.__enter__.return_value = hub
@@ -63,14 +74,14 @@ def test_normal_launch_runs_this_checkout_and_forwards_safe_mode(tmp_path, monke
         create = MagicMock(return_value=hub)
         monkeypatch.setattr(start_profile.subprocess, "Popen", create)
         assert start_profile.main([str(profile), "--safe-mode"]) == 23
-        create.assert_called_once_with(expected, cwd=start_profile.ROOT, env=start_profile.profile_environment(profile))
+        create.assert_called_once_with(expected, cwd=start_profile.ROOT, env=env, shell=False)
     else:
         monkeypatch.chdir(tmp_path)
 
-        def replace(executable, command, env):
+        def replace(executable, command, child_env):
             assert Path.cwd() == start_profile.ROOT
             assert executable == sys.executable and command == expected
-            assert env == start_profile.profile_environment(profile)
+            assert child_env == env
             raise SystemExit(23)
 
         monkeypatch.setattr(start_profile.os, "execve", replace)

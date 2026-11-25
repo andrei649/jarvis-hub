@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import re
 
-
 _LANGUAGE = r"english|romanian|engleză|engleza|română|romana"
 _WORD = r"([^\W\d_]+)"
 _POLITE = r"(?:please\s+|can you\s+|could you\s+|te rog\s+|vă rog\s+|va rog\s+)?"

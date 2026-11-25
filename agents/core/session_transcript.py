@@ -94,7 +94,7 @@ async def read_transcript(orch, session_id, *, references=False):
         # Refuse a large projection before running the scanner, and again after it.
         _encode(document)
         scanner = SecretScanner()
-        for row, can_reference in zip(turns, eligible):
+        for row, can_reference in zip(turns, eligible, strict=True):
             for field in ("content", "agent_id", "timestamp"):
                 if row[field] is not None:
                     value = scanner.redact(row[field])

@@ -25,6 +25,7 @@ import logging
 import re
 import sys
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
@@ -33,6 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 import agents as _agents_pkg
 from agents.core import soul_edit
 from agents.core.app_state import get_orch
+from agents.core.commands import Principal
 from agents.core.llm.hybrid_router import (
     CLOUD_ONLY_AGENTS,
     POLICY_AUTO,
@@ -89,7 +91,7 @@ async def api_agents():
                     elif row["id"] in CLOUD_ONLY_AGENTS and policy == POLICY_CLOUD:
                         routing = "cloud_only"
             except Exception:
-                pass  # A policy read failure must not hide any roster rows.
+                logger.debug("Agent routing policy unavailable")
         agents.append({**row, "chat_routing": routing})
     return nocache_json({"agents": agents})
 
@@ -129,7 +131,7 @@ class AgentOpinionsResponse(BaseModel):
 @router.post("/api/agents/opinions", dependencies=[Depends(admin_guard)],
              response_model=AgentOpinionsResponse, response_model_exclude_none=True)
 async def agent_opinions(body: AgentOpinionsBody, request: Request, response: Response,
-                         principal=Depends(owner_web_principal)):
+                         principal: Annotated[Principal, Depends(owner_web_principal)]):
     """Ask two active agents the same text-only question without starting a task or chat."""
     orch = get_orch()
     if orch is None or getattr(orch, "llm_router", None) is None:

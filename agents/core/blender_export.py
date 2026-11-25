@@ -12,7 +12,6 @@ from pathlib import Path
 
 from agents.core import blender_preview
 
-
 MAX_BYTES = 256 * 1024
 MAX_VERTICES = 8192
 MAX_FACES = 8192

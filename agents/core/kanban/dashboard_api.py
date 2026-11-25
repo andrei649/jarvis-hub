@@ -101,11 +101,10 @@ def _conn(raw: str | None = None, *, mutate: bool = False, read_only: bool = Fal
         if read_only and not expected.is_file():
             raise _error(404, "board database not found")
         scope = kanban_scope(replace(context, can_mutate=False)) if read_only else nullcontext()
-        with scope, kb.scoped_current_board(board):
-            with closing(kb.connect(board=board)) as conn:
-                if read_only:
-                    conn.execute("BEGIN")
-                yield board, conn
+        with scope, kb.scoped_current_board(board), closing(kb.connect(board=board)) as conn:
+            if read_only:
+                conn.execute("BEGIN")
+            yield board, conn
     except (ValueError, PermissionError) as exc:
         raise _error(400 if isinstance(exc, ValueError) else 403, str(exc)) from exc
 

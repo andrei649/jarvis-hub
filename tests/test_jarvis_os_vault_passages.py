@@ -1,7 +1,7 @@
 """A matched vault passage can be found beyond the public graph preview."""
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from agents import web
 from agents.core.routers import jarvis_os

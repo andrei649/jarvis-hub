@@ -10,7 +10,7 @@ beforeAll(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-const target = { id: 'target-1', vault: 'Andrei OS', inbox: '00 Acasa/Inbox' };
+const target = { id: 'target-1', vault: 'Demo Vault', inbox: '00 Acasa/Inbox' };
 const status = (captureTarget: unknown = target) => new Response(JSON.stringify({ ok: true, captureTarget }));
 const saved = (source: unknown = null) => new Response(JSON.stringify({
   ok: true, relPath: '00 Acasa/Inbox/Edited.md', source,
@@ -57,7 +57,7 @@ it('offers a reviewed exact reply only in a live eligible conversation and saves
   expect(posts).toHaveLength(1);
   expect(JSON.parse(String(posts[0].init.body))).toEqual({ targetId: target.id, requestId: expect.any(String), title: 'Edited', content: reply.text });
   expect(screen.getAllByRole('link', { name: 'Open in Obsidian' })[0].getAttribute('href'))
-    .toBe('obsidian://open?vault=Andrei%20OS&file=00%20Acasa%2FInbox%2FEdited.md');
+    .toBe('obsidian://open?vault=Demo%20Vault&file=00%20Acasa%2FInbox%2FEdited.md');
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
   expect(screen.getByText(/Saved to Obsidian: 00 Acasa\/Inbox\/Edited.md/)).toBeTruthy();
 });

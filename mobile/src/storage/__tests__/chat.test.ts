@@ -74,7 +74,7 @@ test('scoped storage retains only validated assistant receipts', async () => {
 });
 
 test('only explicit completed real replies retain note eligibility across scoped restore', async () => {
-  const target = { id: `v1-${'a'.repeat(64)}`, vault: 'Andrei OS', inbox: '08 Inbox' };
+  const target = { id: `v1-${'a'.repeat(64)}`, vault: 'Demo Vault', inbox: '08 Inbox' };
   const receipt = { relPath: '08 Inbox/Edited.md', source: null };
   await saveConversation('same', { sessionId: 'saved', messages: [
     { id: 'done', role: 'assistant', text: 'Answer', completed: true,

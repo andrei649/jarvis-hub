@@ -52,7 +52,7 @@ def test_returns_only_inventory_and_static_failure_messages(monkeypatch, owner_h
     assert response.status_code == 200 and response.json() == inventory
     assert "no-store" in response.headers["Cache-Control"]
     for error, status in ((blender_preview.BlenderUnavailable, 503), (blender_preview.BlenderPreviewError, 422)):
-        def fail(_):
+        def fail(_, error=error):
             raise error("private internal filename")
         monkeypatch.setattr(blender_preview, "preview_blend", fail)
         response = client.post(URL, content=b"project", headers=owner_headers)
