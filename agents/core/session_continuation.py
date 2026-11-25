@@ -282,9 +282,13 @@ class ContinuationStore:
             self._receipt(row)
             return validate_seed(row)
 
-    def create(self, source, request, turns, clock):
+    def create(self, source, request, turns, clock, child_id=None):
+        """*child_id* names the continuation (an editor's fork, H542, takes an ``acp_`` id so
+        it stays an editor conversation); otherwise a ``session_`` id is made here."""
         try:
             if not is_valid_session_id(source) or str(uuid.UUID(request)) != request:
+                raise ValueError
+            if child_id is not None and (not is_valid_session_id(child_id) or child_id == source):
                 raise ValueError
         except (ValueError, TypeError, AttributeError):
             raise ContinuationRefused("invalid_identifier", 422) from None
@@ -345,7 +349,9 @@ class ContinuationStore:
                     ).fetchone()
                     if ancestor and ancestor != (root, root_instance):
                         raise ContinuationRefused("invalid_ancestry")
-                sid, instance = "session_" + uuid.uuid4().hex, uuid.uuid4().hex
+                sid, instance = child_id or "session_" + uuid.uuid4().hex, uuid.uuid4().hex
+                if child_id is not None and identity(conn, sid) is not None:
+                    raise ContinuationRefused("session_exists")
                 now = datetime.now(UTC).isoformat()
                 metadata = ({MARKER: {"kind": "derived", "source": source_origin.source,
                                      "instance_id": instance}} if source_origin.tainted else {})
@@ -406,13 +412,16 @@ class ContinuationStore:
 
 #: G11 — the refusal an editor conversation gets once the hub no longer holds it.
 EDITOR_SESSION_CLOSED = "editor_session_closed"
+#: H542 review — an editor conversation continued anywhere but into another editor one.
+EDITOR_SESSION_SOURCE = "editor_session_source"
 
 
 def editor_session_closed(sid) -> bool:
-    """G11 — *sid* names an editor conversation (``acp_…``) with no live binding."""
+    """G11 — *sid* names an editor conversation (``acp_…``; an editor's fork has one too,
+    H542) with no live binding."""
     from .acp import sessions as acp_sessions
 
-    return isinstance(sid, str) and sid.startswith(acp_sessions.PREFIX) and acp_sessions.get(sid) is None
+    return acp_sessions.is_editor_conversation(sid) and acp_sessions.get(sid) is None
 
 
 def _fresh_editor_session(sid) -> bool:
@@ -593,7 +602,12 @@ async def prepare_session(orch, sid):
             raise ContinuationRefused(exc.reason, exc.status) from exc
 
 
-async def create_continuation(orch, source, request):
+async def create_continuation(orch, source, request, *, child_id=None):
+    """Continue *source* in a new conversation. H542 review: an editor conversation
+    (``acp_…``, bound to a folder) is continued only into another editor conversation
+    (*child_id* ``acp_…``, which the editor routes bind and index); a HUD continuation of it
+    would carry the editor's history into the HUD's wider file scope, so it is refused."""
+    from .acp import sessions as acp_sessions
     from .foreign_history import ForeignHistoryRefused
 
     try:
@@ -601,6 +615,8 @@ async def create_continuation(orch, source, request):
             raise ValueError
     except (ValueError, TypeError, AttributeError):
         raise ContinuationRefused("invalid_identifier", 422) from None
+    if acp_sessions.is_editor_conversation(source) and not acp_sessions.is_editor_conversation(child_id):
+        raise ContinuationRefused(EDITOR_SESSION_SOURCE, 409)
     store = ContinuationStore(orch.checkpoints)
     replay = store.replay(source, request)
     if replay:
@@ -618,7 +634,7 @@ async def create_continuation(orch, source, request):
                 turns = _load_locked(orch, source)
                 # No await from captured history through the one SQLite activation
                 # commit. Cancellation/response loss after commit resolves by request ID.
-                created = store.create(source, request, turns, clock)
+                created = store.create(source, request, turns, clock, child_id=child_id)
             except ForeignHistoryRefused as exc:
                 raise ContinuationRefused(exc.reason, exc.status) from exc
     await _inherit_standing(orch, source, created)

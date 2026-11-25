@@ -14,7 +14,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 import agents.web as web  # noqa: E402
-from agents.core.mcp.client import MCPManager, MCPServer  # noqa: E402
+from agents.core.mcp.client import DO_NOT_RETRY, MCPManager, MCPServer  # noqa: E402
 
 _TOKEN = "mcp-filter-token"
 _HDR = {"X-Admin-Token": _TOKEN}
@@ -62,7 +62,7 @@ async def test_a_filtered_tool_cannot_be_called_by_name():
     srv = _server(tools_deny=["delete_*"])
     await srv._list_tools()
     srv.sent.clear()
-    assert await srv.call_tool("delete_file", {}) == {"error": "tool_filtered", "tool": "delete_file", "server": "fs"}
+    assert await srv.call_tool("delete_file", {}) == {"error": "tool_filtered", "tool": "delete_file", "server": "fs", **DO_NOT_RETRY}
     assert srv.sent == []
     assert await srv.call_tool("write_file", {}) == {"ok": True}
     manager = MCPManager()

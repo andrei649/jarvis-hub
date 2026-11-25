@@ -3027,6 +3027,7 @@ def _mcp_agent_request_guard(
 def _build_mcp_server():
     """Build a JarvisMCPServer over the live orchestrator's agents."""
     from agents.core.mcp.server import JarvisMCPServer
+    from agents.core.mcp.write_quota import shared_quota
 
     agents = {
         aid: f"{a.config.get('name', aid)} — {a.config.get('tier', '')} tier agent"
@@ -3048,6 +3049,9 @@ def _build_mcp_server():
         mutating_route_tools=mutating_route_tools,
         agent_request_guard=_mcp_agent_request_guard,
         inbox_tools=_build_mcp_inbox_tools(),
+        # H558: built per request, so the quotas are the process-wide ones.
+        write_quota=shared_quota("write"),
+        ask_quota=shared_quota("ask"),
     )
 
 

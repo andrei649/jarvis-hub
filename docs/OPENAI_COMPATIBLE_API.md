@@ -86,7 +86,7 @@ If Nerva is reachable from other machines, put it behind HTTPS (a reverse proxy 
 
 | Endpoint | What it does |
 |---|---|
-| `POST /v1/chat/completions` | One answer, whole or streamed (`"stream": true`, with `stream_options.include_usage`). |
+| `POST /v1/chat/completions` | One answer, whole or streamed (`"stream": true`, with `stream_options.include_usage`). With `stream_options.include_tool_progress` the stream also carries typed `event: nerva.tool.progress` frames for the turn's own tool calls (tool, call id, stage, status; never arguments or results). Off by default, because a strict client may not expect a typed frame in a chat stream. |
 | `POST /v1/responses` | The Responses API: answers are stored, `previous_response_id` continues the same conversation, `conversation` names one, `"stream": true` sends the typed events (`response.created` … `response.completed`). `"store": false` stores no response object (so it cannot be continued by id); the turn itself is still part of Nerva's conversation for that key. |
 | `GET /v1/responses/{id}`, `DELETE /v1/responses/{id}` | Read or delete a stored response. Only the key that made it can see it. |
 | `GET /v1/models` | `nerva` and `nerva/<agent>` for each Nerva agent. |

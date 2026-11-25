@@ -8,7 +8,10 @@ an approval card the diff is drawn for. Every one of them goes through here:
 * a path is resolved (symlinks included) and must stay inside that folder — ``..``, an
   absolute path elsewhere, or a symlink that leaves the folder is refused;
 * a NUL or an over-long path is refused before any filesystem call;
-* a read is bounded (:data:`MAX_READ_BYTES`) and only text is returned.
+* a read is bounded (:data:`MAX_READ_BYTES`) and only text is returned;
+* under WSL, a Windows editor's spelling (``C:\\src\\app``, ``file:///C:/src/app``,
+  ``\\\\wsl$\\Ubuntu\\home\\me``) is translated to the Linux path first
+  (:func:`translate`), and is then confined exactly like any other path (H542).
 
 The hub applies its own, independent scope as well (its file roots, ``FileScope``): this
 module only decides what the *editor side* reads and shows.
@@ -16,7 +19,9 @@ module only decides what the *editor side* reads and shows.
 
 from __future__ import annotations
 
+import functools
 import os
+import re
 from pathlib import Path
 
 MAX_PATH_CHARS = 4096
@@ -32,10 +37,56 @@ class AcpPathError(ValueError):
         self.reason = reason
 
 
+#: A drive path: the drive letter, a separator, the rest. ``c:`` alone and the drive-relative
+#: ``c:name`` are not translated (they may be a relative name on the Linux side).
+_DRIVE = re.compile(r"/?([A-Za-z]):[\\/](.*)\Z", re.S)
+_WSL_SHARE = re.compile(r"(?:\\\\|//)wsl(?:\$|\.localhost)[\\/]([^\\/]+)(?:[\\/](.*))?\Z", re.S | re.I)
+
+
+def _this_distro() -> str:
+    from agents.core.env_config import env_str
+
+    return env_str("WSL_DISTRO_NAME", "").strip()
+
+
+@functools.lru_cache(maxsize=1)
+def running_under_wsl() -> bool:
+    """True inside Windows Subsystem for Linux (the kernel names itself ``microsoft``)."""
+    try:
+        with open("/proc/sys/kernel/osrelease", encoding="ascii", errors="replace") as handle:
+            return "microsoft" in handle.read(256).lower()
+    except OSError:
+        return False
+
+
+def translate(raw: str, *, wsl: bool | None = None) -> str:
+    """A Windows editor's path as the WSL side names it, or *raw* unchanged.
+
+    ``C:\\x\\y`` and ``/C:/y`` (a ``file:///C:/y`` URI's path) become ``/mnt/c/x/y``;
+    ``\\\\wsl$\\<distro>\\home\\me`` and ``\\\\wsl.localhost\\<distro>\\…`` become
+    ``/home/me`` — only when ``<distro>`` is this one (``WSL_DISTRO_NAME``); another
+    distro's share is refused (``other_wsl_distro``), never read as this distro's path. Nothing
+    is translated outside WSL. The result is still only a spelling: the caller resolves and
+    confines it to the session folder like any other path."""
+    if not (running_under_wsl() if wsl is None else wsl):
+        return raw
+    share = _WSL_SHARE.fullmatch(raw)
+    if share:
+        here = _this_distro()
+        if not here or share.group(1).lower() != here.lower():
+            raise AcpPathError("other_wsl_distro")
+        return "/" + (share.group(2) or "").replace("\\", "/")
+    drive = _DRIVE.fullmatch(raw)
+    if drive:
+        rest = (drive.group(2) or "").replace("\\", "/")
+        return f"/mnt/{drive.group(1).lower()}/{rest}".rstrip("/") if rest else f"/mnt/{drive.group(1).lower()}"
+    return raw
+
+
 def _clean(raw: object) -> str:
     if not isinstance(raw, str) or not raw or len(raw) > MAX_PATH_CHARS or "\x00" in raw:
         raise AcpPathError("invalid_path")
-    return raw
+    return translate(raw)
 
 
 def session_root(raw: object) -> Path:
@@ -93,4 +144,5 @@ def read_text(path: Path) -> str | None:
         raise AcpPathError("not_text") from None
 
 
-__all__ = ["AcpPathError", "MAX_READ_BYTES", "confine", "read_text", "session_root"]
+__all__ = ["AcpPathError", "MAX_READ_BYTES", "confine", "read_text", "running_under_wsl", "session_root",
+           "translate"]

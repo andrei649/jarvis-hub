@@ -552,12 +552,13 @@ def test_hub_mode_on_another_machine_says_why_it_shows_only_known_names(tmp_path
     from scripts import doctor
 
     payload = {"sources": [{"key": "MY_TOOL_FLAG", "layer": "repo_env", "shadowed": []},
-                           {"key": "JARVIS_MODEL", "layer": "repo_env", "shadowed": []}],
+                           {"key": "JARVIS_LOG_LEVEL", "layer": "repo_env", "shadowed": []}],
                "files": {"repo_env": {"path": "/srv/nerva/.env", "present": True, "kind": "file", "read": True}}}
     opener = _sources_hub(payload)
     env = {"NERVA_HUB_URL": "http://hub.lan:8080"}
     check = doctor.check_config_sources(tmp_path, env, opener=opener, readyz=doctor.check_readyz(opener, env=env))
-    assert [row["key"] for row in check.data["sources"]] == ["JARVIS_MODEL"]
+    # (H264: a hub variable the registry declares; an unread JARVIS_ name now warns)
+    assert [row["key"] for row in check.data["sources"]] == ["JARVIS_LOG_LEVEL"]
     assert check.status == doctor.OK and "withheld" not in check.reason
     assert "another machine" in check.reason
 

@@ -513,6 +513,13 @@ class AcquisitionRuntime:
             logger.warning("acquisition promotion proposal failed", exc_info=True)
             return None
 
+    def verification_root(self) -> Path:
+        """Where sandbox verification runs keep their sealed mounts (H566 reuses it)."""
+        from agents.core.paths import data_path
+
+        base = Path(self._root) if self._root is not None else data_path("acquisition")
+        return base / "verification-runs"
+
     async def execute_install_task(self, task) -> dict:
         broker = self.ensure_promotion()
         if broker is None:

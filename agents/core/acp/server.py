@@ -17,6 +17,12 @@ tests inject a fake):
   registry exactly as typed in the HUD (advertised with ``available_commands_update``).
 * ``session/cancel`` — closes the turn's stream; the hub cancels a turn whose client went
   away (``/chat/stream`` reaps its runner on disconnect). The prompt answers ``cancelled``.
+* ``session/list`` / ``session/load`` / ``session/resume`` / ``session/fork`` (H542) — the
+  editor conversations the hub recorded, 50 a page; an earlier one bound to its folder
+  again (``load`` replays its redacted transcript first, ``resume`` does not), or continued
+  in a new conversation (``fork``). Each names a conversation an editor opened **for the
+  same folder**; the hub refuses any other. ``mcpServers`` on any of them are handled as
+  on ``session/new``: remembered, and asked about at the first prompt.
 
 **Permissions (H543).** A turn that needs the owner queues an approval card on the hub and
 stops — that is Nerva's ordinary approval path, kernel and tier rules included. For each
@@ -78,6 +84,9 @@ MAX_SESSION_MCP = 8
 MAX_MCP_ARGS = 64
 MAX_MCP_ENV = 32
 MAX_MCP_TEXT = 4096
+#: Transcript turns ``session/load`` replays (the newest), and the characters of each.
+MAX_REPLAY_TURNS = 200
+MAX_REPLAY_CHARS = 20_000
 #: Default seconds the editor has to answer one permission request before it is a reject.
 DEFAULT_PERMISSION_TIMEOUT = 300.0
 #: How long an accepted card is followed until the hub reports it done.
@@ -106,7 +115,9 @@ class BackendRefused(Exception):
 class Backend(Protocol):
     """The hub, as the ACP agent uses it. Every method maps to an existing hub route."""
 
-    async def open_session(self, cwd: str) -> str: ...
+    async def open_session(self, cwd: str, *, load: str | None = None, fork: str | None = None) -> str: ...
+    async def list_sessions(self, cwd: str | None, cursor: str | None) -> dict[str, Any]: ...
+    async def transcript(self, session_id: str) -> list[dict[str, Any]]: ...
     async def close_session(self, session_id: str) -> None: ...
     async def commands(self) -> list[dict[str, Any]]: ...
     async def stream_turn(self, session_id: str, message: str, on_event: Any,
@@ -219,7 +230,12 @@ class AcpServer:
             return await self._new_session(params)
         if method == "session/prompt":
             return await self._prompt(params)
-        if method in ("session/load", "session/set_mode", "session/set_model"):
+        if method in ("session/load", "session/resume", "session/fork"):
+            return await self._earlier_session(method.split("/", 1)[1], params)
+        if method == "session/list":
+            return await self._list_sessions(params)
+        if method in ("session/set_mode", "session/set_model", "session/set_config_option"):
+            # Deliberately absent: an editor never widens Nerva's approval mode or model.
             raise RpcError(METHOD_NOT_FOUND, f"{method} is not supported")
         raise RpcError(METHOD_NOT_FOUND, "method not found")
 
@@ -237,7 +253,8 @@ class AcpServer:
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "agentCapabilities": {
-                "loadSession": False,
+                "loadSession": True,
+                "sessionCapabilities": {"list": {}, "resume": {}, "fork": {}},
                 "promptCapabilities": {"image": False, "audio": False, "embeddedContext": True},
                 "mcpCapabilities": {"http": False, "sse": False},
             },
@@ -269,6 +286,88 @@ class AcpServer:
         self.sessions[session_id] = session
         asyncio.ensure_future(self._advertise_commands(session))
         return {"sessionId": session_id}
+
+    async def _earlier_session(self, how: str, params: Any) -> dict[str, Any]:
+        """``session/load``, ``session/resume`` or ``session/fork`` of a conversation an
+        editor opened earlier. The hub decides whether it may (same folder, not held by
+        another editor); this side only confines the folder and validates the servers."""
+        if not isinstance(params, dict):
+            raise RpcError(INVALID_PARAMS, "params must be an object")
+        earlier = params.get("sessionId")
+        if not isinstance(earlier, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", earlier):
+            raise RpcError(INVALID_PARAMS, "sessionId is required")
+        if len(self.sessions) >= MAX_SESSIONS:
+            raise RpcError(INVALID_REQUEST, "too many open sessions")
+        if how != "fork" and earlier in self.sessions:
+            raise RpcError(INVALID_REQUEST, "this session is already open")
+        try:
+            root = session_root(params.get("cwd"))
+        except AcpPathError as exc:
+            raise RpcError(INVALID_PARAMS, f"cwd refused: {exc.reason}") from None
+        servers = self._mcp_servers(params.get("mcpServers", []))
+        try:
+            if how == "fork":
+                session_id = await self.backend.open_session(str(root), fork=earlier)
+            else:
+                session_id = await self.backend.open_session(str(root), load=earlier)
+        except BackendRefused as exc:
+            raise RpcError(INVALID_REQUEST, _hub_refusal(f"the hub did not {how} that session", exc)) from None
+        session = _Session(id=session_id, root=root, pending_mcp=servers)
+        self.sessions[session_id] = session
+        if how == "load":
+            await self._replay(session)
+        asyncio.ensure_future(self._advertise_commands(session))
+        return {"sessionId": session_id} if how == "fork" else {}
+
+    async def _replay(self, session: _Session) -> None:
+        """The conversation so far, as the hub's redacted transcript, before ``session/load``
+        answers (ACP: the client renders the history from these updates)."""
+        try:
+            turns = await self.backend.transcript(session.hub)
+        except Exception:  # noqa: BLE001 - a thread without its history still works
+            logger.info("transcript of editor session %s unavailable", session.id)
+            await self._say(session, "(The earlier messages of this conversation could not be shown.)\n\n")
+            return
+        rows = [t for t in turns if isinstance(t, dict)] if isinstance(turns, list) else []
+        if len(rows) > MAX_REPLAY_TURNS:
+            await self._say(session, f"({len(rows) - MAX_REPLAY_TURNS} earlier messages are not shown.)\n\n")
+            rows = rows[-MAX_REPLAY_TURNS:]
+        for row in rows:
+            text = render.safe_block(row.get("content"), MAX_REPLAY_CHARS)
+            if not text:
+                continue
+            kind = "user_message_chunk" if row.get("role") == "user" else "agent_message_chunk"
+            await self._notify(session, {"sessionUpdate": kind, "content": {"type": "text", "text": text}})
+
+    async def _list_sessions(self, params: Any) -> dict[str, Any]:
+        params = params if isinstance(params, dict) else {}
+        cwd = params.get("cwd")
+        if cwd is not None:
+            try:
+                cwd = str(session_root(cwd))
+            except AcpPathError as exc:
+                raise RpcError(INVALID_PARAMS, f"cwd refused: {exc.reason}") from None
+        cursor = params.get("cursor")
+        if cursor is not None and (not isinstance(cursor, str) or not re.fullmatch(r"[0-9]{1,6}", cursor)):
+            raise RpcError(INVALID_PARAMS, "invalid cursor")
+        try:
+            page = await self.backend.list_sessions(cwd, cursor)
+        except BackendRefused as exc:
+            raise RpcError(INVALID_REQUEST, _hub_refusal("the hub did not list sessions", exc)) from None
+        page = page if isinstance(page, dict) else {}
+        rows = page.get("sessions") if isinstance(page.get("sessions"), list) else []
+        sessions = []
+        for row in rows:
+            if not isinstance(row, dict) or not isinstance(row.get("session_id"), str):
+                continue
+            item = {"sessionId": row["session_id"], "cwd": render.safe_line(row.get("cwd"), 4096)}
+            if isinstance(row.get("created"), str):
+                item["updatedAt"] = render.safe_line(row["created"], 40)
+            if isinstance(row.get("parent"), str):
+                item["title"] = render.safe_line(f"fork of {row['parent']}", 200)
+            sessions.append(item)
+        following = page.get("next_cursor")
+        return {"sessions": sessions[:100], "nextCursor": following if isinstance(following, str) else None}
 
     def _mcp_servers(self, raw: Any) -> list[dict[str, Any]]:
         """Validate the editor's ``mcpServers`` (stdio only — HTTP is not advertised)."""
@@ -425,7 +524,11 @@ class AcpServer:
             if session.cancel.is_set():
                 return {"stopReason": "cancelled"}
             await self._decide_cards(session, (end or {}).get("pending_approvals"))
-            return {"stopReason": "cancelled" if session.cancel.is_set() else "end_turn"}
+            result: dict[str, Any] = {"stopReason": "cancelled" if session.cancel.is_set() else "end_turn"}
+            usage = render.prompt_usage((end or {}).get("usage"))
+            if usage:
+                result["usage"] = usage
+            return result
         finally:
             await self._reject_open(session, "the editor turn ended before an answer")
             session.running = False

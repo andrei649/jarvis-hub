@@ -26,6 +26,31 @@ stdin/stdout. Rows: G11 / H542, H543, H544, H545, H056.
   forgotten by a hub restart) is refused, never run without its folder. `nerva acp` then opens
   a new conversation for the same folder and tells you; earlier messages and editor MCP
   servers do not carry over.
+- **Earlier threads come back.** The hub keeps an owner-only list of the conversations editors
+  opened (`<memory dir>/acp/editor_sessions.json`: the id, its folder, when it was made, what it
+  was forked from). The editor can list them (`session/list`, 50 a page, newest first), open one
+  again with its history shown (`session/load` replays the hub's **redacted** transcript) or
+  without it (`session/resume`), or continue one in a new conversation (`session/fork`, the
+  hub's own continuation, so the copy keeps its source's lineage and standing). Each only for
+  **the folder the conversation was made for** (`cwd_mismatch` otherwise), and a conversation
+  another editor holds open cannot be loaded (`session_in_use`). Each binding gets a holder
+  token that `nerva acp` sends with its lease renewals, MCP servers and close
+  (`X-ACP-Holder`): an editor whose session lapsed and was loaded by another can no longer renew
+  or close it (`not_holder`). A fork gets an `acp_…` id of its own, so it is an editor
+  conversation whatever happens to the list: with no editor holding it, it is refused like any
+  other, and it is renewed, closed and given MCP servers like any other. A HUD continuation
+  (`/sessions/continue`) of an editor conversation is refused (`editor_session_source`): its
+  history never moves into the HUD's wider file scope. If the list file cannot be read it is
+  copied aside and never overwritten; new conversations are then listed only until the hub
+  restarts. Deleting a conversation removes its row. Editor MCP servers given on load, resume
+  or fork are asked about at the first prompt, as on `session/new`.
+- **Windows editors on WSL.** When `nerva acp` runs inside WSL, Windows paths from the editor
+  (`C:\src\app`, `file:///C:/src/app`, `\\wsl$\Ubuntu\home\me\app`) are translated to the
+  Linux side (`/mnt/c/src/app`, `/home/me/app`) and then confined exactly like any other path.
+  A `\\wsl$` share is translated only for the distro `nerva acp` runs in (`WSL_DISTRO_NAME`);
+  another distro's share is refused. A bare `c:` or `c:name` is left as it is.
+- **Usage.** A prompt's answer carries the turn's measured token counts (`usage`) when the hub
+  measured them; no model, provider or price is sent.
 - **Live rendering.** Answers stream as message chunks; each tool call appears as a card with
   its kind (read, edit, execute, search, fetch…) and status. The tool's arguments and
   results are not shown on these cards, which is the same rule the HUD's tool trail follows.
@@ -156,8 +181,8 @@ environment. stdout carries only protocol messages; diagnostics go to stderr.
   fenced as content and scanned for injection, never stores it as your words, and the turn is
   treated as having read untrusted content (actions it plans ask for approval). At most 8
   attachments of 64,000 characters.
-- Images and audio in prompts are not accepted. `session/load`, session modes and model
-  switching are not offered: the editor's thread is the conversation, and the model is the
+- Images and audio in prompts are not accepted. Session modes, config options and model
+  switching are not offered: an editor cannot widen Nerva's approval mode, and the model is the
   hub's routing.
 - A clarify question that offers choices is put to you as a choice. A question that needs
   typed text is shown and skipped, because a permission dialog cannot take free text.
@@ -166,4 +191,5 @@ environment. stdout carries only protocol messages; diagnostics go to stderr.
 
 Code: `agents/core/acp/` (protocol, rendering, path confinement, the agent),
 `agents/cli/acp_hub.py` (the hub backend and stdio), `agents/core/routers/acp.py` (session and
-MCP routes). Tests: `tests/test_g11_acp.py`.
+MCP routes). Tests: `tests/test_g11_acp.py`, `tests/test_h542_acp_sessions.py`.
+`nerva acp --version` prints the agent's and the protocol's version.

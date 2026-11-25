@@ -20,6 +20,18 @@ fail-closed by design:
   can call it. Calling is ``agents/core/a2a_outbound.py`` (the adopted Hermes client tools,
   governed); this module only keeps and validates the addresses.
 
+**A hostile or runaway peer (H563).** An authenticated peer still meets, in order: the
+owner's allow switch (a credential is not permission — :meth:`A2ARegistry.set_peer_policy`
+suspends a peer without revoking it), a per-peer rate limit (:data:`RATE_LIMIT` a minute,
+counted only after the signature verified, so a stranger cannot spend a peer's budget) and
+a per-conversation turn cap (a peer's tasks naming one ``context_id``; default
+:data:`DEFAULT_TURN_CAP`, the owner may raise it per peer up to :data:`MAX_TURN_CAP`), which
+stops two agents ping-ponging forever. Refusals are :class:`A2ARefused` with a fixed reason.
+The task text the inbox shows is defanged and framed with an untrusted-provenance banner by
+the adopted Hermes filter (``plugins/platforms/a2a/security.wrap_inbound``): injection markers
+become ``[filtered]`` and every message, a ``/command`` included, is labelled as a remote
+peer's. The routes write one line per exchange into the signed, hash-chained audit log.
+
 File-backed (JSON under ``memory_logs/a2a.json``), pure-Python, offline-testable.
 """
 
@@ -31,6 +43,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
 import threading
 import time
@@ -50,6 +63,78 @@ INBOUND_APPROVED = "approved"
 INBOUND_REJECTED = "rejected"
 
 _MAX_INBOX = 500  # bound the on-disk inbox
+#: Inbound tasks one peer may send a minute (Hermes: 60 per identity).
+RATE_LIMIT = 60
+RATE_WINDOW_SECONDS = 60.0
+#: Tasks one peer may send in one conversation (``context_id``) before it is refused,
+#: and the most the owner may allow (Hermes: a cap of 5, a hard ceiling of 20).
+DEFAULT_TURN_CAP = 5
+MAX_TURN_CAP = 20
+#: The most of a task's text kept for the inbox view.
+MAX_VIEW_CHARS = 4000
+#: Pending tasks one peer may hold in the inbox (one peer never crowds out the others).
+MAX_PENDING_PER_PEER = 100
+#: A timestamped request is accepted this many seconds either side of the hub's clock.
+REPLAY_WINDOW_SECONDS = 300
+#: Signed requests remembered against a replay (oldest dropped past this).
+MAX_SEEN = 2000
+_CONTEXT_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
+
+
+class A2ARefused(PermissionError):
+    """An authenticated peer's task refused by policy; ``reason`` is a fixed word and
+    ``status`` the HTTP status the route answers with."""
+
+    def __init__(self, reason: str, status: int) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.status = status
+
+
+def context_of(payload: Any) -> str | None:
+    """The conversation a task belongs to (``context_id`` / ``contextId``, at the top or in
+    ``task``), or None when the task names none. A named one that is not a short plain
+    identifier is refused (ValueError, HTTP 400), so a malformed id never escapes the turn
+    cap (H563 review m3)."""
+    for holder in (payload, payload.get("task") if isinstance(payload, dict) else None):
+        if isinstance(holder, dict):
+            for key in ("context_id", "contextId"):
+                if key not in holder or holder[key] is None:
+                    continue
+                value = holder[key]
+                if not isinstance(value, str) or not _CONTEXT_RE.fullmatch(value):
+                    raise ValueError("invalid context_id")
+                return value
+    return None
+
+
+def _visible(text: str) -> str:
+    """Control and format characters (bidi overrides, zero-width joiners) removed, newlines
+    and tabs kept: what is filtered is what the reader sees (H563 review m6)."""
+    import unicodedata
+
+    return "".join(ch for ch in text if ch in "\n\t" or unicodedata.category(ch) not in ("Cc", "Cf"))
+
+
+def inbound_view(peer_id: str, task: Any, *, fence: str | None = None) -> str:
+    """What the owner (and anything that ever reads the inbox) sees of a peer's task: its
+    text cleaned of invisible characters, defanged and framed as a remote peer's untrusted
+    input (adopted Hermes filter), and closed by an end marker carrying a random *fence* the
+    peer cannot know, so it cannot fake the end of its message (H563 review m6)."""
+    from agents.vendor.hermes.plugins.platforms.a2a.security import wrap_inbound
+
+    if isinstance(task, str):
+        text = task
+    elif isinstance(task, dict) and isinstance(task.get("text") or task.get("message"), str):
+        text = task.get("text") or task.get("message")
+    else:
+        try:
+            text = json.dumps(task, ensure_ascii=False, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            text = ""
+    fence = fence or secrets.token_hex(6)
+    return (wrap_inbound(_visible(peer_id), _visible(text[:MAX_VIEW_CHARS]))
+            + f"\n[end of the message from A2A peer {_visible(peer_id)!r} · {fence}]")
 _MAX_CONTRACT_BODY_BYTES = 64_000
 A2A_INBOUND_CONTRACT_KIND = "a2a.inbound"
 
@@ -250,16 +335,21 @@ class A2ARegistry(JsonStore):
 
     def __init__(self, path: str | Path = DEFAULT_PATH, identity_secret: Optional[str] = None) -> None:
         super().__init__(path)
+        #: peer_id -> monotonic times of its recent verified requests (H563 rate limit).
+        self._recent: dict[str, list[float]] = {}
         self._identity_secret = identity_secret or os.environ.get("JARVIS_A2A_KEY", "").strip() or None
 
     def _serialize(self):
-        return {"peers": self._peers, "inbox": self._inbox, "card": self._card}
+        return {"peers": self._peers, "inbox": self._inbox, "card": self._card, "seen": self._seen_list()}
 
     def _deserialize(self, raw) -> None:
         raw = raw if isinstance(raw, dict) else {}
         self._peers = raw.get("peers", {})
         self._inbox = raw.get("inbox", [])
         self._card = raw.get("card", {})
+        seen = raw.get("seen")
+        self._seen = [row for row in seen if isinstance(row, list) and len(row) == 3]\
+            if isinstance(seen, list) else []
 
     # ── Our Agent Card ───────────────────────────────────────────────────────
 
@@ -310,7 +400,9 @@ class A2ARegistry(JsonStore):
         rows = []
         for p in sorted(self._peers.values(), key=lambda r: r.get("added_at", 0), reverse=True):
             row = {"peer_id": p["peer_id"], "name": p.get("name", p["peer_id"]),
-                   "secret_hint": (p["secret"][:4] + "…"), "added_at": p.get("added_at")}
+                   "secret_hint": (p["secret"][:4] + "…"), "added_at": p.get("added_at"),
+                   "allowed": p.get("allowed", True) is not False,
+                   "turn_cap": _turn_cap(p)}
             if isinstance(p.get("outbound"), dict):
                 row["outbound"] = dict(p["outbound"])
             rows.append(row)
@@ -377,12 +469,52 @@ class A2ARegistry(JsonStore):
                 out.append({"peer_id": p["peer_id"], "name": p.get("name", p["peer_id"]), **ob})
         return out
 
-    def verify_peer(self, peer_id: str, raw_body: Union[bytes, str], signature: str) -> bool:
-        """Constant-time HMAC check that *raw_body* came from the allowlisted peer."""
+    def set_peer_policy(self, peer_id: str, *, allowed: Optional[bool] = None,
+                        turn_cap: Optional[int] = None) -> dict:
+        """The owner's switches for an authenticated peer (H563): ``allowed`` (a suspended
+        peer keeps its credential and is refused with 403) and ``turn_cap`` (1 to
+        :data:`MAX_TURN_CAP` tasks per conversation)."""
+        if turn_cap is not None and (type(turn_cap) is not int or not 1 <= turn_cap <= MAX_TURN_CAP):
+            raise ValueError("invalid_turn_cap")
+        with self._lock:
+            rec = self._peers.get(peer_id)
+            if rec is None:
+                raise KeyError("unknown peer")
+            if turn_cap is not None:
+                rec["turn_cap"] = turn_cap
+            if allowed is not None:
+                rec["allowed"] = bool(allowed)
+            self._save()
+            return {"peer_id": peer_id, "allowed": rec.get("allowed", True) is not False,
+                    "turn_cap": _turn_cap(rec)}
+
+    def _admit(self, peer_id: str) -> None:
+        """The allow switch and the rate limit, for a peer whose signature verified."""
+        rec = self._peers.get(peer_id) or {}
+        if rec.get("allowed", True) is False:
+            raise A2ARefused("peer_not_allowed", 403)
+        now = time.monotonic()
+        with self._lock:
+            recent = [t for t in self._recent.get(peer_id, []) if now - t < RATE_WINDOW_SECONDS]
+            if len(recent) >= RATE_LIMIT:
+                self._recent[peer_id] = recent
+                raise A2ARefused("rate_limited", 429)
+            recent.append(now)
+            self._recent[peer_id] = recent
+
+    def verify_peer(self, peer_id: str, raw_body: Union[bytes, str], signature: str, *,
+                    timestamp: Optional[str] = None, nonce: Optional[str] = None) -> bool:
+        """Constant-time HMAC check that *raw_body* came from the allowlisted peer. With a
+        *timestamp* and *nonce* (``X-A2A-Timestamp`` / ``X-A2A-Nonce``) the signature covers
+        ``"<timestamp>.<nonce>." + body`` and the timestamp must be within
+        :data:`REPLAY_WINDOW_SECONDS` of now (H563 review m4)."""
         rec = self._peers.get(peer_id)
         if not rec or not signature:
             return False
-        expected = _hmac(rec["secret"], raw_body)
+        signed = _signed_bytes(raw_body, timestamp, nonce)
+        if signed is None:
+            return False
+        expected = _hmac(rec["secret"], signed)
         provided = signature.strip()
         if "=" not in provided:                          # accept a bare hexdigest
             provided = f"sha256={provided}"
@@ -390,18 +522,32 @@ class A2ARegistry(JsonStore):
 
     # ── Inbound tasks (verified → pending; NEVER executed here) ───────────────
 
-    def receive_task(self, peer_id: str, raw_body: Union[bytes, str], signature: str) -> dict:
+    def receive_task(self, peer_id: str, raw_body: Union[bytes, str], signature: str, *,
+                     timestamp: Optional[str] = None, nonce: Optional[str] = None) -> dict:
         """Accept a signed task from an allowlisted peer into the pending inbox.
 
         Fails closed: disabled service, unknown peer, or bad signature all raise.
         The task is only *recorded* — approval/execution is a separate, human step.
+
+        A signed request is accepted once (H563 review m4): its nonce (or, for a peer that
+        signs the body alone, its signature) is remembered, and a replay is refused with
+        ``replayed`` before it can spend the peer's rate limit, turn cap or inbox room. A
+        peer's own retry of the same task goes through ``Idempotency-Key``, which answers
+        with the first receipt before this point.
         """
         if not a2a_enabled():
             raise PermissionError("A2A is disabled (set JARVIS_A2A_ENABLED to enable)")
         if peer_id not in self._peers:
             raise PermissionError("unknown peer")
-        if not self.verify_peer(peer_id, raw_body, signature):
+        if not self.verify_peer(peer_id, raw_body, signature, timestamp=timestamp, nonce=nonce):
             raise PermissionError("invalid signature")
+        replay_key = hashlib.sha256(
+            f"{peer_id}\x00{nonce if nonce else signature.strip().removeprefix('sha256=')}".encode()).hexdigest()
+        with self._lock:
+            seen = self._seen_list()
+            if replay_key in {row[0] for row in seen}:
+                raise A2ARefused("replayed", 409)
+        self._admit(peer_id)
         try:
             payload = json.loads(raw_body if isinstance(raw_body, str) else raw_body.decode("utf-8"))
         except (ValueError, TypeError, AttributeError) as exc:
@@ -410,22 +556,74 @@ class A2ARegistry(JsonStore):
         if denied:
             raise PermissionError(f"contract denied: {denied}")
 
+        context = context_of(payload)              # a malformed one raises ValueError (400)
+        task = payload.get("task") if isinstance(payload, dict) and "task" in payload else payload
+        view = inbound_view(peer_id, task)
         task_id = secrets.token_urlsafe(8)
         record = {
             "id": task_id,
             "peer_id": peer_id,
             "status": INBOUND_PENDING,
-            "task": payload.get("task") if isinstance(payload, dict) and "task" in payload else payload,
+            "task": task,
+            "view": view,
+            "context_id": context,
             "received_at": time.time(),
         }
-        self._inbox.append(record)
-        del self._inbox[:-_MAX_INBOX]                     # keep the inbox bounded
         with self._lock:
+            if replay_key in {row[0] for row in seen}:      # the same request, concurrently
+                raise A2ARefused("replayed", 409)
+            cap = _turn_cap(self._peers.get(peer_id) or {})
+            mine = [r for r in self._inbox if r.get("peer_id") == peer_id]
+            if context is not None:
+                turns = sum(1 for r in mine if r.get("context_id") == context)
+            else:
+                # H563 review m3: tasks naming no conversation share one per-peer bucket of
+                # undecided tasks, so leaving the id out never escapes the cap.
+                turns = sum(1 for r in mine if r.get("context_id") is None and r.get("status") == INBOUND_PENDING)
+            if turns >= cap:
+                raise A2ARefused("turn_cap", 429)
+            if sum(1 for r in mine if r.get("status") == INBOUND_PENDING) >= MAX_PENDING_PER_PEER:
+                raise A2ARefused("inbox_full", 429)
+            if len(self._inbox) >= _MAX_INBOX:
+                # Room is made from decided rows only: a pending task is never evicted for
+                # another peer's (H563 review m5).
+                decided = [r for r in self._inbox if r.get("status") != INBOUND_PENDING]
+                if not decided:
+                    raise A2ARefused("inbox_full", 429)
+                drop = {id(r) for r in decided[:len(self._inbox) - _MAX_INBOX + 1]}
+                self._inbox[:] = [r for r in self._inbox if id(r) not in drop]
+            self._inbox.append(record)
+            seen.append([replay_key, time.time(), bool(nonce)])
+            self._prune_seen(seen)
             self._save()
         return {"id": task_id, "status": INBOUND_PENDING, "accepted": True}
 
-    def list_inbox(self, status: Optional[str] = None) -> list[dict]:
-        items = [dict(r) for r in self._inbox if status is None or r.get("status") == status]
+    def _seen_list(self) -> list:
+        """The remembered signed requests (caller holds the lock)."""
+        if not isinstance(getattr(self, "_seen", None), list):
+            self._seen = []
+        return self._seen
+
+    @staticmethod
+    def _prune_seen(seen: list) -> None:
+        """Timestamped requests are forgotten once outside the window (a replay of one is
+        then refused by its timestamp); body-only ones are kept up to :data:`MAX_SEEN`."""
+        horizon = time.time() - 2 * REPLAY_WINDOW_SECONDS
+        seen[:] = [row for row in seen if not (row[2] and row[1] < horizon)][-MAX_SEEN:]
+
+    def list_inbox(self, status: Optional[str] = None, *, raw: bool = False) -> list[dict]:
+        """Inbox rows, newest first, with the cleaned and framed ``view`` (computed for a row
+        stored before views existed). The peer's raw ``task`` only with *raw*."""
+        items = []
+        for r in self._inbox:
+            if status is not None and r.get("status") != status:
+                continue
+            row = dict(r)
+            if not isinstance(row.get("view"), str):
+                row["view"] = inbound_view(str(row.get("peer_id") or "unknown"), row.get("task"))
+            if not raw:
+                row.pop("task", None)
+            items.append(row)
         return items[::-1]
 
     def decide(self, task_id: str, approve: bool) -> dict:
@@ -440,6 +638,26 @@ class A2ARegistry(JsonStore):
                     self._save()
                 return dict(rec)
         raise ValueError(f"task {task_id} not found")
+
+
+def _signed_bytes(raw_body: Union[bytes, str], timestamp: Optional[str], nonce: Optional[str]) -> Optional[bytes]:
+    """What the peer signed: the body alone, or ``"<ts>.<nonce>." + body`` with both headers
+    (the timestamp in seconds, within the replay window; the nonce 8-128 plain characters).
+    None when only one is given or either is malformed or stale."""
+    body = raw_body.encode("utf-8") if isinstance(raw_body, str) else raw_body
+    if timestamp is None and nonce is None:
+        return body
+    if not isinstance(timestamp, str) or not isinstance(nonce, str) or not timestamp.isdigit() \
+            or len(timestamp) > 12 or not re.fullmatch(r"[A-Za-z0-9._-]{8,128}", nonce):
+        return None
+    if abs(time.time() - int(timestamp)) > REPLAY_WINDOW_SECONDS:
+        return None
+    return f"{timestamp}.{nonce}.".encode() + body
+
+
+def _turn_cap(rec: dict) -> int:
+    cap = rec.get("turn_cap")
+    return cap if type(cap) is int and 1 <= cap <= MAX_TURN_CAP else DEFAULT_TURN_CAP
 
 
 _REGISTRY: Optional[A2ARegistry] = None

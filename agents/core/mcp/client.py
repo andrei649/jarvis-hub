@@ -70,6 +70,8 @@ from agents.core.automation_contracts import (
 )
 from agents.core.env_alias import canonical
 from agents.core.env_config import env_flag, env_list, resolve_spellings
+from agents.core.mcp import process_guard
+from agents.core.mcp.guard import config_findings, definition_digest, inspect_tool
 from agents.core.mcp.host_requests import (
     ElicitationConfig,
     MCPHost,
@@ -88,10 +90,11 @@ from agents.core.mcp.http_transport import (
     StreamableHttpTransport,
     http_client_enabled,
     normalize_transport,
+    tls_context,
     transport_allowed,
     validate_mcp_url,
 )
-from agents.core.mcp.resilience import ReconnectPolicy, ServerHealth, halted
+from agents.core.mcp.resilience import STATE_RECYCLED, ReconnectPolicy, ServerHealth, halted
 from agents.core.mcp.resources import (
     UTILITY_OPS,
     ResourceError,
@@ -132,6 +135,14 @@ STDIO_ENV_ALLOW_FLAG = "JARVIS_MCP_STDIO_ALLOWED_ENV"
 #: an unannotated, unlisted or mutating tool is refused by name before any request leaves.
 #: ``full`` lets every tool through to the contract and kernel checks that already govern
 #: it. The hint is the server's own claim, so it can only ever *narrow* what a tier allows.
+#: H554 — merged into every refusal a retry cannot change, so the model is told not to try
+#: again (Hermes's denial text says the same).
+DO_NOT_RETRY = {
+    "retry": False,
+    "message": "This call was refused by the owner's MCP policy. Do not retry it; tell the "
+               "owner what you wanted to do instead.",
+}
+
 TRUST_READ_ONLY = "read-only"
 TRUST_FULL = "full"
 TRUST_TIERS: tuple[str, ...] = (TRUST_READ_ONLY, TRUST_FULL)
@@ -145,6 +156,101 @@ _TRUST_ALIASES = {
 def normalize_trust(raw: object) -> str | None:
     """Canonical trust tier for *raw*, or None when it names no tier."""
     return _TRUST_ALIASES.get(str(raw or "").strip().lower())
+
+
+# ── H547 / H556: the per-server operational keys ────────────────────────────
+
+#: Numeric keys: (floor, ceiling). A value under the floor is raised to it (Hermes floors
+#: ``keepalive_interval`` at 5 s the same way); over the ceiling is refused.
+NUMERIC_OPTIONS: dict[str, tuple[float, float]] = {
+    "timeout": (1.0, 3600.0),                  # per request; default 10 s
+    "connect_timeout": (1.0, 600.0),           # spawn/handshake; default 30 s
+    "keepalive_interval": (5.0, 86400.0),      # stdio ping; default the manager's 60 s
+    "idle_timeout_seconds": (30.0, 30 * 86400.0),   # stdio: stop after this long unused
+    "max_lifetime_seconds": (60.0, 365 * 86400.0),  # stdio: restart after this long up
+}
+OPTION_KEYS = frozenset(NUMERIC_OPTIONS) | {"supports_parallel_tool_calls", "ssl_verify",
+                                           "client_cert", "client_key"}
+_MAX_PATH_CHARS = 4096
+
+
+def _clean_path(value: object) -> str | None:
+    """An absolute path (``~`` allowed) without NUL or newline, else None."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or len(text) > _MAX_PATH_CHARS or any(ch in text for ch in "\x00\r\n"):
+        return None
+    return text if os.path.isabs(os.path.expanduser(text)) else None
+
+
+def operational_options(cfg: object, *, strict: bool = False) -> tuple[dict, str | None]:
+    """``(options, refusal)`` from a server entry's operational keys.
+
+    *strict* (the add and reload paths) refuses the first malformed key by name; otherwise
+    (loading the saved list at start) a malformed key is dropped with a warning and the
+    server keeps working on the defaults.
+
+    TLS: ``ssl_verify`` is ``true`` (default) or the absolute path of a CA bundle the
+    server's certificate is checked against (in addition to the default store and the
+    owner's anchor). ``false`` is refused: Nerva never turns certificate verification
+    off (agents/core/tls_trust.py); a private CA is trusted instead. ``client_cert`` is a
+    path, or a list of one (cert and key in one PEM) or two (cert, key) paths;
+    ``client_key`` is the key's path when ``client_cert`` is a string. A key protected by a
+    password is not accepted (no secret goes in this config).
+    """
+    out: dict = {}
+    if not isinstance(cfg, dict):
+        return out, None
+    problems: list[str] = []
+    for key, (floor, ceiling) in NUMERIC_OPTIONS.items():
+        value = cfg.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value \
+                or value <= 0 or value > ceiling:
+            problems.append(key)
+            continue
+        out[key] = float(max(floor, value))
+    parallel = cfg.get("supports_parallel_tool_calls")
+    if parallel is not None:
+        if isinstance(parallel, bool):
+            out["supports_parallel_tool_calls"] = parallel
+        else:
+            problems.append("supports_parallel_tool_calls")
+    verify = cfg.get("ssl_verify")
+    if verify is not None and verify is not True:
+        path = _clean_path(verify)
+        if path is None:
+            problems.append("ssl_verify")
+        else:
+            out["ssl_verify"] = path
+    cert, key = cfg.get("client_cert"), cfg.get("client_key")
+    if cert is not None:
+        if isinstance(cert, list) and len(cert) in (1, 2) and key is None \
+                and all(_clean_path(c) for c in cert):
+            out["client_cert"] = [_clean_path(c) for c in cert]
+        elif isinstance(cert, str) and _clean_path(cert) and (key is None or _clean_path(key)):
+            out["client_cert"] = [_clean_path(cert)] + ([_clean_path(key)] if key is not None else [])
+        else:
+            problems.append("client_cert")
+    elif key is not None:
+        problems.append("client_key")
+    if problems:
+        if strict:
+            return {}, f"invalid_option:{problems[0]}"
+        logger.warning("MCP server %s: ignoring malformed %s", cfg.get("name"), ", ".join(problems))
+    return out, None
+
+
+def tls_options_refusal(transport: str, cfg: dict) -> str | None:
+    """TLS keys only mean something for an HTTP server; on stdio they are refused."""
+    if transport == TRANSPORT_STREAMABLE_HTTP:
+        return None
+    for key in ("ssl_verify", "client_cert", "client_key"):
+        if cfg.get(key) is not None and cfg.get(key) is not True:
+            return f"invalid_option:{key}"
+    return None
 
 
 MAX_TOOL_PATTERNS = 64
@@ -382,12 +488,16 @@ def _is_server_request(msg: dict) -> bool:
             and "result" not in msg and "error" not in msg)
 
 
+#: Answers POSTed after a cancelled call (review m6), held so they are not collected early.
+_LATE_ANSWERS: set = set()
+
+
 def _permanent_refusal(reason: str | None) -> bool:
     """A connect refusal no retry can fix: the configuration itself is refused."""
     text = str(reason or "")
     return text in {"unsafe_command", "missing_command", "oauth_required", "secret_missing",
                     "token_origin_mismatch"} or text.startswith(
-        ("unsupported_transport", "transport_disabled"))
+        ("unsupported_transport", "transport_disabled", "config_refused", "tls_config"))
 
 
 #: H552 — the longest JSON-RPC line read off a stdio server: a 50 MiB resource as base64
@@ -445,12 +555,19 @@ class MCPTool:
         self.name = name
         #: H552 — one of the four resource/prompt tools this client adds, not the server's own.
         self.utility = bool(utility)
+        #: H555 — the digest of the definition exactly as the server listed it (what an
+        #: owner's release in ``accepted_definitions`` names), then the cleaned copy:
+        #: invisible characters out of the description and the schema's texts, and the
+        #: findings of the tool-definition scan (non-empty = quarantined, never offered).
+        self.definition_digest = definition_digest(description, input_schema, annotations)
+        description, cleaned_schema, annotations, self.findings = inspect_tool(
+            description, input_schema, annotations, name=None if utility else name)
         self.description = description
         #: What the server sent, kept for diagnostics only — never offered to a model.
         self.raw_input_schema = input_schema
         #: The provider-agnostic repair (H557): applied here, at registration, so every
         #: dialect serializer downstream ships the same safe schema.
-        self.input_schema = normalize_mcp_input_schema(input_schema)
+        self.input_schema = normalize_mcp_input_schema(cleaned_schema)
         self.server = server
         #: The server's own claims about the tool (``readOnlyHint``, ``destructiveHint``, …).
         self.annotations: dict = dict(annotations) if isinstance(annotations, dict) else {}
@@ -495,6 +612,8 @@ class MCPServer:
         secret_headers: dict[str, str] | None = None,
         oauth: dict | None = None,
         origin: dict | None = None,
+        accepted_definitions: dict | None = None,
+        options: dict | None = None,
     ):
         """
         ``transport`` is normalised (``"HTTP"`` → ``streamable-http``); an unknown
@@ -542,6 +661,9 @@ class MCPServer:
         self.secret_headers = {str(k): str(v) for k, v in dict(secret_headers or {}).items()}
         self.oauth = dict(oauth or {})
         self.origin = dict(origin or {})
+        #: H555 — the owner's releases of quarantined tool definitions: tool name → the
+        #: sha256 of the exact definition released (a changed definition is quarantined again).
+        self.accepted_definitions: dict[str, str] = clean_accepted_definitions(accepted_definitions)
         #: G11 (H545) — the editor conversation this server was handed for, or None for a
         #: configured server. A scoped server's tools are offered to that conversation's
         #: turns only, and it is never written to the saved server list (:meth:`MCPManager.to_config`).
@@ -561,6 +683,18 @@ class MCPServer:
         self.health = ServerHealth()
         self.connect_timeout = 30.0
         self.request_timeout = 10.0
+        #: H547 / H556 — the owner's operational keys (:func:`operational_options`), kept
+        #: as given so they are saved back unchanged.
+        self.options: dict = operational_options(options or {})[0]
+        self.request_timeout = self.options.get("timeout", self.request_timeout)
+        self.connect_timeout = self.options.get("connect_timeout", self.connect_timeout)
+        self.keepalive_interval: float | None = self.options.get("keepalive_interval")
+        self.idle_timeout: float | None = self.options.get("idle_timeout_seconds")
+        self.max_lifetime: float | None = self.options.get("max_lifetime_seconds")
+        self.supports_parallel_tool_calls = self.options.get("supports_parallel_tool_calls") is True
+        #: Wall-clock time of the current stdio spawn and of its last request (H556).
+        self._spawned_at: float | None = None
+        self._last_io: float = 0.0
         #: The owner (or autoconnect) wants this server up: the supervisor reconnects it.
         self.wanted = False
         self._stderr_task: asyncio.Task | None = None
@@ -664,6 +798,12 @@ class MCPServer:
                 logger.warning("MCP stdio command rejected as unsafe: %s", self.name)
                 self.last_error = "unsafe_command"
                 return False
+            # H555 — the saved entry is checked again at spawn, however it reached storage.
+            refused = self.config_findings()
+            if refused:
+                logger.warning("MCP server %s refused at spawn: %s", self.name, ", ".join(refused))
+                self.last_error = f"config_refused:{refused[0]}"
+                return False
             # Terminate any prior process first, or a server that connects but
             # registers no tools gets a fresh subprocess spawned (and the old one
             # orphaned) on every reconnect attempt.
@@ -674,6 +814,7 @@ class MCPServer:
             # from the model as ambiguous (H557).
             self.tools = []
             self.utility_tools = []
+            group = process_guard.spawn_kwargs()
             self._proc = await asyncio.create_subprocess_exec(
                 *argv,
                 stdin=asyncio.subprocess.PIPE,
@@ -682,7 +823,14 @@ class MCPServer:
                 cwd=self.cwd or None,
                 env=self._merged_env(),
                 limit=STDIO_IDLE_LINE_LIMIT,
+                **group,
             )
+            # H556 — its own process group, recorded so a hub that dies hard does not leave
+            # the group running into the next start (process_guard.reap_orphans).
+            self._proc._mcp_group = bool(group)
+            if group and isinstance(getattr(self._proc, "pid", None), int):
+                self._proc._mcp_start = process_guard.record(self._proc.pid, self.name)
+            self._spawned_at = self._last_io = time.time()
             self._start_stderr_drain()
             await self._initialize()
             logger.info(f"MCP server connected: {self.name} ({len(self.tools)} tools, "
@@ -719,6 +867,11 @@ class MCPServer:
         if reason:
             self.last_error = reason
             return False
+        refused = self.config_findings()
+        if refused:
+            logger.warning("MCP server %s refused at connect: %s", self.name, ", ".join(refused))
+            self.last_error = f"config_refused:{refused[0]}"
+            return False
         if self._http is not None:
             await self._teardown()
         self.tools = []
@@ -729,12 +882,30 @@ class MCPServer:
         if refusal:
             self.last_error = refusal
             return False
+        # H547 — the owner's per-server timeout and TLS material (CA bundle, client cert),
+        # passed only when set so the default path is unchanged.
+        extra: dict = {}
+        if "timeout" in self.options:
+            extra["timeout"] = self.request_timeout
+        if self.options.get("ssl_verify") or self.options.get("client_cert"):
+            try:
+                extra["verify"] = await asyncio.to_thread(
+                    tls_context, self.options.get("ssl_verify"), self.options.get("client_cert"))
+            except MCPTransportError as exc:
+                self.last_error = f"tls_config:{exc.detail}"
+                return False
         try:
-            self._http = self._http_factory(self.url, headers, name=self.name)
-            result = await self._http.initialize()
+            self._http = self._http_factory(self.url, headers, name=self.name, **extra)
+            # H553 — a request the server sends inside a call's response stream (sampling,
+            # elicitation, ping) is answered by the same host as on stdio, so the same
+            # capabilities are declared: only what the owner's settings can answer.
+            caps = self.client_capabilities()
+            if hasattr(self._http, "on_server_request"):
+                self._http.on_server_request = self._http_server_request
+            else:
+                caps = {}
+            result = await (self._http.initialize(caps) if caps else self._http.initialize())
             if result:
-                # No server-to-client channel is read on this transport, so nothing is
-                # declared for sampling or elicitation; resources and prompts still work.
                 self._record_capabilities(result)
                 await self._list_tools()
                 self._refresh_utilities()
@@ -761,6 +932,34 @@ class MCPServer:
         if self.transport == TRANSPORT_STREAMABLE_HTTP:
             return self._http is not None and self._http.initialized and bool(self.tools or self.utility_tools)
         return self._proc is not None and self._proc.returncode is None
+
+    def config_findings(self) -> list[str]:
+        """H555 — the launch shapes that refuse this server (empty = clean): checked when it
+        is saved and again before every spawn. Secret values are not read for it; their
+        names are (a loader variable is refused by name)."""
+        argv = self._command_argv() if self.transport == TRANSPORT_STDIO else None
+        env = {**dict.fromkeys(self.secret_env, ""), **self.env}
+        headers = {**self.secret_headers, **self.headers}
+        return config_findings(argv, env=env, cwd=self.cwd, headers=headers)
+
+    def quarantine_reasons(self, tool: "MCPTool") -> list[str]:
+        """H555 — why *tool* is withheld (empty = offered). A flagged definition stays
+        quarantined unless the owner released that exact definition; a released tool whose
+        definition changed since is quarantined again (``definition_changed``), flagged or not."""
+        accepted = self.accepted_definitions.get(tool.name)
+        if accepted is not None and accepted != tool.definition_digest:
+            return ["definition_changed", *tool.findings]
+        if tool.findings and accepted != tool.definition_digest:
+            return list(tool.findings)
+        return []
+
+    def quarantined(self, tool: "MCPTool") -> bool:
+        return bool(self.quarantine_reasons(tool))
+
+    def quarantined_tools(self) -> list[dict]:
+        return [{"name": t.name, "findings": self.quarantine_reasons(t),
+                 "digest": t.definition_digest}
+                for t in self.all_tools() if self.quarantined(t)]
 
     def _command_argv(self) -> list[str] | None:
         command = (self.command or "").strip()
@@ -955,7 +1154,16 @@ class MCPServer:
         if not isinstance(arguments, dict):
             return {"error": "bad_args", "tool": name, "server": self.name}
         if not self.tool_visible(name):
-            return {"error": "tool_filtered", "tool": name, "server": self.name}
+            return {"error": "tool_filtered", "tool": name, "server": self.name, **DO_NOT_RETRY}
+        listed = next((t for t in self.tools if t.name == name), None) or self.utility(name)
+        if listed is None:
+            # Only a tool the server listed (and the definition scan saw) may be called:
+            # an unlisted name cannot go around the quarantine (review nit).
+            return {"error": "trust_denied", "tool": name, "server": self.name,
+                    "trust": self.trust, "reason": "unlisted_tool", **DO_NOT_RETRY}
+        if self.quarantined(listed):
+            return {"error": "tool_quarantined", "tool": name, "server": self.name,
+                    "findings": self.quarantine_reasons(listed), **DO_NOT_RETRY}
         denied = self._trust_denial(name)
         if denied is not None:
             return denied
@@ -975,7 +1183,8 @@ class MCPServer:
             # instruction the owner never sees (Hermes absorption 4a).
             # H552 — bounded (blocks, total text) and stripped off the event loop; image,
             # audio and embedded binary blocks go to disk and the model gets a path.
-            return await cache_result_blocks(self.name, await bound_tool_result(resp["result"]))
+            return await cache_result_blocks(self.name, await bound_tool_result(resp["result"],
+                                                                                server=self.name))
         return resp
 
     async def _call_utility(self, op: str, arguments: dict) -> dict:
@@ -1002,6 +1211,7 @@ class MCPServer:
             "server": self.name,
             "trust": self.trust,
             "reason": "unlisted_tool" if tool is None else "readOnlyHint_required",
+            **DO_NOT_RETRY,
         }
 
     def _tool_call_blocked(self, name: str, arguments: dict) -> dict | None:
@@ -1022,7 +1232,7 @@ class MCPServer:
             return {"error": "contract_error", "tool": name, "server": self.name}
         reason = contract_denial(decision)
         if reason:
-            return {"error": reason, "tool": name, "server": self.name}
+            return {"error": reason, "tool": name, "server": self.name, **DO_NOT_RETRY}
         return None
 
     async def _send(self, msg: dict) -> dict:
@@ -1084,6 +1294,7 @@ class MCPServer:
                 await self._teardown()
                 return {"error": {"code": -32000, "message": "unsolicited_output"}}
             _set_line_limit(reader, line_limit)
+            self._last_io = time.time()
             try:
                 self._next_id += 1
                 req_id = self._next_id
@@ -1143,9 +1354,34 @@ class MCPServer:
                 logger.warning(f"MCP error ({self.name}): {e}")
                 return {}
             finally:
+                self._last_io = time.time()
                 # Back to the idle limit: an idle server can park at most ~2 MiB here.
                 if self._proc is not None:
                     _set_line_limit(self._proc.stdout, STDIO_IDLE_LINE_LIMIT)
+
+    async def _http_server_request(self, req: dict) -> dict:
+        """H553 — answer a request a Streamable HTTP server sent inside a response stream;
+        the transport POSTs the answer and bounds how many it serves per call."""
+        method = str(req.get("method") or "")
+        if self.host is None:
+            return {"error": {"code": -32601, "message": "method not supported by this client"}}
+        self._cancel_reply = None
+        try:
+            return await self.host.handle(self, method, req.get("params"))
+        except asyncio.CancelledError:
+            # Review m6 — as on stdio: the call that was waiting ended; the server is told,
+            # with the owner's answer if it had already been accepted, else a withdrawal.
+            late, self._cancel_reply = self._cancel_reply, None
+            http = self._http
+            if http is not None and hasattr(http, "post_answer"):
+                task = asyncio.get_running_loop().create_task(http.post_answer(
+                    req, late or MCPHost.refusal(method, "the request was withdrawn")))
+                _LATE_ANSWERS.add(task)
+                task.add_done_callback(_LATE_ANSWERS.discard)
+            raise
+        except Exception:
+            logger.warning("MCP %s: answering %s failed", self.name, method[:60], exc_info=True)
+            return {"error": {"code": -32603, "message": "internal error"}}
 
     async def _answer_server_request(self, req: dict, *, refuse: bool = False) -> None:
         method = str(req.get("method") or "")
@@ -1182,7 +1418,10 @@ class MCPServer:
 
     async def ping(self) -> bool:
         """Keepalive (H556): False when the server did not answer within the deadline."""
+        last_io = self._last_io
         resp = await self._send({"jsonrpc": "2.0", "method": "ping", "params": {}, "id": 0})
+        # A keepalive is not use: it must not hold off the idle recycling (H556).
+        self._last_io = last_io
         return bool(resp) and "result" in resp
 
     async def _teardown(self) -> None:
@@ -1192,16 +1431,10 @@ class MCPServer:
             self._stderr_task = None
         if self._proc:
             proc, self._proc = self._proc, None
-            try:
-                if proc.returncode is None:
-                    proc.terminate()
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=5.0)
-                except TimeoutError:
-                    proc.kill()
-                    await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except (TimeoutError, ProcessLookupError, AttributeError):
-                pass
+            self._spawned_at = None
+            with suppress(TimeoutError, ProcessLookupError, AttributeError):
+                # H556 — the whole group (a launcher such as npx and the server it started).
+                await process_guard.terminate_group(proc)
             # Close the pipes too: a reader paused by a full buffer never sees EOF, and
             # its transport would otherwise outlive the process.
             transport = getattr(proc, "_transport", None)
@@ -1247,6 +1480,10 @@ def _saved_row(srv: MCPServer) -> dict:
         **({"secret_headers": dict(srv.secret_headers)} if srv.secret_headers else {}),
         **({"oauth": dict(srv.oauth)} if srv.oauth else {}),
         **({"origin": dict(srv.origin)} if srv.origin else {}),
+        **({"accepted_definitions": dict(srv.accepted_definitions)}
+           if srv.accepted_definitions else {}),
+        **{key: (list(value) if isinstance(value, list) else value)
+           for key, value in sorted(srv.options.items())},
     }
 
 
@@ -1356,12 +1593,18 @@ class MCPManager:
             if srv._trust_denial(tool.name) is not None:
                 # The owner's trust tier would refuse every call: never offer it.
                 continue
+            if srv.quarantined(tool):
+                # H555: its description or schema matched the definition scan.
+                continue
             rows.append({
                 "name": name,
                 "description": tool.description,
                 "input_schema": tool.input_schema,
                 "gated": not tool.read_only,
                 "untrusted_output": True,
+                # H547 — the owner said this server takes concurrent calls; only its
+                # read-only tools may then run beside others in one model turn.
+                "parallel_safe": bool(srv.supports_parallel_tool_calls and tool.read_only),
                 "server": srv.name,
                 "tool": tool.name,
                 "qualified_name": tool.qualified_name,
@@ -1763,8 +2006,25 @@ class MCPManager:
             if not srv.wanted or self._halted(srv.name):
                 continue
             if srv.is_connected():
+                if srv.transport == TRANSPORT_STDIO and not srv._io_lock.locked():
+                    # H547 / H556 — stdio recycling: a server past its lifetime is restarted
+                    # now; one unused for its idle timeout is stopped and comes back on its
+                    # next call. Never mid-request (the I/O lock is free).
+                    if srv.max_lifetime and srv._spawned_at is not None \
+                            and now - srv._spawned_at >= srv.max_lifetime:
+                        await srv._teardown()
+                        srv.health.recycled("lifetime")
+                        due.append(srv)
+                        done[srv.name] = "recycled_lifetime"
+                        continue
+                    if srv.idle_timeout and srv._last_io and now - srv._last_io >= srv.idle_timeout:
+                        await srv._teardown()
+                        srv.health.recycled("idle")
+                        done[srv.name] = "recycled_idle"
+                        continue
+                interval = srv.keepalive_interval or self.keepalive_interval
                 if (srv.transport == TRANSPORT_STDIO and not srv._io_lock.locked()
-                        and now - self._last_ping.get(srv.name, 0.0) >= self.keepalive_interval):
+                        and now - self._last_ping.get(srv.name, 0.0) >= interval):
                     self._last_ping[srv.name] = now
                     if await srv.ping():
                         done[srv.name] = "ping_ok"
@@ -1773,6 +2033,8 @@ class MCPManager:
                         await srv._teardown()
                         done[srv.name] = "ping_failed"
                 continue
+            if srv.health.state == STATE_RECYCLED:
+                continue            # idle-stopped: its next call reconnects it
             srv.health.lost("transport_lost", now=now)
             if srv.health.retry_due(now):
                 due.append(srv)
@@ -1807,9 +2069,16 @@ class MCPManager:
         loop = asyncio.get_running_loop()
 
         async def run() -> None:
+            try:
+                # H556 — server groups a previous run left behind when it died hard.
+                await asyncio.to_thread(process_guard.reap_orphans)
+            except Exception:
+                logger.warning("MCP orphan sweep failed", exc_info=True)
             if autoconnect:
                 try:
-                    await self.connect_all()
+                    # One process connects the saved servers at a time (shared data dir).
+                    async with process_guard.discovery_lock():
+                        await self.connect_all()
                 except Exception:
                     logger.warning("MCP background connect failed", exc_info=True)
             await self._supervise(interval)
@@ -1975,4 +2244,21 @@ def _g9_fields(cfg: dict) -> dict:
     oauth = cfg.get("oauth")
     if isinstance(oauth, dict):
         out["oauth"] = {k: v for k, v in oauth.items() if isinstance(k, str) and isinstance(v, (str, int))}
+    accepted = clean_accepted_definitions(cfg.get("accepted_definitions"))
+    if accepted:
+        out["accepted_definitions"] = accepted
+    options, _refused = operational_options(cfg)
+    if options:
+        out["options"] = options
     return out
+
+
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def clean_accepted_definitions(raw: object) -> dict[str, str]:
+    """H555 — ``{tool name: sha256 hex}`` entries only (at most 256); anything else is dropped."""
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v for k, v in list(raw.items())[:256]
+            if isinstance(k, str) and 0 < len(k) <= 200 and isinstance(v, str) and _DIGEST_RE.match(v)}

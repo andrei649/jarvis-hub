@@ -207,6 +207,7 @@ def test_the_launchers_pin_exactly_the_documented_names():
         "Dockerfile": (r"^\s+(JARVIS_[A-Z_]+)=", {"JARVIS_HOST", "JARVIS_PORT", "JARVIS_HOME"}),
         "docker-compose.yml": (r"^\s+(JARVIS_[A-Z_]+):", {"JARVIS_HOST", "JARVIS_PORT", "JARVIS_HOME"}),
         "docker-compose.quickstart.yml": (r"^\s+(JARVIS_[A-Z_]+):", {"JARVIS_HOST", "JARVIS_PORT", "JARVIS_HOME"}),
+        "docker-compose.windows.yml": (r"^\s+(JARVIS_[A-Z_]+):", {"JARVIS_HOST", "JARVIS_PORT", "JARVIS_HOME"}),
         "deploy/systemd/jarvis-hub.service": (r"^Environment=(JARVIS_[A-Z_]+)=",
                                               {"JARVIS_HOST", "JARVIS_PORT", "JARVIS_SHUTDOWN_TIMEOUT", "JARVIS_HOME"}),
         "deploy/systemd/jarvis-runtime.service": (r"^Environment=(JARVIS_[A-Z_]+)=",

@@ -31,6 +31,9 @@ def run_cli(tmp_path, report, *argv):
     calls = []
 
     def post(route, body):
+        if body.get("preview"):
+            # H570: the consent screen is read first and records nothing.
+            return {"ok": True, "preview": True, "consent": "not_granted", "declared_digest": "a" * 64, "added_declarations": [], "removed_declarations": []}
         calls.append((route, body))
         return report
 
@@ -155,7 +158,7 @@ def test_grant_flow_keeps_existing_output_when_report_revoked_is_false(tmp_path)
         "declared_digest": "abcdef1234567890",
         "restart_restore": {"state": "remove_failed", "reason": "disk_error"},
     }
-    code, out, _err, _ = run_cli(tmp_path, report, "consent")
+    code, out, _err, _ = run_cli(tmp_path, report, "consent", "--yes")
     assert code == EXIT_OK
     assert "Consent recorded for boats (abcdef123456)" in out
     assert "Warning:" not in out

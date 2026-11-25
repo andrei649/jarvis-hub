@@ -23,13 +23,23 @@ class SavedReloadPlan:
 _FIELDS = frozenset({
     "name", "transport", "command", "url", "cwd", "trust", "tools_allow",
     "tools_deny", "sampling", "elicitation", "auth", "env", "secret_env",
-    "secret_headers", "oauth", "origin", "headers",
+    "secret_headers", "oauth", "origin", "headers", "accepted_definitions",
+    # H547 / H556 operational keys (client.OPTION_KEYS)
+    "timeout", "connect_timeout", "keepalive_interval", "idle_timeout_seconds",
+    "max_lifetime_seconds", "supports_parallel_tool_calls", "ssl_verify", "client_cert",
+    "client_key",
 })
 
 
 def candidates(configs: object) -> tuple[dict[str, object], bytes]:
     """Validate the entire effective list before creating any live server."""
-    from .client import MCPManager, normalize_trust, tool_patterns_over_bounds
+    from .client import (
+        MCPManager,
+        normalize_trust,
+        operational_options,
+        tls_options_refusal,
+        tool_patterns_over_bounds,
+    )
     from .http_transport import normalize_transport, validate_mcp_url
 
     if type(configs) is not list or len(configs) > 128:
@@ -90,6 +100,9 @@ def candidates(configs: object) -> tuple[dict[str, object], bytes]:
                 for k, v in value.items()
             ):
                 raise SavedReloadRefused("saved_config_invalid")
+        _options, refused = operational_options(row, strict=True)
+        if refused or tls_options_refusal(transport, row):
+            raise SavedReloadRefused("saved_config_invalid")
         if row.get("env") and not row.get("origin"):
             raise SavedReloadRefused("saved_config_invalid")
         if row.get("secret_env") is not None and (type(row["secret_env"]) is not list
@@ -104,6 +117,13 @@ def candidates(configs: object) -> tuple[dict[str, object], bytes]:
             raise SavedReloadRefused("saved_config_invalid")
         if transport == "stdio" and server._command_argv() is None:
             raise SavedReloadRefused("saved_config_invalid")
+        accepted = row.get("accepted_definitions")
+        if accepted is not None and (type(accepted) is not dict
+                                     or server.accepted_definitions != accepted):
+            raise SavedReloadRefused("saved_config_invalid")
+        if server.config_findings():
+            # H555: a launch shape the validator refuses never reaches the live manager.
+            raise SavedReloadRefused("saved_config_refused")
         result[name] = server
     return result, encoded
 

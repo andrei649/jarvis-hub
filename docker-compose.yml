@@ -1,5 +1,11 @@
 services:
 
+  # Both images run as the unprivileged `nerva` user (H573): deploy/docker/entrypoint.sh
+  # remaps it to NERVA_UID/NERVA_GID or PUID/PGID from .env (default 1000), hands it the data
+  # root and drops root before exec. Set the coordinator's JARVIS_RUNTIME_COORDINATOR=0 to
+  # switch it off: it exits 125 and its supervisor records it as down and holds, instead
+  # of the restart policy crash-looping it.
+  #
   # The hub runs serve.py — the canonical entry — never raw uvicorn: only serve.py applies
   # a staged in-place restore at boot and re-execs itself when an approved restore asks it
   # to (H010). Same posture as Dockerfile / docker-compose.quickstart.yml: host networking
@@ -17,6 +23,8 @@ services:
         RUN pip install --no-cache-dir -r requirements-beta.txt
         COPY . .
         EXPOSE 8080
+        RUN useradd --uid 1000 --user-group --no-create-home --home-dir /data --shell /usr/sbin/nologin nerva
+        ENTRYPOINT ["sh", "/app/deploy/docker/entrypoint.sh"]
         CMD ["python", "serve.py"]
     network_mode: host
     # tini as pid 1: the coordinator shares this pid namespace (below), so something here
@@ -60,6 +68,8 @@ services:
         COPY requirements-beta.txt .
         RUN pip install --no-cache-dir -r requirements-beta.txt
         COPY . .
+        RUN useradd --uid 1000 --user-group --no-create-home --home-dir /data --shell /usr/sbin/nologin nerva
+        ENTRYPOINT ["sh", "/app/deploy/docker/entrypoint.sh"]
         CMD ["python", "scripts/runtime_supervisor.py"]
     pid: "service:jarvis"
     # RB-2: pinned here under the JARVIS_ spelling, as for the hub above (edit this line to change it).

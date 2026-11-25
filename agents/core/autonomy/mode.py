@@ -34,9 +34,10 @@ from __future__ import annotations
 
 import logging
 import re
-import threading
 import time
 from typing import Any
+
+from agents.core.settings_lock import SettingsWriteLock
 
 logger = logging.getLogger("jarvis.autonomy.mode")
 
@@ -68,7 +69,9 @@ _MEANING = {
 _warned: set[str] = set()
 #: One writer at a time reads the old value, persists, applies and audits (two writers
 #: must never leave the store, the live policy and the last audit row disagreeing).
-_write_lock = threading.RLock()
+#: Re-entrant in-process and held across processes too (``settings_lock``): the offline
+#: CLI and the hub are serialised by it (review of H257, M1).
+_write_lock = SettingsWriteLock()
 
 
 class ModeNotSaved(RuntimeError):

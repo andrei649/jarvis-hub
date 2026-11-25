@@ -13,7 +13,7 @@ sys.path.insert(0, str(repo_root))
 from agents.core.automation_contracts import ContractDecision
 from agents.core.kernel import Action, Decision, Verdict
 from agents.core.mcp import client as mcp_client
-from agents.core.mcp.client import MCPServer
+from agents.core.mcp.client import DO_NOT_RETRY, MCPServer, MCPTool
 from agents.core.plugins import oracle_bridge
 
 
@@ -182,6 +182,8 @@ async def test_mcp_call_tool_obeys_live_contract_before_send(monkeypatch):
     # This test is about the call contract, which runs after the trust tier (Hermes
     # absorption 4b); full trust keeps the tier out of the way.
     srv = MCPServer("worldview", transport="stdio", command="python -m worldview.mcp", trust="full")
+    # Only a listed tool may be called (an unlisted name is refused before the contract).
+    srv.tools = [MCPTool("watch_aoi", "Watch an area.", {"type": "object"}, "worldview")]
 
     async def fake_send(msg):
         send_calls.append(msg)
@@ -191,7 +193,8 @@ async def test_mcp_call_tool_obeys_live_contract_before_send(monkeypatch):
 
     out = await srv.call_tool("watch_aoi", {"aoi": "black-sea", "token": "secret"})
 
-    assert out == {"error": "contract_blocked", "tool": "watch_aoi", "server": "worldview"}
+    assert out == {"error": "contract_blocked", "tool": "watch_aoi", "server": "worldview",
+                   **DO_NOT_RETRY}
     assert send_calls == []
     assert contract.calls[0][0]["args_keys"] == ["aoi", "token"]
 
@@ -202,6 +205,8 @@ async def test_mcp_call_tool_rejects_mixed_arg_keys_without_send():
     # This test is about the call contract, which runs after the trust tier (Hermes
     # absorption 4b); full trust keeps the tier out of the way.
     srv = MCPServer("worldview", transport="stdio", command="python -m worldview.mcp", trust="full")
+    # Only a listed tool may be called (an unlisted name is refused before the contract).
+    srv.tools = [MCPTool("watch_aoi", "Watch an area.", {"type": "object"}, "worldview")]
 
     async def fake_send(msg):
         send_calls.append(msg)
@@ -211,5 +216,5 @@ async def test_mcp_call_tool_rejects_mixed_arg_keys_without_send():
 
     out = await srv.call_tool("watch_aoi", {"aoi": "black-sea", 1: "not-json-safe"})
 
-    assert out == {"error": "bad_args_keys", "tool": "watch_aoi", "server": "worldview"}
+    assert out == {"error": "bad_args_keys", "tool": "watch_aoi", "server": "worldview", **DO_NOT_RETRY}
     assert send_calls == []

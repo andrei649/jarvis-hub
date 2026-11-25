@@ -50,7 +50,9 @@ class AcquiredRecord:
             "name": self.name,
             "version": self.version,
             "description": f"Governed acquired capability {self.name}.",
-            "author": "jarvis-acquisition",
+            # H566: an extension a third-party author wrote and the owner submitted says so.
+            "author": ("owner-submitted" if self.manifest.get("model_route") == "owner-submitted"
+                       else "jarvis-acquisition"),
             "execution_mode": self.execution_mode,
             "package_hash": self.package_hash,
             "receipt_hash": self.manifest["receipt_hash"],
