@@ -3,7 +3,7 @@
 > Written for a **Claude Cowork session on the owner's machine** (it can `npm install`, build the
 > frontend, and drive the browser to verify — the remote sandbox cannot). Each item lists what to
 > build, why, the exact backend endpoints/files that already exist, and an acceptance test. Sources:
-> the 2026-07-24 QA run (`docs/qa-runs/2026-07-24-cowork-run.md`) and the owner's asks
+> the 2026-07-24 QA run (`docs/archive/qa-runs/2026-07-24-cowork-run.md`) and the owner's asks
 > ("how do I manage projects on multiple subjects with no chat history?" / "how does it show me
 > what it did, visually?").
 >
@@ -89,5 +89,5 @@ The owner wants to *see*, visually, what the system did. Pieces exist but are sc
 - Keep the honesty rule from the runbook: honest empty/"not connected" states are correct; never
   render seed/mock data as if it were live. The QA run's whole point was catching fabricated-as-real.
 - Land each item as its own small PR (draft), with a vitest test where a pure seam exists and a
-  browser-verified screenshot in the PR. Update `docs/qa-runs/2026-07-24-cowork-run.md`'s §K if a
+  browser-verified screenshot in the PR. Update `docs/archive/qa-runs/2026-07-24-cowork-run.md`'s §K if a
   fix closes one of its findings.

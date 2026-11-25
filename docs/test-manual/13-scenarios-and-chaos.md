@@ -57,7 +57,7 @@ HURT:      BLOCKER / MAJOR / MINOR / COSMETIC   (+ fabrication grade F0–F5 fro
 Three rules that make a journey worth more than the sum of its cases:
 
 1. **Two sources or it didn't happen.** chat vs widget · widget vs API · API vs audit chain · audit
-   chain vs server log. `docs/qa-runs/2026-07-24-cowork-run.md` found all three blockers this way.
+   chain vs server log. `docs/archive/qa-runs/2026-07-24-cowork-run.md` found all three blockers this way.
 2. **Time-stamp every beat.** Half the chaos family is only provable against a timeline.
 3. **Do not prepare the machine.** No calendar OAuth, no bank connector, no pre-seeded rooms before
    JRN-1/JRN-3 — the fabrication failure mode only reproduces with connectors *absent*, which is

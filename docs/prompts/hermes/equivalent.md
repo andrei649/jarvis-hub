@@ -41,7 +41,7 @@ You are working in `andrei649/jarvis-hub` on branch `claude/cto-session-recovery
   - `docs/HERMES_SPRINT.md`:
     - "Ce înseamnă terminat" (about lines 66–94) says what "complete" means;
     - "Cum se menține statusul" says how status is maintained.
-  - `docs/hermes/full-parity-2026-09-27.md`
+  - `docs/archive/hermes/full-parity-2026-09-27.md`
   - `docs/handoff/2026-09-28-codex-review/README.md`, including its known gaps (§ "Known gaps") and the pending AGENTS.md owner decision.
   - `scripts/hermes_status.py`. Its `assess()` function is the schema contract.
   - `tests/test_hermes_sprint_status.py`

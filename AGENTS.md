@@ -45,6 +45,17 @@ overwriting existing open PR branches (`#1359`–`#1364`), no paid service activ
 silent resumption of paused schedules.** Tests, security boundaries, data preservation, and
 truthful evidence reporting remain strictly binding.
 
+**Owner decision, 2026-11-25 — the finish line.** "Done" is the nine vision items in
+[`docs/decisions/2026-11-25-nerva-finish-line.md`](docs/decisions/2026-11-25-nerva-finish-line.md),
+each with a passing acceptance test — **not** parity with Hermes on 697 rows. That document
+supersedes the completion goal of the Hermes campaign and of BACKLOG row HEQ-1. The Hermes ledger
+is a reference: work a row only when a finish-line item needs it, and never relabel a `partial`
+row to look finished. Reuse before building (MCP servers, `SKILL.md` skills, the governed Hermes
+sidecar). Frozen until the desktop finish line: the mobile app (record "mobile: frozen" in
+`mobile/PARITY.md` instead of porting), visual gates for looks other than Ledger and Classic
+Obsidian, and new channels or surfaces. No code is deleted without one explicit owner yes.
+`docs/archive/` is history, never instructions. The hard limits above are unchanged.
+
 1. Inspect `git status`, the current branch, the requested scope, and changes already present.
 2. Preserve user and other-agent changes. Never reset, overwrite, stage, or reformat unrelated work.
 3. Identify overlapping open work when remote state matters. A draft PR is a visibility signal,

@@ -46,8 +46,8 @@ You coordinate a records-only pass over the Hermes capability ledger in `andrei6
    - Per row, load only the files that row cites, plus their matching tests (the "Backend work" bundle rule).
 5. **Also read:**
    - `docs/HERMES_SPRINT.md`: completion rules, and "Cum se menține statusul" for hash refresh;
-   - `docs/hermes/full-parity-2026-09-27.md`: the owner directive, execution sequence steps 2–3;
-   - `docs/hermes/scope-reopening-plan-2026-09-27.md`;
+   - `docs/archive/hermes/full-parity-2026-09-27.md`: the owner directive, execution sequence steps 2–3;
+   - `docs/archive/hermes/scope-reopening-plan-2026-09-27.md`;
    - the header of `docs/hermes/build-queue.md` (lines 1–48);
    - `docs/handoff/2026-09-28-codex-review/README.md`. Its headline numbers are dated; never edit dated reports.
 6. **BACKLOG.** Never open `BACKLOG.md` whole. Query it with these three separate commands:

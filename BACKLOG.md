@@ -2670,8 +2670,13 @@
 
 
 
-- [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
-  owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
+- [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** **Re-scoped by owner decision
+  2026-11-25** ([finish line](docs/decisions/2026-11-25-nerva-finish-line.md)): the goal is no longer
+  all 697 rows equivalent. The ledger is a reference; a row is worked only when one of the nine
+  finish-line items needs it, 233 partial rows in twelve areas are frozen as they are, and this row
+  closes when every finish-line item has its acceptance test. State on 2026-11-25: 187 equivalent,
+  474 partial, 36 excluded. The text below is the earlier sprint record, kept as history.
+  This was the owner-prioritized sprint; all 697 rows were accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted
   contract of each row, preserve authority boundaries, and update code evidence and
   the status in the implementation PR. First slices: job editing, configured-target
