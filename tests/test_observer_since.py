@@ -5,7 +5,7 @@ It is recorded when a key flips healthy -> unhealthy, never refreshed by a later
 sample, and dropped on recovery. A key with no recorded flip carries no `since` at all.
 """
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 repo_root = Path(__file__).resolve().parent.parent
@@ -39,7 +39,7 @@ def _observer(clock):
 
 
 def test_since_is_recorded_when_the_key_flips_unhealthy():
-    clock = _Clock(datetime(2026, 11, 23, 10, 40, 5, tzinfo=timezone.utc))
+    clock = _Clock(datetime(2026, 11, 23, 10, 40, 5, tzinfo=UTC))
     obs = _observer(clock)
     obs.evaluate([_down()])
     row = obs.status()["unhealthy"][0]
@@ -49,7 +49,7 @@ def test_since_is_recorded_when_the_key_flips_unhealthy():
 
 
 def test_since_is_not_refreshed_by_later_unhealthy_samples():
-    clock = _Clock(datetime(2026, 11, 23, 10, 40, tzinfo=timezone.utc))
+    clock = _Clock(datetime(2026, 11, 23, 10, 40, tzinfo=UTC))
     obs = _observer(clock)
     obs.evaluate([_down()])
     clock.advance(minutes=30)
@@ -60,7 +60,7 @@ def test_since_is_not_refreshed_by_later_unhealthy_samples():
 
 
 def test_since_is_dropped_on_recovery_and_set_afresh_on_the_next_flip():
-    clock = _Clock(datetime(2026, 11, 23, 10, 0, tzinfo=timezone.utc))
+    clock = _Clock(datetime(2026, 11, 23, 10, 0, tzinfo=UTC))
     obs = _observer(clock)
     obs.evaluate([_down()])
     clock.advance(minutes=10)
@@ -72,7 +72,7 @@ def test_since_is_dropped_on_recovery_and_set_afresh_on_the_next_flip():
 
 
 def test_each_unhealthy_key_has_its_own_since():
-    clock = _Clock(datetime(2026, 11, 23, 9, 0, tzinfo=timezone.utc))
+    clock = _Clock(datetime(2026, 11, 23, 9, 0, tzinfo=UTC))
     obs = _observer(clock)
     obs.evaluate([_down("service.qdrant", "qdrant down")])
     clock.advance(hours=1)
@@ -92,11 +92,11 @@ def test_default_clock_stamps_a_parseable_utc_time():
     obs = ProactiveObserver(worker=None, probes=[])
     obs.evaluate([_down()])
     since = datetime.fromisoformat(obs.status()["unhealthy"][0]["since"])
-    assert abs((datetime.now(timezone.utc) - since).total_seconds()) < 60
+    assert abs((datetime.now(UTC) - since).total_seconds()) < 60
 
 
 def test_a_key_with_no_recorded_flip_carries_no_since():
-    obs = _observer(_Clock(datetime(2026, 11, 23, tzinfo=timezone.utc)))
+    obs = _observer(_Clock(datetime(2026, 11, 23, tzinfo=UTC)))
     obs.evaluate([_down()])
     obs._since.clear()   # a state the observer cannot reach by itself; the field must not be invented
     assert "since" not in obs.status()["unhealthy"][0]
@@ -123,7 +123,7 @@ def test_observer_route_returns_since_for_each_unhealthy_key():
             row = next(r for r in body["unhealthy"] if r["key"] == "service.route_since")
             since = datetime.fromisoformat(row["since"])
             assert since.tzinfo is not None
-            assert abs((datetime.now(timezone.utc) - since).total_seconds()) < 60
+            assert abs((datetime.now(UTC) - since).total_seconds()) < 60
             observer.evaluate([_up("service.route_since")])
     finally:
         web.ADMIN_TOKEN = old_token

@@ -5,7 +5,7 @@ Prints, per job: frames, errors, and the worst frames for each metric with sampl
 """
 import json
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")

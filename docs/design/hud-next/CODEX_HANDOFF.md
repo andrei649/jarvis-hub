@@ -37,6 +37,33 @@ Findings after publication (the owner's check on commit `82f03d5f`, Chromium, sy
   this is inherited from the base. The redesign itself adds 10 lint problems. Read the check logs
   before changing anything; `hud-v2-build` compares the committed bundle with a fresh build.
 
+## Done on #1386 by Claude while Codex repairs #1380 (2026-11-25 ~13:30)
+
+So Codex can skip these in its step 2:
+
+- **Demo-mode run-foot leak: fixed.** `frame/RunningFoot.tsx` draws "Channels" with the demo label
+  under `?demo=1` and no hub gateway or session figures. New test in `RunningFoot.test.tsx` failed on
+  the old code (it drew "1 of 1 running41 sessions…") and passes now.
+- **Kanban container in Work › Projects: fixed.** `panels/kanban/kanban.css` gives
+  `.n-areapage__main .nerva-kanban` the look's panel treatment: a card in the card looks, unchanged in
+  the rule looks (checked by eye in Atlas light, Console dark and Ledger dark at 1920×1080).
+- **The redesign's own lint problems: fixed** (`ruff --fix` on `agents/core/autonomy/observer.py`,
+  `tests/test_observer_since.py`, `docs/design/hud-next/_kit/tools/qa-summary.py`; UP017 and F401).
+- **CI diagnosis.** Of the four checks failing on #1386, three come from the #1380 base and Codex's
+  `codex/1380-ci-repair-20261125` commit already addresses them: `hud-v2-build` (Vitest could not
+  load `expo/tsconfig.base` for `mobile/src/api/modelCallProvenance.ts`; Codex sets
+  `tsconfig: './tsconfig.json'` in `vite.config.ts`), `vault-containment` (ruff in
+  `apps/jarvis-os/vault_search.py`) and bandit (its log had expired; the redesign's four backend files
+  add nothing bandit flags). The fourth, `test (ubuntu-latest)`, was ruff: the base's errors plus the
+  redesign's, now fixed.
+- **Still open, found while checking:** under `?demo=1`, Work › Projects still draws the hub's own
+  rooms, missions, sessions and activity (labelled "LIVE") and the live Kanban state. They are
+  labelled honestly, but they are the hub's data on a page that says it shows a demo sample.
+
+Verified: `npx tsc --noEmit` clean; Vitest on `src/frame`, `src/pages`, `src/panels` and the app,
+desktop and demo-exit tests, 79–83 files, all passed; `pytest tests/test_observer_since.py` passed.
+The render matrix was not rerun.
+
 ## What the owner decided
 
 - Ledger is the default look. Every screen follows Ledger's style.

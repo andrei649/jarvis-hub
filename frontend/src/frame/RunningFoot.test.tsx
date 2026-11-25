@@ -176,6 +176,20 @@ describe('RunningFoot', () => {
     expect(calls).toEqual([]);
   });
 
+  it('draws no hub channel or session count over the demo sample, only its label', () => {
+    // the hub's chrome is polled whatever the page shows; under ?demo=1 the foot must not read it
+    render(<RunningFoot lang="en" demo turns={[]} hub={{ ...initialHubSnapshot(true), agents: ROSTER, chrome: chrome({
+      version: '1.4.0', gateway: { state: 'running', running: ['fictitious-channel'], running_count: 1, total: 1 },
+      sessions: { active: 41, window_s: 900, state: 'known' },
+    }) }} />);
+    const channels = document.querySelector('[data-runfoot="channels"]') as HTMLElement;
+    expect(channels.textContent).toBe('ChannelsDemo sample');
+    expect(channels.textContent).not.toContain('41');
+    expect(channels.innerHTML).not.toContain('fictitious-channel');
+    expect(part('gateway')?.getAttribute('data-state')).toBe('demo');
+    expect(part('sessions')).toBeNull();
+  });
+
   it('gives the key hint at the widest width: Ctrl K finds everything, no shortcut signs or rejects', () => {
     render(<RunningFoot hub={initialHubSnapshot()} lang="en" demo={false} turns={[]} shortcutOverrides={{}} />);
     const hint = document.querySelector('[data-runfoot="keys"]') as HTMLElement;
