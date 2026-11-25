@@ -989,30 +989,30 @@ async def generic_error_handler(request: Request, exc: Exception):
     )
 
 
-# Nerva Workspace: WorkspaceError → {"error", "message", ...}, and FastAPI's request
-# validation reshaped to 422 invalid_request on /api/workspace/* only — every other path
-# keeps FastAPI's default {"detail": [...]} body (agents/core/workspace/errors.py).
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+
 from agents.core.workspace import errors as _workspace_errors  # noqa: E402
 
-_workspace_errors.register_handlers(app)
-
-from fastapi.exceptions import RequestValidationError  # noqa: E402
+app.add_exception_handler(
+    _workspace_errors.WorkspaceError, _workspace_errors.workspace_error_handler,  # type: ignore[arg-type]
+)
 
 
 @app.exception_handler(RequestValidationError)
 async def chat_reference_validation_handler(request: Request, exc: RequestValidationError):
-    if request.url.path == "/api/kanban/board-note/preview":
+    """Redact reference input before delegating to Workspace or FastAPI validation."""
+    # The matched route uses the logical path even under a configured root path.
+    path = getattr(request.scope.get("route"), "path", None)
+    if path == "/api/kanban/board-note/preview":
         return _nocache_json({"detail": "invalid_board_reference"}, status_code=422)
-    if (request.url.path in {"/chat", "/chat/stream"} and isinstance(exc.body, dict)
-            and "board_references" in exc.body):
-        return _nocache_json({"detail": "invalid_board_reference"}, status_code=422)
-    if (request.url.path in {"/chat", "/chat/stream"}
-            and ((isinstance(exc.body, dict) and "history_reference" in exc.body)
-                 or any("history_reference" in error.get("loc", ()) for error in exc.errors()))):
-        return _nocache_json({"detail": "invalid_history_reference"}, status_code=422)
-    if (request.url.path in {"/chat", "/chat/stream"} and isinstance(exc.body, dict)
-            and "require_full_attachments" in exc.body):
-        return _nocache_json({"detail": "invalid_attachment"}, status_code=422)
+    if path in {"/chat", "/chat/stream"}:
+        body = exc.body if isinstance(exc.body, dict) else {}
+        if "board_references" in body:
+            return _nocache_json({"detail": "invalid_board_reference"}, status_code=422)
+        if "history_reference" in body or any("history_reference" in error.get("loc", ()) for error in exc.errors()):
+            return _nocache_json({"detail": "invalid_history_reference"}, status_code=422)
+        if "require_full_attachments" in body:
+            return _nocache_json({"detail": "invalid_attachment"}, status_code=422)
     return await _workspace_errors.validation_error_handler(request, exc)
 
 

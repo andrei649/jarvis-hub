@@ -269,3 +269,19 @@ collection skip). Hosted verification is the next step. The current
 [handoff](../2026-11-23-ai-harness-checkpoint.md) records the separate Windows
 transcript export and main-branch CI findings. Revert the CI repair commit to roll
 back this unit.
+
+### Full Ubuntu run and follow-up
+
+The hosted runner passed all 98 native Windows vault cases, including the two
+symlink cases. HUD, security scans and lockfiles passed. The first full Ubuntu
+run exposed 15 failures. The follow-up aligns the resume test doubles with the
+keyword-only source-receipt parameter, verifies the three new chat schemas,
+regenerates the API manual, and pins the binding writer at its actual callsite.
+The validation handler uses the matched route so invalid chat and board inputs
+stay redacted under a deployment prefix. The cross-loop denial test waits for
+actual delivery and holds the requester until the decision is committed.
+
+All 409 tests in the ten affected modules passed on isolated Linux, with zero
+skips. The status generator ran both JavaScript suites and counted 37,687 backend
+outcomes, 3,577 HUD tests and 535 mobile tests. The six additional cases cover
+validation under a path prefix. The full hosted Ubuntu rerun is pending.

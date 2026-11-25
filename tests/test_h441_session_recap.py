@@ -224,7 +224,7 @@ class _Memory:
     async def resume_session(self, sid):
         return sid == "s-old"
 
-    async def get_history(self, sid, last_n=None):
+    async def get_history(self, sid, last_n=None, *, include_board_sources=False):
         rows = list(self.turns)
         return rows[-last_n:] if last_n else rows
 
