@@ -1,5 +1,30 @@
 # HUD redesign — handoff to Codex
 
+## Finish-line item 9 — integration on 2026-11-25
+
+Claude's footer, Kanban and lint fixes from `903a0676` were rebased onto harness
+`c8a0e9e4`. On the integrated HUD at `1c0d04af`, both TypeScript checks passed
+and Node 22 rebuilt both committed web bundles byte for byte. The HUD Git tree
+is `2fef89c7641f` and the Workspace tree is `592996ea1752`.
+
+Chromium at 1920×1080 showed one fixture channel and 41 sessions in the normal
+footer. Demo showed its sample label and omitted both counts. Work › Projects
+mounted in Ledger dark and Classic Obsidian dark. The wider Projects demo-data
+issue recorded below remains open. The visual run covered these two looks.
+
+The full `python scripts/status_sync.py --check` exited 0 with 37,713 Linux
+backend outcomes collected, 5,026 frontend tests passing across 442 files and
+535 mobile tests passing. A local diagnostic recorded the child processes'
+exit codes. An earlier check had all 5,026 frontend assertions passing but
+Vitest exited 1. Its cause remains open.
+
+Harness CI passed on draft #1380 at `c8a0e9e4`. The integration for draft
+#1386 retains both that commit and Claude's original `903a0676` as ancestors.
+The editable PSD writer came from the harness branch. Its owner decision is
+tracked in [OWNER_TASKS.md](../../OWNER_TASKS.md#editable-photoshop-export).
+
+The dated entries below preserve earlier checkpoints.
+
 | Field | Value |
 |---|---|
 | Generated | 2026-11-25 11:40 local (UTC+2) |
