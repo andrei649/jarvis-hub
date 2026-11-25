@@ -54,3 +54,30 @@ describe('World tab after WorldView retirement', () => {
     expectRetired(fetcher);
   });
 });
+
+describe('World tab after it is closed', () => {
+  it('writes no state when a Signal Layer reply lands after the page and its window are gone', async () => {
+    const release: Array<() => void> = [];
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => new Promise<Response>((resolve) => {
+      const key = Object.keys(healthy).find((path) => String(input).includes(path));
+      release.push(() => resolve({ ok: true, status: 200,
+        json: async () => healthy[key as keyof typeof healthy] } as Response));
+    })));
+    const { unmount } = render(<WorldIntelligenceMode t={(s: string) => s} />);
+    await waitFor(() => expect(release.length).toBe(3));
+    unmount();
+    const late: unknown[] = [];
+    const record = (reason: unknown) => { late.push(reason); };
+    process.on('unhandledRejection', record);
+    // The test environment is torn down the same way once a file finishes.
+    vi.stubGlobal('window', undefined);
+    try {
+      release.forEach((go) => go());
+      await new Promise((done) => setTimeout(done, 30));
+    } finally {
+      vi.unstubAllGlobals();
+      process.off('unhandledRejection', record);
+    }
+    expect(late).toEqual([]);
+  });
+});
