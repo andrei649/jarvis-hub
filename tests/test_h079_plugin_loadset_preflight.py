@@ -63,7 +63,6 @@ def test_env_and_stored_keys_precede_snapshot_and_patched_class(monkeypatch):
     assert seen == ["env", "stored", "snapshot", "construct", "snapshot"]
     assert manager.plugins == {"cloud-llm": built}
     assert orch.oracle_bridge is None
-    assert orch.argus.signal_layer is None
 
 
 def test_final_recheck_drops_plugin_disabled_during_construction(monkeypatch):
@@ -81,7 +80,7 @@ def test_final_recheck_drops_plugin_disabled_during_construction(monkeypatch):
 def test_allowed_plugins_remain_concrete_and_close(monkeypatch):
     from agents.core.autonomy.watchers import EmailProbe
 
-    monkeypatch.setattr(load_set, "declared", lambda _kind: {"disabled": [], "only": ["gmail", "signal-layer"]})
+    monkeypatch.setattr(load_set, "declared", lambda _kind: {"disabled": [], "only": ["gmail", "apple-health"]})
     monkeypatch.setattr(integration_keys, "apply_stored", lambda: None)
     monkeypatch.setattr(pm, "load_hub_env", lambda: None)
     monkeypatch.setattr(pm, "_oauth_init", lambda: None)
@@ -89,11 +88,10 @@ def test_allowed_plugins_remain_concrete_and_close(monkeypatch):
     manager = pm.PluginManager()
     orch = _orch(manager)
     manager.build(orch)
-    assert list(manager.plugins) == ["gmail", "signal-layer"]
+    assert list(manager.plugins) == ["gmail", "apple-health"]
     assert type(manager.get("gmail")).__name__ == "GmailPlugin"
-    assert type(manager.get("signal-layer")).__name__ == "SignalLayerPlugin"
+    assert type(manager.get("apple-health")).__name__ == "AppleHealthPlugin"
     assert EmailProbe(gmail_plugin=manager.get("gmail")).plugin is manager.get("gmail")
-    assert orch.argus.signal_layer is manager.get("signal-layer")
     closed = []
     for key, plugin in manager.plugins.items():
         original = plugin.close
@@ -104,4 +102,4 @@ def test_allowed_plugins_remain_concrete_and_close(monkeypatch):
 
         monkeypatch.setattr(plugin, "close", close)
     asyncio.run(manager.close_all())
-    assert closed == ["gmail", "signal-layer"]
+    assert closed == ["gmail", "apple-health"]

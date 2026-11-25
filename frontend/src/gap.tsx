@@ -48,7 +48,6 @@ import { OsintPanel } from './panels/osint';
 import { MarketplaceAdminPanel } from './panels/marketplace-admin';
 import { SecuritySkillsMapPanel } from './panels/security-skills-map';
 import { PaymentsPanel } from './panels/payments';
-import { SignalGovernancePanel } from './panels/signals-governance';
 import { AutonomyControlPanel } from './panels/autonomy-legacy';
 import { DesktopAllowlistPanel } from './panels/desktop-allowlist';
 import { LlmRoutingPanel } from './panels/llm-routing';
@@ -5300,84 +5299,6 @@ export function PacksPanel() {
   );
 }
 
-/* T-0.41 — the live World Signal feed routed per domain/agent
-   (GET /api/signals/routed, user-guarded). The routing layer classifies the
-   sidecar's signals into domains and slices them per subscribing agent; an
-   unclassifiable signal stays visible in `unrouted` rather than being
-   force-labeled. Honest when no sidecar is configured — says so, shows nothing. */
-export function SignalRoutingPanel() {
-  const { d, e, loading, reload } = useApi('/api/signals/routed');
-  const available = !!(d && d.available);
-  const counts = (d && d.counts) || {};
-  const byDomain = (available && d.by_domain) || {};
-  const byAgent = (available && d.by_agent) || {};
-  const signals = arr(d, 'signals');
-  // Clicking an agent chip pulls that agent's OWN slice from the dedicated
-  // endpoint (the same one an agent's digest consumes), rather than filtering
-  // client-side — so the per-agent route has a real caller and the slice shown
-  // is exactly what the agent would receive.
-  const [slice, setSlice] = useState(null);
-  const showAgent = (ag) => {
-    setSlice({ agent: ag, loading: true, signals: [] });
-    apiGet('/api/signals/agent/' + encodeURIComponent(ag))
-      .then((r: any) => setSlice({ agent: ag, loading: false, signals: arr(r, 'signals'), domains: (r && r.domains) || [] }))
-      .catch(() => setSlice({ agent: ag, loading: false, signals: [], error: true }));
-  };
-  return (
-    <Card title="WORLD SIGNALS" live={asLive(d, available)} sub={available ? `${counts.routed || 0}/${counts.signals || 0} routed` : (d ? 'no sidecar' : null)} onReload={reload}>
-      <State e={e} loading={loading} n={available ? signals.length : 0} />
-      {d && !available && (
-        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
-          signal layer unavailable{d.reason ? ` · ${d.reason}` : ''} — configure the sidecar to populate this feed
-        </div>
-      )}
-      {available && Object.keys(byDomain).length > 0 && (
-        <Row>
-          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>domains</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {Object.entries(byDomain).map(([dom, idx]) => <Tag key={dom}>{dom} {(idx as any[]).length}</Tag>)}
-          </span>
-        </Row>
-      )}
-      {available && Object.keys(byAgent).length > 0 && (
-        <Row>
-          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>agents</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {Object.entries(byAgent).map(([ag, idx]) => (
-              <button key={ag} className="tool-btn" style={{ fontSize: 'var(--n-fs-meta)', padding: '1px 5px' }} onClick={() => showAgent(ag)}>
-                {ag} {(idx as any[]).length}
-              </button>
-            ))}
-          </span>
-        </Row>
-      )}
-      {slice && (
-        <Row>
-          <span style={mono}>{slice.agent}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
-            {slice.loading ? 'loading…' : slice.error ? 'slice unavailable'
-              : `${slice.signals.length} signal(s) · ${(slice.domains || []).join(', ') || 'no domains'}`}
-          </span>
-        </Row>
-      )}
-      {available && (d.unrouted || []).length > 0 && (
-        <Row>
-          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>unrouted</span>
-          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
-            {d.unrouted.length} unclassified — shown, never guessed
-          </span>
-        </Row>
-      )}
-      {available && signals.slice(0, 6).map((s, i) => (
-        <Row key={i}>
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title || '—'}</span>
-          {s.severity != null && <Tag>sev {s.severity}</Tag>}
-        </Row>
-      ))}
-    </Card>
-  );
-}
-
 /* 0.39 — the curated market watchlist (GET/POST/DELETE /api/market/watchlist/saved,
    user-guarded). The owner curates a small {symbol, low, high, note} list once;
    routers/market.py's alert/brief evaluators run against it. Read/write, but pure
@@ -5705,7 +5626,6 @@ const PANEL_COMPONENTS = {
   ProvenancePanel,
   SecuritySkillsMapPanel,
   PaymentsPanel,
-  SignalGovernancePanel,
   TrustOpsPanel,
   KillSwitchPanel,
   KernelMetricsPanel,
@@ -5734,7 +5654,6 @@ const PANEL_COMPONENTS = {
   MarketplacePanel,
   SkillHistoryPanel,
   PacksPanel,
-  SignalRoutingPanel,
   WatchlistPanel,
   OnboardingPanel,
   CodeIntelPanel,

@@ -55,7 +55,7 @@ describe('the §3.3 placement table', () => {
     expect(panels.filter((p) => p.auto).map(idOf)).toEqual([]);
     const count = (area: AreaId) => panels.filter((p) => p.area === area).length;
     expect(Object.fromEntries(AREA_IDS.map((a) => [a, count(a)]))).toEqual({
-      home: 7, work: 13, agents: 9, memory: 14, trust: 21, build: 22, connect: 17, observe: 16, settings: 17,
+      home: 7, work: 13, agents: 9, memory: 14, trust: 20, build: 22, connect: 16, observe: 16, settings: 17,
     });
     expect(panels).toHaveLength(CONSOLE_PANELS.length);
   });
@@ -75,7 +75,7 @@ describe('the §3.3 placement table', () => {
       work: 'work', timeline: 'work', projects: 'work', jobs: 'work', autonomy: 'work',
       agents: 'agents', finance: 'agents', health: 'agents', knowledge: 'agents', family: 'agents',
       memory: 'memory', artifacts: 'memory', trust: 'trust', build: 'build',
-      interop: 'connect', comms: 'connect', observe: 'observe', world: 'observe', admin: 'settings',
+      interop: 'connect', comms: 'connect', observe: 'observe', admin: 'settings',
     });
   });
 

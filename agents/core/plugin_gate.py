@@ -287,16 +287,6 @@ BUILTIN_PLUGINS = {
         allowed_domains=["openapi.tuya.com"],
         agents_served=["jarvis", "ultron"],
     ),
-    "signal-layer": PluginManifest(
-        id="signal-layer",
-        name="Jarvis Signal Layer",
-        version="0.1.0",
-        description="Query local situational-awareness signals, evidence, briefs, assessments, and provider health",
-        network_access=NetworkAccess.LAN,
-        data_scope=DataScope.LOCAL_ONLY,
-        allowed_domains=[],
-        agents_served=["jarvis", "friday", "athena", "stark", "vision", "argus"],
-    ),
     # ── SEC-5b: previously-unmanifested networked plugins ─────────────────────
     # These reached the network with no manifest (→ fail-open / unrestricted).
     # Now each is gated by the egress boundary. Config/env-driven hosts (n8n,
@@ -408,7 +398,7 @@ BUILTIN_PLUGINS = {
         # resolver that could not work behind ``follow_redirects=False``; the resolver is
         # gone, so the egress grant goes with it.)
         allowed_domains=["dns.google"],
-        agents_served=["vision", "argus", "athena"],
+        agents_served=["vision", "athena"],
     ),
     "n8n": PluginManifest(
         id="n8n",

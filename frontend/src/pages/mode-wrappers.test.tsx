@@ -66,7 +66,7 @@ describe('the strings the parity guard pins stay in their files', () => {
   });
 
   it('leaves no hand-written panel or per-mode wrapper behind (ChatMode aside)', () => {
-    for (const file of ['modes.tsx', 'modes2.tsx', 'modes3.tsx', 'modes4.tsx', 'modes_world.tsx']) {
+    for (const file of ['modes.tsx', 'modes2.tsx', 'modes3.tsx', 'modes4.tsx']) {
       const source = read(file);
       expect(source, file).not.toMatch(/function (ModePanel|MP|Panel)\b/);
       expect(source, file).not.toContain('className="bk tl"');
@@ -77,7 +77,6 @@ describe('the strings the parity guard pins stay in their files', () => {
 // the rest of the modes: each draws a register too
 import { CommsMode, AdminMode } from '../modes3';
 import { AutonomyMode, BuildMode, ObserveMode, InteropMode } from '../modes2';
-import { WorldIntelligenceMode } from '../modes_world';
 
 const MORE = {
   Comms: () => <CommsMode t={t} />,
@@ -86,7 +85,6 @@ const MORE = {
   Observe: () => <ObserveMode t={t} />,
   Interop: () => <InteropMode t={t} />,
   Admin: () => <AdminMode t={t} />,
-  World: () => <WorldIntelligenceMode t={t} />,
 };
 
 describe.each(Object.entries(MORE))('%s mode wrapper', (_name, Mode) => {

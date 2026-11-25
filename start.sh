@@ -6,7 +6,6 @@
 #   ./start.sh --no-browser same, without opening a browser (also: NERVA_NO_BROWSER=1)
 #   ./start.sh --doctor     run the install check-up (scripts/doctor.py) instead of starting
 #
-# Signal Layer is an opt-in companion: JARVIS_SIGNAL_LAYER=1.
 # Serves the V2 cockpit HUD by default (set JARVIS_HUD=v1 for the legacy HUD).
 # The bind stays loopback (127.0.0.1) — a phone or second device is a documented,
 # token-gated decision: docs/PHONE_ACCESS.md.
@@ -24,23 +23,6 @@ for arg in "$@"; do
     *) echo "[WARN] unknown option: $arg" >&2 ;;
   esac
 done
-
-# --- Jarvis Signal Layer — opt-IN with JARVIS_SIGNAL_LAYER=1 ---
-# RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; this script reads both and never
-# sets a JARVIS_ default beside a NERVA_ value you gave (the hub would refuse the pair).
-if [ "${NERVA_SIGNAL_LAYER:-${JARVIS_SIGNAL_LAYER:-0}}" = "1" ] && [ -f services/signal-layer/src/index.mjs ]; then
-  if command -v node >/dev/null 2>&1; then
-    export JARVIS_SIGNAL_LAYER_MODE="${NERVA_SIGNAL_LAYER_MODE:-${JARVIS_SIGNAL_LAYER_MODE:-replay}}"
-    export SIGNAL_LAYER_HOST="${SIGNAL_LAYER_HOST:-127.0.0.1}"
-    export SIGNAL_LAYER_PORT="${SIGNAL_LAYER_PORT:-8787}"
-    export WORLDMONITOR_BASE_URL="${WORLDMONITOR_BASE_URL:-http://localhost:3100}"
-    export WORLDMONITOR_MCP_URL="${WORLDMONITOR_MCP_URL:-http://localhost:3100/api/mcp}"
-    echo "[Signal Layer] starting at http://127.0.0.1:${SIGNAL_LAYER_PORT}/healthz (mode=${JARVIS_SIGNAL_LAYER_MODE}). Logs: /tmp/jarvis-signal-layer.log"
-    ( cd services/signal-layer && nohup node src/index.mjs >/tmp/jarvis-signal-layer.log 2>&1 & )
-  else
-    echo "[Signal Layer] skipped (Node 20+ required)."
-  fi
-fi
 
 PYBIN=python3
 if [ -d .venv ]; then

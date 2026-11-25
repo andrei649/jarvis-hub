@@ -10,7 +10,7 @@ Mirrors the ChannelManager extraction exactly: the manager owns the registry dic
 and the build/close lifecycle; the facade exposes it via a getter/setter property.
 ``build(orch)`` takes the orchestrator as a parameter (back-ref pattern) so it can
 read live settings (``orch.get_setting``) and set the few orchestrator attributes
-the rest of the app reads off the facade (``orch.oracle_bridge``, ``orch.argus``).
+the rest of the app reads off the facade (``orch.oracle_bridge``).
 No top-level import of Orchestrator — no import cycle.
 """
 
@@ -21,7 +21,6 @@ import logging
 
 from agents.core.env_provenance import load_hub_env
 
-from .argus import ArgusInterface
 from .env_config import env_str
 from .orchestrator_bindings import bind_external_orchestrator_attribute
 from .plugins.oauth import init_from_env as _oauth_init
@@ -51,7 +50,6 @@ _PLUGIN_CLASSES = {
     "OsintEnrichPlugin": "osint_enrich",
     "PostizPlugin": "postiz",
     "RevenueCatPlugin": "revenuecat",
-    "SignalLayerPlugin": "signal_layer",
     "SMSAlertsPlugin": "sms_alerts",
     "SpotifyPlugin": "spotify_plugin",
     "StockQuotesPlugin": "stock_quotes",
@@ -380,13 +378,6 @@ class PluginManager:
                 secret=orch.get_setting("plugins.tuya_secret", ""),
                 device_id=orch.get_setting("plugins.tuya_device_id", ""),
             )
-        # Signal Layer — provider-neutral world intelligence (local-first; :8787).
-        # Read-only + fail-safe: a down service returns {"status":"unavailable"}.
-        if permitted("signal-layer"):
-            self.plugins["signal-layer"] = _plugin_class("SignalLayerPlugin")(
-                api_url=env_str("SIGNAL_LAYER_API_URL"),
-                api_token=env_str("SIGNAL_LAYER_API_TOKEN"),
-            )
         # Guide-gap wave: business/marketing connectors (read-only / draft-first).
         if permitted("revenuecat"):
             self.plugins["revenuecat"] = _plugin_class("RevenueCatPlugin")(
@@ -409,11 +400,6 @@ class PluginManager:
         self.attach_llm()
         bind_external_orchestrator_attribute(
             orch, "oracle_bridge", self.plugins.get("oracle-bridge")
-        )
-        # Argus — one governed facade over Signal Layer for world-intel
-        # queries. Built after its backend is registered; every call is gated.
-        bind_external_orchestrator_attribute(
-            orch, "argus", ArgusInterface.from_orchestrator(orch)
         )
 
     def _drop_switched_off(self) -> None:

@@ -92,7 +92,6 @@ from .autonomy.audit_sink import ActionAuditSink
 from .autonomy.reflection import DailyReflector, ReflectionRunStore
 from .autonomy.log_scanner import LogBugScanner
 from .autonomy.tech_scout import TechScout, TechScoutStore, DEFAULT_QUERIES as _TECH_SCOUT_DEFAULT_QUERIES
-from .signal_governance import SignalGovernanceBridge
 from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
@@ -805,7 +804,6 @@ class Orchestrator:
         self.last_memory_maintenance = None
         self.channel_inbox = None
         self.oracle_bridge = None
-        self.argus = None
         self.permission_ledger = None
         self.work_runs = None
         self.company_runtime = None
@@ -1078,15 +1076,6 @@ class Orchestrator:
         # Action-level audit sink, shared by every governed-action recorder (the
         # autonomy worker below, the remediation runner in autonomy_coordinator).
         self.action_audit = ActionAuditSink(getattr(self, "intent_log", None))
-        # Signal Layer → approval inbox (DRA-19). The bridge shipped complete but
-        # with no production constructor, so the Signal Layer's actionable
-        # recommendations never reached the decision inbox. Constructing it here
-        # changes nothing until the owner flips JARVIS_SIGNAL_GOVERNANCE: `from_env`
-        # reads that flag and a disabled bridge queues nothing. Even enabled it is
-        # preview-only — every item lands BLOCKED, awaiting a human.
-        self.signal_governance = SignalGovernanceBridge.from_env(
-            self.autonomy_queue, audit=self.action_audit.log
-        )
         # H484: the policy is built with the stored approval mode and per-agent overrides,
         # so the owner's dial governs the very first decision after a restart — not only
         # once the coordinator's first tick has copied it over.
@@ -1407,7 +1396,7 @@ class Orchestrator:
             logger.warning("per-agent capability issuance failed", exc_info=True)
 
         # CLN-2: live-plugin registry build moved to PluginManager (byte-identical
-        # construction order + env/settings reads; sets self.oracle_bridge + self.argus).
+        # construction order + env/settings reads; sets self.oracle_bridge).
         self._build_plugins()
 
         # Autonomy queue — durable self-tasking store (H6.1)
@@ -1659,7 +1648,7 @@ class Orchestrator:
     def _build_plugins(self) -> None:
         """Build the live plugins, or, in safe mode (H490), none: no integration is
         reached and no plugin data enters a prompt. The .env credentials are still
-        loaded (the hub's one load), and oracle_bridge / argus stay None."""
+        loaded (the hub's one load), and oracle_bridge stays None."""
         from . import safe_mode
 
         if safe_mode.enabled():

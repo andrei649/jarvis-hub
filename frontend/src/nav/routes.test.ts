@@ -29,11 +29,12 @@ describe('pageForRoute', () => {
     expect(at('/v2/console')).toMatchObject({ kind: 'allPages', area: null, entry: ALL_PAGES, group: null });
   });
 
-  it('keeps the root, legacy World links and unknown URLs on their current destinations', () => {
+  it('keeps the root, the removed World links and unknown URLs on Home', () => {
     expect(at('/v2')).toMatchObject({ kind: 'home', area: { id: 'home' } });
     expect(at('/v2/')).toMatchObject({ kind: 'home' });
-    expect(at('/v2/', '?world=1')).toMatchObject({ kind: 'mode', area: { id: 'observe' }, entry: { key: 'mode:world' } });
-    expect(at('/v2/', '', '#world').entry.key).toBe('mode:world');
+    expect(at('/v2/', '?world=1')).toMatchObject({ kind: 'home', entry: { key: 'mode:cockpit' } });
+    expect(at('/v2/', '', '#world')).toMatchObject({ kind: 'home', entry: { key: 'mode:cockpit' } });
+    expect(at('/v2/world')).toMatchObject({ kind: 'home', entry: { key: 'mode:cockpit' } });
     expect(at('/v2/no-such-page')).toMatchObject({ kind: 'home', entry: { key: 'mode:cockpit' } });
     expect(at('/v2/console/no-such-panel')).toMatchObject({ kind: 'home' });
     expect(pageForRoute({ mode: 'not-a-mode', panel: null })).toMatchObject({ kind: 'home' });
@@ -66,7 +67,7 @@ describe('pageTitle (§3.4)', () => {
     expect(title('/v2/admin')).toBe('Settings · Nerva');
     expect(title('/v2/chat')).toBe('Conversation · Home · Nerva');
     expect(title('/v2/glance')).toBe('Glance · Home · Nerva');
-    expect(title('/v2/world')).toBe('World signals · Observe · Nerva');
+    expect(title('/v2/observe')).toBe('Observe · Nerva');
     expect(title('/v2/console/decision-inbox')).toBe('Decisions · Work · Nerva');
     expect(title('/v2/console/kill-switch')).toBe('Emergency stop · Trust · Nerva');
     expect(title('/v2/console')).toBe('All pages · Nerva');
@@ -87,7 +88,8 @@ describe('pageTitle (§3.4)', () => {
 
 describe('areas of modes and panels', () => {
   it('follow the registry', () => {
-    expect(areaOfMode('world')).toBe('observe');
+    expect(areaOfMode('observe')).toBe('observe');
+    expect(areaOfMode('world')).toBeNull();
     expect(areaOfMode('comms')).toBe('connect');
     expect(areaOfMode('jobs')).toBe('work');
     expect(areaOfMode('artifacts')).toBe('memory');

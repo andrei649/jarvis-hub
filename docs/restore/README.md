@@ -91,7 +91,7 @@ of `deleted-files/` — those 30 were deleted outright, so there is nothing to m
 | **G** `pre-commit-hooks` | local commit hooks: gitleaks, ruff, EOF fixer, large-file check | 32 | *(local only)* |
 | **H** `ai-policy-pr-template` | R0–R3 risk policy + checker, evidence-receipt PR template, AGENTS.md ceremony | 1,314 | *(process only)* |
 | **I** `codeowners` | owner review required on `.github/` and the gate scripts | 14 | *(needs branch protection)* |
-| **J** `ci-full-pr-matrix` | puts Windows + sandbox + frontend + HUD + OpenAPI lanes **back on the PR path** | 72 | `test (windows-latest)`, `nerva-movement`, `sandbox-isolation`, `signal-layer-smoke (…)`, `frontend`, `hud-v2-build`, `openapi-types` |
+| **J** `ci-full-pr-matrix` | puts Windows + sandbox + frontend + HUD + OpenAPI lanes **back on the PR path** | 72 | `test (windows-latest)`, `nerva-movement`, `sandbox-isolation`, `frontend`, `hud-v2-build`, `openapi-types` |
 | **K** `pr-triggers-7-workflows` | re-adds `pull_request:` to CodeQL, code-health, e2e, eval-nightly, smoke, thirdparty-drift, worldview | 45 | `Analyze (python)`, `analyze`, `e2e`, `server-boot`, `drift`, eval + worldview jobs |
 | **L** `docs-and-counters` | the prose: "CI must be green before merging", maintainer review, no-direct-push, the OWNER_TASKS de-gate checklist, test counter 6832→7089 | 22 | — |
 

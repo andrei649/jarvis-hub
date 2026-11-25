@@ -106,7 +106,6 @@
   "plugin:postiz": "wired",
   "plugin:revenuecat": "wired",
   "plugin:room-peers": "wired",
-  "plugin:signal-layer": "wired",
   "plugin:sms-alerts": "wired",
   "plugin:social_x": "wired",
   "plugin:spotify": "wired",

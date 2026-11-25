@@ -10,6 +10,8 @@ from .queue import TaskQueue, TaskStatus, approval_is_pending
 
 logger = logging.getLogger("jarvis.autonomy.task_approval_judge")
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}\Z")
+#: Kind of the rows the removed Signal Layer bridge queued (external OSINT, tainted).
+_RETIRED_SIGNAL_RECOMMENDATION_KIND = "signal_recommendation"
 
 
 class TaskApprovalJudge(AdvisoryJudgements):
@@ -21,7 +23,6 @@ class TaskApprovalJudge(AdvisoryJudgements):
 
     def _snapshot(self, task) -> dict | None:
         from ..security import taint
-        from ..signal_governance import TASK_KIND as SIGNAL_RECOMMENDATION
         from .approval_judge import action_is_tainted, normalise_snapshot
 
         digest = self.queue.approval_snapshot_digest(task)
@@ -39,10 +40,12 @@ class TaskApprovalJudge(AdvisoryJudgements):
             "summary": task.title, "args": description,
         })
         # Review F4, defence in depth: a row queued outside the worker's origin marking
-        # (or before a producer tainted at ingest) is still untrusted by its origin or,
-        # for Signal Layer recommendations, by its kind. A remote judge never sees it.
+        # (or before a producer tainted at ingest) is still untrusted by its origin. The
+        # Signal Layer bridge that queued ``signal_recommendation`` rows was removed on
+        # 2026-11-25; a row it left behind is still untrusted by its kind. A remote judge
+        # never sees it.
         if (action_is_tainted(description) or taint.is_untrusted_source(task.origin)
-                or task.kind == SIGNAL_RECOMMENDATION):
+                or task.kind == _RETIRED_SIGNAL_RECOMMENDATION_KIND):
             snapshot["tainted"] = True
         return snapshot
 

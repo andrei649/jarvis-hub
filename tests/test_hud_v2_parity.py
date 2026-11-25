@@ -70,10 +70,8 @@ RULES = [
     # rendered as a panel — a HUD surface for them would be meaningless.
     ("/manifest.webmanifest", "NOT_IN_HUD"),
     ("/sw-v2.js", "NOT_IN_HUD"),
-    # T-0.20 vault (Console → Memory), T-0.41 signals (Console → Interop),
-    # T-0.53 design manifest (Console → Observe).
+    # T-0.20 vault (Console → Memory), T-0.53 design manifest (Console → Observe).
     ("/api/vault", "memory"),
-    ("/api/signals/", "interop"),
     ("/api/packs", "interop"),          # T-0.58 typed Pack Manager inventory
     ("/api/design-manifest", "observe"),
     ("/api/widget/", "interop"),  # embeddable widget runtime (managed under Interop)

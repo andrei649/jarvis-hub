@@ -176,7 +176,7 @@
         `nerva-movement`, `boundary`, `review (correctness)` / `review (boundary)` /
         `review (tests)`, `Secret scan (gitleaks)`, `SAST (semgrep)`, `SAST (bandit — blocking gate)`,
         `Dependency audit (pip-audit)`, `in-sync`, `parked-modules`, `validate`, `Analyze (python)` /
-        `CodeQL`, `sandbox-isolation`, `signal-layer-smoke (…)`, `frontend`, `hud-v2-build`,
+        `CodeQL`, `sandbox-isolation`, `frontend`, `hud-v2-build`,
         `openapi-types`, `e2e`, `server-boot`, `analyze`, `drift` — *except the four below, which
         came back on 2026-09-02.*
   - [ ] **Mark the four re-gated PR checks required (CTO D1, 2026-09-02 —

@@ -4,7 +4,6 @@ import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
 import { installSkill, getAutonomyMode, setAutonomyMode, modeRefusalNote, getNorthStar } from './api/actions';
 import { getToken } from './api/client';
-import { WorldIntelligencePanel } from './world-intelligence';
 import { PageSection } from './pages/PageSection';
 import { ConfirmAction, RISK_TIER } from './confirm';
 import { isLooser } from './frame/RunningHead';
@@ -293,9 +292,8 @@ function ObserveMode({ t }){
   const O = V2.OBSERVE;
   const maxLat = O.by_agent.length ? Math.max(...O.by_agent.map(a=>a.v)) : 0;
   return (
-    <PageSection title={t.observe} meta="world · north-star · traces · eval">
+    <PageSection title={t.observe} meta="north-star · traces · eval">
       <NorthStarMeter />
-      <WorldIntelligencePanel />
       <div className="mem-grid" style={{marginBottom:'var(--gap)'}}>
         <div className="stat-card"><div className="sv">{_pct(O.quality.success_rate)}</div><div className="sl">success rate</div></div>
         <div className="stat-card"><div className="sv">{_obs(O.quality.interactions)}</div><div className="sl">interactions</div></div>

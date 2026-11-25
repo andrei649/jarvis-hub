@@ -1,6 +1,6 @@
 # AI System Prompt — Repo Architecture Analysis (jarvis-hub / Nerva)
 
-> WorldView was retired by the owner on 2026-10-27. It is not a shipped sibling stack, tool or backlog target. Historical references must not restore it; use the retained Signal Layer for supported world-intelligence reads.
+> WorldView was retired by the owner on 2026-10-27. It is not a shipped sibling stack, tool or backlog target. Historical references must not restore it. Signal Layer and the Argus agent were removed on 2026-11-25 and must not be restored either.
 
 > Generated architecture analysis + actionable system prompt for AI-driven development in this
 > repository. Canonical sources it condenses: `AGENTS.md` (workflow policy), `docs/ARCHITECTURE.md`
@@ -21,7 +21,7 @@
 ## 1. Executive Repo Summary
 
 **Core Purpose:** Nerva (repo codename *jarvis-hub*) is a **local-first Personal Intelligence
-Operating System**: a multi-agent AI orchestration engine with 17 active agents (4 tiers) plus 14
+Operating System**: a multi-agent AI orchestration engine with 16 active agents (4 tiers) plus 14
 dormant bench agents, coordinated by a prime orchestrator ("Jarvis"), with long-term memory,
 governed autonomy, voice, and a governed capability-acquisition pipeline.
 

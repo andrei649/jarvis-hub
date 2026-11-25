@@ -4,7 +4,7 @@
 turned out the *content/domain* type already had a full implementation —
 `knowledge_packs.py` (manifest / verify / install-plan over the drop-folder
 indexer) — with **zero callers**: no route, no HUD, only its own unit test, the
-same built-but-unwired shape `signal_routing.py` and `vault.py` had. So this
+same built-but-unwired shape `vault.py` had. So this
 closes the row by giving pack types one real typed surface, not by inventing an
 empty taxonomy on top of `skill`.
 

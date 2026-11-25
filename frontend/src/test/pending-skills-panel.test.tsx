@@ -20,7 +20,7 @@ function mockFetch(payload) {
 const PENDING = {
   count: 2,
   pending: [
-    { name: 'summarize-inbox', description: 'condense the overnight mail', agents: ['jarvis', 'argus'] },
+    { name: 'summarize-inbox', description: 'condense the overnight mail', agents: ['jarvis', 'vision'] },
     { name: 'tidy-notes', description: '', agents: [] },
   ],
 };
@@ -66,7 +66,7 @@ describe('PendingSkillsPanel — the CDX-8 approval gate is reachable', () => {
     expect(screen.getByText('condense the overnight mail')).toBeTruthy();
     // Both rows are quarantined; only the one with agents shows the agent tag.
     expect(screen.getAllByText('quarantined').length).toBe(2);
-    expect(screen.getByText('For jarvis, argus')).toBeTruthy();
+    expect(screen.getByText('For jarvis, vision')).toBeTruthy();
   });
 
   it('approves the skill the button belongs to, not the first one', async () => {

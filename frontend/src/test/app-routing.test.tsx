@@ -2,11 +2,11 @@
 
    Every way of moving through the HUD drives the same URL: the masthead's nine areas, an area's
    contents column, the search and command sheet (Ctrl K; the backtick opens it on panels), the
-   number keys in masthead order, `w` for Observe › World signals, `a` for Glance, a Console panel
-   as a page of its area, and the desktop window's hand-off. World and the panels are ordinary
+   number keys in masthead order, `a` for Glance, a Console panel
+   as a page of its area, and the desktop window's hand-off. Mode pages and the panels are ordinary
    pages, so Back and Forward walk them through normal history; Glance is the one overlay route,
    and its Escape returns to the page that opened it, entry by entry. The H209 rebinding cases
-   keep using `w` and the Keyboard shortcuts panel; a key hint now shows on the masthead's Find
+   use the Agents key and the Keyboard shortcuts panel; a key hint now shows on the masthead's Find
    button, the sheet's rows and the contents column instead of the retired buttons.
 
    Heavy modes and panels are stand-ins: this pins the route wiring, not each page's content. */
@@ -23,8 +23,7 @@ vi.mock('../api/live', () => ({ PREVIEW_MODE_LIVE_KEYS: {}, useLiveModes: () => 
 vi.mock('../analytics', () => ({ initAnalytics: () => {}, trackPageview: () => {} }));
 vi.mock('../modes', () => ({ AgentsMode: () => <div>Agents route loaded</div>, Dossier: () => null, MemoryMode: () => <input aria-label="Memory draft" /> }));
 vi.mock('../modes3', () => ({ CommsMode: () => null, AdminMode: () => null }));
-vi.mock('../modes_world', () => ({ WorldIntelligenceMode: () => <div>World route loaded<input aria-label="World draft" /></div> }));
-vi.mock('../panels/jobs', () => ({ JobsWorkspace: () => <div>Jobs route loaded</div> }));
+vi.mock('../panels/jobs', () => ({ JobsWorkspace: () => <div>Jobs route loaded<input aria-label="Jobs draft" /></div> }));
 vi.mock('../gap', () => ({
   ConsolePanel: ({ panelId }: { panelId: string }) => <div>Console route {panelId}</div>,
   FirstRunGate: () => null,
@@ -100,11 +99,11 @@ it('connects the masthead, the contents column, the sheet, hotkeys, panel pages 
   await screen.findByLabelText('Memory draft');
   expect(location.pathname).toBe('/v2/memory');
   expect(sheet()).toBeNull();
-  // w: World is Observe's page, an ordinary history entry Back leaves
-  fireEvent.keyDown(window, { key: 'w' });
-  await screen.findByText('World route loaded');
-  expect(location.pathname).toBe('/v2/world');
-  expect(currentArea()).toBe('observe');
+  // a number key again: an ordinary history entry Back leaves
+  fireEvent.keyDown(window, { key: '3' });
+  await screen.findByText('Agents route loaded');
+  expect(location.pathname).toBe('/v2/agents');
+  expect(currentArea()).toBe('agents');
   act(() => history.back());
   await screen.findByLabelText('Memory draft');
   expect(location.pathname).toBe('/v2/memory');
@@ -123,25 +122,25 @@ it('connects the masthead, the contents column, the sheet, hotkeys, panel pages 
   expect(location.pathname).toBe('/v2/chat');
 }, 30_000);
 
-it('loads a World bookmark as Observe\'s page and walks it through Back/Forward', async () => {
-  history.replaceState(null, '', '/v2/world?demo=1');
+it('loads a mode bookmark as a page of its area and walks it through Back/Forward', async () => {
+  history.replaceState(null, '', '/v2/jobs?demo=1');
   render(<App />);
-  await screen.findByText('World route loaded');
-  expect(document.title).toBe('World signals · Observe · Nerva');
-  expect(currentArea()).toBe('observe');
-  expect(currentPage()).toBe('mode:world');
-  expect(within(frame('page') as HTMLElement).getByText('World route loaded')).toBeTruthy();
+  await screen.findByText('Jobs route loaded');
+  expect(document.title).toBe('Scheduled jobs · Work · Nerva');
+  expect(currentArea()).toBe('work');
+  expect(currentPage()).toBe('mode:jobs');
+  expect(within(frame('page') as HTMLElement).getByText('Jobs route loaded')).toBeTruthy();
   // a page, not an overlay: Escape does not leave it
   fireEvent.keyDown(window, { key: 'Escape' });
-  expect(location.pathname).toBe('/v2/world');
+  expect(location.pathname).toBe('/v2/jobs');
   fireEvent.click(area('home'));
   await waitFor(() => expect(location.pathname).toBe('/v2/cockpit'));
-  await waitFor(() => expect(screen.queryByText('World route loaded')).toBeNull());
+  await waitFor(() => expect(screen.queryByText('Jobs route loaded')).toBeNull());
   act(() => history.back());
-  await screen.findByText('World route loaded');
-  expect(location.pathname).toBe('/v2/world');
+  await screen.findByText('Jobs route loaded');
+  expect(location.pathname).toBe('/v2/jobs');
   act(() => history.forward());
-  await waitFor(() => expect(screen.queryByText('World route loaded')).toBeNull());
+  await waitFor(() => expect(screen.queryByText('Jobs route loaded')).toBeNull());
   expect(location.pathname).toBe('/v2/cockpit');
 }, 20_000);
 
@@ -173,13 +172,13 @@ it('keeps floating desktop on canonical chat and preserves its query context', a
   expect(frame('masthead')).toBeNull();
 });
 
-it('remounts World content when the existing demo context changes', async () => {
-  history.replaceState(null, '', '/v2/world?demo=1');
+it('remounts a mode page\'s content when the existing demo context changes', async () => {
+  history.replaceState(null, '', '/v2/jobs?demo=1');
   render(<App />);
-  fireEvent.change(await screen.findByLabelText('World draft'), { target: { value: 'demo draft' } });
+  fireEvent.change(await screen.findByLabelText('Jobs draft'), { target: { value: 'demo draft' } });
   fireEvent.click(screen.getByRole('button', { name: /exit demo/i }));
-  await waitFor(() => expect((screen.getByLabelText('World draft') as HTMLInputElement).value).toBe(''));
-  expect(location.pathname).toBe('/v2/world');
+  await waitFor(() => expect((screen.getByLabelText('Jobs draft') as HTMLInputElement).value).toBe(''));
+  expect(location.pathname).toBe('/v2/jobs');
 });
 
 it('restores the invoking page of a historical Glance visit', async () => {
@@ -252,7 +251,7 @@ it('under a base path, Escape closes the panels sheet where it was and a panel p
   } finally { delete window.__NERVA_BASE_PATH__; }
 }, 20_000);
 
-it('closes prefixed Glance with Escape and restores the invoking page; prefixed World is a page', async () => {
+it('closes prefixed Glance with Escape and restores the invoking page; a prefixed mode page is a page', async () => {
   window.__NERVA_BASE_PATH__ = '/one';
   try {
     history.replaceState(null, '', '/one/v2/chat?demo=1');
@@ -264,11 +263,11 @@ it('closes prefixed Glance with Escape and restores the invoking page; prefixed 
     fireEvent.keyDown(window, { key: 'Escape' });
     await chatPage();
     expect(location.pathname).toBe('/one/v2/chat');
-    fireEvent.keyDown(window, { key: 'w' });
-    await screen.findByText('World route loaded');
-    expect(location.pathname).toBe('/one/v2/world');
+    fireEvent.keyDown(window, { key: '3' });
+    await screen.findByText('Agents route loaded');
+    expect(location.pathname).toBe('/one/v2/agents');
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(location.pathname).toBe('/one/v2/world');
+    expect(location.pathname).toBe('/one/v2/agents');
   } finally { delete window.__NERVA_BASE_PATH__; }
 }, 20_000);
 
@@ -292,20 +291,23 @@ it('H209: mod+/ opens the shortcuts panel, a rebinding moves the key, and it per
   expect(location.pathname).toBe('/v2/agents');
 });
 
-it('H209: a rebound World key opens World and the old one no longer does', async () => {
-  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'view.world': 'y' }));
+it('H209: a rebound Agents key opens Agents and the old one no longer does', async () => {
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'mode.agents': 'y' }));
   render(<App />);
   await chatPage();
+  fireEvent.keyDown(window, { key: '3' });
+  expect(location.pathname).toBe('/v2/chat');
+  // the removed World key answers nothing either
   fireEvent.keyDown(window, { key: 'w' });
   expect(location.pathname).toBe('/v2/chat');
   // the hint names the new key: the Keyboard shortcuts panel lists it
   fireEvent.keyDown(window, { key: '/', ctrlKey: true });
-  expect((await screen.findByRole('button', { name: 'Rebind Open World signals' })).textContent).toBe('Y');
+  expect((await screen.findByRole('button', { name: 'Rebind Go to Agents' })).textContent).toBe('Y');
   fireEvent.keyDown(window, { key: 'Escape' });
   await waitFor(() => expect(shortcutsPanel()).toBeNull());
   fireEvent.keyDown(window, { key: 'y' });
-  await screen.findByText('World route loaded');
-  expect(location.pathname).toBe('/v2/world');
+  await screen.findByText('Agents route loaded');
+  expect(location.pathname).toBe('/v2/agents');
 });
 
 it('H209: a key typed into a field is the field\'s, not a page switch', async () => {
@@ -313,11 +315,10 @@ it('H209: a key typed into a field is the field\'s, not a page switch', async ()
   render(<App />);
   const box = await screen.findByLabelText('Memory draft');
   box.focus();
-  for (const key of ['2', '3', 'w', 'a', '`']) fireEvent.keyDown(box, { key });
+  for (const key of ['2', '3', 'a', '`']) fireEvent.keyDown(box, { key });
   await act(async () => {});
   expect(location.pathname).toBe('/v2/memory');
   expect(screen.queryByText('Agents route loaded')).toBeNull();
-  expect(screen.queryByText('World route loaded')).toBeNull();
   expect(sheet()).toBeNull();
 });
 
@@ -397,25 +398,25 @@ it('H209: a sheet rebound to a bare key never fires while typing (F3)', async ()
 });
 
 it('H209: a HUD action on a rebound chord is not also the browser\'s (F4)', async () => {
-  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'mode.agents': 'mod+d', 'view.world': 'mod+y' }));
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'mode.agents': 'mod+d', 'mode.memory': 'mod+y' }));
   render(<App />);
   await chatPage();
   expect(fireEvent.keyDown(window, { key: 'd', ctrlKey: true })).toBe(false);
   await screen.findByText('Agents route loaded');
   expect(fireEvent.keyDown(window, { key: 'y', ctrlKey: true })).toBe(false);
-  await screen.findByText('World route loaded');
+  await screen.findByLabelText('Memory draft');
 });
 
-it('H209: World\'s key waits while the panel is open (F5)', async () => {
+it('H209: Glance\'s key waits while the panel is open (F5)', async () => {
   render(<App />);
   await chatPage();
   fireEvent.keyDown(window, { key: '/', ctrlKey: true });
   await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
-  fireEvent.keyDown(window, { key: 'w' });
+  fireEvent.keyDown(window, { key: 'a' });
   expect(location.pathname).toBe('/v2/chat');
 });
 
-it('H209: with storage off, a World rebinding still takes for this page (F6)', async () => {
+it('H209: with storage off, an Agents rebinding still takes for this page (F6)', async () => {
   const setItem = Storage.prototype.setItem;
   const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
     if (key === 'hud.shortcuts') throw new Error('storage off');
@@ -426,20 +427,20 @@ it('H209: with storage off, a World rebinding still takes for this page (F6)', a
     await chatPage();
     fireEvent.keyDown(window, { key: '/', ctrlKey: true });
     await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
-    fireEvent.click(screen.getByRole('button', { name: 'Rebind Open World signals' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebind Go to Agents' }));
     fireEvent.keyDown(window, { key: 'y' });
-    expect(screen.getByRole('button', { name: 'Rebind Open World signals' }).textContent).toBe('Y');
+    expect(screen.getByRole('button', { name: 'Rebind Go to Agents' }).textContent).toBe('Y');
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(shortcutsPanel()).toBeNull());
-    fireEvent.keyDown(window, { key: 'w' });
+    fireEvent.keyDown(window, { key: '3' });
     expect(location.pathname).toBe('/v2/chat');
     fireEvent.keyDown(window, { key: 'y' });
-    await screen.findByText('World route loaded');
+    await screen.findByText('Agents route loaded');
   } finally { spy.mockRestore(); }
 });
 
 it('H209: the HUD\'s key hints follow a rebinding (F7)', async () => {
-  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'mode.agents': 'x', 'view.world': 'y', 'view.console': 'c', 'session.palette': 'mod+p' }));
+  localStorage.setItem('hud.shortcuts', JSON.stringify({ 'mode.agents': 'x', 'view.console': 'c', 'session.palette': 'mod+p' }));
   render(<App />);
   await chatPage();
   // the masthead's Find, and the contents column's "Ctrl K finds any of the N"
@@ -454,15 +455,15 @@ it('H209: the HUD\'s key hints follow a rebinding (F7)', async () => {
   expect(hint('area:home')).toBe('1');
   fireEvent.keyDown(within(open).getByRole('combobox'), { key: 'Escape' });
   expect(sheet()).toBeNull();
-  // and the keys themselves: c opens the sheet on panels, y goes to World
+  // and the keys themselves: c opens the sheet on panels, x goes to Agents
   fireEvent.keyDown(window, { key: 'c' });
   expect(sheet()?.querySelector('[data-cmd="scope"]')).not.toBeNull();
   fireEvent.keyDown(within(sheet() as HTMLElement).getByRole('combobox'), { key: 'Escape' });
-  fireEvent.keyDown(window, { key: 'y' });
-  await screen.findByText('World route loaded');
+  fireEvent.keyDown(window, { key: 'x' });
+  await screen.findByText('Agents route loaded');
 });
 
-it('H209: the Escape that closes the panel leaves Glance open beneath it, and World where it was (F8)', async () => {
+it('H209: the Escape that closes the panel leaves Glance open beneath it, and a page where it was (F8)', async () => {
   render(<App />);
   await chatPage();
   fireEvent.keyDown(window, { key: 'a' });
@@ -476,13 +477,13 @@ it('H209: the Escape that closes the panel leaves Glance open beneath it, and Wo
   // Glance's own Escape still returns to the page that opened it
   fireEvent.keyDown(window, { key: 'Escape' });
   await chatPage();
-  fireEvent.keyDown(window, { key: 'w' });
-  await screen.findByText('World route loaded');
+  fireEvent.keyDown(window, { key: '3' });
+  await screen.findByText('Agents route loaded');
   fireEvent.keyDown(window, { key: '/', ctrlKey: true });
   await screen.findByRole('dialog', { name: 'Keyboard shortcuts' });
   fireEvent.keyDown(window, { key: 'Escape' });
   await waitFor(() => expect(shortcutsPanel()).toBeNull());
-  expect(location.pathname).toBe('/v2/world');
+  expect(location.pathname).toBe('/v2/agents');
 }, 20_000);
 
 it('H209: in Cinema the panel does not open unseen; stage keys and hints follow the registry (F10, F4, F7)', async () => {

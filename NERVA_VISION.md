@@ -41,7 +41,7 @@ a restart:
 |------|--------------------|
 | **Observe** | `core/autonomy/observer.py` + watchers, `passive_capture.py`, channels, heartbeat |
 | **Understand** | memory fusion (vector ⊕ graph, RRF), bi-temporal KG (H14), ingestion pipeline |
-| **Decide** | orchestrator + 17 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
+| **Decide** | orchestrator + 16 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
 | **Act** | the **Action Kernel** (O24 — Gate-K, 21 action kinds mediated), brokers, ToolRPC, sandbox |
 | **Verify** | the **Verification Fabric** (O24 — reality harness, SEAM→WIRED→VERIFIED→GA registry; in-process — resets each boot, a durable committed snapshot is V3, pending) |
 | **Learn** | the governed per-turn learning loop (O20 — `learning/background_review.py`, CoreMemory, skill curator) |

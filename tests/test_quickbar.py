@@ -63,7 +63,6 @@ def test_bare_agent_name_is_a_query_not_a_summon():
 def test_query_hint_is_grounded_in_router_rules():
     assert parse_command("what's the weather tomorrow")["route_hint"] == "friday"
     assert parse_command("show me my budget")["route_hint"] == "gecko"
-    assert parse_command("any satellite overpass tonight")["route_hint"] == "argus"
 
 
 def test_query_without_a_trigger_has_no_hint():

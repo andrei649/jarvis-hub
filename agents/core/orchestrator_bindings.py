@@ -30,7 +30,6 @@ ExternalBindingName = Literal[
     "last_memory_maintenance",
     "channel_inbox",
     "oracle_bridge",
-    "argus",
     "permission_ledger",
     "work_runs",
     "company_runtime",
@@ -61,10 +60,9 @@ EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[ExternalBindingCallsite, ...]] = Ma
         "task_executor": (("agents/core/autonomy_coordinator.py", 2717, 8),),
         "last_memory_maintenance": (("agents/core/scheduler_service.py", 594, 8),),
         "channel_inbox": (("agents/web.py", 639, 4),),
-        "oracle_bridge": (("agents/core/plugin_manager.py", 410, 8),),
+        "oracle_bridge": (("agents/core/plugin_manager.py", 401, 8),),
         "permission_ledger": (("agents/core/autonomy_coordinator.py", 2544, 12),),
         "work_runs": (("agents/core/autonomy_coordinator.py", 2579, 12),),
-        "argus": (("agents/core/plugin_manager.py", 415, 8),),
         "company_runtime": (("agents/core/scheduler_service.py", 378, 12),),
         "custom_endpoint_service": (("agents/core/llm/custom_endpoint_service.py", 551, 4),),
         "code_environment": (("agents/core/autonomy_coordinator.py", 1785, 8),),
@@ -93,7 +91,6 @@ class ExternalOrchestratorBindings(Protocol):
     last_memory_maintenance: Any | None
     channel_inbox: Any | None
     oracle_bridge: Any | None
-    argus: Any | None
     permission_ledger: Any | None
     work_runs: Any | None
     company_runtime: Any | None

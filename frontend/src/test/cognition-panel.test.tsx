@@ -40,7 +40,7 @@ const ALL_OFF = {
     modules: ['honesty', 'memory'],
   },
   '/api/cognition/honesty': { available: true, sycophancy_index: 0.8, alerting: true, threshold: 0.6, n: 12 },
-  '/api/cognition/personality': { available: true, agents: ['jarvis', 'argus'] },
+  '/api/cognition/personality': { available: true, agents: ['jarvis', 'vision'] },
   '/api/cognition/memory': { available: true, core: 4, user_core: 2, embed_version: 'v3', tiers: {} },
   '/api/cognition/learning': { available: true, kc_count: 7, corrections: 1 },
   '/api/cognition/ensemble': { available: false },

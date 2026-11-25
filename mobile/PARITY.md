@@ -249,7 +249,6 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Opt-in terminal guardian verdicts (H277) | Same blocked-task projection: `judge.advisory=false`, strict `decision`; pending `judge_mode=smart` | ✅ DENY/ESCALATE, guardian identity and one-task owner override; smart approvals leave the inbox | ⬜ distinct guardian verdict/pending labels; existing owner decisions remain usable | H18.29 / H277 |
 | Guardian denial feedback and observers (H485) | Bounded next authenticated owner-turn prompt observation; consented server extension events around native guardian request/committed decision | Server chat flow warns after repeated DENYs; observer subscriptions use extension declarations, no dedicated HUD editor | Native settings/labels, observer management and device acceptance remain open; no new mobile client implementation | H485 |
 | Capability registry board | user `GET /api/capabilities`; user `GET /api/metrics/capabilities` has no dedicated client caller | ✅ registry board over `/api/capabilities` | ✅ registry board over `/api/capabilities`; no metrics-route caller | H18.22 / H27.8 |
-| WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
 | Slack/Discord inbox replies | Same inbox/reply API; exact room/thread target, existing approval queue | ✅ live inbox composer | ✅ existing Comms screen and client; requires host adapters; Slack automatic ingress uses optional Socket Mode ([setup](../docs/SLACK_SETUP.md)) | HA-4i-comms / 4i-socket |
 | Native Slack slash commands (H057, local 2026-11-12) | Host Socket Mode ingress and `/nerva` fallback; existing command access/inbox/approval flow | Existing inbox and approval surfaces; no new screen | Host/Slack-specific; no new mobile route or screen | Live Slack workspace acceptance unverified |
@@ -323,7 +322,6 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Mic satellites (pair a device as a mic) | `GET /api/satellites`, `POST /api/satellites/register`, `DELETE /api/satellites/{satellite_id}` | ✅ | ⬜ | |
 | Oracle sync and conflicts | user `GET /api/oracle/status`, `GET /api/oracle/conflicts`; admin `POST /api/oracle/sync`, `POST /api/oracle/conflicts/resolve` | ✅ standalone admin GETs carry the entered admin credential; existing POST paths are separate | ⬜ | |
 | Packs inventory + verification | `GET /api/packs`, `GET /api/packs/{key}/verify` | ✅ | ⬜ | |
-| World signals routing feed | `GET /api/signals/routed`, `GET /api/signals/agent/{agent_id}` | ✅ | ⬜ | |
 | Market watchlist (owner-saved rows; no quotes, no trading) | `GET/POST /api/market/watchlist/saved`, `DELETE /api/market/watchlist/saved/{symbol}` | ✅ | ⬜ | |
 | Onboarding wizard + funnel steps | `GET /api/onboarding/wizard`, `POST /api/onboarding/funnel` | ✅ | ⬜ | |
 | Model setup — hardware tier → governed Ollama pull | `GET /api/onboarding/model-plan`, `POST /api/onboarding/model-pull` | ✅ | ⬜ | |

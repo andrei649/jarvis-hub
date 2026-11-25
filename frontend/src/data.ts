@@ -22,7 +22,7 @@ const GLYPHS = {
 };
 
 /* The roster is live (GET /api/agents), but these glyphs are a hand-drawn seed
-   set. A registry agent with no seed glyph — howard, argus, and whatever
+   set. A registry agent with no seed glyph — howard, and whatever
    the registry grows next — must still get a visible mark: an empty <path>
    renders nothing, so the agent looks absent rather than un-illustrated.
    Every glyph lookup that reaches an SVG path goes through this one helper, so
@@ -53,16 +53,15 @@ const AGENTS = [
   { id:'hercules', name:'Hercules', tier:'FND', role:'Fitness & Nutrition', status:'idle', model:'gemma-4-26b', policy:'auto' },
   { id:'hephaestus', name:'Hephaestus', tier:'FND', role:'Builder & Mechanic', status:'idle', model:'gemma-4-26b', policy:'auto' },
   { id:'frigga', name:'Frigga', tier:'FND', role:'Family Matriarch', status:'idle', model:'gemma-4-26b', policy:'local' },
-  /* LVP — the registry has 17 agents and this corpus had 15. argus and howard
-     are active in `agents/_system/agents.yaml` and were reaching the roster live with no
-     seed metadata at all: no tier, no role, no dossier, so opening one showed a blank
+  /* LVP — the registry has 16 agents and this corpus had 15. howard is active in
+     `agents/_system/agents.yaml` and was reaching the roster live with no
+     seed metadata at all: no tier, no role, no dossier, so opening it showed a blank
      card. Every field below is copied from that file (name, archetype→role,
-     tier business→BIZ / foundation→FND, channel, heartbeat, llm_policy, plugins) rather
+     tier foundation→FND, channel, heartbeat, llm_policy, plugins) rather
      than invented; only the demo-only counters (`skills`, `memory_facts`) and `model`
      follow this corpus' own convention for the policy, the same as the fifteen above.
-     They deliberately get no hand-drawn GLYPH — `glyphFor`'s neutral mark is the
+     It deliberately gets no hand-drawn GLYPH — `glyphFor`'s neutral mark is the
      designed answer for a registry agent without one, and has its own test. */
-  { id:'argus', name:'Argus', tier:'BIZ', role:'Geospatial OSINT Intel', status:'idle', model:'claude-haiku', policy:'claude' },
   { id:'howard', name:'Howard', tier:'FND', role:'Digital Twin / Archive', status:'idle', model:'gemma-4-26b', policy:'local' },
 ];
 
@@ -72,9 +71,7 @@ const COLLAB = [
   ['pepper','stark'],['pepper','veronica'],['stark','gecko'],['athena','stark'],
   ['vision','veronica'],['steve','oracle'],['steve','ultron'],['ultron','oracle'],
   ['hephaestus','steve'],['frigga','pepper'],['hercules','friday'],['jerome','friday'],
-  // the two registry agents above, edged to the work they actually neighbour:
-  // argus is the geospatial half of research, howard the archive.
-  ['argus','vision'],['argus','ultron'],
+  // the registry agent above, edged to the work it actually neighbours: howard the archive.
   ['howard','jarvis'],['howard','frigga'],
 ];
 
@@ -94,7 +91,6 @@ const DOSSIER = {
   hercules:{ archetype:'Fitness & Nutrition', personality:'Motivating, data-driven, health-focused. Tracks fitness and wellness metrics.', model:'gemma-4-26b-a4b', channel:'telegram', heartbeat:'2h', policy:'auto', plugins:['apple-health'], skills:2, memory_facts:8, soul:'You are Hercules, the fitness coach. Track thoroughly, motivate clearly.' },
   hephaestus:{ archetype:'Builder & Mechanic', personality:'Practical, detail-oriented. Manages builds and tracks parts.', model:'gemma-4-26b-a4b', channel:'telegram', heartbeat:'2h', policy:'auto', plugins:[], skills:3, memory_facts:10, soul:'You are Hephaestus, the builder. Build carefully, track precisely.' },
   frigga:{ archetype:'Family Matriarch', personality:'Warm, protective, family-focused. Manages family data, local-only.', model:'gemma-4-26b-a4b', channel:'local', heartbeat:'4h', policy:'local', plugins:['whatsapp-bridge'], skills:2, memory_facts:18, soul:'You are Frigga, the family guardian. Protect fiercely, remember always.' },
-  argus:{ archetype:'Geospatial OSINT Intel', personality:'Geospatial, source-conscious, corroboration-first. Uses Signal Layer evidence and hands findings to Vision.', model:'claude-haiku', channel:'web-dashboard', heartbeat:'6h', policy:'claude', plugins:['signal-layer','cloud-llm'], skills:2, memory_facts:6, soul:'You are Argus, the geospatial analyst. Corroborate before you conclude.' },
   howard:{ archetype:'Digital Twin / Archive', personality:'Retentive, precise, unhurried. Keeps the long archive and answers from it rather than from guesswork.', model:'gemma-4-26b-a4b', channel:'telegram', heartbeat:'no', policy:'local', plugins:[], skills:1, memory_facts:14, soul:'You are Howard, the archive. Answer from what is recorded; say so when nothing is.' },
 };
 

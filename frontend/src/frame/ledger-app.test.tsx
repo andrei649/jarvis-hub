@@ -2,7 +2,7 @@
    switch were deleted in stage 5), with every region wired in: every registry route renders inside
    the Ledger frame (Glance full screen, without it), live and in demo, without throwing; each page
    of an area carries its contents column; Home holds the day, the conversation, the docket and the
-   record; the search and command sheet is Ctrl K; World is a page, not an overlay; the floating
+   record; the search and command sheet is Ctrl K; the floating
    window is the conversation page's floating variant. A browser that still carries the old
    switch's word (?frame=classic, localStorage['hud.frame']) gets the same frame.
 
@@ -42,7 +42,6 @@ vi.mock('../modes4', () => ({
   FinanceMode: () => <div data-testid="mode-body">finance</div>, HealthMode: () => <div data-testid="mode-body">health</div>,
   KnowledgeMode: () => <div data-testid="mode-body">knowledge</div>, FamilyMode: () => <div data-testid="mode-body">family</div>,
 }));
-vi.mock('../modes_world', () => ({ WorldIntelligenceMode: () => <div data-testid="mode-body">World route loaded</div> }));
 vi.mock('../panels/jobs', () => ({ JobsWorkspace: () => <div data-testid="mode-body">jobs</div> }));
 vi.mock('../artifacts', () => ({ ArtifactsPanel: () => <div data-testid="mode-body">artifacts</div>, artifactsTabLabel: () => 'Artifacts' }));
 vi.mock('../gap', () => ({
@@ -233,7 +232,7 @@ describe('App under the Ledger frame', () => {
     expect(document.querySelector('[data-chrome="version"]')?.textContent).toBe('Nerva 9.9.9');
   });
 
-  it('follows the Ledger keys: 1–9 the areas, 0 the conversation, w World, the backtick the panels, a Glance', async () => {
+  it('follows the Ledger keys: 1–9 the areas, 0 the conversation, the backtick the panels, a Glance', async () => {
     // the one registry: the masthead's order on the number keys, none of the HUD v2 rail's ids
     expect(ACTIONS.find((a) => a.chord === '2')?.id).toBe('mode.work');
     expect(ACTIONS.some((a) => a.id === 'mode.comms' || a.id === 'mode.autonomy')).toBe(false);
@@ -244,10 +243,12 @@ describe('App under the Ledger frame', () => {
       fireEvent.keyDown(window, { key });
       await waitFor(() => expect(location.pathname, key).toBe(path));
     }
+    // the removed World key answers nothing
     fireEvent.keyDown(window, { key: 'w' });
-    await waitFor(() => expect(location.pathname).toBe('/v2/world'));
-    expect((await screen.findByTestId('mode-body')).textContent).toBe('World route loaded');
-    expect(document.querySelector('[data-frame="masthead"] [aria-current="page"]')?.getAttribute('data-area')).toBe('observe');
+    expect(location.pathname).toBe('/v2/cockpit');
+    fireEvent.keyDown(window, { key: '8' });
+    await waitFor(() => expect(location.pathname).toBe('/v2/observe'));
+    await waitFor(() => expect(document.querySelector('[data-frame="masthead"] [aria-current="page"]')?.getAttribute('data-area')).toBe('observe'));
     fireEvent.keyDown(window, { key: '`' });
     const panels = sheet() as HTMLElement;
     expect(panels).not.toBeNull();
@@ -261,7 +262,7 @@ describe('App under the Ledger frame', () => {
     expect(frame('masthead')).toBeNull();
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(frame('masthead')).not.toBeNull());
-    expect(location.pathname).toBe('/v2/world');
+    expect(location.pathname).toBe('/v2/observe');
     expect(location.search).toBe('');
   });
 
@@ -393,18 +394,6 @@ describe('App under the Ledger frame', () => {
     }
   });
 
-  it('keeps World a page in the shipped entry: no WORLD button, no overlay, no rail reservation', async () => {
-    start('/v2/world');
-    render(<App />);
-    expect((await screen.findByTestId('mode-body')).textContent).toBe('World route loaded');
-    expect(within(frame('page') as HTMLElement).getByTestId('mode-body')).toBeTruthy();
-    expect(screen.queryByTitle(/World Intelligence/)).toBeNull();
-    expect(screen.queryByText('close · esc')).toBeNull();
-    expect([...document.querySelectorAll('style')].some((s) => s.textContent?.includes('.rail'))).toBe(false);
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(location.pathname).toBe('/v2/world');
-  });
-
   it('draws the floating window as the conversation page\'s floating variant', async () => {
     start('/v2/chat?desktop=floating');
     render(<App floating />);
@@ -421,7 +410,7 @@ describe('App under the Ledger frame', () => {
     expect(page.querySelector('.n-runhead--marks [data-runhead="mode"][data-readonly]')).not.toBeNull();
     expect(page.querySelector('.n-runhead--marks [data-runhead="interrupts"]')).not.toBeNull();
     // and no page key moves it off the conversation (its router accepts nothing else)
-    for (const key of ['w', 'a', '2', '`']) {
+    for (const key of ['a', '2', '`']) {
       fireEvent.keyDown(window, { key });
       expect(location.pathname, key).toBe('/v2/chat');
     }

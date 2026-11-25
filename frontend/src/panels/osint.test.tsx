@@ -1,11 +1,9 @@
 // @ts-nocheck
-/* OSINT panel — POST /api/osint/correlate + POST /api/osint/brief (user tier) and
-   GET /api/signals/brief/{domain} (user tier). fetch is mocked, like src/test/kg-panel.test.tsx.
+/* OSINT panel — POST /api/osint/correlate + POST /api/osint/brief (user tier). fetch is
+   mocked, like src/test/kg-panel.test.tsx.
 
-   The refusal and the three distinct empty states are the point: apiPost throws on 4xx and
-   carries the parsed body, so a 422 must render as a visible refusal with the backend's own
-   msg — never as a success drawer — and the Signal Layer's `available:false` must never be
-   rendered as "no signals" / "0 signals". */
+   The refusal is the point: apiPost throws on 4xx and carries the parsed body, so a 422
+   must render as a visible refusal with the backend's own msg — never as a success drawer. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
@@ -44,7 +42,7 @@ describe('OsintPanel — the offline correlator is reachable and never overstate
   it('issues no request at all until the operator acts', async () => {
     const fn = mockRoutes(() => null);
     render(<OsintPanel />);
-    await waitFor(() => expect(screen.getByText('pick a domain — nothing is requested until you do')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('offline correlator — correlates what you type')).toBeTruthy());
     expect(fn).not.toHaveBeenCalled();
     // no drawer, no borrowed headline, no fabricated zero
     expect(screen.queryByText('0 findings returned')).toBeNull();
@@ -133,73 +131,5 @@ describe('OsintPanel — the offline correlator is reachable and never overstate
     // and NOT a success drawer
     expect(screen.queryByText('view: correlate')).toBeNull();
     expect(screen.queryByText('0 findings returned')).toBeNull();
-  });
-
-  it('renders the Signal Layer reason verbatim and never as "no signals" / "0 signals"', async () => {
-    const fn = mockRoutes((u) => (u.startsWith('/api/signals/brief/')
-      ? {
-        status: 200,
-        body: {
-          domain: 'cyber', known_domain: null, available: false, reason: 'unavailable',
-          top: [], count: 0, headline: 'signal layer unavailable', freshness: {},
-        },
-      }
-      : null));
-    render(<OsintPanel />);
-    fireEvent.click(screen.getByText('cyber'));
-
-    await waitFor(() => expect(screen.getByText(/signal layer unavailable · reason: unavailable/)).toBeTruthy());
-    expect(fn.mock.calls.some((c) => String(c[0]) === '/api/signals/brief/cyber?top=5&limit=20')).toBe(true);
-    expect(screen.queryByText('no signals')).toBeNull();
-    expect(document.body.textContent).not.toMatch(/0 signals/);
-    // count/known_domain are placeholders in this branch, so neither is shown as a number
-    expect(screen.getByText('count —')).toBeTruthy();
-    expect(screen.queryByText('count 0')).toBeNull();
-    expect(screen.getByText('known_domain —')).toBeTruthy();
-    // known_domain is null here, so it must NOT be reported as "unknown domain"
-    expect(screen.queryByText('unknown domain')).toBeNull();
-    // and no control is offered for a sidecar that has no start/enable route
-    const labels = screen.getAllByRole('button').map((b) => b.textContent || '');
-    expect(labels.some((t) => /enable|start|configure|restart/i.test(t))).toBe(false);
-  });
-
-  it('keeps an unknown domain distinct from an unavailable sidecar', async () => {
-    mockRoutes((u) => (u.startsWith('/api/signals/brief/')
-      ? {
-        status: 200,
-        body: {
-          domain: 'weather', known_domain: false, available: true, reason: null,
-          top: [], count: 0, headline: 'unknown domain', freshness: {},
-        },
-      }
-      : null));
-    render(<OsintPanel />);
-    fireEvent.change(screen.getByLabelText('domain'), { target: { value: 'weather' } });
-    fireEvent.keyDown(screen.getByLabelText('domain'), { key: 'Enter' });
-
-    await waitFor(() => expect(screen.getByText('unknown domain')).toBeTruthy());
-    expect(document.body.textContent).not.toMatch(/signal layer unavailable/);
-    expect(document.body.textContent).toMatch(/known_domain false/);
-  });
-
-  it('never presents the truncated top list as the domain total', async () => {
-    mockRoutes((u) => (u.startsWith('/api/signals/brief/')
-      ? {
-        status: 200,
-        body: {
-          domain: 'cyber', known_domain: true, available: true, reason: null,
-          top: [{ title: 'ransomware crew hits port', severity: 4 }],
-          count: 9, headline: '9 cyber signal(s)', freshness: { fetched_at: '2026-09-01T00:00:00Z' },
-        },
-      }
-      : null));
-    render(<OsintPanel />);
-    fireEvent.click(screen.getByText('cyber'));
-
-    await waitFor(() => expect(screen.getByText('9 cyber signal(s)')).toBeTruthy());
-    expect(screen.getByText('count 9 routed into cyber')).toBeTruthy();
-    expect(screen.getByText('showing top 1 of 9 (severity-ranked)')).toBeTruthy();
-    expect(screen.getByText('ransomware crew hits port')).toBeTruthy();
-    expect(screen.getByText('sev 4')).toBeTruthy();
   });
 });
