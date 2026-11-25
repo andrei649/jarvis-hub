@@ -67,6 +67,20 @@ nothing is published on a LAN interface. Data lives in the `nerva_data` volume
 networking* (4.34+). The full stack (qdrant/neo4j/n8n + the headless coordinator) is
 the separate `docker-compose.yml`.
 
+Without host networking on Docker Desktop for Windows, use
+`docker compose -f docker-compose.windows.yml up --build`: bridge networking, the port
+published on the host's `127.0.0.1:8080` only, and — because the hub then binds `0.0.0.0`
+inside its container — it refuses to start until `NERVA_USER_TOKEN` and
+`NERVA_ADMIN_TOKEN` are set in `.env`. A model runtime on the host is at
+`host.docker.internal` from inside it.
+
+Every image runs the hub as the unprivileged `nerva` user. `deploy/docker/entrypoint.sh`
+remaps it at start to `NERVA_UID`/`NERVA_GID` or `PUID`/`PGID` (default 1000; 0 is
+refused) and hands it the data root, so with a bind mount
+(`-e PUID=$(id -u) -e PGID=$(id -g) -v "$PWD/data:/data"`) the files are yours, not
+root's. `JARVIS_RUNTIME_COORDINATOR=0` switches the headless coordinator off: it is
+recorded as down in the run-log instead of being restarted forever.
+
 The image and both compose files pin `JARVIS_HOST`, `JARVIS_PORT` and `JARVIS_HOME` under
 the `JARVIS_` spelling. `NERVA_<X>` is the preferred spelling of every other variable.
 To change one of those three under compose, **edit the line in the compose file**:

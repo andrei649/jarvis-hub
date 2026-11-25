@@ -71,7 +71,7 @@ def script_problem(script):
     return None
 
 
-def snapshot_script(script):
+def snapshot_script(script, *, cwd=None):
     """Read through no-follow descriptors, then bind exact bytes into argv."""
     from agents.core.environments.execution import parse_argv
     from agents.core.environments.terminal_contract import hardline_match
@@ -107,6 +107,10 @@ def snapshot_script(script):
     parsed, refusal = parse_argv(command)
     if len(command) > 4000 or refusal or parsed != argv or hardline_match(argv):
         raise ValueError('script cannot cross the existing terminal command contract')
+    from .jobs_guard import check_lifecycle
+    # H457: on the exact bytes that will run, where they will run. Only these bytes are
+    # bound into the approved command, so a script that runs other script files is refused.
+    check_lifecycle(script_source=source, cwd=cwd, forbid_refs=True)
     return {'command': command, 'sha256': hashlib.sha256(raw).hexdigest()}
 
 
@@ -301,7 +305,9 @@ class ScriptRuntime:
                 payload = initial_payload(row)
                 self.propose_url(row, payload, row['data']['origin'] + ':hop:0')
                 return self.run_result(job.id, run_id)
-            prepared = snapshot_script(options.get('monitor_script') or options['script'])
+            from .jobs_guard import job_cwd
+            prepared = snapshot_script(options.get('monitor_script') or options['script'],
+                                       cwd=job_cwd(options))
             payload = {'tool': 'terminal_run', 'target': 'terminal_run',
                        'args': {'target': 'local-host', 'command': prepared['command'], 'timeout': 60}}
             if 'workdir' in options:
@@ -449,8 +455,11 @@ class ScriptRuntime:
                             reset_action_origin,
                         )
                         from agents.core.security.quarantine import fence_tool_result
-                        fenced, _ = fence_tool_result(json.dumps(data['monitor_context']) if monitor else json.dumps({'stdout': output}),
-                                                     source='scheduled-script')
+
+                        from .jobs_guard import sanitize_loaded, sanitize_loaded_deep
+                        loaded = (sanitize_loaded_deep(data['monitor_context'], source='monitor context') if monitor
+                                  else {'stdout': sanitize_loaded(output, source='script output')})
+                        fenced, _ = fence_tool_result(json.dumps(loaded), source='scheduled-script')
                         action = {**frozen.action, 'deliver': False, 'prompt': frozen.action.get('prompt', '') +
                                   '\n\nScheduled script output (untrusted data):\n' +
                                   ('[Host notice: this script context is truncated; complete stdout was longer.]\n'

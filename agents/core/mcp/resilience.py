@@ -13,9 +13,11 @@ were read as reference only):
 * :func:`halted` — the e-stop and the kill switch, read together. A reconnect, a keepalive
   ping, a sampling answer and an elicitation card are all refused while either is engaged.
 
-What is *not* here (H556 stays partial): a schema cache with lazy connect, stdio idle and
-lifetime recycling, a parent-death watchdog killing the child's process group, an orphan
-reaper and a cross-process discovery lock.
+Stdio idle / lifetime recycling is driven by the manager's supervisor pass
+(:meth:`MCPManager.tick`, state ``recycled``); process groups, the orphan reaper and the
+cross-process discovery lock are in ``process_guard.py``. What is *not* here (H556 stays
+partial): a schema cache with lazy connect, a resident parent-death watchdog, and a
+separate per-server connect cooldown.
 """
 
 from __future__ import annotations
@@ -36,6 +38,8 @@ STATE_OPEN = "circuit_open"
 STATE_PARKED = "parked"
 STATE_DISCONNECTED = "disconnected"
 STATE_REFUSED = "refused"
+#: H556 - stopped on purpose (idle or lifetime recycling); reconnected on its next use.
+STATE_RECYCLED = "recycled"
 
 
 @dataclass(frozen=True)
@@ -151,6 +155,14 @@ class ServerHealth:
         self.state = STATE_DISCONNECTED
         self.next_retry_at = None
         self.breaker_open_until = None
+
+    def recycled(self, reason: str) -> None:
+        """A stdio server stopped on purpose (idle, or past its lifetime): not a failure,
+        no backoff; the next call (or the supervisor, for a lifetime restart) brings it up."""
+        self.state = STATE_RECYCLED
+        self.next_retry_at = None
+        self.breaker_open_until = None
+        self.bump(f"recycled_{reason}")
 
     def retry_due(self, now: float | None = None) -> bool:
         now = time.time() if now is None else now

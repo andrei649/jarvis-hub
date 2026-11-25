@@ -433,6 +433,14 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
     if outcome_cleanup_error is not None:
         raise SessionDeleteError("approval_outcomes_unavailable") from outcome_cleanup_error
     forget_skill_loads(session_id)
+    if session_id.startswith("acp_"):
+        # H542 review: a deleted editor conversation leaves the editors' list too.
+        from agents.core.acp import sessions as acp_sessions
+
+        try:
+            await asyncio.to_thread(acp_sessions.forget, session_id)
+        except Exception:  # noqa: BLE001 - the delete itself is done; a stale row only lists
+            logger.warning("editor index row of %s could not be removed", session_id)
     pruned = await asyncio.to_thread(prune_backups, root) if prune else []
     logger.info("session %s deleted; backup at %s", session_id, backup)
     return {"ok": True, "session": session_id, "backup": str(backup), "removed": removed, "pruned": pruned}

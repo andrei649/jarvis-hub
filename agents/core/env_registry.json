@@ -1,0 +1,4443 @@
+{
+ "schema": 1,
+ "generated_by": "scripts/gen_env_registry.py",
+ "families": [
+  "NERVA_ROLE_*",
+  "NERVA_VLM_*",
+  "NERVA_TERMINAL_SSH_*"
+ ],
+ "entries": {
+  "NERVA_A2A_ENABLED": {
+   "aliases": [
+    "JARVIS_A2A_ENABLED"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Agent-to-Agent (A2A, H16.2). A network surface — OFF unless enabled. Peers are allowlisted with a shared secret and sign every request; inbound tasks land in an approval inbox and never auto-execute.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_A2A_KEY": {
+   "aliases": [
+    "JARVIS_A2A_KEY"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Agent-to-Agent (A2A, H16.2). A network surface — OFF unless enabled. Peers are allowlisted with a shared secret and sign every request; inbound tasks land in an approval inbox and never auto-execute.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_ACP_MCP_TRUST": {
+   "aliases": [
+    "JARVIS_ACP_MCP_TRUST"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "- JARVIS_ACP_PERMISSION_TIMEOUT: default 300 seconds (agents/cli/nerva.py cmd_acp; --permission-timeout overrides it, 1–86400). It is how long an editor has to answer one permission request. No answer is a reject of the approval card.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_ACP_PERMISSION_TIMEOUT": {
+   "aliases": [
+    "JARVIS_ACP_PERMISSION_TIMEOUT"
+   ],
+   "namespace": "hub",
+   "type": "float",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "- JARVIS_ACP_PERMISSION_TIMEOUT: default 300 seconds (agents/cli/nerva.py cmd_acp; --permission-timeout overrides it, 1–86400). It is how long an editor has to answer one permission request. No answer is a reject of the approval card.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_ACQUISITION_SANDBOX_IMAGE": {
+   "aliases": [
+    "JARVIS_ACQUISITION_SANDBOX_IMAGE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ACTION_KERNEL": {
+   "aliases": [
+    "JARVIS_ACTION_KERNEL"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "set 1 for owner-authorized LM Studio/Ollama lifecycle autonomy",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_ADMIN_TOKEN": {
+   "aliases": [
+    "JARVIS_ADMIN_TOKEN"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Protects the /api/admin/* endpoints (settings, env, memory clear, agents). - Leave EMPTY: admin works only from localhost (safe for a local laptop).",
+   "required_when": "REQUIRED before exposing the server on a LAN / Pi / public address.",
+   "doc": ".env.example"
+  },
+  "NERVA_ALLOWED_HOSTS": {
+   "aliases": [
+    "JARVIS_ALLOWED_HOSTS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Extra Host names accepted besides loopback names, IP literals and the bind address (a Tailscale or Caddy name). Any other Host answers 400 — the DNS-rebinding defence.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_ALLOW_INSECURE_BIND": {
+   "aliases": [
+    "JARVIS_ALLOW_INSECURE_BIND"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Acknowledge a non-loopback bind the boot guard would refuse (agents/core/boot_guards.py); loopback is always allowed.",
+   "required_when": "",
+   "doc": "scripts/gen_env_registry.py"
+  },
+  "NERVA_ALLOW_INSECURE_SIGNIN": {
+   "aliases": [
+    "JARVIS_ALLOW_INSECURE_SIGNIN"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ANALYTICS_MAX_EVENTS": {
+   "aliases": [
+    "JARVIS_ANALYTICS_MAX_EVENTS"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": 200000,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_APP_ROOT": {
+   "aliases": [
+    "JARVIS_APP_ROOT"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_AUDIT_KEY": {
+   "aliases": [
+    "JARVIS_AUDIT_KEY"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Required by NERVA_HARDENED=1: the audit chain is HMAC-keyed with it, so an attacker with DB write access cannot forge the chain.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_AUTO_DEEP": {
+   "aliases": [
+    "JARVIS_AUTO_DEEP"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "LLM Model Tiering (fast vs heavy)",
+   "purpose": "H7.5: complexity-based escalation — light requests use the fast VRAM model, heavy ones (long context or reasoning cues) use the deep slot (DDR5 spillover). Set NERVA_AUTO_DEEP=0 to disable escalation;",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_AUX_ACQUISITION_CAPABILITY_MODEL": {
+   "aliases": [
+    "JARVIS_AUX_ACQUISITION_CAPABILITY_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Acquisition captures its model once for both JSON attempts.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_AUX_ACQUISITION_DRAFT_MODEL": {
+   "aliases": [
+    "JARVIS_AUX_ACQUISITION_DRAFT_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Acquisition captures its model once for both JSON attempts.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_AUX_COMPRESSION_MODEL": {
+   "aliases": [
+    "JARVIS_AUX_COMPRESSION_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Optional independent models on the existing local backend (H277). Blank preserves the active local model and each task's existing fallback. These model IDs do not select providers or activate the auxiliary features.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_AUX_ONESHOT_MODEL": {
+   "aliases": [
+    "JARVIS_AUX_ONESHOT_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Optional independent models on the existing local backend (H277). Blank preserves the active local model and each task's existing fallback. These model IDs do not select providers or activate the auxiliary features.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_AUX_QUERY_REWRITE_MODEL": {
+   "aliases": [
+    "JARVIS_AUX_QUERY_REWRITE_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Optional independent models on the existing local backend (H277). Blank preserves the active local model and each task's existing fallback. These model IDs do not select providers or activate the auxiliary features.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_AUX_REVIEW_MODEL": {
+   "aliases": [
+    "JARVIS_AUX_REVIEW_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Optional independent models on the existing local backend (H277). Blank preserves the active local model and each task's existing fallback. These model IDs do not select providers or activate the auxiliary features.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_AUX_SESSION_TITLE_MODEL": {
+   "aliases": [
+    "JARVIS_AUX_SESSION_TITLE_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Optional independent models on the existing local backend (H277). Blank preserves the active local model and each task's existing fallback. These model IDs do not select providers or activate the auxiliary features.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_AUX_SOUL_DESCRIPTION_MODEL": {
+   "aliases": [
+    "JARVIS_AUX_SOUL_DESCRIPTION_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Local SOUL description proposal",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_BACKUP_KEY": {
+   "aliases": [
+    "JARVIS_BACKUP_KEY"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Encrypts backups AND the pre-forget archive. If unset, one is generated under $NERVA_KEY_DIR (default ~/.config/jarvis) — outside the data root, so a stolen archive never ships its own key.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_BACKUP_MAX_BYTES": {
+   "aliases": [
+    "JARVIS_BACKUP_MAX_BYTES"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "default 68719476736 (64 GiB) uncompressed",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_BACKUP_MAX_MEMBERS": {
+   "aliases": [
+    "JARVIS_BACKUP_MAX_MEMBERS"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Archive-bomb caps when a backup is unpacked (verify drill + restore). A backup over either cap — or over the free space on the destination, counting the files an in-place --force restore replaces — fails loudly instead of filling the disk.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_BACKUP_QUICK_KEEP": {
+   "aliases": [
+    "JARVIS_BACKUP_QUICK_KEEP"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_BINARY_ARTIFACTS": {
+   "aliases": [
+    "JARVIS_BINARY_ARTIFACTS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_BROWSER_ALLOWED_DOMAINS": {
+   "aliases": [
+    "JARVIS_BROWSER_ALLOWED_DOMAINS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_BROWSER_ALLOW_PRIVATE_URLS": {
+   "aliases": [
+    "JARVIS_BROWSER_ALLOW_PRIVATE_URLS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "ON: PinnedResolver runs in lan mode and the driver's route layer admits RFC1918 / loopback literals, so the governed browser can reach house devices.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_BROWSER_BROKER_ALLOW_LOOPBACK_HTTP": {
+   "aliases": [
+    "JARVIS_BROWSER_BROKER_ALLOW_LOOPBACK_HTTP"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_BUDGET_MAX_DEPTH": {
+   "aliases": [
+    "JARVIS_BUDGET_MAX_DEPTH"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_BUDGET_MAX_TOKENS": {
+   "aliases": [
+    "JARVIS_BUDGET_MAX_TOKENS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_BUDGET_MAX_WALL_SECONDS": {
+   "aliases": [
+    "JARVIS_BUDGET_MAX_WALL_SECONDS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_CALL_CONFIG": {
+   "aliases": [
+    "JARVIS_CALL_CONFIG"
+   ],
+   "namespace": "hub",
+   "type": "json",
+   "default": {},
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_CALL_LIVE": {
+   "aliases": [
+    "JARVIS_CALL_LIVE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "- JARVIS_WRITEBACK_LIVE (agents/core/writeback.py live_rail_enabled): ON, WriteBackBroker constructs HttpWriteBackClient, so an APPROVED writeback.* or mapped create_task task performs the real Notion / GitHub / Calendar / Linear / Asana /…",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_CA_BUNDLE": {
+   "aliases": [
+    "JARVIS_CA_BUNDLE"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "TLS trust (only needed behind a proxy that inspects HTTPS)",
+   "purpose": "A PEM of extra CA roots for plugin and model egress. Without it, behind a corporate MITM or an inspecting VPN, every outbound call fails and web_search answers \"0 results\" instead of saying why. It only ADDS trust.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_CHANNEL_BACKFILL_MAX": {
+   "aliases": [
+    "JARVIS_CHANNEL_BACKFILL_MAX"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_CHANNEL_BACKFILL_WINDOW_S": {
+   "aliases": [
+    "JARVIS_CHANNEL_BACKFILL_WINDOW_S"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_CHANNEL_LATE_DELIVERY_S": {
+   "aliases": [
+    "JARVIS_CHANNEL_LATE_DELIVERY_S"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_CHANNEL_OPEN": {
+   "aliases": [
+    "JARVIS_CHANNEL_OPEN"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Inbound pairing is ON by default: a sender the bot does not know is held until you pair them (HUD Pairing card or the t.me/<bot>?start=<token> link).",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_CHANNEL_PAIRING": {
+   "aliases": [
+    "JARVIS_CHANNEL_PAIRING"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Inbound pairing is ON by default: a sender the bot does not know is held until you pair them (HUD Pairing card or the t.me/<bot>?start=<token> link).",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_CHANNEL_SEND_RATE": {
+   "aliases": [
+    "JARVIS_CHANNEL_SEND_RATE"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": 0,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_CHANNEL_SEND_RATES": {
+   "aliases": [
+    "JARVIS_CHANNEL_SEND_RATES"
+   ],
+   "namespace": "hub",
+   "type": "int_map",
+   "default": {},
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_CHAT_HISTORY": {
+   "aliases": [
+    "JARVIS_CHAT_HISTORY"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_COMFYUI_CHECKPOINT": {
+   "aliases": [
+    "JARVIS_COMFYUI_CHECKPOINT"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_COMFYUI_CHECKPOINTS": {
+   "aliases": [
+    "JARVIS_COMFYUI_CHECKPOINTS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_COMFYUI_URL": {
+   "aliases": [
+    "JARVIS_COMFYUI_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_COMPANY_MODE": {
+   "aliases": [
+    "JARVIS_COMPANY_MODE"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "ON: the runtime may construct a CompanySupervisor and tick an open work run: a single owner-approved goal worked continuously across turns and reboots (autonomy/work_runs.py, work_verifier.py, work_judge.py).",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_CONTAINER": {
+   "aliases": [
+    "JARVIS_CONTAINER"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_CORS_ORIGINS": {
+   "aliases": [
+    "JARVIS_CORS_ORIGINS"
+   ],
+   "namespace": "hub",
+   "type": "list",
+   "default": [],
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "CORS allow-list (HF-2). Empty = same-origin only (recommended). Set a comma- separated list of origins to allow cross-origin reads, e.g. a widget host:",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_CSP": {
+   "aliases": [
+    "JARVIS_CSP"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_DEEP_MODEL": {
+   "aliases": [
+    "JARVIS_DEEP_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM Model Tiering (fast vs heavy)",
+   "purpose": "H7.5: complexity-based escalation — light requests use the fast VRAM model, heavy ones (long context or reasoning cues) use the deep slot (DDR5 spillover). Set NERVA_AUTO_DEEP=0 to disable escalation;",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_DESKTOP_HOST": {
+   "aliases": [
+    "JARVIS_DESKTOP_HOST"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_DESKTOP_ISOLATED": {
+   "aliases": [
+    "JARVIS_DESKTOP_ISOLATED"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_DEVICE_ID": {
+   "aliases": [
+    "JARVIS_DEVICE_ID"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_DEVICE_LABEL": {
+   "aliases": [
+    "JARVIS_DEVICE_LABEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_DISABLE_CSP": {
+   "aliases": [
+    "JARVIS_DISABLE_CSP"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_DRIVE_AI_DEST": {
+   "aliases": [
+    "JARVIS_DRIVE_AI_DEST"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "Personal Drive import (PRIVATE personalization — rclone)",
+   "purpose": "override local dest (default: memory_logs/drive_ai)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_DRIVE_AI_FLAGS": {
+   "aliases": [
+    "JARVIS_DRIVE_AI_FLAGS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Personal Drive import (PRIVATE personalization — rclone)",
+   "purpose": "extra rclone flags, space-separated",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_DRIVE_AI_INDEX": {
+   "aliases": [
+    "JARVIS_DRIVE_AI_INDEX"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "Personal Drive import (PRIVATE personalization — rclone)",
+   "purpose": "1 = also ingest into memory after sync (0 = sync only)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_DRIVE_AI_MODE": {
+   "aliases": [
+    "JARVIS_DRIVE_AI_MODE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Personal Drive import (PRIVATE personalization — rclone)",
+   "purpose": "copy (non-destructive) | sync (mirror)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_DRIVE_AI_REMOTE": {
+   "aliases": [
+    "JARVIS_DRIVE_AI_REMOTE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Personal Drive import (PRIVATE personalization — rclone)",
+   "purpose": "Fast-import an owner-configured Google Drive folder (e.g. the root \"AI\" folder) into a GITIGNORED local dir, then ingest it into memory (local-docs indexer).",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_DRIVE_AI_SYNC": {
+   "aliases": [
+    "JARVIS_DRIVE_AI_SYNC"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Personal Drive import (PRIVATE personalization — rclone)",
+   "purpose": "1 = sync at startup (fire-and-forget)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_E2E_SYNC": {
+   "aliases": [
+    "JARVIS_E2E_SYNC"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_E2E_SYNC_DIR": {
+   "aliases": [
+    "JARVIS_E2E_SYNC_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_E2E_SYNC_KEY": {
+   "aliases": [
+    "JARVIS_E2E_SYNC_KEY"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_EMAIL_REPLY_MAX_PER_HOUR": {
+   "aliases": [
+    "JARVIS_EMAIL_REPLY_MAX_PER_HOUR"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ENV": {
+   "aliases": [
+    "JARVIS_ENV"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ENVIRONMENT_HINT": {
+   "aliases": [
+    "JARVIS_ENVIRONMENT_HINT"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_EVAL_LIVE": {
+   "aliases": [
+    "JARVIS_EVAL_LIVE"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "H23.4 live eval fidelity gate (owner box; all opt-in). With NERVA_EVAL_LIVE=1 the companion eval gate also runs the golden suite through your real local backend and fails closed if the lane cannot run.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_EVAL_LIVE_MIN_SCORE": {
+   "aliases": [
+    "JARVIS_EVAL_LIVE_MIN_SCORE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "H23.4 live eval fidelity gate (owner box; all opt-in). With NERVA_EVAL_LIVE=1 the companion eval gate also runs the golden suite through your real local backend and fails closed if the lane cannot run.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_EVAL_LIVE_MODEL": {
+   "aliases": [
+    "JARVIS_EVAL_LIVE_MODEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "H23.4 live eval fidelity gate (owner box; all opt-in). With NERVA_EVAL_LIVE=1 the companion eval gate also runs the golden suite through your real local backend and fails closed if the lane cannot run.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_EVAL_LIVE_URL": {
+   "aliases": [
+    "JARVIS_EVAL_LIVE_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "LM Studio; Ollama: http://127.0.0.1:11434/v1",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_EVAL_STORE": {
+   "aliases": [
+    "JARVIS_EVAL_STORE"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_EXEC_TEMP_DIR": {
+   "aliases": [
+    "JARVIS_EXEC_TEMP_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_FAULT_INJECT": {
+   "aliases": [
+    "JARVIS_FAULT_INJECT"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "ON: inject(FaultPlan) may patch httpx send, open() / sqlite3.connect under the data root, and time.time for the duration of a with block. Nothing outside data_root() is ever touched.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_FILE_BROWSER_DIRS": {
+   "aliases": [
+    "JARVIS_FILE_BROWSER_DIRS"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_FILE_BROWSER_MAX_BYTES": {
+   "aliases": [
+    "JARVIS_FILE_BROWSER_MAX_BYTES"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_FILE_MAX_BYTES": {
+   "aliases": [
+    "JARVIS_FILE_MAX_BYTES"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "OFF: register_file_tools is a no-op — no file tool exists on the ToolRPC allowlist at all.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_FILE_ROOTS": {
+   "aliases": [
+    "JARVIS_FILE_ROOTS"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "OFF: register_file_tools is a no-op — no file tool exists on the ToolRPC allowlist at all.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_FILE_TOOLS": {
+   "aliases": [
+    "JARVIS_FILE_TOOLS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "OFF: register_file_tools is a no-op — no file tool exists on the ToolRPC allowlist at all.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_FORGET_ARCHIVE_DIR": {
+   "aliases": [
+    "JARVIS_FORGET_ARCHIVE_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "'Forget me' archives (POST /api/admin/forget). The archive is a complete copy of everything you asked to delete, so it is encrypted, kept outside the data root, and pruned. Default keeps only the newest. default: a sibling of the data root",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_FORGET_ARCHIVE_KEEP": {
+   "aliases": [
+    "JARVIS_FORGET_ARCHIVE_KEEP"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "0 = keep none",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_H30_HA_LIVE": {
+   "aliases": [
+    "JARVIS_H30_HA_LIVE"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_H30_HA_TOKEN": {
+   "aliases": [
+    "JARVIS_H30_HA_TOKEN"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_H31_FRIGATE_CAMERA_ID": {
+   "aliases": [
+    "JARVIS_H31_FRIGATE_CAMERA_ID"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_H31_FRIGATE_LIVE": {
+   "aliases": [
+    "JARVIS_H31_FRIGATE_LIVE"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_H31_FRIGATE_ORIGIN": {
+   "aliases": [
+    "JARVIS_H31_FRIGATE_ORIGIN"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_H31_FRIGATE_TOKEN": {
+   "aliases": [
+    "JARVIS_H31_FRIGATE_TOKEN"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HARDENED": {
+   "aliases": [
+    "JARVIS_HARDENED"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "1 = design-partner/hardened preset (see below)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_HA_ALLOWED_HOSTS": {
+   "aliases": [
+    "JARVIS_HA_ALLOWED_HOSTS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HA_TOKEN_REF": {
+   "aliases": [
+    "JARVIS_HA_TOKEN_REF"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HA_URL": {
+   "aliases": [
+    "JARVIS_HA_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HERMES_BRIDGE_TOKEN": {
+   "aliases": [
+    "JARVIS_HERMES_BRIDGE_TOKEN"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HERMES_BRIDGE_URL": {
+   "aliases": [
+    "JARVIS_HERMES_BRIDGE_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HERMES_ENABLED": {
+   "aliases": [
+    "JARVIS_HERMES_ENABLED"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional pinned Hermes runtime; provision with python scripts/hermes_runtime.py install. Admin runtime control additionally requires the enabled/bound Action Kernel.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_HERMES_GENERATION": {
+   "aliases": [
+    "JARVIS_HERMES_GENERATION"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HESTIA_BRIDGE": {
+   "aliases": [
+    "JARVIS_HESTIA_BRIDGE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "JARVIS_HESTIA_BRIDGE ON: HestiaBridge.observe() / propose() may run — observation is a strict-local snapshot with aggregate occupancy only, and every proposal becomes an ask-tier house task through HouseActuator.request_* → govern_enqueue (…",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_HOME": {
+   "aliases": [
+    "JARVIS_HOME"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": "(computed)",
+   "default_varies": true,
+   "section": "",
+   "purpose": "The hub's data root (settings, audit log, runtime state); keep it outside the git checkout.",
+   "required_when": "",
+   "doc": "scripts/gen_env_registry.py"
+  },
+  "NERVA_HOME_ASSISTANT": {
+   "aliases": [
+    "JARVIS_HOME_ASSISTANT"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HOOKS": {
+   "aliases": [
+    "JARVIS_HOOKS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HOOKS_MAX_TIMEOUT_S": {
+   "aliases": [
+    "JARVIS_HOOKS_MAX_TIMEOUT_S"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HOST": {
+   "aliases": [
+    "JARVIS_HOST"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "127.0.0.1",
+   "default_varies": false,
+   "section": "",
+   "purpose": "Address the hub binds to (default 127.0.0.1, loopback; agents/web.py).",
+   "required_when": "",
+   "doc": "scripts/gen_env_registry.py"
+  },
+  "NERVA_HOST_ID": {
+   "aliases": [
+    "JARVIS_HOST_ID"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HOUSE_BRAIN": {
+   "aliases": [
+    "JARVIS_HOUSE_BRAIN"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HOUSE_PRESENCE": {
+   "aliases": [
+    "JARVIS_HOUSE_PRESENCE"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_HUD": {
+   "aliases": [
+    "JARVIS_HUD"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_INBOUND_BATCH_MAX_MS": {
+   "aliases": [
+    "JARVIS_INBOUND_BATCH_MAX_MS"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_INBOUND_BATCH_MS": {
+   "aliases": [
+    "JARVIS_INBOUND_BATCH_MS"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_KEEP_AWAKE": {
+   "aliases": [
+    "JARVIS_KEEP_AWAKE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "H182: hold a power assertion (caffeinate / systemd-inhibit / SetThreadExecutionState) while a turn runs, so the machine does not idle-sleep mid-reply.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_KEY_DIR": {
+   "aliases": [
+    "JARVIS_KEY_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Encrypts backups AND the pre-forget archive. If unset, one is generated under $NERVA_KEY_DIR (default ~/.config/jarvis) — outside the data root, so a stolen archive never ships its own key.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_LATEST_CI_COMMIT": {
+   "aliases": [
+    "JARVIS_LATEST_CI_COMMIT"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LLM_WARMUP": {
+   "aliases": [
+    "JARVIS_LLM_WARMUP"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LMSTUDIO_CHAT_CONTROL": {
+   "aliases": [
+    "JARVIS_LMSTUDIO_CHAT_CONTROL"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "Local-model lifecycle control (LM Studio + Ollama)",
+   "purpose": "Narrower switch: mute only the *natural-language* chat detection (so a stray \"load up the data\" can never act) while keeping the explicit admin buttons. Live setting: `llm.chat_control`.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_LMSTUDIO_CONTROL": {
+   "aliases": [
+    "JARVIS_LMSTUDIO_CONTROL"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "Local-model lifecycle control (LM Studio + Ollama)",
+   "purpose": "Lets Jarvis START and LOAD/UNLOAD local models. LM Studio uses `lms`; Ollama uses fixed `ollama serve` argv plus its localhost API (never a shell).",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_LM_STUDIO_URL": {
+   "aliases": [
+    "JARVIS_LM_STUDIO_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LOCAL_IMAGE_BACKENDS": {
+   "aliases": [
+    "JARVIS_LOCAL_IMAGE_BACKENDS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LOCAL_IMAGE_DEFAULT_BACKEND": {
+   "aliases": [
+    "JARVIS_LOCAL_IMAGE_DEFAULT_BACKEND"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "comfyui",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LOCAL_IMAGE_GENERATION": {
+   "aliases": [
+    "JARVIS_LOCAL_IMAGE_GENERATION"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LOCAL_IMAGE_PROVIDERS": {
+   "aliases": [
+    "JARVIS_LOCAL_IMAGE_PROVIDERS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LOG_BACKUPS": {
+   "aliases": [
+    "JARVIS_LOG_BACKUPS"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LOG_FILE": {
+   "aliases": [
+    "JARVIS_LOG_FILE"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LOG_LEVEL": {
+   "aliases": [
+    "JARVIS_LOG_LEVEL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "info",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LOG_MAX_MB": {
+   "aliases": [
+    "JARVIS_LOG_MAX_MB"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LOG_REDACTION": {
+   "aliases": [
+    "JARVIS_LOG_REDACTION"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LSP": {
+   "aliases": [
+    "JARVIS_LSP"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LSP_DISABLED": {
+   "aliases": [
+    "JARVIS_LSP_DISABLED"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LSP_IDLE_SECONDS": {
+   "aliases": [
+    "JARVIS_LSP_IDLE_SECONDS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LSP_MEMORY_MB": {
+   "aliases": [
+    "JARVIS_LSP_MEMORY_MB"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LSP_REQUIRE_SANDBOX": {
+   "aliases": [
+    "JARVIS_LSP_REQUIRE_SANDBOX"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LSP_TIMEOUT_SECONDS": {
+   "aliases": [
+    "JARVIS_LSP_TIMEOUT_SECONDS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_LSP_TOOLS_DIR": {
+   "aliases": [
+    "JARVIS_LSP_TOOLS_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MACHINE_ID": {
+   "aliases": [
+    "JARVIS_MACHINE_ID"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MANAGED": {
+   "aliases": [
+    "JARVIS_MANAGED"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MANAGED_DIR": {
+   "aliases": [
+    "JARVIS_MANAGED_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MCP_AUTOCONNECT": {
+   "aliases": [
+    "JARVIS_MCP_AUTOCONNECT"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "off (web.py lifespan → MCPManager.start)",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_MCP_HTTP_CLIENT": {
+   "aliases": [
+    "JARVIS_MCP_HTTP_CLIENT"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "- JARVIS_MCP_HTTP_CLIENT: ON, MCPServer.connect() speaks Streamable HTTP for transport: streamable-http configs and the tool-call contract widens to stdio + streamable-http via client.active_tool_call_contract() (re-read per call, so unsett…",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_MCP_MUTATING_TOOLS": {
+   "aliases": [
+    "JARVIS_MCP_MUTATING_TOOLS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MCP_ROUTE_TOOLS": {
+   "aliases": [
+    "JARVIS_MCP_ROUTE_TOOLS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MCP_SAMPLING_DAILY_TOKENS": {
+   "aliases": [
+    "JARVIS_MCP_SAMPLING_DAILY_TOKENS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "20000 (mcp/host_requests.py DAILY_TOKENS_ENV)",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_MCP_STDIO_ALLOWED_ENV": {
+   "aliases": [
+    "JARVIS_MCP_STDIO_ALLOWED_ENV"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "- JARVIS_MCP_HTTP_CLIENT: ON, MCPServer.connect() speaks Streamable HTTP for transport: streamable-http configs and the tool-call contract widens to stdio + streamable-http via client.active_tool_call_contract() (re-read per call, so unsett…",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_MCP_STDIO_ENV_BASELINE": {
+   "aliases": [
+    "JARVIS_MCP_STDIO_ENV_BASELINE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "- JARVIS_MCP_HTTP_CLIENT: ON, MCPServer.connect() speaks Streamable HTTP for transport: streamable-http configs and the tool-call contract widens to stdio + streamable-http via client.active_tool_call_contract() (re-read per call, so unsett…",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_MEDIA_CATALOG": {
+   "aliases": [
+    "JARVIS_MEDIA_CATALOG"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MEDIA_DELIVERY_DIRS": {
+   "aliases": [
+    "JARVIS_MEDIA_DELIVERY_DIRS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MEDIA_DELIVERY_MAX_BYTES": {
+   "aliases": [
+    "JARVIS_MEDIA_DELIVERY_MAX_BYTES"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MEDIA_DIRECTOR": {
+   "aliases": [
+    "JARVIS_MEDIA_DIRECTOR"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MEDIA_DRIVERS": {
+   "aliases": [
+    "JARVIS_MEDIA_DRIVERS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MEDIA_PRESENCE_ROOM": {
+   "aliases": [
+    "JARVIS_MEDIA_PRESENCE_ROOM"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MEDIA_ROOTS": {
+   "aliases": [
+    "JARVIS_MEDIA_ROOTS"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MEDIA_URL_ALLOWLIST": {
+   "aliases": [
+    "JARVIS_MEDIA_URL_ALLOWLIST"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MEMORY_DIR": {
+   "aliases": [
+    "JARVIS_MEMORY_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MIC_MUTED": {
+   "aliases": [
+    "JARVIS_MIC_MUTED"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MODEL_INFO": {
+   "aliases": [
+    "JARVIS_MODEL_INFO"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MODEL_MANAGER": {
+   "aliases": [
+    "JARVIS_MODEL_MANAGER"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_MODEL_PULL": {
+   "aliases": [
+    "JARVIS_MODEL_PULL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "ON: POST /api/onboarding/model-pull may reach the unified action facade (action:model.pull). It still needs JARVIS_UNIFIED_ACTION_API and JARVIS_ACTION_KERNEL or it refuses unified_action_api_disabled / action_kernel_disabled;",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_NOUS_ANTHROPIC_WIRE": {
+   "aliases": [
+    "JARVIS_NOUS_ANTHROPIC_WIRE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Vision (VLM) ─ default OFF",
+   "purpose": "Anthropic catalog models use chat/completions by default. Only native switches anthropic/* to Messages; auto currently stays on chat, as do invalid values.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_NOUS_CLIENT_ID": {
+   "aliases": [
+    "JARVIS_NOUS_CLIENT_ID"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Vision (VLM) ─ default OFF",
+   "purpose": "Nous account authentication. Login alone does not select a vision provider or model. Set a registered public OAuth client ID; no Nerva client registration is assumed.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_NOUS_INFERENCE_BASE_URL": {
+   "aliases": [
+    "JARVIS_NOUS_INFERENCE_BASE_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Vision (VLM) ─ default OFF",
+   "purpose": "The account owns its inference endpoint; this is an explicit account override.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_NOUS_PORTAL_URL": {
+   "aliases": [
+    "JARVIS_NOUS_PORTAL_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Vision (VLM) ─ default OFF",
+   "purpose": "Nous account authentication. Login alone does not select a vision provider or model. Set a registered public OAuth client ID; no Nerva client registration is assumed.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_OLLAMA_URL": {
+   "aliases": [
+    "JARVIS_OLLAMA_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ORACLE_WATCH": {
+   "aliases": [
+    "JARVIS_ORACLE_WATCH"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Oracle GitHub watcher (dev/dogfooding — OFF by default)",
+   "purpose": "The Oracle bridge can poll a GitHub repo every 30s to auto-pull + test commits from parallel agent sessions. OFF by default — a privacy-first local app should not make unsolicited outbound calls. Set to 1 to enable on a dev box;",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_OSINT_ENRICH": {
+   "aliases": [
+    "JARVIS_OSINT_ENRICH"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_ALLOW_HARDLINKS": {
+   "aliases": [
+    "JARVIS_OS_ALLOW_HARDLINKS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_PROJECT_INDEX": {
+   "aliases": [
+    "JARVIS_OS_PROJECT_INDEX"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_PROJECT_INDEX_PATH": {
+   "aliases": [
+    "JARVIS_OS_PROJECT_INDEX_PATH"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_PROJECT_INDEX_SCHEMA": {
+   "aliases": [
+    "JARVIS_OS_PROJECT_INDEX_SCHEMA"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_PROJECT_REGISTER_DIR": {
+   "aliases": [
+    "JARVIS_OS_PROJECT_REGISTER_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_REPOSITORY_DOCS": {
+   "aliases": [
+    "JARVIS_OS_REPOSITORY_DOCS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_VAULT_EXCLUDE": {
+   "aliases": [
+    "JARVIS_OS_VAULT_EXCLUDE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_VAULT_INBOX": {
+   "aliases": [
+    "JARVIS_OS_VAULT_INBOX"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_VAULT_INCLUDE": {
+   "aliases": [
+    "JARVIS_OS_VAULT_INCLUDE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_VAULT_PATH": {
+   "aliases": [
+    "JARVIS_OS_VAULT_PATH"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_PASSIVE_CAPTURE": {
+   "aliases": [
+    "JARVIS_PASSIVE_CAPTURE"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_PERMISSION_LEDGER": {
+   "aliases": [
+    "JARVIS_PERMISSION_LEDGER"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "OFF: PermissionLedger.check() answers allow for legacy callers and records nothing — today's behaviour, byte-identical. ON: first contact with an app / site / OS-input device / file root / terminal target answers ask;",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_PLAYWRIGHT_BROWSER": {
+   "aliases": [
+    "JARVIS_PLAYWRIGHT_BROWSER"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "chromium",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_PLAYWRIGHT_DOWNLOAD_DIR": {
+   "aliases": [
+    "JARVIS_PLAYWRIGHT_DOWNLOAD_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_PLAYWRIGHT_HEADLESS": {
+   "aliases": [
+    "JARVIS_PLAYWRIGHT_HEADLESS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_PLAYWRIGHT_HOST": {
+   "aliases": [
+    "JARVIS_PLAYWRIGHT_HOST"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "ON with every prerequisite: Operator Run with approval proposes an exact durable browser_run task through authenticated ToolRPC. The owner must accept it; each mutating step then needs its exact Kernel receipt.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_PLUGIN_GRANTS": {
+   "aliases": [
+    "JARVIS_PLUGIN_GRANTS"
+   ],
+   "namespace": "hub",
+   "type": "list",
+   "default": [],
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_PLUGIN_LEAST_PRIVILEGE": {
+   "aliases": [
+    "JARVIS_PLUGIN_LEAST_PRIVILEGE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_PORT": {
+   "aliases": [
+    "JARVIS_PORT"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": 8080,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Port the hub listens on (default 8080; the CLI and the doctor use it to find the hub).",
+   "required_when": "",
+   "doc": "scripts/gen_env_registry.py"
+  },
+  "NERVA_PROFILE": {
+   "aliases": [
+    "JARVIS_PROFILE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_PROVENANCE": {
+   "aliases": [
+    "JARVIS_PROVENANCE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_PROVIDER_PLUGINS": {
+   "aliases": [
+    "JARVIS_PROVIDER_PLUGINS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Package installation does not select a model or call a provider. The package-status field selects_model: false describes that installation operation.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_RATE_LIMIT": {
+   "aliases": [
+    "JARVIS_RATE_LIMIT"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": 120,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Per-IP HTTP rate limit (requests/minute) for unauthenticated network clients — DoS / token brute-force dampening (HF-2). Localhost and validly-authenticated requests are exempt. Default 120; set 0 to disable.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_REALITY_HARNESS": {
+   "aliases": [
+    "JARVIS_REALITY_HARNESS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_REQUIRE_REVIEWED_SKILLS": {
+   "aliases": [
+    "JARVIS_REQUIRE_REVIEWED_SKILLS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Skills supply chain (H12.12, anti-ClawHub). Installs are always zip-slip-safe; these add opt-in enforcement on top of the metadata the HUD already surfaces: - NERVA_REQUIRE_REVIEWED_SKILLS=1 → only marketplace skills moderated to 'approved'…",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_REQUIRE_SIGNED_SKILLS": {
+   "aliases": [
+    "JARVIS_REQUIRE_SIGNED_SKILLS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Skills supply chain (H12.12, anti-ClawHub). Installs are always zip-slip-safe; these add opt-in enforcement on top of the metadata the HUD already surfaces: - NERVA_REQUIRE_REVIEWED_SKILLS=1 → only marketplace skills moderated to 'approved'…",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_RESTART_PREDECESSOR_WAIT_SECONDS": {
+   "aliases": [
+    "JARVIS_RESTART_PREDECESSOR_WAIT_SECONDS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "NERVA_SERVICE_WRAPPER=nssm is set by install-service.ps1; only that value is read.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_RESTORE_RUNTIME_WAIT_SECONDS": {
+   "aliases": [
+    "JARVIS_RESTORE_RUNTIME_WAIT_SECONDS"
+   ],
+   "namespace": "hub",
+   "type": "float",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_RESTORE_STAGE_TTL_HOURS": {
+   "aliases": [
+    "JARVIS_RESTORE_STAGE_TTL_HOURS"
+   ],
+   "namespace": "hub",
+   "type": "float",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ROOM_AWARE_VOICE": {
+   "aliases": [
+    "JARVIS_ROOM_AWARE_VOICE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ROOM_FENCING_SECRET": {
+   "aliases": [
+    "JARVIS_ROOM_FENCING_SECRET"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ROOM_PEERS": {
+   "aliases": [
+    "JARVIS_ROOM_PEERS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ROOM_PEERS_ALLOW_HTTP": {
+   "aliases": [
+    "JARVIS_ROOM_PEERS_ALLOW_HTTP"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_ROOT_PATH": {
+   "aliases": [
+    "JARVIS_ROOT_PATH"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_RUNTIME_COORDINATOR": {
+   "aliases": [
+    "JARVIS_RUNTIME_COORDINATOR"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Default on. 0 switches the headless coordinator (scripts/coordinator.py) off: it exits at once with status 125, and scripts/runtime_supervisor.py records one disabled event in the run-log instead of respawning it.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_RUNTIME_CYCLE_SECONDS": {
+   "aliases": [
+    "JARVIS_RUNTIME_CYCLE_SECONDS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_RUNTIME_FAKE_LLM": {
+   "aliases": [
+    "JARVIS_RUNTIME_FAKE_LLM"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_RUNTIME_LOG": {
+   "aliases": [
+    "JARVIS_RUNTIME_LOG"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_RUNTIME_RESPAWN_DELAY": {
+   "aliases": [
+    "JARVIS_RUNTIME_RESPAWN_DELAY"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_RUNTIME_RESTORE_GRACE_SECONDS": {
+   "aliases": [
+    "JARVIS_RUNTIME_RESTORE_GRACE_SECONDS"
+   ],
+   "namespace": "hub",
+   "type": "float",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_RUNTIME_RESTORE_POLL": {
+   "aliases": [
+    "JARVIS_RUNTIME_RESTORE_POLL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_RUNTIME_STATE": {
+   "aliases": [
+    "JARVIS_RUNTIME_STATE"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SAFE_MODE": {
+   "aliases": [
+    "JARVIS_SAFE_MODE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Safe mode (H275/H490): the hub starts with owner jobs and loosened settings left out.",
+   "required_when": "",
+   "doc": "scripts/gen_env_registry.py"
+  },
+  "NERVA_SCANNER_EXTRA_PATTERNS": {
+   "aliases": [
+    "JARVIS_SCANNER_EXTRA_PATTERNS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SECRET_KEY": {
+   "aliases": [
+    "JARVIS_SECRET_KEY"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SELF_RESTART": {
+   "aliases": [
+    "JARVIS_SELF_RESTART"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SESSION_BACKUP_KEEP": {
+   "aliases": [
+    "JARVIS_SESSION_BACKUP_KEEP"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SHUTDOWN_TIMEOUT": {
+   "aliases": [
+    "JARVIS_SHUTDOWN_TIMEOUT"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": 10,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SIGNAL_GOVERNANCE": {
+   "aliases": [
+    "JARVIS_SIGNAL_GOVERNANCE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SIGNAL_LAYER": {
+   "aliases": [
+    "JARVIS_SIGNAL_LAYER"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SIGNAL_LAYER_MODE": {
+   "aliases": [
+    "JARVIS_SIGNAL_LAYER_MODE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SKILL_ENVIRONMENTS": {
+   "aliases": [
+    "JARVIS_SKILL_ENVIRONMENTS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SKILL_HISTORY": {
+   "aliases": [
+    "JARVIS_SKILL_HISTORY"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SKILL_SIGNING_KEY": {
+   "aliases": [
+    "JARVIS_SKILL_SIGNING_KEY"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Skills supply chain (H12.12, anti-ClawHub). Installs are always zip-slip-safe; these add opt-in enforcement on top of the metadata the HUD already surfaces: - NERVA_REQUIRE_REVIEWED_SKILLS=1 → only marketplace skills moderated to 'approved'…",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_SMART_APPROVALS": {
+   "aliases": [
+    "JARVIS_SMART_APPROVALS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Optional smart guardian for terminal_run tasks only (default OFF). Requires the dedicated approval judge above and the existing signed task authority. APPROVE permits one exact operation; DENY/ESCALATE keep the owner decision card.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_SMART_APPROVAL_DENY": {
+   "aliases": [
+    "JARVIS_SMART_APPROVAL_DENY"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Optional smart guardian for terminal_run tasks only (default OFF). Requires the dedicated approval judge above and the existing signed task authority. APPROVE permits one exact operation; DENY/ESCALATE keep the owner decision card.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_SMART_APPROVAL_POLICY": {
+   "aliases": [
+    "JARVIS_SMART_APPROVAL_POLICY"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Optional smart guardian for terminal_run tasks only (default OFF). Requires the dedicated approval judge above and the existing signed task authority. APPROVE permits one exact operation; DENY/ESCALATE keep the owner decision card.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_SMART_DENIAL_BREAKER_THRESHOLD": {
+   "aliases": [
+    "JARVIS_SMART_DENIAL_BREAKER_THRESHOLD"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "3",
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Next authenticated owner turn warns after this many consecutive committed DENYs. <=0 disables the warning; default 3. This feedback grants no execution authority.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_SMS_ACCOUNT_SID": {
+   "aliases": [
+    "JARVIS_SMS_ACCOUNT_SID"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SMS_ALLOWED_NUMBERS": {
+   "aliases": [
+    "JARVIS_SMS_ALLOWED_NUMBERS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SMS_AUTH_TOKEN": {
+   "aliases": [
+    "JARVIS_SMS_AUTH_TOKEN"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SMS_ENABLED": {
+   "aliases": [
+    "JARVIS_SMS_ENABLED"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SMS_FROM_NUMBER": {
+   "aliases": [
+    "JARVIS_SMS_FROM_NUMBER"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SMS_REPLY_MAX_PER_HOUR": {
+   "aliases": [
+    "JARVIS_SMS_REPLY_MAX_PER_HOUR"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SMS_WEBHOOK_URL": {
+   "aliases": [
+    "JARVIS_SMS_WEBHOOK_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SOCIAL_LIVE": {
+   "aliases": [
+    "JARVIS_SOCIAL_LIVE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "- JARVIS_WRITEBACK_LIVE (agents/core/writeback.py live_rail_enabled): ON, WriteBackBroker constructs HttpWriteBackClient, so an APPROVED writeback.* or mapped create_task task performs the real Notion / GitHub / Calendar / Linear / Asana /…",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_SOUL_MAX_CHARS": {
+   "aliases": [
+    "JARVIS_SOUL_MAX_CHARS"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_STRICT_EGRESS": {
+   "aliases": [
+    "JARVIS_STRICT_EGRESS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Strict egress (default on): outbound calls are limited to the egress allow-list; NERVA_HARDENED forces it on.",
+   "required_when": "",
+   "doc": "scripts/gen_env_registry.py"
+  },
+  "NERVA_STRICT_LOCAL": {
+   "aliases": [
+    "JARVIS_STRICT_LOCAL"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Keep model calls on local backends: a cloud model or judge is refused while it is on.",
+   "required_when": "",
+   "doc": "scripts/gen_env_registry.py"
+  },
+  "NERVA_STRICT_MODELS": {
+   "aliases": [
+    "JARVIS_STRICT_MODELS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "Refuse a model outside an agent's approved_models (default on; 0 only logs the violation).",
+   "required_when": "",
+   "doc": "scripts/gen_env_registry.py"
+  },
+  "NERVA_STT_BEAM_SIZE": {
+   "aliases": [
+    "JARVIS_STT_BEAM_SIZE"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_STT_COMPUTE_TYPE": {
+   "aliases": [
+    "JARVIS_STT_COMPUTE_TYPE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SUBAGENT_SPAWN_LOG": {
+   "aliases": [
+    "JARVIS_SUBAGENT_SPAWN_LOG"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_SYSTEM_PROFILE": {
+   "aliases": [
+    "JARVIS_SYSTEM_PROFILE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_TASK_MAX_SECONDS": {
+   "aliases": [
+    "JARVIS_TASK_MAX_SECONDS"
+   ],
+   "namespace": "hub",
+   "type": "float",
+   "default": 0.0,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_TASK_MEDIATION": {
+   "aliases": [
+    "JARVIS_TASK_MEDIATION"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_TERMINAL_CHECKPOINTS": {
+   "aliases": [
+    "JARVIS_TERMINAL_CHECKPOINTS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_TERMINAL_LOCAL_HOST": {
+   "aliases": [
+    "JARVIS_TERMINAL_LOCAL_HOST"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "OFF: the local-host inventory row is absent and LocalHostTransport is not constructed — the refusal is the byte-identical local_transport_not_implemented.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_TERMINAL_LOCAL_ROOTS": {
+   "aliases": [
+    "JARVIS_TERMINAL_LOCAL_ROOTS"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "OFF: the local-host inventory row is absent and LocalHostTransport is not constructed — the refusal is the byte-identical local_transport_not_implemented.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_TERMINAL_TARGETS": {
+   "aliases": [
+    "JARVIS_TERMINAL_TARGETS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "off (checked in the terminal_run tool handler)",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_TERMINAL_TIMEOUT_S": {
+   "aliases": [
+    "JARVIS_TERMINAL_TIMEOUT_S"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "OFF: the local-host inventory row is absent and LocalHostTransport is not constructed — the refusal is the byte-identical local_transport_not_implemented.",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_TESTING": {
+   "aliases": [
+    "JARVIS_TESTING"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_TLS_INSECURE_TARGETS": {
+   "aliases": [
+    "JARVIS_TLS_INSECURE_TARGETS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "TLS trust (only needed behind a proxy that inspects HTTPS)",
+   "purpose": "Model provider ids or hosts (comma-separated) whose clients skip certificate checking — only for a LAN model server on a self-signed certificate. Each such client logs a WARNING; NERVA_HARDENED=1 ignores the list.",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_TOKEN_KEY": {
+   "aliases": [
+    "JARVIS_TOKEN_KEY"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Fernet key that encrypts stored OAuth tokens at rest (Gmail/Calendar/Spotify). - Leave EMPTY: a key is generated on first use at data/tokens/.encryption_key (perms 0600). Works, but the key lives on disk next to the ciphertext.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_TRUSTED_PROXIES": {
+   "aliases": [
+    "JARVIS_TRUSTED_PROXIES"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Reverse proxies whose X-Forwarded-For may be believed (comma-separated: 127.0.0.1/32 for a same-box Caddy).",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_TRUSTED_PROXY": {
+   "aliases": [
+    "JARVIS_TRUSTED_PROXY"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_TZ": {
+   "aliases": [
+    "JARVIS_TZ"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_UNIFIED_ACTION_API": {
+   "aliases": [
+    "JARVIS_UNIFIED_ACTION_API"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "1 = enable the H27 capability action plane",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_UPDATE_MAX_BOOTS": {
+   "aliases": [
+    "JARVIS_UPDATE_MAX_BOOTS"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": 3,
+   "default_varies": false,
+   "section": "",
+   "purpose": "3",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_UPDATE_VERIFY_SECONDS": {
+   "aliases": [
+    "JARVIS_UPDATE_VERIFY_SECONDS"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": 180,
+   "default_varies": false,
+   "section": "",
+   "purpose": "180 (minimum 10)",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_USER_HOME": {
+   "aliases": [
+    "JARVIS_USER_HOME"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "The owner's data folder (packaged installs); its .env is the second .env layer the hub loads.",
+   "required_when": "",
+   "doc": "scripts/gen_env_registry.py"
+  },
+  "NERVA_USER_TOKEN": {
+   "aliases": [
+    "JARVIS_USER_TOKEN"
+   ],
+   "namespace": "hub",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Admin / Security",
+   "purpose": "Protects the user-facing routes (the assistant /chat, personal memory & notes, code execution) — one tier below admin (HF-1). - Leave EMPTY: these work only from localhost (safe for a local laptop).",
+   "required_when": "X-Admin-Token also works). REQUIRED before exposing /chat on a LAN / Pi /",
+   "doc": ".env.example"
+  },
+  "NERVA_VIDEO_ANALYSIS": {
+   "aliases": [
+    "JARVIS_VIDEO_ANALYSIS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Video understanding is separate from video generation and inbound attachments. Gemini uses inline_data with the declared container MIME; Matroska is refused. Its serialized request must be below 20,000,000 bytes, including prompt/base64.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_VIDEO_PROVIDER": {
+   "aliases": [
+    "JARVIS_VIDEO_PROVIDER"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Video generation (the video_generate tool; adopted from Hermes, docs/hermes/ADOPT_LANE.md)",
+   "purpose": "Off until a provider's key is set AND the provider is chosen. Choose it in the HUD (Console → Start → Integrations → \"use for videos\", with a consent card) or here. Every video is still one approval card that shows its upper-bound cost.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_VOICE_COMMANDS": {
+   "aliases": [
+    "JARVIS_VOICE_COMMANDS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "H613 voice command providers (owner box; opt-in). With NERVA_VOICE_COMMANDS=1 the TTS/STT command a human approved in Console -> Admin -> Settings -> Voice -> Command providers may run (argv only, never a shell).",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_VOICE_COMMAND_TIMEOUT_S": {
+   "aliases": [
+    "JARVIS_VOICE_COMMAND_TIMEOUT_S"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "H613 voice command providers (owner box; opt-in). With NERVA_VOICE_COMMANDS=1 the TTS/STT command a human approved in Console -> Admin -> Settings -> Voice -> Command providers may run (argv only, never a shell).",
+   "required_when": "",
+   "doc": ".env.example, docs/FLAGS.md"
+  },
+  "NERVA_VRAM_RESERVE_MB": {
+   "aliases": [
+    "JARVIS_VRAM_RESERVE_MB"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_VRAM_TOTAL_MB": {
+   "aliases": [
+    "JARVIS_VRAM_TOTAL_MB"
+   ],
+   "namespace": "hub",
+   "type": "int",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_WASM_PYTHON": {
+   "aliases": [
+    "JARVIS_WASM_PYTHON"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_WEBHOOK_CHANNELS": {
+   "aliases": [
+    "JARVIS_WEBHOOK_CHANNELS"
+   ],
+   "namespace": "hub",
+   "type": "json",
+   "default": {},
+   "default_varies": false,
+   "section": "",
+   "purpose": "The cheap win holds — all five adapters exist, in agents/core/channels/webhook_channels.py: WhatsApp Cloud API (:127), Signal via signal-cli REST (:158), Matrix client-server (:183), Teams (:214), Google Chat (:239).",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_WEB_BACKEND": {
+   "aliases": [
+    "JARVIS_WEB_BACKEND"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_WEB_BLOCKED_DOMAINS": {
+   "aliases": [
+    "JARVIS_WEB_BLOCKED_DOMAINS"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_WEB_PROVIDER_TIER": {
+   "aliases": [
+    "JARVIS_WEB_PROVIDER_TIER"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_WEB_RESCUE": {
+   "aliases": [
+    "JARVIS_WEB_RESCUE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_WLED_URL": {
+   "aliases": [
+    "JARVIS_WLED_URL"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "JARVIS_HESTIA_BRIDGE ON: HestiaBridge.observe() / propose() may run — observation is a strict-local snapshot with aggregate occupancy only, and every proposal becomes an ask-tier house task through HouseActuator.request_* → govern_enqueue (…",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "NERVA_WORKFLOW_PERSIST": {
+   "aliases": [
+    "JARVIS_WORKFLOW_PERSIST"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_WRITEBACK_LIVE": {
+   "aliases": [
+    "JARVIS_WRITEBACK_LIVE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "",
+   "purpose": "- JARVIS_WRITEBACK_LIVE (agents/core/writeback.py live_rail_enabled): ON, WriteBackBroker constructs HttpWriteBackClient, so an APPROVED writeback.* or mapped create_task task performs the real Notion / GitHub / Calendar / Linear / Asana /…",
+   "required_when": "",
+   "doc": "docs/FLAGS.md"
+  },
+  "AI_GATEWAY_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "ai-gateway (Vercel)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "ALIBABA_CODING_PLAN_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "alibaba-coding-plan (and -cn)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "ALIBABA_CODING_PLAN_CN_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "alibaba-coding-plan-cn",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "ALIBABA_TOKEN_PLAN_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "alibaba-token-plan (and -cn)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "ALIBABA_TOKEN_PLAN_CN_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "alibaba-token-plan-cn",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "ANTHROPIC_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "Tiered routing (S0.1): heavy agents (Vision, Steve) → Claude API, light agents → local 7B Claude API for heavy reasoning agents (0 VRAM), falls back to Gemini/cloud if missing",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "APPLE_HEALTH_BRIDGE_URL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "LAN Bridges",
+   "purpose": "URLs for local bridge services on your network",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "ARCEEAI_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "arcee",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "BRAVE_SEARCH_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Web search (the model's web_search / web_extract tools, and research tasks)",
+   "purpose": "Optional search backends adopted from Hermes Agent (docs/hermes/ADOPT_LANE.md); each is off until its key is set. Brave's free tier allows 2,000 queries a month.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Dev agent / Superpowers privacy opt-outs",
+   "purpose": "These are for local coding-agent harnesses (Claude Code, Codex/OpenCode, etc.), not Jarvis runtime behavior. Keep them true by default on privacy-sensitive machines when using external agent methodology plugins.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "COMMANDCODE_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "commandcode",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "DASHSCOPE_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "alibaba, alibaba-cn (and a fallback for the coding plans)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "DEEPINFRA_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Auto is opt-in: the image composer tries OpenRouter's dedicated :free vision model, then a logged-in Nous account, then DeepInfra's served vision catalog. It has no selected main conversation route today, so that candidate is absent.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "DEEPINFRA_BASE_URL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Model roles (H277) ─ separate models for separate jobs",
+   "purpose": "Auto is opt-in: the image composer tries OpenRouter's dedicated :free vision model, then a logged-in Nous account, then DeepInfra's served vision catalog. It has no selected main conversation route today, so that candidate is absent.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "DEEPSEEK_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "deepseek",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "DISABLE_TELEMETRY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Dev agent / Superpowers privacy opt-outs",
+   "purpose": "These are for local coding-agent harnesses (Claude Code, Codex/OpenCode, etc.), not Jarvis runtime behavior. Keep them true by default on privacy-sensitive machines when using external agent methodology plugins.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "DISCORD_BOT_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Discord",
+   "purpose": "Bot token from Discord Developer Portal",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "EMAIL_REQUIRE_SENDER_AUTH": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "H096: the authserv-id of the server that receives your mail (the first word of its Authentication-Results header, e.g. mx.google.com). Only that server's header can mark a sender \"verified\". Unset: every sender shows as unverified;",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "EMAIL_TRUSTED_AUTHSERV_IDS": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "H096: the authserv-id of the server that receives your mail (the first word of its Authentication-Results header, e.g. mx.google.com). Only that server's header can mark a sender \"verified\". Unset: every sender shows as unverified;",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "EMBED_BACKEND": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Recall Embeddings (long-term memory)",
+   "purpose": "H8.4 — Recommended quality model: mxbai-embed-large Load \"mxbai-embed-large\" in LM Studio (Models tab) for best retrieval quality. It uses the same /v1/embeddings interface as the default nomic model.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "EMBED_BASE_URL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Recall Embeddings (long-term memory)",
+   "purpose": "Recommended quality model (H8.4): mxbai-embed-large loaded in LM Studio",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "EMBED_CACHE_DIR": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Recall Embeddings (long-term memory)",
+   "purpose": "Disk cache for recall query-embeddings (H7.4); identical queries skip the network round-trip. Default: memory_logs/embedding_cache/recall.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "EMBED_MODEL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Recall Embeddings (long-term memory)",
+   "purpose": "Recommended quality model (H8.4): mxbai-embed-large loaded in LM Studio",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "EXA_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Web search (the model's web_search / web_extract tools, and research tasks)",
+   "purpose": "Optional search backends adopted from Hermes Agent (docs/hermes/ADOPT_LANE.md); each is off until its key is set. Brave's free tier allows 2,000 queries a month.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "FAL_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Video generation (the video_generate tool; adopted from Hermes, docs/hermes/ADOPT_LANE.md)",
+   "purpose": "Off until a provider's key is set AND the provider is chosen. Choose it in the HUD (Console → Start → Integrations → \"use for videos\", with a consent card) or here. Every video is still one approval card that shows its upper-bound cost.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "FIREWORKS_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "fireworks",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "GEMINI_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "Gemini API key for hybrid router (context >8K -> Gemini Flash, >128K -> Gemini Pro)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "GMAIL_ACCESS_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Google APIs",
+   "purpose": "OAuth 2.0 access tokens for Google services (auto-refreshed if GOOGLE_CLIENT_* are set)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "GMI_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "gmi",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "GOOGLE_CALENDAR_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Google APIs",
+   "purpose": "OAuth 2.0 access tokens for Google services (auto-refreshed if GOOGLE_CLIENT_* are set)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "GOOGLE_CLIENT_ID": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Google APIs",
+   "purpose": "OAuth 2.0 credentials (create project at https://console.cloud.google.com/apis/credentials)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "GOOGLE_CLIENT_SECRET": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Google APIs",
+   "purpose": "OAuth 2.0 credentials (create project at https://console.cloud.google.com/apis/credentials)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "HF_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "huggingface",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "HOMEBRIDGE_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LAN Bridges",
+   "purpose": "URLs for local bridge services on your network",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "HOMEBRIDGE_URL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "LAN Bridges",
+   "purpose": "URLs for local bridge services on your network",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "IMAP_HOST": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "IMAP_PASS": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "IMAP_PORT": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "IMAP_USER": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "KILOCODE_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "kilocode",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "KIMI_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "kimi-coding (also KIMI_CODING_API_KEY)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "KIMI_CN_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "kimi-coding-cn",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "KNOWLEDGE_GRAPH_BACKEND": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Knowledge Graph (Neo4j — optional)",
+   "purpose": "Set KNOWLEDGE_GRAPH_BACKEND=neo4j to use Neo4j, or \"memory\" for in-memory fallback.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "MEMORY_EMBED_TURNS": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Recall Embeddings (long-term memory)",
+   "purpose": "Set to true to auto-embed every conversation turn into long-term memory.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NEBIUS_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "nebius-token-factory (also NEBIUS_TOKEN_FACTORY_API_KEY)",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NEO4J_PASSWORD": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Knowledge Graph (Neo4j — optional)",
+   "purpose": "Set KNOWLEDGE_GRAPH_BACKEND=neo4j to use Neo4j, or \"memory\" for in-memory fallback.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NEO4J_URL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Knowledge Graph (Neo4j — optional)",
+   "purpose": "Set KNOWLEDGE_GRAPH_BACKEND=neo4j to use Neo4j, or \"memory\" for in-memory fallback.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NEO4J_USER": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Knowledge Graph (Neo4j — optional)",
+   "purpose": "Set KNOWLEDGE_GRAPH_BACKEND=neo4j to use Neo4j, or \"memory\" for in-memory fallback.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NOVITA_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "novita",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NTFY_INBOUND": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "ntfy (push to your phone, no bot, no account)",
+   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NTFY_MARKDOWN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "ntfy (push to your phone, no bot, no account)",
+   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NTFY_PUBLISH_TOPIC": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "ntfy (push to your phone, no bot, no account)",
+   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NTFY_TITLE": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "ntfy (push to your phone, no bot, no account)",
+   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NTFY_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "ntfy (push to your phone, no bot, no account)",
+   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NTFY_TOPIC": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "ntfy (push to your phone, no bot, no account)",
+   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NTFY_URL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "ntfy (push to your phone, no bot, no account)",
+   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NVIDIA_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "nvidia",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "OLLAMA_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "ollama-cloud",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "OPENAI_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "Tiered routing (S0.1): heavy agents (Vision, Steve) → Claude API, light agents → local 7B Claude API for heavy reasoning agents (0 VRAM), falls back to Gemini/cloud if missing",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "PARALLEL_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Web search (the model's web_search / web_extract tools, and research tasks)",
+   "purpose": "Optional search backends adopted from Hermes Agent (docs/hermes/ADOPT_LANE.md); each is off until its key is set. Brave's free tier allows 2,000 queries a month.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "QDRANT_URL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Qdrant Vector Database (optional)",
+   "purpose": "Set to \"qdrant\" to use Qdrant instead of in-memory vector store",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SEARXNG_URL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Web search (the model's web_search / web_extract tools, and research tasks)",
+   "purpose": "Nothing is required: with both empty the search falls back to DuckDuckGo's HTML endpoint, which needs the optional `beautifulsoup4` package (requirements-beta.txt) — without it the tool answers websearch_unavailable, never a fake \"nothing f…",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SLACK_APP_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Slack",
+   "purpose": "Optional live inbox: enable Socket Mode and provide an app-level token with connections:write. Without this, only host-supplied Slack events are received. Setup, event subscriptions and pairing: docs/SLACK_SETUP.md",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SLACK_BOT_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Slack",
+   "purpose": "",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SMTP_HOST": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SMTP_PASS": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SMTP_PORT": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SMTP_USER": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "SMTP/IMAP (Email Channel)",
+   "purpose": "",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SPOTIFY_ACCESS_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Spotify",
+   "purpose": "Spotify Developer app credentials + OAuth tokens",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SPOTIFY_CLIENT_ID": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Spotify",
+   "purpose": "Spotify Developer app credentials + OAuth tokens",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SPOTIFY_CLIENT_SECRET": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Spotify",
+   "purpose": "Spotify Developer app credentials + OAuth tokens",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SPOTIFY_REFRESH_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Spotify",
+   "purpose": "Spotify Developer app credentials + OAuth tokens",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "STEPFUN_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "stepfun",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "SUPERPOWERS_DISABLE_TELEMETRY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Dev agent / Superpowers privacy opt-outs",
+   "purpose": "These are for local coding-agent harnesses (Claude Code, Codex/OpenCode, etc.), not Jarvis runtime behavior. Keep them true by default on privacy-sensitive machines when using external agent methodology plugins.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "TAVILY_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Web search (the model's web_search / web_extract tools, and research tasks)",
+   "purpose": "Nothing is required: with both empty the search falls back to DuckDuckGo's HTML endpoint, which needs the optional `beautifulsoup4` package (requirements-beta.txt) — without it the tool answers websearch_unavailable, never a fake \"nothing f…",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "TELEGRAM_ALLOWED_CHAT_IDS": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Group gating (Hermes absorption 0.4). In a group the bot answers only when it is @mentioned or replied to (TELEGRAM_GROUP_REQUIRE_MENTION=1, the default).",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "TELEGRAM_ALLOWED_USER_IDS": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Telegram owner allowlist (comma-separated user ids). Empty is valid — sender pairing is the primary gate — but the approval-callback owner check needs either this or autonomy.owner_chat_id, and fails closed with neither.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "TELEGRAM_BOT_TOKEN": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "Telegram",
+   "purpose": "Bot token from @BotFather on Telegram",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "TELEGRAM_GROUP_OBSERVE": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Group gating (Hermes absorption 0.4). In a group the bot answers only when it is @mentioned or replied to (TELEGRAM_GROUP_REQUIRE_MENTION=1, the default).",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "TELEGRAM_GROUP_REQUIRE_MENTION": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Group gating (Hermes absorption 0.4). In a group the bot answers only when it is @mentioned or replied to (TELEGRAM_GROUP_REQUIRE_MENTION=1, the default).",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "UPSTAGE_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "upstage",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "VECTOR_BACKEND": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "Qdrant Vector Database (optional)",
+   "purpose": "Set to \"qdrant\" to use Qdrant instead of in-memory vector store",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "WHATSAPP_BRIDGE_URL": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "text",
+   "default": null,
+   "default_varies": false,
+   "section": "LAN Bridges",
+   "purpose": "URLs for local bridge services on your network",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "XIAOMI_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "xiaomi",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "ZAI_API_KEY": {
+   "aliases": [],
+   "namespace": "other",
+   "type": "credential",
+   "default": null,
+   "default_varies": false,
+   "section": "LLM",
+   "purpose": "zai (also GLM_API_KEY, Z_AI_API_KEY)",
+   "required_when": "",
+   "doc": ".env.example"
+  }
+ }
+}

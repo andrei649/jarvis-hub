@@ -1,0 +1,61 @@
+# docker-compose.windows.yml — Nerva in one container on Docker Desktop for Windows (H573).
+#
+#   copy .env.example .env      (then set NERVA_USER_TOKEN and NERVA_ADMIN_TOKEN in it)
+#   docker compose -f docker-compose.windows.yml up --build
+#   → http://127.0.0.1:8080/v2
+#
+# Why a Windows variant: docker-compose.quickstart.yml relies on host networking, which
+# Docker Desktop only offers from 4.34 and only when "Enable host networking" is switched
+# on. This file needs neither. The difference, and what keeps it safe:
+#
+#   * bridge networking. Inside its own network namespace the hub has to listen on
+#     0.0.0.0 to be reachable through a published port at all;
+#   * the port is published on the HOST's loopback only (127.0.0.1:8080), so nothing on
+#     the LAN can reach it — the same reach as the native install;
+#   * because the hub itself binds a non-loopback address, boot_guards.assert_safe_bind
+#     requires a credential: the hub refuses to start until NERVA_USER_TOKEN (or
+#     NERVA_ADMIN_TOKEN; set both) is in .env next to this file — either spelling,
+#     JARVIS_ or NERVA_, works there. Hermes engages its auth gate on any non-loopback
+#     bind for the same reason;
+#   * a model runtime on the Windows host (Ollama :11434, LM Studio :1234) is at
+#     host.docker.internal from inside the container, not 127.0.0.1 — set
+#     OLLAMA_URL=http://host.docker.internal:11434 in .env;
+#   * the data root is a named volume in the Docker Desktop VM (JARVIS_HOME=/data), not an
+#     NTFS bind mount, so file ownership is the container's own; the hub still runs as the
+#     unprivileged `nerva` user (deploy/docker/entrypoint.sh).
+services:
+  nerva:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        WORKDIR /app
+        COPY requirements-beta.lock .
+        RUN pip install --no-cache-dir --require-hashes -r requirements-beta.lock
+        COPY . .
+        RUN useradd --uid 1000 --user-group --no-create-home --home-dir /data --shell /usr/sbin/nologin nerva
+        ENTRYPOINT ["sh", "/app/deploy/docker/entrypoint.sh"]
+        CMD ["python", "serve.py"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    # RB-2: these three are pinned under the JARVIS_ spelling, as in the other compose files
+    # (edit the line here to change one). The tokens come from .env, never from this file.
+    environment:
+      JARVIS_HOST: "0.0.0.0"
+      JARVIS_PORT: "8080"
+      JARVIS_HOME: /data
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - nerva_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  nerva_data:

@@ -123,6 +123,9 @@ def _read_store(path) -> tuple[dict[tuple[str, str], Any], set[str], bool] | Non
         values = {(c, k): json.loads(v) for c, k, v in conn.execute("SELECT category, key, value FROM settings")}
         applied = ({r[0] for r in conn.execute("SELECT name FROM settings_migrations")}
                    if "settings_migrations" in tables else set())
+        from agents.core import settings_ladder
+
+        applied.add(f"schema_version:{settings_ladder.stamped_version(conn)}")   # H258: read with the rest
         return values, applied, _SKILL_SWITCH_TABLE in tables
     finally:
         conn.close()
@@ -155,10 +158,15 @@ def plan(path=None, table: tuple[RetiredModel, ...] | None = None) -> list[Chang
                                   "(H329: a missing one is reported, see `nerva skills list`)"))
             continue
         changes.append(Change(".".join(name), "seed", None, spec["value"], "new in this build"))
+    ladder = _ladder_plan(values, applied)
+    if any(c.kind == "refused" for c in ladder):
+        # review M5: a store the ladder refuses gets no value migration at all
+        return [*changes, *ladder]
     for marker, category, key, old, new in settings_db._CHANGED_DEFAULTS:
         if marker in applied or values.get((category, key), _MISSING) != old:
             continue
         changes.append(Change(f"{category}.{key}", "default", old, new, "the shipped default changed"))
+    changes.extend(ladder)
     for category, key in MODEL_SETTINGS:
         current = values.get((category, key))
         if not isinstance(current, str):
@@ -170,12 +178,36 @@ def plan(path=None, table: tuple[RetiredModel, ...] | None = None) -> list[Chang
     return changes
 
 
+#: H258 — the kinds a plan line of the settings ladder carries (``settings_ladder``).
+LADDER_KINDS = ("rename", "reshape", "retire", "refused")
+
+
+def _ladder_plan(values: dict[tuple[str, str], Any], applied: set[str]) -> list[Change]:
+    """H258 — the ladder steps a store still needs (names only, never a value), or the
+    one line that says why it is not migrated."""
+    from agents.core import settings_ladder
+
+    version = next((int(m.split(":", 1)[1]) for m in applied if m.startswith("schema_version:")), 0)
+    why = settings_ladder.verdict(version)
+    if why is not None:
+        return [Change("settings", "refused", version, settings_ladder.STORE_VERSION,
+                       settings_ladder.refusal_text(version, why))]
+    out = []
+    for step in settings_ladder.pending(version):
+        if step.setting in values:
+            to = f" → {'.'.join(step.to)}" if step.to else ""
+            out.append(Change(".".join(step.setting), step.kind, None, None, f"{step.why}{to}"))
+    return out
+
+
 def apply(changes: list[Change]) -> list[Change]:
     from contextlib import nullcontext
 
     from agents.core import settings_db
     from agents.core.llm.providers.selection_gates import exclusive
 
+    if any(c.kind == "refused" for c in changes):
+        return []           # review M5: a refused store is not written at all
     touches_pair = any(c.setting == 'llm.compatible_model' and c.kind != 'kept'
                        for c in changes)
     with exclusive(settings_db.DB_PATH) if touches_pair else nullcontext():
@@ -194,6 +226,10 @@ def _apply_fenced(changes: list[Change]) -> list[Change]:
     try:
         with conn:
             conn.executescript(settings_db.SCHEMA)       # an old store may lack settings_migrations
+            from agents.core import settings_ladder
+
+            if settings_ladder.store_verdict(conn)[1] is not None:
+                changes = []     # review M5: refused since the plan was read — nothing is written
             for change in changes:
                 category, _, key = change.setting.partition(".")
                 if change.kind == "seed":
@@ -213,10 +249,20 @@ def _apply_fenced(changes: list[Change]) -> list[Change]:
                         conn.execute("INSERT OR IGNORE INTO settings_migrations (name, applied_at) VALUES (?, ?)",
                                      (marker, time.time()))
                 else:
-                    continue
+                    continue      # kept, and the ladder lines: the ladder below runs them
                 if cur.rowcount > 0:
                     written.append(change)
                     touched.setdefault(category, {})[key] = change.after
+            # H258 — the ladder and its report, in the same transaction as the plan's writes
+            from agents.core import settings_ladder
+
+            report = settings_ladder.run(conn, spec=settings_db._SPEC, validate=settings_db._ladder_validate,
+                                         seeded=[c.setting for c in written if c.kind == "seed"])
+            for line in report["steps"]:
+                written.append(Change(line["setting"], line["kind"], None, None,
+                                      line["why"] + ("" if line.get("carried", True) else
+                                                     f" — not carried: {line.get('problem', '')}")))
+                touched.setdefault(line["setting"].partition(".")[0], {})
     finally:
         conn.close()
     settings_db._require_readable_store()

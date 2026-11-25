@@ -835,6 +835,12 @@ class ToolRPCServer:
     def allows(self, name: str) -> bool:
         return name in self._tools
 
+    def registered_capabilities(self) -> dict[str, str | None]:
+        """Every registered tool name and its capability id (``None`` when it declared
+        none), hidden tools included. Read-only; H566 uses it to keep an extension from
+        taking a core tool's name or tearing one down."""
+        return {name: spec.get("capability_id") for name, spec in self._tools.items()}
+
     def remote_profile(self, name: str) -> Optional[dict]:
         """H658 — what a room grant must know about a registered tool: whether it is
         gated and whether it runs only from a trusted execution context (such a tool is

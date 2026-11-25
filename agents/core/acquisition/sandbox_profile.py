@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 
 from agents.core.environments.output_limits import read_capped_stream, render_capped, truncate_text
 
-from .generator import CapabilityContract, GeneratedPackage
+from .generator import ACCEPTED_MODEL_ROUTES, CapabilityContract, GeneratedPackage
 from .quarantine import QuarantineError
 from .receipt import VerificationReceipt, canonical_hash, make_receipt
 
@@ -486,7 +486,7 @@ class SandboxVerifier:
             and package.test_hash == test_hash
             and package.contract_hash == contract.contract_hash
             and package.package_hash == canonical_hash(package.canonical_members())
-            and package.model_route == "strict-local"
+            and package.model_route in ACCEPTED_MODEL_ROUTES
         )
 
     @staticmethod

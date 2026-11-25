@@ -90,6 +90,18 @@ def tool_status(event: dict[str, Any]) -> str:
     return _STATUSES.get(str(event.get("status") or ""), "pending")
 
 
+def prompt_usage(usage: Any) -> dict[str, int] | None:
+    """The hub turn's measured token usage as ACP's prompt-response ``usage`` (H544), or
+    None when the hub did not measure it (``usage_basis`` unknown: a null count). Counts
+    only: no model, provider or price leaves the hub through this."""
+    if not isinstance(usage, dict):
+        return None
+    tokens_in, tokens_out = usage.get("input_tokens"), usage.get("output_tokens")
+    if type(tokens_in) is not int or type(tokens_out) is not int or tokens_in < 0 or tokens_out < 0:
+        return None
+    return {"inputTokens": tokens_in, "outputTokens": tokens_out, "totalTokens": tokens_in + tokens_out}
+
+
 def text_block(text: str) -> dict[str, Any]:
     return {"type": "content", "content": {"type": "text", "text": text}}
 
@@ -220,6 +232,6 @@ def plan_entries(todos: Any) -> list[dict[str, Any]]:
 
 
 __all__ = [
-    "card_target", "card_tool_call", "consent_offer", "permission_options", "plan_entries",
+    "card_target", "card_tool_call", "consent_offer", "permission_options", "plan_entries", "prompt_usage",
     "safe_block", "safe_line", "text_block", "tool_kind", "tool_status", "tool_title",
 ]

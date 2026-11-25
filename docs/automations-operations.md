@@ -34,6 +34,22 @@ it closes that signature; a different error creates a new incident. The existing
 three-consecutive-failure pause remains. Acknowledgement does not resume a job or
 approve an action. Use `jobs resume JOB_ID` to resume after addressing the cause.
 
+Each incident carries a `failure_type` — `rate_limit`, `timeout`, `auth`,
+`delivery`, `config`, `script`, `agent` or `unknown` — and moves
+`detected → alerted → closed`. The owner is alerted (an `E_JOB_PAUSED` problem)
+the first time a signature pauses its job; the incident then reads `alerted`, and
+the same failure recurring while it stays paused records the reason without another
+alert. Acknowledging closes it. Resuming the job (`jobs resume`) rearms its alerted and
+closed incidents to `detected`, so the next pause episode can alert again; a different
+error always opens a new incident. An alert that could not be written is released back
+to `detected`.
+
+A job refused by an unattended-lane guard when it fires (a prompt or script the guards
+now refuse, or a record written outside the API) is not a failure: it is paused with
+the guard's reason, the owner gets one `E_JOB_BLOCKED` notice, and no incident opens.
+Edit the job and resume it. A scheduled script may not run other script files; put what
+it needs in the one file.
+
 To rearm a completed one-shot, edit its schedule to a different future time.
 Then `jobs run JOB_ID` can execute that newly armed slot immediately. The manual
 and scheduled paths share the reservation, so a racing timer cannot execute it

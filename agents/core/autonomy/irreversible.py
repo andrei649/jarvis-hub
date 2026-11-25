@@ -51,6 +51,8 @@ BUILTIN_KINDS: dict[str, tuple[str, str]] = {
     "lsp.install": ("agents.core.codeintel.lsp.install", "apply_approved"),
     # G17 · H163/H021/H514/H408: an owner hook runs a program on this machine on an event.
     "hooks.define": ("agents.core.hooks.store", "apply_approved"),
+    # H566: installing a third-party author's extension package (signed, sandbox-verified).
+    "extensions.install": ("agents.core.extensions.submission", "apply_approved"),
     # H624: updating the hub's own code, rolling it back, and which commits it may update to.
     "hub.update": ("agents.core.hub_update_apply", "apply_approved"),
     "hub.restart": ("agents.core.hub_restart_apply", "apply_approved"),

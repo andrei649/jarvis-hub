@@ -13,11 +13,12 @@ server's say-so:
   dimension ``mcp_sampling_tokens`` with a daily ceiling (``JARVIS_MCP_SAMPLING_DAILY_TOKENS``,
   default 20 000 estimated tokens), reserved before the call and settled after it. Over
   the ceiling the request is refused before any card is shown. The ledger is the K3
-  primitive held in memory by this host: it resets when Nerva restarts (and at UTC
-  midnight); it is not written to disk.
+  primitive; the hub keeps the day's usage in ``<data>/mcp_sampling_budget.json`` (0600),
+  so a restart does not reset it (UTC midnight does).
 * Per-server limits: a 60-second sliding-window rate limit (``max_rpm``, default 10; the
   same rule as Hermes ``SamplingHandler._check_rate_limit``, written natively), an output
-  cap (``max_tokens_cap``, default and ceiling 1024) and a timeout (default 30 s).
+  cap (``max_tokens_cap``, default 1024, at most 4096 — Hermes's default) and a timeout
+  (default 30 s).
 * **Never with tools.** A request that carries ``tools`` or ``toolChoice`` is refused, and
   Nerva never declares the ``sampling.tools`` capability. The completion runs stateless on
   the local auxiliary rail: no history, no memory, no tool, nothing written to a session.
@@ -78,7 +79,9 @@ ROLE_CAPABLE = "capable"
 #: Nerva role → the auxiliary task whose model serves it (agents/core/llm/auxiliary_text.py).
 ROLE_TASKS = {ROLE_FAST: "oneshot", ROLE_CAPABLE: "review"}
 
-MAX_TOKENS_CEILING = 1024
+MAX_TOKENS_CEILING = 4096
+#: The output cap when the owner names none (a server asks for less, never more).
+DEFAULT_MAX_TOKENS = 1024
 DAILY_TOKENS_ENV = "JARVIS_MCP_SAMPLING_DAILY_TOKENS"
 DEFAULT_DAILY_TOKENS = 20_000
 BUDGET_DIMENSION = "mcp_sampling_tokens"
@@ -122,7 +125,7 @@ class SamplingConfig:
     """The owner's sampling settings for one server (persisted with the server)."""
 
     mode: str = SAMPLING_OFF
-    max_tokens_cap: int = MAX_TOKENS_CEILING
+    max_tokens_cap: int = DEFAULT_MAX_TOKENS
     max_rpm: int = 10
     timeout: float = 30.0
     approval_timeout: float = 120.0
@@ -141,7 +144,7 @@ class SamplingConfig:
         role = raw.get("role") if raw.get("role") in ROLE_TASKS else None
         return cls(
             mode=mode or SAMPLING_OFF,
-            max_tokens_cap=int(_num(raw.get("max_tokens_cap"), MAX_TOKENS_CEILING, lo=1, hi=MAX_TOKENS_CEILING)),
+            max_tokens_cap=int(_num(raw.get("max_tokens_cap"), DEFAULT_MAX_TOKENS, lo=1, hi=MAX_TOKENS_CEILING)),
             max_rpm=int(_num(raw.get("max_rpm"), 10, lo=1, hi=120)),
             timeout=_num(raw.get("timeout"), 30.0, lo=1.0, hi=300.0),
             approval_timeout=_num(raw.get("approval_timeout"), 120.0, lo=1.0, hi=3600.0),
@@ -200,12 +203,106 @@ class RateLimiter:
 class SamplingBudget:
     """The owner's daily allowance for completions MCP servers ask for, on the K3 ledger."""
 
-    def __init__(self, daily_tokens: int | None = None, *, clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, daily_tokens: int | None = None, *, clock: Callable[[], float] = time.time,
+                 persist_path: Any = None) -> None:
+        """*persist_path* (the hub passes ``<data>/mcp_sampling_budget.json``) keeps the
+        day's usage across restarts: a restart no longer hands servers a fresh allowance.
+        A file that exists but cannot be read starts the day at the ceiling (fail closed);
+        a missing file starts it at zero."""
         self._fixed = daily_tokens
         self._clock = clock
+        self._path = persist_path
         self.ledger = BudgetLedger()
         self._day = ""
         self._roll()
+        self._load()
+
+    def _read_file(self) -> tuple[str, float] | None | bool:
+        """``(day, used)`` from the file; None when there is none; False when unreadable."""
+        import json
+        import os
+
+        try:
+            fd = os.open(str(self._path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return False
+        try:
+            with os.fdopen(fd, "r", encoding="utf-8") as handle:
+                data = json.loads(handle.read(4096))
+            used = float(data["used"])
+            if not (used >= 0) or not isinstance(data.get("day"), str):
+                raise ValueError("bad row")
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+        return data["day"], used
+
+    def _load(self) -> None:
+        if self._path is None:
+            return
+        dim = self.ledger.dimensions[BUDGET_DIMENSION]
+        row = self._read_file()
+        if row is None:
+            self._synced = 0.0
+            return
+        if row is False:
+            logger.warning("MCP sampling budget file unreadable; today's allowance starts spent")
+            dim.used = float(dim.limit or 0.0)
+            self._synced = dim.used
+            return
+        day, used = row
+        if day == self._day:
+            dim.used = used
+        self._synced = dim.used
+
+    def _save(self) -> None:
+        """Write the day's usage, merged with what another process sharing the data
+        directory booked since our last write: under an ``flock``, the file's value plus
+        our own change since then. The temporary file is created exclusively and never
+        through a link. Small and synchronous (a few hundred bytes)."""
+        if self._path is None:
+            return
+        import contextlib
+        import json
+        import os
+        import secrets
+        from pathlib import Path
+
+        path = Path(self._path)
+        dim = self.ledger.dimensions[BUDGET_DIMENSION]
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        lock_fd = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            try:
+                import fcntl
+
+                lock_fd = os.open(str(path.with_name(path.name + ".lock")),
+                                  os.O_RDWR | os.O_CREAT | nofollow, 0o600)
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            except ImportError:  # pragma: no cover - not POSIX
+                lock_fd = None
+            row = self._read_file()
+            ours = dim.used - getattr(self, "_synced", 0.0)
+            if isinstance(row, tuple) and row[0] == self._day:
+                dim.used = max(0.0, row[1] + ours)
+            tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(6)}.tmp")
+            fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow, 0o600)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump({"day": self._day, "used": dim.used}, handle)
+                os.replace(tmp, path)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    tmp.unlink()
+                raise
+            self._synced = dim.used
+        except OSError:
+            logger.warning("MCP sampling budget not saved", exc_info=True)
+        finally:
+            if lock_fd is not None:
+                os.close(lock_fd)
 
     def limit(self) -> int:
         if self._fixed is not None:
@@ -220,6 +317,8 @@ class SamplingBudget:
         day = datetime.fromtimestamp(self._clock(), UTC).strftime("%Y-%m-%d")
         dim = self.ledger.dimensions.get(BUDGET_DIMENSION)
         used = 0.0 if (day != self._day or dim is None) else dim.used
+        if day != self._day:
+            self._synced = 0.0           # a new day: nothing of ours is in the file yet
         self._day = day
         self.ledger.set_dimension_usage(BUDGET_DIMENSION, used, limit=float(self.limit()),
                                         unit="tokens", metadata={"day": day, "scope": "mcp sampling"})
@@ -231,6 +330,7 @@ class SamplingBudget:
         if dim.limit is not None and dim.used + tokens > dim.limit:
             return "budget_exceeded"
         self.ledger.add_dimension_usage(BUDGET_DIMENSION, tokens)
+        self._save()
         return None
 
     def settle(self, reserved: int, actual: int) -> None:
@@ -238,6 +338,7 @@ class SamplingBudget:
         self._roll()
         dim = self.ledger.dimensions[BUDGET_DIMENSION]
         dim.used = max(0.0, dim.used - reserved + max(0, actual))
+        self._save()
 
     def status(self) -> dict:
         self._roll()

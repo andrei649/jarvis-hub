@@ -220,7 +220,8 @@ async def test_initialize_new_session_and_a_streamed_turn(tmp_path):
             await editor.conn.request("session/new", {"cwd": str(tmp_path)})   # before initialize
         init, sid = await _init(editor, tmp_path)
         assert init["protocolVersion"] == 1
-        assert init["agentCapabilities"]["loadSession"] is False
+        assert init["agentCapabilities"]["loadSession"] is True
+        assert init["agentCapabilities"]["sessionCapabilities"] == {"list": {}, "resume": {}, "fork": {}}
         assert init["agentCapabilities"]["mcpCapabilities"] == {"http": False, "sse": False}
         assert backend.opened == [str(tmp_path.resolve())]
         result = await editor.conn.request("session/prompt", {
@@ -681,22 +682,27 @@ async def test_router_opens_a_conversation_inside_the_file_roots_without_switchi
         assert refused.status_code == 409                                # outside the file roots
         reply = await acp_router.acp_open_session(acp_router.AcpSessionBody(cwd=str(project)))
         body = json.loads(reply.body)
-        sid = body["session_id"]
+        sid, holder = body["session_id"], body["holder"]
         assert sid.startswith("acp_") and body["cwd"] == str(project.resolve())
         assert memory.conversation.current_session_id == hud                # the HUD's stays current
         await prepare_session(orch, sid)                                    # a real, addressable session
         assert acp_sessions.cwd_for(sid) == project.resolve()
 
         bad = await acp_router.acp_add_session_mcp(sid, acp_router.AcpMcpBody(
-            name="docs", command="docs-server; rm -rf /"))
+            name="docs", command="docs-server; rm -rf /"), holder=holder)
         assert bad.status_code == 400
+        stranger = await acp_router.acp_add_session_mcp(sid, acp_router.AcpMcpBody(
+            name="docs", command="docs-server"), holder="not-the-holder")
+        assert stranger.status_code == 409                                # H542 review m1
         added = json.loads((await acp_router.acp_add_session_mcp(sid, acp_router.AcpMcpBody(
-            name="docs", command="docs-server", args=["--stdio"], env={"DOCS_TOKEN": "v"}))).body)
+            name="docs", command="docs-server", args=["--stdio"], env={"DOCS_TOKEN": "v"}),
+            holder=holder)).body)
         assert added["connected"] is True and added["trust"] == "read-only"
         server = orch.mcp.servers[added["server"]]
         assert server.session_scope == sid and server.cwd == str(project.resolve())
         assert server.env == {"DOCS_TOKEN": "v"}
-        closed = json.loads((await acp_router.acp_close_session(sid)).body)
+        assert (await acp_router.acp_close_session(sid, holder=None)).status_code == 409
+        closed = json.loads((await acp_router.acp_close_session(sid, holder=holder)).body)
         assert closed["removed"] == [added["server"]] and orch.mcp.servers == {}
         assert acp_sessions.cwd_for(sid) is None
     finally:
@@ -716,9 +722,12 @@ def test_hub_backend_decision_routes_are_the_hud_routes():
             calls.append(("GET", path, None))
             return {"pending": [], "tasks": [{"id": 7, "status": "done"}]}
 
-        def request(self, method, path, body, timeout=None):
+        def request(self, method, path, body, timeout=None, headers=None):
             calls.append((method, path, body))
-            return {"ok": True, "task": {"status": "approved"}, "session_id": "acp_" + "0" * 24}
+            if headers:
+                calls.append(("headers", path, dict(headers)))
+            return {"ok": True, "task": {"status": "approved"}, "session_id": "acp_" + "0" * 24,
+                    "holder": "h-token"}
 
     backend = HubBackend(Client())
 
@@ -727,8 +736,13 @@ def test_hub_backend_decision_routes_are_the_hud_routes():
         await backend.decide(8, "reject", "no answer from the editor")
         assert await backend.task_status(7) == "done"
         await backend.open_session("/tmp/x")
+        await backend.renew("acp_" + "0" * 24)
+        await backend.close_session("acp_" + "0" * 24)
 
     asyncio.run(run())
+    # H542 review m1: the binding's holder token goes with the lease and the close.
+    assert ("headers", f"/api/acp/sessions/acp_{'0' * 24}/lease", {"X-ACP-Holder": "h-token"}) in calls
+    assert ("headers", f"/api/acp/sessions/acp_{'0' * 24}", {"X-ACP-Holder": "h-token"}) in calls
     assert calls[0] == ("POST", "/autonomy/tasks/7/decision", {"action": "accept", "reason": "accepted in the editor"})
     assert calls[1][1] == "/autonomy/tasks/8/decision" and calls[1][2]["action"] == "reject"
     assert ("POST", "/api/acp/sessions", {"cwd": "/tmp/x"}) in calls
@@ -899,13 +913,14 @@ async def test_review_m3_a_forgotten_editor_session_is_refused_never_unbound(tmp
     monkeypatch.setattr(app_state, "get_orch", lambda: orch)
     monkeypatch.setattr(acp_router, "get_orch", lambda: orch)
     try:
-        sid = json.loads((await acp_router.acp_open_session(
-            acp_router.AcpSessionBody(cwd=str(project)))).body)["session_id"]
+        opened = json.loads((await acp_router.acp_open_session(
+            acp_router.AcpSessionBody(cwd=str(project)))).body)
+        sid, holder = opened["session_id"], opened["holder"]
         turn = SimpleNamespace(session_id=sid, get_setting=lambda k, d=None: d)
         await prepare_session(orch, sid)
         await _begin_project_context(turn)
         assert worktrees.bound_tree() == project.resolve()
-        assert json.loads((await acp_router.acp_renew_session(sid)).body)["ok"] is True
+        assert json.loads((await acp_router.acp_renew_session(sid, holder=holder)).body)["ok"] is True
         acp_sessions._reset_for_tests()                                   # restart / reaped
         with pytest.raises(ContinuationRefused) as refused:
             await prepare_session(orch, sid)
@@ -913,7 +928,7 @@ async def test_review_m3_a_forgotten_editor_session_is_refused_never_unbound(tmp
         with pytest.raises(ContinuationRefused):
             await _begin_project_context(turn)                           # the floor
         assert worktrees.bound_tree() is None
-        assert (await acp_router.acp_renew_session(sid)).status_code == 410
+        assert (await acp_router.acp_renew_session(sid, holder=holder)).status_code == 410
     finally:
         worktrees.apply_session_tree(None)
         cp.close()

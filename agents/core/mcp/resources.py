@@ -76,6 +76,9 @@ MAX_TEXT_CHARS = 100_000
 #: … and per result, all blocks together (Hermes's hard result cap is 2M characters).
 #: Applied before any cleaning or scanning, so their cost is bounded by it.
 MAX_RESULT_TEXT_CHARS = 2_000_000
+#: H555 — above this many characters of text a tool result spills to a file and the model
+#: reads a preview of this size (Hermes's spillover threshold).
+SPILL_THRESHOLD_CHARS = 50_000
 #: Content blocks kept from one result (resource contents, prompt messages, tool content).
 MAX_RESULT_BLOCKS = 100
 #: Items kept from one listing, whatever the pages held.
@@ -372,11 +375,44 @@ async def store_blob(server: str, data_b64: Any, mime: Any, *, root: Path | None
         return {"type": "binary", "error": "cache_write_failed"}
 
 
-def _bound_tool_result(result: Any) -> Any:
+def _spill_text(server: str, texts: list[str], *, root: Path | None = None) -> dict:
+    """H555 — write a long result's full text (TAG characters stripped, at most
+    :data:`MAX_RESULT_TEXT_CHARS`) through the tool-result store, and return its row.
+
+    The store writes into ``<data>/workspace/tool_results`` (mode 0600, its own retention
+    and size bounds), which is the spill directory ``file_read``'s read-only door admits
+    and which ``FileTools._is_spill`` marks third-party: a page read back is ``tainted``
+    and fenced like the result itself. *root* is the store's directory (tests)."""
+    from agents.core.security.quarantine import strip_invisible
+    from agents.core.tool_result_store import ToolResultStore
+
+    text = strip_invisible("\n\n".join(texts))[:MAX_RESULT_TEXT_CHARS]
+    raw = text.encode("utf-8", "replace")
+    store = ToolResultStore(root)
+    stream = store.open_stream(tool=f"mcp-{server}", suffix="txt", max_bytes=len(raw) + 1)
+    if stream is None:
+        raise OSError("tool result store unavailable")
+    stream.write(raw)
+    spilled = stream.close()
+    if spilled is None:
+        raise OSError("tool result spill failed")
+    return {"path": spilled.path, "chars": len(text), "sha256": spilled.sha256,
+            "note": ("The whole text is in this file (the server's content, untrusted data); "
+                     "read it with file_read only if the preview is not enough.")}
+
+
+def _bound_tool_result(result: Any, *, server: str | None = None,
+                       root: Path | None = None) -> Any:
     """A ``tools/call`` result inside the per-result bounds, invisible TAG characters
     stripped (runs on a worker thread): at most :data:`MAX_RESULT_BLOCKS` blocks, text
     blocks sharing :data:`MAX_RESULT_TEXT_CHARS`, ``structuredContent`` replaced by a
-    notice when its JSON is larger than that."""
+    notice when its JSON is larger than that.
+
+    H555 — with *server*, a result whose text blocks hold more than
+    :data:`SPILL_THRESHOLD_CHARS` spills: the whole text (still capped at
+    :data:`MAX_RESULT_TEXT_CHARS`) goes to a 0600 file in the server's cache and the model
+    gets a head+tail preview sharing :data:`SPILL_THRESHOLD_CHARS`, plus the file's path
+    under ``full_text`` (Hermes: 50 K spillover, 2 M hard cap)."""
     from agents.core.security.quarantine import strip_invisible_deep
 
     if not isinstance(result, dict):
@@ -384,6 +420,15 @@ def _bound_tool_result(result: Any) -> Any:
     out = dict(result)
     remaining = MAX_RESULT_TEXT_CHARS
     notes: dict[str, Any] = {}
+    if server is not None and isinstance(result.get("content"), list):
+        texts = [b["text"] for b in result["content"][:MAX_RESULT_BLOCKS]
+                 if isinstance(b, dict) and isinstance(b.get("text"), str)]
+        if sum(len(t) for t in texts) > SPILL_THRESHOLD_CHARS:
+            try:
+                notes["full_text"] = _spill_text(server, texts, root=root)
+                remaining = SPILL_THRESHOLD_CHARS
+            except OSError:
+                logger.warning("MCP %s: a long result could not be spilled", server, exc_info=True)
     if isinstance(result.get("content"), list):
         blocks = []
         for index, block in enumerate(result["content"]):
@@ -412,8 +457,9 @@ def _bound_tool_result(result: Any) -> Any:
     return strip_invisible_deep(out)
 
 
-async def bound_tool_result(result: Any) -> Any:
-    return await asyncio.to_thread(_bound_tool_result, result)
+async def bound_tool_result(result: Any, *, server: str | None = None,
+                            root: Path | None = None) -> Any:
+    return await asyncio.to_thread(_bound_tool_result, result, server=server, root=root)
 
 
 async def cache_result_blocks(server: str, result: Any, *, root: Path | None = None) -> Any:

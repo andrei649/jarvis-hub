@@ -936,10 +936,14 @@
         "tests/test_g1_managed_scope.py",
         "tests/test_h157b_settings_review.py",
         "tests/test_h15_4_secret_broker.py",
+        "tests/test_h248_config_explain.py",
         "tests/test_h255_settings_env_interpolation.py",
         "tests/test_h256_consent_writes.py",
+        "tests/test_h257_config_cli_guards.py",
+        "tests/test_h258_settings_ladder.py",
         "tests/test_h262_lifecycle_sweep.py",
         "tests/test_h262_retention_approval.py",
+        "tests/test_h264_env_registry.py",
         "tests/test_h277_local_auxiliary.py",
         "tests/test_h378_selection_guards.py",
         "tests/test_h513_data_handling.py",
@@ -1882,7 +1886,10 @@
         "tests/test_h456_code_policy.py",
         "tests/test_h456_job_policy.py",
         "tests/test_h456_job_policy_api.py",
+        "tests/test_h452_incident_lifecycle.py",
         "tests/test_h456_job_reasoning.py",
+        "tests/test_h457_unattended_guards.py",
+        "tests/test_h459_catch_up.py",
         "tests/test_h462_goal_entry_e2e.py",
         "tests/test_h462_goal_intake.py",
         "tests/test_h464_run_barriers.py",
@@ -2366,6 +2373,7 @@
       ],
       "suite": [
         "tests/test_g11_acp.py",
+        "tests/test_h542_acp_sessions.py",
         "tests/test_lsp_rows.py",
         "tests/test_mcp_admin.py",
         "tests/test_mcp_client.py"
@@ -2408,7 +2416,12 @@
         "tests/test_mcp_tool_filters.py",
         "tests/test_mcp_trust.py",
         "tests/test_h084_mcp_saved_command.py",
-        "tests/test_h084_mcp_saved_reconcile.py"
+        "tests/test_h084_mcp_saved_reconcile.py",
+        "tests/test_h555_mcp_guard.py",
+        "tests/test_h547_h556_mcp_operations.py",
+        "tests/test_h554_mcp_outbound_gate.py",
+        "tests/test_h558_mcp_write_quota.py",
+        "tests/test_h553_mcp_http_host_requests.py"
       ]
     },
     {
@@ -2428,6 +2441,8 @@
       ],
       "suite": [
         "tests/test_a2a_outbound.py",
+        "tests/test_h563_a2a_hardening.py",
+        "tests/test_h560_tool_progress.py",
         "tests/test_client_protocol.py",
         "tests/test_g12_guest_context.py",
         "tests/test_g12_openai_compat.py"
@@ -2482,7 +2497,12 @@
         "tests/test_h079_extension_restart_routes.py",
         "tests/test_h079_extension_restart_composed.py",
         "tests/test_h079_extension_restart_cli.py",
-        "tests/test_extension_manifest_catalog.py"
+        "tests/test_extension_manifest_catalog.py",
+        "tests/test_h570_capability_consent.py",
+        "tests/test_h573_container_user_and_disabled_service.py",
+        "tests/test_runtime_supervisor.py",
+        "tests/test_h566_h571_extension_install.py",
+        "tests/test_h569_seam_growth_contract.py"
       ]
     },
     {

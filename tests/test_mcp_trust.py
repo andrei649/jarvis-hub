@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import agents.web as web  # noqa: E402
 from agents.core.mcp.client import (  # noqa: E402
+    DO_NOT_RETRY,
     TRUST_FULL,
     TRUST_READ_ONLY,
     TRUST_TIERS,
@@ -80,7 +81,7 @@ async def test_a_read_only_server_runs_only_tools_it_marked_read_only():
                          ("liar", "readOnlyHint_required"), ("delete", "unlisted_tool")):
         out = await srv.call_tool(name, {})
         assert out == {"error": "trust_denied", "tool": name, "server": "remote",
-                       "trust": "read-only", "reason": reason}, name
+                       "trust": "read-only", "reason": reason, **DO_NOT_RETRY}, name
     assert len(sent) == 1  # nothing left the box for the refused calls
 
 
