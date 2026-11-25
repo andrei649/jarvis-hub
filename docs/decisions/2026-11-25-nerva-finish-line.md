@@ -85,15 +85,22 @@ needs a line in the PR body saying which of the four conditions it meets, and th
 - **New channels and surfaces.** No new messaging platform, SSO, business connector or house/camera
   work.
 
-### Proposed for removal — needs one owner yes before any code is deleted
+### Approved for removal (owner, 2026-11-25)
 
-Nothing is deleted by this decision. These default-off areas are candidates; an agent proposing a
-removal lists the switches, routes, panels and tests it would delete, and waits for the owner:
+The owner approved removing these areas from the hub on 2026-11-25. Connectors and similar
+integrations continue as standalone products outside this repository. The tag
+`archive/pre-removal-2026-11-25` marks main before the first deletion, so that work can start from
+the removed code.
 
-- house brain and camera intelligence;
-- messaging platforms other than Telegram (SMS, Matrix, Slack, Discord);
-- native OIDC sign-in and the business connectors (NWS-8, NWS-9);
-- worldview and other surfaces the owner confirms unused.
+| Area | What happens |
+|---|---|
+| House brain (Hestia) and camera intelligence | Removed together in one change; they import each other. |
+| Worldview, Signal Layer and Argus | Removed. `frontend/src/signals/` (the HUD's attention signals) is a different thing and stays. |
+| Messaging platforms other than Telegram | Slack, Discord, SMS, ntfy, email, Matrix and the webhook channels are removed. Telegram stays. The WhatsApp export parser in ingestion is not a channel and stays. |
+| Native OIDC sign-in and business connectors | Never built. NWS-8 and NWS-9 are closed in BACKLOG. Workspace sign-in through a trusted proxy and `writeback_connectors.py` stay. |
+
+Each area is one pull request, so each can be reverted alone. Any other removal still needs its own
+owner yes, with the list of switches, routes, panels and tests it would delete.
 
 ### Documents
 
