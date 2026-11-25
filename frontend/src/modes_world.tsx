@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Icon, ICONS } from './ui';
 import { LABEL } from './theme/type';
 import { PageSection } from './pages/PageSection';
@@ -45,6 +45,9 @@ function WorldIntelligenceMode({ t }) {
   const [answer, setAnswer] = useState(null);
   const [asking, setAsking] = useState(false);
 
+  // A reply that lands after the page is gone must not write state.
+  const mounted = useRef(true);
+
   async function refresh() {
     setLoading(true);
     setError('');
@@ -54,22 +57,24 @@ function WorldIntelligenceMode({ t }) {
         getJson('/briefs/world'),
         getJson('/signals?limit=18&relevantOnly=true'),
       ]);
+      if (!mounted.current) return;
       setHealth(h);
       setBrief(b);
       setPayload(s);
       setSelected((current) => current || (s.signals || [])[0] || null);
     } catch (e) {
-      setError(e?.message || 'Signal Layer unavailable');
+      if (mounted.current) setError(e?.message || 'Signal Layer unavailable');
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
   }
 
   useEffect(() => {
     let alive = true;
+    mounted.current = true;
     (async () => { if (alive) await refresh(); })();
     const iv = setInterval(() => { if (alive) refresh(); }, 30000);
-    return () => { alive = false; clearInterval(iv); };
+    return () => { alive = false; mounted.current = false; clearInterval(iv); };
   }, []);
 
   async function ask() {
