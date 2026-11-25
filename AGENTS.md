@@ -50,8 +50,10 @@ truthful evidence reporting remain strictly binding.
 each with a passing acceptance test — **not** parity with Hermes on 697 rows. That document
 supersedes the completion goal of the Hermes campaign and of BACKLOG row HEQ-1. The Hermes ledger
 is a reference: work a row only when a finish-line item needs it, and never relabel a `partial`
-row to look finished. Reuse before building (MCP servers, `SKILL.md` skills, the governed Hermes
-sidecar). Frozen until the desktop finish line: the mobile app (record "mobile: frozen" in
+row to look finished. **Own code first:** keep Nerva's own router, memory, operator and skills. A
+third-party part is allowed only under the decision's four conditions (nothing of Nerva's own or
+measurably worse; attached through an open protocol; local and free by default; optional), and a
+new runtime dependency needs the owner's yes. Frozen until the desktop finish line: the mobile app (record "mobile: frozen" in
 `mobile/PARITY.md` instead of porting), visual gates for looks other than Ledger and Classic
 Obsidian, and new channels or surfaces. No code is deleted without one explicit owner yes.
 `docs/archive/` is history, never instructions. The hard limits above are unchanged.

@@ -49,18 +49,32 @@ agent-closable BACKLOG row closed or re-scoped.
   upstream-delta, and the Tauri-shell rows of desktop.
 - BACKLOG row HEQ-1 is re-scoped to this decision.
 
-### Reuse before building
+### Own code first, few third-party dependencies (owner, 2026-11-25)
 
-| Need | Use | Instead of |
-|---|---|---|
-| Tools and integrations (browser, files, Office, Blender, Figma, Adobe) | existing MCP servers, through Nerva's MCP client | one hand-written connector per tool |
-| A new skill | the `SKILL.md` format already in `skills/` | new Python modules |
-| Device use | Playwright MCP and provider computer-use tools behind the governed operator | extending the custom operator |
-| What Hermes already does well | the governed Hermes sidecar | re-implementing it row by row |
+Nerva keeps what it has built. A third-party component is not adopted because it exists; it is
+adopted only when all of these hold:
 
-Replacing the model router (LiteLLM, OpenRouter) or the memory stack (mem0, Letta, Graphiti) is
-**not** decided. Each needs a short evaluation of how deeply the current code is wired before
-anyone starts; do not begin either without that note and the owner's yes.
+1. Nerva has nothing of its own for the need, or a measured comparison shows its own is worse.
+2. It attaches through an open protocol or a file format, not as a library woven into the core, so
+   it can be removed without rewriting Nerva.
+3. It runs locally, needs no account or paid service by default, and its licence allows it.
+4. It is optional: with it absent, Nerva still starts and the rest keeps working.
+
+What this means in practice:
+
+| Need | Decision |
+|---|---|
+| Model routing, local and cloud | Keep Nerva's own router. No LiteLLM or OpenRouter. |
+| Long-term memory and the vault | Keep Nerva's own memory stack and vault indexer. No mem0, Letta or Graphiti. |
+| Skills | Nerva's own `SKILL.md` format in `skills/`. |
+| Device and browser use | Nerva's own governed operator. |
+| Word, Excel, files | Nerva's own exporters and tools. |
+| Professional tools (Blender, Adobe, Figma, game engines) | Nerva's own path where one exists (Blender). Otherwise the vendor's or community's MCP server, reached through Nerva's own MCP client: optional, per tool, removable. |
+| Hermes | A source of ideas and a reference. The sidecar stays optional; no finish-line item may depend on it. |
+
+The shortcut in this decision is therefore **scope**, not outsourcing: fewer things built, each
+built on Nerva's own parts. Adding a new runtime dependency to `requirements` or `package.json`
+needs a line in the PR body saying which of the four conditions it meets, and the owner's yes.
 
 ### Frozen until the desktop finish line is reached
 

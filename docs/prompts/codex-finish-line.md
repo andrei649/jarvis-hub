@@ -27,9 +27,11 @@ WORK, IN ORDER
 2. For each of the nine finish-line items: check whether its acceptance test already exists and
    passes. Write the missing tests first; they are the to-do list. Record the result per item in
    one table in docs/FINISH_LINE_STATUS.md.
-3. Close the gaps the table shows, highest user value first. Reuse before building: MCP servers
-   for tools (browser, Office, Blender, Figma, Adobe), SKILL.md for skills, the governed Hermes
-   sidecar for what Hermes already does. Touch a Hermes row only when an item needs it.
+3. Close the gaps the table shows, highest user value first. Build on Nerva's own parts:
+   its router, memory, operator, exporters and SKILL.md skills. Only professional tools with no
+   Nerva path (Adobe, Figma, game engines) may come through an optional MCP server, reached by
+   Nerva's own MCP client. Touch a Hermes row only when an item needs it; no item may depend on
+   the Hermes sidecar.
 4. BACKLOG: close or re-scope every row an agent can close. Owner-only rows (hardware, accounts,
    tokens, GitHub settings, decisions) get exact steps in docs/OWNER_TASKS.md; then move on.
 5. Refresh generated status (scripts/status_sync.py, then --check) with every unit.
@@ -39,7 +41,9 @@ DO NOT
   gates, new channels, SSO, business connectors, house or camera features, CLI/TUI parity.
 - Delete code. Propose removals with the list of switches, routes, panels and tests, and wait
   for the owner's yes.
-- Replace the model router or the memory stack without a written evaluation and the owner's yes.
+- Add a third-party runtime dependency, or replace Nerva's own router, memory, operator or
+  skills with a third-party one. Own code first; the decision lists the four conditions for an
+  exception, and each needs the owner's yes.
 - Relabel a partial Hermes row to look finished.
 - Merge, mark a PR ready, deploy, activate anything paid, touch port 8080 or the live hub, clear
   the 35 fixture cards in the approval queue, or send personal data outside. Keep PRs as drafts,
