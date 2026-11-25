@@ -2,7 +2,7 @@
 
 Hermes ships its user documentation inside the app. Nerva's user guide, flag table and
 privacy notes lived only in the repository, so a HUD user had no way to read what a
-flag costs or what the camera keeps without leaving the product. The docs route
+flag costs or what the hub keeps without leaving the product. The docs route
 serves a hard-coded slug → file table: the slug is only ever a dictionary key, never
 joined into a path, so '../', encoded traversal and unknown slugs are all 404. The
 body is Markdown text for the HUD's React-only renderer, never HTML.
@@ -36,7 +36,7 @@ def test_the_list_names_every_allowlisted_doc(client):
     reply = client.get("/api/help/docs")
     assert reply.status_code == 200 and "no-store" in reply.headers["cache-control"]
     docs = reply.json()["docs"]
-    assert [d["slug"] for d in docs] == ["user-guide", "flags", "privacy", "camera-privacy"]
+    assert [d["slug"] for d in docs] == ["user-guide", "flags", "privacy"]
     assert all(d["available"] is True and d["title"] for d in docs)
 
 
@@ -44,7 +44,6 @@ def test_the_list_names_every_allowlisted_doc(client):
     ("user-guide", "docs/USER_GUIDE.md"),
     ("flags", "docs/FLAGS.md"),
     ("privacy", "docs/PRIVACY.md"),
-    ("camera-privacy", "docs/CAMERA_PRIVACY.md"),
 ])
 def test_each_allowlisted_doc_is_served_as_markdown_text(client, slug, path):
     reply = client.get(f"/api/help/docs/{slug}")

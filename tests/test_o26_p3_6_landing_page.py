@@ -17,7 +17,7 @@ def _active_agents() -> int:
 
     Derived rather than hard-coded: this test guards *verified* copy, and a
     literal here just moves the staleness from the page into the test — the
-    roster grew to 18 with Hestia and this assertion was the thing left behind.
+    roster size changed and this assertion was the thing left behind.
     """
     data = yaml.safe_load(
         (ROOT / "agents" / "_system" / "agents.yaml").read_text(encoding="utf-8")

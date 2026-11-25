@@ -51,8 +51,6 @@ const SENTENCES = {
   'goal.approve': ['Starts a night of work on a goal.', 'Pornește o noapte de lucru pentru un obiectiv.'],
   'hub.update': ['Updates the hub.', 'Actualizează hubul.'],
   'hub.restart': ['Restarts the hub.', 'Repornește hubul.'],
-  'house.control': ['Controls a device in the house.', 'Comandă un dispozitiv din casă.'],
-  'house.security_control': ['Controls the house’s security.', 'Comandă securitatea casei.'],
   'hooks.define': ['Activates a hook program.', 'Activează un program de tip hook.'],
   'note.write': ['Writes a note.', 'Scrie o notă.'],
   'comms.send': ['Sends a message.', 'Trimite un mesaj.'],

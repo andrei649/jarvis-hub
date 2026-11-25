@@ -235,12 +235,12 @@ describe('the briefing wall stops claiming there is no decision feed', () => {
   });
 });
 
-/* ── the three registry agents the demo corpus never had ──────────────────── */
+/* ── the two registry agents the demo corpus never had ─ ──────────────────── */
 
 describe('the demo roster covers the whole registry', () => {
-  const REGISTRY_ONLY = ['argus', 'hestia', 'howard'];
+  const REGISTRY_ONLY = ['argus', 'howard'];
 
-  it('gives argus, hestia and howard a roster row and a dossier', () => {
+  it('gives argus and howard a roster row and a dossier', () => {
     for (const id of REGISTRY_ONLY) {
       const row = V2.AGENTS.find((a) => a.id === id);
       expect(row, `${id} is active in agents.yaml and must be in the demo roster`).toBeTruthy();
@@ -258,8 +258,6 @@ describe('the demo roster covers the whole registry', () => {
     // the registry agreeing, this is the test that notices.
     expect(V2.DOSSIER.argus.channel).toBe('web-dashboard');
     expect(V2.DOSSIER.argus.plugins).toEqual(['signal-layer', 'cloud-llm']);
-    expect(V2.DOSSIER.hestia.policy).toBe('local');
-    expect(V2.DOSSIER.hestia.plugins).toEqual(['homebridge', 'iot-control']);
     expect(V2.DOSSIER.howard.heartbeat).toBe('no');
     expect(V2.DOSSIER.howard.plugins).toEqual([]);
   });

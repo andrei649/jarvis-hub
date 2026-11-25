@@ -205,7 +205,6 @@ NON_CODE_NAMES = {
                   "(05 test manual)",
     "qa": "a source label the manual types into the transcript intake form (05 test manual, PNB-068)",
     "nonexistent_agent": "an agent id the manual types to provoke the learning panel's 404 (05 test manual)",
-    "netstat": "a host command the manual suggests for a packet check (12 test manual)",
     # …and example task kinds the governance book submits to the autonomy policy, which
     # classifies a kind by its verb: no code defines them.
     **dict.fromkeys(("book_flight", "purchase_item", "withdraw_cash", "cancel_contract", "draft_note",

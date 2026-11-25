@@ -727,14 +727,6 @@ from agents.core.observability.operator_reality import (  # noqa: E402, I001
     OperatorEventLedger as _OperatorEventLedger,
 )
 from agents.core.observability.media_reality import H29_MEDIA_REALITY_CASES  # noqa: E402
-from agents.core.observability.house_reality import (  # noqa: E402
-    H30_HOUSE_LIVE_CASES,
-    H30_HOUSE_REALITY_CASES,
-)
-from agents.core.observability.camera_reality import (  # noqa: E402
-    H31_CAMERA_LIVE_CASES,
-    H31_CAMERA_REALITY_CASES,
-)
 from agents.core.observability.ambient_reality import (  # noqa: E402
     H33_AMBIENT_REALITY_CASES,
 )
@@ -1090,10 +1082,6 @@ CASES: list[RealityCase] = [
     *SELECTION_ACTION_CASES,
     *CUSTOM_ENDPOINT_ACTION_CASES,
     *MEDIA_CAPABILITY_CASES,
-    *H30_HOUSE_REALITY_CASES,
-    *H30_HOUSE_LIVE_CASES,
-    *H31_CAMERA_REALITY_CASES,
-    *H31_CAMERA_LIVE_CASES,
     *H33_AMBIENT_REALITY_CASES,
     *TOOL_CAPABILITY_CASES,
     *OPERATOR_CAPABILITY_CASES,

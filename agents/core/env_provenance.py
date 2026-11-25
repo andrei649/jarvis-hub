@@ -517,7 +517,7 @@ def judge(values: LayerValues, folded: env_alias.Fold) -> Verdict:
     - Any other hub variable with a reference nothing sets: a warning, and it boots with
       the value python-dotenv always gave it.
     - A reference that is DEFINED and blank is the operator's stated value, whatever it
-      builds (``HA_URL=`` then ``JARVIS_HA_URL=${HA_URL}``; ``PREFIX=`` then
+      builds (``COMFY=`` then ``JARVIS_COMFYUI_URL=${COMFY}``; ``PREFIX=`` then
       ``JARVIS_LOG_FILE=${PREFIX}/var/log/hub.log``): a note at most. If what results is
       the filesystem root, it gets the warning a root written out by hand gets.
     Variables that are not the hub's, and names a file cannot set, are not judged."""

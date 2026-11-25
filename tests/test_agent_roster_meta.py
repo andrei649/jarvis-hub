@@ -1,6 +1,6 @@
 """HUD roster parity (BACKLOG GAP-9 follow-up): /api/agents must describe every
 registry agent — including registry-only agents that the HUD's static seed corpus
-never knew (howard, hestia) — by deriving tier/role from each agent's SOUL.md
+never knew (howard) — by deriving tier/role from each agent's SOUL.md
 front-matter when no curated meta row exists. The curated table keeps priority
 for ids it knows, so its human-readable roles are not regressed."""
 import sys
@@ -29,7 +29,7 @@ def _agents(client):
 
 def test_registry_only_agents_are_served(client):
     agents = _agents(client)
-    for aid in ("howard", "hestia", "argus"):
+    for aid in ("howard", "argus"):
         assert aid in agents, f"{aid} missing from /api/agents"
 
 
@@ -39,8 +39,6 @@ def test_soul_frontmatter_derives_role_and_tier(client):
     # tier mapped from the front-matter word (foundation -> FND).
     assert agents["howard"]["role"] == "Digital Twin / Archive"
     assert agents["howard"]["tier"] == "FND"
-    assert agents["hestia"]["role"] == "House Brain"
-    assert agents["hestia"]["tier"] == "FND"
     # argus HAS a curated row; it must win over the raw archetype text.
     assert agents["argus"]["role"] == "Geospatial OSINT / Intel"
     assert agents["argus"]["tier"] == "BIZ"

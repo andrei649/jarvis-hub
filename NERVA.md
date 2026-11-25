@@ -4,7 +4,7 @@
 
 ## Overview
 
-Jarvis is a local-first multi-agent AI orchestration system. 18 active agents across 4 tiers (incl. Argus, the Signal Layer facade, Howard, the emerging digital twin, and Hestia, the House Brain), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
+Jarvis is a local-first multi-agent AI orchestration system. 17 active agents across 4 tiers (incl. Argus, the Signal Layer facade, and Howard, the emerging digital twin), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
 
 
 **Stack:** Python 3.12 + FastAPI + LM Studio (OpenAI-compatible API)  
@@ -163,7 +163,7 @@ memory_logs/                 # Sessions, checkpoints, learning records
 - Set `ANTHROPIC_API_KEY` (or a rotation pool in `ANTHROPIC_API_KEYS`) in the environment; Gemini
   works the same way through `GEMINI_API_KEY`
 - Which agents may use a cloud model is code plus the registry, not a list: `LOCAL_ONLY_AGENTS`
-  (frigga, ultron, howard, hestia — never cloud), `CLOUD_ONLY_AGENTS` (athena) and `CLAUDE_AGENTS`
+  (frigga, ultron, howard — never cloud), `CLOUD_ONLY_AGENTS` (athena) and `CLAUDE_AGENTS`
   (vision, steve) in `agents/core/llm/hybrid_router.py`, then the per-agent `llm_policy` key in
   `agents/_system/agents.yaml`; every other agent routes `auto`. (A `general.cloud_llm_agents`
   list used to sit in `agents.yaml`; nothing read it, and it was removed 2026-09-07.)
@@ -205,10 +205,10 @@ curl.exe http://127.0.0.1:8080/status
 ## Quick Stats
 
 <!-- project-status:jarvis-stats:start -->
-- 18 active agents; registry-derived
-- 950 HTTP routes; parity-snapshot-derived
-- Tests: backend **38,268** · frontend **5,028** · mobile **535**
-- Version: **v1.0.0** · source commit `8cc292d81f22`
+- 17 active agents; registry-derived
+- 939 HTTP routes; parity-snapshot-derived
+- Tests: backend **37,899** · frontend **5,002** · mobile **522**
+- Version: **v1.0.0** · source commit `84215ba33693`
 - Backlog ledger: 289 done · 25 open or blocked of 314 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
 - H23 roll-up: 28/30 done, 1 blocked, 1 open; release gates: A1, A3, A4, A6
 <!-- project-status:jarvis-stats:end -->

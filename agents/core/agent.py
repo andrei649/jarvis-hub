@@ -47,8 +47,7 @@ DEMOTION_TIERS = {
 #   * a size cap, so one oversized file cannot eat the context window silently.
 #
 # What this does and does not claim. It cannot widen what an agent may do: no
-# CODE-enforced gate is reached from here (the house rules live in
-# agents/core/house/hestia_bridge.py, approvals in the governance gate). But
+# CODE-enforced gate is reached from here (approvals live in the governance gate). But
 # dropping persona text is not behaviour-neutral either — every shipped SOUL
 # carries prose-only rules, and quality.py's persona-consistency rail reads its
 # forbidden-phrase list straight out of that same prose via

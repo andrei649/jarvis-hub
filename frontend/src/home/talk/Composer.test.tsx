@@ -1,6 +1,6 @@
 /* The re-laid composer (PHASE_B_PLAN.md §5.3, §9.4 E5): exactly To, Mode, the field, Attach,
    Voice, Options and Send are visible; Enter sends, Shift+Enter adds a line, an IME composition
-   never sends; a disabled Send says why; the local-only list includes hestia; the recipient
+   never sends; a disabled Send says why; the local-only list includes howard; the recipient
    picker warns before it stops a reply. Its body renders the same in both frames, so these run
    against InputBar itself (the classic cockpit passes no picker, mode or variant, and draws no
    head: its layout shows the recipient above the composer). */
@@ -14,7 +14,7 @@ import { composerField, composerSend, openComposerMenu } from './test-support';
 const roster = [
   { id: 'jarvis', name: 'Jarvis', rosterSource: 'api', chat_routing: 'orchestrated', enabled: true },
   { id: 'frigga', name: 'Frigga', rosterSource: 'api', chat_routing: 'local', enabled: true },
-  { id: 'hestia', name: 'Hestia', rosterSource: 'api', chat_routing: 'local', enabled: true },
+  { id: 'howard', name: 'Howard', rosterSource: 'api', chat_routing: 'local', enabled: true },
 ];
 const live = { state: 'live' as const, value: { mode: 'ask' as const }, checkedAt: 1, lastGoodAt: 1 };
 const frame = () => document.querySelector('[data-composer-frame]') as HTMLElement;
@@ -268,7 +268,7 @@ describe('the recipient', () => {
     render(<InputBar t={V2.I18N.en} agent="jarvis" agents={[...roster, { id: 'retired', rosterSource: 'api', status: 'retired' }]}
       onSubmit={vi.fn()} onSelectAgent={select} variant="home" />);
     const picker = screen.getByRole('combobox', { name: 'To' }) as HTMLSelectElement;
-    expect(Array.from(picker.options).map((o) => o.textContent)).toEqual(['Jarvis · Orchestrated', 'Frigga · Local', 'Hestia · Local']);
+    expect(Array.from(picker.options).map((o) => o.textContent)).toEqual(['Jarvis · Orchestrated', 'Frigga · Local', 'Howard · Local']);
     fireEvent.change(picker, { target: { value: 'frigga' } });
     expect(select).toHaveBeenCalledExactlyOnceWith('frigga');
   });
@@ -464,7 +464,7 @@ describe('the recipient', () => {
     view.rerender(bar('jarvis', roster, true));
     dropOwn();
     expect(line()).not.toBeNull();
-    view.rerender(bar('hestia', roster.filter((a) => a.id !== 'frigga'), true));
+    view.rerender(bar('howard', roster.filter((a) => a.id !== 'frigga'), true));
     expect(line()).toBeNull();
   });
 
@@ -497,8 +497,8 @@ describe('the recipient', () => {
   });
 });
 
-describe('the local-only list includes hestia', () => {
-  it('stages a task result for hestia without a cloud consent, as for the other local-only agents', async () => {
+describe('the local-only list includes howard', () => {
+  it('stages a task result for howard without a cloud consent, as for the other local-only agents', async () => {
     HTMLDialogElement.prototype.showModal ||= function () { this.setAttribute('open', ''); };
     HTMLDialogElement.prototype.close ||= function () { this.removeAttribute('open'); };
     const digest = 'a'.repeat(64);
@@ -508,7 +508,7 @@ describe('the local-only list includes hestia', () => {
       if (url.includes('/board?')) return Response.json({ columns: [{ tasks: [card] }] });
       return Response.json({ task: card });
     }));
-    for (const agent of ['hestia', 'athena']) {
+    for (const agent of ['howard', 'athena']) {
       const view = render(<InputBar t={V2.I18N.en} selectedTurn agent={agent} sessionId={`s-${agent}`} onSubmit={vi.fn()} />);
       openComposerMenu('attach');
       fireEvent.click(screen.getByRole('button', { name: 'Attach board result' }));
@@ -516,7 +516,7 @@ describe('the local-only list includes hestia', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Attach full result' }));
       await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Attach completed task result' })).toBeNull());
       const consent = screen.queryByRole('checkbox', { name: /Allow these reviewed passages/ });
-      if (agent === 'hestia') {
+      if (agent === 'howard') {
         expect(consent).toBeNull();
         expect(composerSend().disabled).toBe(false);
       } else {

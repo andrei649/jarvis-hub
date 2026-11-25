@@ -113,13 +113,13 @@ _SKILL_VIEW = (
 _NERVA_HELP = (
     "# Nerva help\n"
     "When the user needs help configuring, using, extending, or troubleshooting Nerva, check the "
-    "bundled Help documents for the relevant feature: User guide, Feature flags, Privacy, and Camera "
-    "privacy. These are available in the Nerva HUD Help area. Ground instructions in the relevant "
+    "bundled Help documents for the relevant feature: User guide, Feature flags, and Privacy. "
+    "These are available in the Nerva HUD Help area. Ground instructions in the relevant "
     "document and the tools actually available for this turn; say when a detail is unverified."
 )
 _NERVA_HELP_FILE_READ = (
     " If the repository documentation is within the allowed file scope, use file_read to inspect "
-    "docs/USER_GUIDE.md, docs/FLAGS.md, docs/PRIVACY.md, or docs/CAMERA_PRIVACY.md as needed."
+    "docs/USER_GUIDE.md, docs/FLAGS.md, or docs/PRIVACY.md as needed."
 )
 
 # Adapted from pinned Hermes prompt_builder.STEER_CHANNEL_NOTE. The caller's

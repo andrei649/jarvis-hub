@@ -5,7 +5,7 @@
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v1.0.0** · backend **38,268** · frontend **5,028** · mobile **535** · **950** routes · **18** active agents · open owner gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · commit `8cc292d81f22`.
+> Generated project status: **v1.0.0** · backend **37,899** · frontend **5,002** · mobile **522** · **939** routes · **17** active agents · open owner gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · commit `84215ba33693`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision) — superseded 2026-08-28:** the July framing
@@ -31,7 +31,7 @@
 
 ---
 
-### 18 Specialist Agents (4 Tiers)
+### 17 Specialist Agents (4 Tiers)
 
 | Tier | Agent | Role |
 |------|-------|------|
@@ -257,7 +257,7 @@ Chatbots are **reactive** — they wait for you. Workflow builders are **rigid**
 
 ### The Product
 
-**Nerva is your personal AI operating system** — 18 specialist agents that work 24/7, proactively, on your hardware.
+**Nerva is your personal AI operating system** — 17 specialist agents that work 24/7, proactively, on your hardware.
 
 It doesn't wait to be asked. It monitors your system health, watches your email and calendar, scans its own logs for bugs, and consolidates every conversation into a knowledge graph every night. Every morning at 07:00 it delivers a prioritized brief.
 
@@ -308,7 +308,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 > *"The AI that works while you sleep."*
 
-> *"18 agents. One system. Your data stays home."*
+> *"17 agents. One system. Your data stays home."*
 
 > *"Finally: an AI assistant that learns what to stop asking you."*
 

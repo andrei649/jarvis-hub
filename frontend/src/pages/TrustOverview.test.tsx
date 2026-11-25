@@ -393,7 +393,7 @@ describe('Trust overview: capabilities and where work ran', () => {
     const where = document.querySelector('#where');
     expect(where.textContent).toContain('No cloud model configured');
     expect(where.textContent).toContain('declared, not measured');
-    expect(where.textContent).toContain('Frigga · Ultron · Howard · Hestia');
+    expect(where.textContent).toContain('Frigga · Ultron · Howard');
     expect(where.textContent).toContain('Athena — unavailable while no cloud model is configured');
     expect(where.textContent).not.toMatch(/sealed/i);
   });

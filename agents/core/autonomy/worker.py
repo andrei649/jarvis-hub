@@ -105,7 +105,7 @@ class decision_push_loop:  # noqa: N801 - a context manager used like a function
 # Per kind (review round 4, item 4): the vocabulary maps each ACTION_CAPABILITY_MANIFESTS
 # kind to the refusal reasons ITS handler returns (and the parameterised prefixes, the
 # same way). A reason one handler uses as a refusal is not a refusal when another
-# kind's handler returns it: ``kernel_denied`` from house or tool.rpc ran nothing, from a
+# kind's handler returns it: ``kernel_denied`` from tool.rpc ran nothing, from a
 # call handler (which never says it) it is an unknown reason, a failure. A kind resolves
 # like the manifests do: its exact key, else a ``prefix.*`` pattern.
 #
@@ -191,10 +191,6 @@ class decision_push_loop:  # noqa: N801 - a context manager used like a function
 #     at the dial is ``refused`` (0,0); a gate declining on a check after the response
 #     arrived withholds it (``withheld_after_fetch``, 0,0); a fetch or kernel that broke
 #     is a failure.
-#   * House (item 5): a driver that did not succeed — it returned an error or a refusal
-#     after it ran, or raised — is a failure (``driver_failed``) even when the device
-#     state verifies (it may have matched already); the row finishes, nothing is rolled
-#     back, the result names both (``state_verified``, ``driver_reason``).
 #
 # What counts as a refusal: a governance decision (kernel, capability token, kill
 # switch, allowlist, approval binding, a human decision the handler needs), a spent
@@ -209,8 +205,7 @@ class decision_push_loop:  # noqa: N801 - a context manager used like a function
 # ``wall_time_budget_exceeded``, ``capability_broker_unavailable``,
 # ``mediation_state_unavailable``, ``driver_failed``, a kernel that raised or answered
 # with no Decision — ``kernel_error``, ``local_guard_failed`` — or is not there —
-# ``kernel_unavailable``) — and a world the handler found unfit to act in (a stale or
-# degraded house state).
+# ``kernel_unavailable``).
 #
 # Known gap (review round 4, closure C; not fixed here): ``credential_not_configured``
 # (call.outbound, social.*, writeback.*) also covers a secret that is configured but
@@ -248,14 +243,9 @@ class decision_push_loop:  # noqa: N801 - a context manager used like a function
 # Collected by reading the executor of every ACTION_CAPABILITY_MANIFESTS kind the
 # worker runs. The kinds with an empty entry (kg.write, media.*, model.pull,
 # report.export, terminal.exec, file.write, browser.step, desktop.step, host.control,
-# repo.sync, admin.*, payment, mcp.mutating, house.recovery) have no worker executor
+# repo.sync, admin.*, payment, mcp.mutating) have no worker executor
 # of their own that returns a refusal as ``failed``; their implementations run at a
 # route or the unified action API.
-# house (round 5, item 6): ``kernel_denied`` is only a real kernel Decision that refused
-# or queued the actuation, and the two switches — the unified action API or the kernel
-# turned off — are decided before any driver call; a kernel that broke is a failure.
-_HOUSE_REFUSALS = ("kernel_denied", "execution_in_progress", "task_payload_changed",
-                   "unified_action_api_disabled", "action_kernel_disabled")
 _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # Hermes is consumed by its own signed, one-use runtime bridge. The generic
     # autonomy executor cannot run this kind and therefore has no handler-returned
@@ -359,15 +349,6 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     "media.restore": (),
     "desktop.step": (),
     "browser.step": (),
-    # house.control / house.security_control — HouseActuator.execute_task; the
-    # registered handler raises HouseActuationError(reason) instead of returning.
-    # ``execution_in_progress`` is only another execution of this task in flight right
-    # now; a row an earlier attempt left ``running`` (it raised after ``begin``, or the
-    # process died) is ``execution_stranded``, a failure (round 3, item 2). Only a
-    # security task needs a strong confirmation.
-    "house.control": _HOUSE_REFUSALS,
-    "house.security_control": (*_HOUSE_REFUSALS, "strong_confirmation_required"),
-    "house.recovery": (),
     # permission.grant — PermissionLedger.apply_grant, all ``refused`` (a contract
     # denial carries the contract's own reason).
     "permission.grant": ("kind_mismatch", "human_decision_required", "decision_not_approval",

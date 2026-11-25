@@ -13,11 +13,9 @@ import { Markdown } from '../../mobile/src/markdown/Markdown';
 import { AcquisitionScreen } from '../../mobile/src/screens/AcquisitionScreen';
 import { AmbientScreen } from '../../mobile/src/screens/AmbientScreen';
 import { ApprovalsScreen } from '../../mobile/src/screens/ApprovalsScreen';
-import { CameraScreen } from '../../mobile/src/screens/CameraScreen';
 import { CaptureScreen } from '../../mobile/src/screens/CaptureScreen';
 import { ChatScreen } from '../../mobile/src/screens/ChatScreen';
 import { CommsScreen } from '../../mobile/src/screens/CommsScreen';
-import { HouseScreen } from '../../mobile/src/screens/HouseScreen';
 import { MediaScreen } from '../../mobile/src/screens/MediaScreen';
 import { MemoryScreen } from '../../mobile/src/screens/MemoryScreen';
 import { SettingsScreen } from '../../mobile/src/screens/SettingsScreen';
@@ -36,7 +34,7 @@ const consumers:any[]=[
   ['App',App,{},true],['AgentPicker',AgentPicker,{value:'jarvis',onChange:noop}],
   ['MessageBubble',MessageBubble,{message:{id:'one',role:'user',text:'fixture text'}}],
   ['SessionsModal',SessionsModal,{visible:true,onClose:noop,onResume:noop}],['Markdown',Markdown,{text:'fixture text'}],
-  ...Object.entries({AcquisitionScreen,AmbientScreen,ApprovalsScreen,CameraScreen,CaptureScreen,ChatScreen,CommsScreen,HouseScreen,MediaScreen,MemoryScreen,SettingsScreen,SkillsScreen,StatusScreen,TasksScreen}).map(([name,component])=>[name,component,{onGoToSettings:noop,onGoToApprovals:noop}]),
+  ...Object.entries({AcquisitionScreen,AmbientScreen,ApprovalsScreen,CaptureScreen,ChatScreen,CommsScreen,MediaScreen,MemoryScreen,SettingsScreen,SkillsScreen,StatusScreen,TasksScreen}).map(([name,component])=>[name,component,{onGoToSettings:noop,onGoToApprovals:noop}]),
 ];
 const styles=(container:HTMLElement)=>Array.from(container.querySelectorAll('[data-native-style]')).map(node=>node.getAttribute('data-native-style')).join('\n');
 it.each(consumers)('%s updates mounted native styles after foreground appearance refresh',async(_name,Component,props,ownsProvider)=>{

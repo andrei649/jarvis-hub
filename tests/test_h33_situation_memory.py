@@ -4,7 +4,6 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from agents.core.ambient.adapters import AmbientCameraFeedConsumer
 from agents.core.ambient.contracts import (
     AmbientDecision,
     AmbientEvent,
@@ -14,7 +13,6 @@ from agents.core.ambient.contracts import (
 )
 from agents.core.ambient.memory import AmbientSituationMemory
 from agents.core.ambient.runtime import build_ambient_runtime
-from agents.core.cameras.feeds import CameraFeedEvent
 from agents.core.memory.bitemporal import BiTemporalKG
 from agents.core.memory.decay import DecayMemory
 
@@ -244,50 +242,3 @@ def test_consent_purge_forgets_decay_invalidates_kg_and_blocks_replay(tmp_path):
         "reason": "consent_replay_tombstone",
     }
     memory.close()
-
-
-def test_real_h31_camera_feed_reaches_runtime_situation_memory(tmp_path):
-    class Orch:
-        autonomy = SimpleNamespace(govern_enqueue=lambda *args, **kwargs: 1)
-
-        @staticmethod
-        def get_setting(name, default=None):
-            return {
-                "ambient.enabled": True,
-                "ambient.generation": 5,
-                "general.timezone": "Europe/Bucharest",
-            }.get(name, default)
-
-    runtime = build_ambient_runtime(Orch(), root=tmp_path / "ambient")
-    runtime.registry.create(
-        MonitorDefinition(
-            monitor_id="monitor.camera.remember",
-            version=1,
-            source="camera",
-            schema="camera.event.v1",
-            predicates=(MonitorPredicate("attributes.label", "eq", "person"),),
-            alert_rung="remember",
-        ),
-        actor="owner",
-    )
-    consumer = AmbientCameraFeedConsumer(runtime.engine)
-    event = CameraFeedEvent(
-        event_id="camera-event-runtime",
-        camera_id="front-door",
-        label="person",
-        occurred_at=1_000,
-        observed_at=1_001,
-        confidence=0.9,
-        consent_generation=7,
-        dedupe_key="camera:front-door:camera-event-runtime",
-        room_id="entry",
-        zone="porch",
-    )
-
-    asyncio.run(consumer.consume(event))
-
-    situations = runtime.memory.list_situations()
-    assert [(item["kind"], item["count"]) for item in situations] == [
-        ("anonymous_person_observation", 1)
-    ]
-    runtime.close()

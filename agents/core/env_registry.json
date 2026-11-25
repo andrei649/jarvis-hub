@@ -1086,84 +1086,6 @@
    "required_when": "",
    "doc": ".env.example"
   },
-  "NERVA_H30_HA_LIVE": {
-   "aliases": [
-    "JARVIS_H30_HA_LIVE"
-   ],
-   "namespace": "hub",
-   "type": "flag",
-   "default": false,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_H30_HA_TOKEN": {
-   "aliases": [
-    "JARVIS_H30_HA_TOKEN"
-   ],
-   "namespace": "hub",
-   "type": "credential",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_H31_FRIGATE_CAMERA_ID": {
-   "aliases": [
-    "JARVIS_H31_FRIGATE_CAMERA_ID"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_H31_FRIGATE_LIVE": {
-   "aliases": [
-    "JARVIS_H31_FRIGATE_LIVE"
-   ],
-   "namespace": "hub",
-   "type": "flag",
-   "default": false,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_H31_FRIGATE_ORIGIN": {
-   "aliases": [
-    "JARVIS_H31_FRIGATE_ORIGIN"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_H31_FRIGATE_TOKEN": {
-   "aliases": [
-    "JARVIS_H31_FRIGATE_TOKEN"
-   ],
-   "namespace": "hub",
-   "type": "credential",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
   "NERVA_HARDENED": {
    "aliases": [
     "JARVIS_HARDENED"
@@ -1176,45 +1098,6 @@
    "purpose": "1 = design-partner/hardened preset (see below)",
    "required_when": "",
    "doc": ".env.example"
-  },
-  "NERVA_HA_ALLOWED_HOSTS": {
-   "aliases": [
-    "JARVIS_HA_ALLOWED_HOSTS"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_HA_TOKEN_REF": {
-   "aliases": [
-    "JARVIS_HA_TOKEN_REF"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": "",
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_HA_URL": {
-   "aliases": [
-    "JARVIS_HA_URL"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
   },
   "NERVA_HERMES_BRIDGE_TOKEN": {
    "aliases": [
@@ -1268,19 +1151,6 @@
    "required_when": "",
    "doc": ""
   },
-  "NERVA_HESTIA_BRIDGE": {
-   "aliases": [
-    "JARVIS_HESTIA_BRIDGE"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "JARVIS_HESTIA_BRIDGE ON: HestiaBridge.observe() / propose() may run — observation is a strict-local snapshot with aggregate occupancy only, and every proposal becomes an ask-tier house task through HouseActuator.request_* → govern_enqueue (…",
-   "required_when": "",
-   "doc": "docs/FLAGS.md"
-  },
   "NERVA_HOME": {
    "aliases": [
     "JARVIS_HOME"
@@ -1293,19 +1163,6 @@
    "purpose": "The hub's data root (settings, audit log, runtime state); keep it outside the git checkout.",
    "required_when": "",
    "doc": "scripts/gen_env_registry.py"
-  },
-  "NERVA_HOME_ASSISTANT": {
-   "aliases": [
-    "JARVIS_HOME_ASSISTANT"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
   },
   "NERVA_HOOKS": {
    "aliases": [
@@ -1353,32 +1210,6 @@
    "namespace": "hub",
    "type": "text",
    "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_HOUSE_BRAIN": {
-   "aliases": [
-    "JARVIS_HOUSE_BRAIN"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_HOUSE_PRESENCE": {
-   "aliases": [
-    "JARVIS_HOUSE_PRESENCE"
-   ],
-   "namespace": "hub",
-   "type": "flag",
-   "default": false,
    "default_varies": false,
    "section": "",
    "purpose": "",
@@ -3464,19 +3295,6 @@
    "purpose": "",
    "required_when": "",
    "doc": ""
-  },
-  "NERVA_WLED_URL": {
-   "aliases": [
-    "JARVIS_WLED_URL"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "JARVIS_HESTIA_BRIDGE ON: HestiaBridge.observe() / propose() may run — observation is a strict-local snapshot with aggregate occupancy only, and every proposal becomes an ask-tier house task through HouseActuator.request_* → govern_enqueue (…",
-   "required_when": "",
-   "doc": "docs/FLAGS.md"
   },
   "NERVA_WORKFLOW_PERSIST": {
    "aliases": [

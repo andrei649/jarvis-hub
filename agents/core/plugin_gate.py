@@ -235,17 +235,7 @@ BUILTIN_PLUGINS = {
         network_access=NetworkAccess.LAN,
         data_scope=DataScope.LOCAL_ONLY,
         allowed_domains=[],
-        agents_served=["jarvis", "ultron", "hestia"],
-    ),
-    "camera-frigate": PluginManifest(
-        id="camera-frigate",
-        name="Frigate Camera Events",
-        version="0.1.0",
-        description="Read-only local Frigate event metadata behind camera consent and privacy masks",
-        network_access=NetworkAccess.LAN,
-        data_scope=DataScope.LOCAL_ONLY,
-        allowed_domains=[],
-        agents_served=["jarvis"],
+        agents_served=["jarvis", "ultron"],
     ),
     "oracle-bridge": PluginManifest(
         id="oracle-bridge",
@@ -295,7 +285,7 @@ BUILTIN_PLUGINS = {
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.LOCAL_ONLY,
         allowed_domains=["openapi.tuya.com"],
-        agents_served=["jarvis", "ultron", "hestia"],
+        agents_served=["jarvis", "ultron"],
     ),
     "signal-layer": PluginManifest(
         id="signal-layer",

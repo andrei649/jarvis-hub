@@ -8,19 +8,19 @@ ID-urile H001–H697 sunt poziții în inventarul înghețat, validate prin hash
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | [cli](#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 21 | 33 | 0 | 2 | 0 | 123 | seed din dovezi |
 | [gateway](#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 6 | 25 | 0 | 2 | 0 | 252 | seed din dovezi |
-| [platforms](#area-platforms) — Messaging platforms and channels | own | 39 | 6 | 27 | 0 | 6 | 0 | 46 | seed din dovezi |
+| [platforms](#area-platforms) — Messaging platforms and channels | own | 39 | 6 | 27 | 0 | 6 | 0 | 43 | seed din dovezi |
 | [web](#area-web) — Web dashboard and HUD | own/run | 40 | 15 | 23 | 0 | 2 | 0 | 71 | seed din dovezi |
 | [desktop](#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 6 | 46 | 0 | 2 | 0 | 54 | seed din dovezi |
 | [tui](#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 4 | 19 | 0 | 2 | 0 | 30 | seed din dovezi |
 | [config](#area-config) — Configuration and settings | own | 18 | 10 | 8 | 0 | 0 | 0 | 34 | seed din dovezi |
-| [env](#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
+| [env](#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 155 | seed din dovezi |
 | [tools](#area-tools) — Agent-callable tools and toolsets | adopt/own | 32 | 11 | 20 | 0 | 1 | 0 | 82 | seed din dovezi |
 | [skills](#area-skills) — Skills: authoring, catalogue and curation | adopt/own | 33 | 14 | 18 | 0 | 1 | 0 | 80 | seed din dovezi |
 | [providers](#area-providers) — Model providers, routing and fallback | adopt/own | 27 | 6 | 17 | 0 | 4 | 0 | 83 | seed din dovezi |
 | [agent-core](#area-agent-core) — Agent loop, context and sessions | own | 36 | 11 | 25 | 0 | 0 | 0 | 113 | seed din dovezi |
 | [memory](#area-memory) — Memory and recall | own | 27 | 10 | 17 | 0 | 0 | 0 | 70 | seed din dovezi |
 | [automation](#area-automation) — Automation: schedules, goals, delegation, kanban | own | 32 | 6 | 26 | 0 | 0 | 0 | 101 | seed din dovezi |
-| [security](#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 9 | 24 | 0 | 1 | 0 | 217 | seed din dovezi |
+| [security](#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 9 | 24 | 0 | 1 | 0 | 212 | seed din dovezi |
 | [media](#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 20 | 0 | 0 | 0 | 101 | seed din dovezi |
 | [editor-acp](#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 5 | 0 | 1 | 0 | 5 | seed din dovezi |
 | [mcp](#area-mcp) — MCP client and server | own/run | 13 | 3 | 10 | 0 | 0 | 0 | 19 | seed din dovezi |
@@ -141,7 +141,7 @@ Lane: own/run. Suită: 252 intrări (seed din dovezi); 30/31 rânduri reevaluate
 
 ## platforms — Messaging platforms and channels
 
-Lane: own. Suită: 46 intrări (seed din dovezi); 30/33 rânduri reevaluate citează un test din suită.
+Lane: own. Suită: 43 intrări (seed din dovezi); 29/33 rânduri reevaluate citează un test din suită.
 
 | ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
 |---|---|---|---|---|---|
@@ -362,7 +362,7 @@ Lane: own. Suită: 34 intrări (seed din dovezi); 17/18 rânduri reevaluate cite
 
 ## env — Environment, install and execution targets
 
-Lane: own. Suită: 157 intrări (seed din dovezi); 21/27 rânduri reevaluate citează un test din suită.
+Lane: own. Suită: 155 intrări (seed din dovezi); 21/27 rânduri reevaluate citează un test din suită.
 
 | ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
 |---|---|---|---|---|---|
@@ -640,7 +640,7 @@ Lane: own. Suită: 101 intrări (seed din dovezi); 32/32 rânduri reevaluate cit
 
 ## security — Security: approvals, sandbox, secrets, egress
 
-Lane: own. Suită: 217 intrări (seed din dovezi); 32/33 rânduri reevaluate citează un test din suită.
+Lane: own. Suită: 212 intrări (seed din dovezi); 32/33 rânduri reevaluate citează un test din suită.
 
 | ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
 |---|---|---|---|---|---|

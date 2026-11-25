@@ -2,7 +2,7 @@
 
 Hermes ships its user documentation inside the app. Nerva's user guide, flag table and
 privacy notes lived only in the repository, so the HUD had no way to show what a flag
-costs or what the camera keeps. These two routes serve a hard-coded slug → file table.
+costs or what the hub keeps. These two routes serve a hard-coded slug → file table.
 
 - The slug is only ever a key into ``DOCS``, never joined into a path, so ``../``,
   encoded traversal and unknown slugs are all 404.
@@ -32,7 +32,6 @@ DOCS: dict[str, tuple[str, str]] = {
     "user-guide": ("User guide", "docs/USER_GUIDE.md"),
     "flags": ("Feature flags — what each switch costs", "docs/FLAGS.md"),
     "privacy": ("Privacy", "docs/PRIVACY.md"),
-    "camera-privacy": ("Camera privacy", "docs/CAMERA_PRIVACY.md"),
 }
 MAX_DOC_CHARS = 256_000
 

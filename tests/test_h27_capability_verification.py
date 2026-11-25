@@ -198,8 +198,8 @@ async def test_all_executable_capability_cases_pass_hermetically_without_flag_le
     assert {case.capability_id for case in ACTION_CAPABILITY_CASES if
             case.capability_id == "action:plugin.load"} == {"action:plugin.load"}
     # + hook.exec (G17): its kill-switch case is generated from the manifest like every action.
-    assert result["total"] == 44
-    assert result["passed"] == 44
+    assert result["total"] == 41
+    assert result["passed"] == 41
     assert result["skipped"] == 0
     assert result["promoted"] == []
     assert all(item["passed"] for item in result["results"])
@@ -300,7 +300,7 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     # providers (G19) and plugin:channel_sms (G16); H696 moved the optional skills out of
     # the boot registry; + plugin:room-peers (H658 remote room members' egress).
     # H086 browser_broker and H214/H238/H590 pets add two constructed-component probes.
-    assert len(records) == len(cases) == len(by_ref) == 92 - len(H696_OPTIONAL_SKILL_TITLES) == 85
+    assert len(records) == len(cases) == len(by_ref) == 91 - len(H696_OPTIONAL_SKILL_TITLES) == 84
     assert by_ref["reality-v1:plugin:cloud-image"].capability_id == "plugin:cloud-image"
     assert by_ref["reality-v1:plugin:kanban-attachments"].capability_id == "plugin:kanban-attachments"
     assert by_ref["reality-v1:plugin:ntfy"].capability_id == "plugin:ntfy"
@@ -308,11 +308,11 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
         kind: sum(case.capability_id.startswith(f"{kind}:") for case in cases)
         for kind in ("plugin", "component", "skill")
     } == {
-        "plugin": 54,
+        "plugin": 53,
         "component": 26,
         "skill": 5,
     }
-    assert len({case.capability_id for case in cases}) == 85
+    assert len({case.capability_id for case in cases}) == 84
     for name in ("browser_broker", "pets"):
         assert orch.components.status[name] == "ok"
         assert getattr(orch, name) is not None
@@ -323,7 +323,7 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
 
     combined = all_reality_cases(orch)
     assert combined[: len(CASES)] == CASES
-    assert len(combined) == len(CASES) + 85
+    assert len(combined) == len(CASES) + 84
     all_refs = [case.ref for case in combined]
     assert len(all_refs) == len(set(all_refs))
 
@@ -336,11 +336,11 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     assert ("reality-v1:action-provider-selection-kernel-halt", "action:provider.selection") in verification_pairs
     assert ("reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable",
             "action:provider.custom_endpoint") in verification_pairs
-    assert len(ACTION_CAPABILITY_MANIFESTS) == 45
+    assert len(ACTION_CAPABILITY_MANIFESTS) == 42
     assert len(tool_records) == 2
     # + the three default-off cloud video providers, + channel_sms (G16), + hook.exec (G17),
     # + plugin:room-peers (H658), browser_broker and pets constructed-component cases
-    assert len(verification_pairs) == 45 + 2 + 85 == 132
+    assert len(verification_pairs) == 42 + 2 + 84 == 128
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1
@@ -358,8 +358,8 @@ async def test_registry_policy_cases_pass_while_default_off_plugins_remain_seams
     by_id = {item["capability_id"]: item for item in result["results"]}
 
     _assert_h696_boot_skill_split(records.values())
-    assert result["total"] == 85   # + browser_broker and pets construction probes
-    assert result["passed"] == 84
+    assert result["total"] == 84   # + browser_broker and pets construction probes
+    assert result["passed"] == 83
     assert by_id["component:browser_broker"]["passed"] is True
     assert by_id["component:pets"]["passed"] is True
     assert by_id["plugin:ntfy"]["passed"] is True

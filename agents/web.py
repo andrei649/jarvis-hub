@@ -839,8 +839,6 @@ async def lifespan(application: FastAPI):
     # A fixed owner notice is considered only after live bot identity is known.
     from agents.core.hub_restart_apply import after_boot as restart_after_boot
     await restart_after_boot(orch)
-    from agents.core.routers.cameras import start_camera_ingestion
-    await start_camera_ingestion()
     logger.info(
         f"Jarvis Beta ready — {orch.llm_router.name}, "
         f"{len(orch.agents)} agents, {list(orch.channels.keys())} channels, "
@@ -886,8 +884,6 @@ async def lifespan(application: FastAPI):
         logger.exception("language servers did not stop cleanly")
     from agents.core import power
     power.KEEP_AWAKE.release_all()   # H182: no power assertion outlives the hub
-    from agents.core.routers.cameras import stop_camera_ingestion
-    await stop_camera_ingestion()
     from agents.core.ambient.runtime import close_ambient_runtimes
     close_ambient_runtimes()
     # Symmetric lifecycle: stop channels and release the globals so a closed app
@@ -1304,7 +1300,7 @@ _AGENT_META = {
 
 
 # SOUL.md front-matter tier words -> HUD tier codes, for agents with no curated
-# row above. Registry-only agents (e.g. howard, hestia) describe themselves in
+# row above. Registry-only agents (e.g. howard) describe themselves in
 # their SOUL front-matter; the HUD roster must not silently drop them just
 # because this table was never extended.
 _TIER_FROM_SOUL = {
@@ -2524,11 +2520,9 @@ from agents.core.routers.missions import router as _missions_router  # noqa: E40
 from agents.core.routers.bench import router as _bench_router  # noqa: E402
 from agents.core.routers.ops import router as _ops_router  # noqa: E402
 from agents.core.routers.media_director import router as _media_director_router  # noqa: E402
-from agents.core.routers.cameras import router as _cameras_router  # noqa: E402
 from agents.core.routers.acquisition import router as _acquisition_router  # noqa: E402
 from agents.core.routers.ambient import router as _ambient_router  # noqa: E402
 from agents.core.routers.self_improvement import router as _self_improvement_router  # noqa: E402
-from agents.core.routers.house import router as _house_router  # noqa: E402
 from agents.core.routers.backup import router as _backup_router  # noqa: E402
 from agents.core.routers.company import router as _company_router  # noqa: E402
 from agents.core.routers.operator_bench import router as _operator_bench_router  # noqa: E402
@@ -2695,8 +2689,6 @@ app.include_router(_sessions_router)
 app.include_router(_bench_router)
 app.include_router(_ops_router)
 app.include_router(_media_director_router)
-app.include_router(_house_router)
-app.include_router(_cameras_router)
 app.include_router(_acquisition_router)
 app.include_router(_ambient_router)
 app.include_router(_self_improvement_router)

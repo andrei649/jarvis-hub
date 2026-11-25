@@ -9,8 +9,6 @@ export const CONSOLE_PANELS = [
   {"id": "pets", "label": "Companions", "group": "Start", "component": "PetsPanel"},
   {"id": "presence-inbox", "label": "Presence Inbox", "group": "Home", "component": "PresenceInboxPanel"},
   {"id": "ambient-watch", "label": "Ambient Watch", "group": "Home", "component": "AmbientWatchPanel"},
-  {"id": "house", "label": "House", "group": "Home", "component": "HousePanel"},
-  {"id": "camera", "label": "Camera", "group": "Home", "component": "CameraPanel"},
   {"id": "data-spaces", "label": "Data Spaces", "group": "Memory", "component": "DataSpacesPanel"},
   {"id": "local-docs", "label": "Local Docs", "group": "Memory", "component": "LocalDocsPanel"},
   {"id": "notes", "label": "Notes", "group": "Memory", "component": "NotesPanel"},

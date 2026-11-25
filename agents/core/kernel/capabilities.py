@@ -11,7 +11,7 @@ that set; the kernel's ``authorize`` already enforces a presented token (K1), so
 
 from __future__ import annotations
 
-LOCAL_ONLY_AGENTS = frozenset({"frigga", "ultron", "howard", "hestia"})
+LOCAL_ONLY_AGENTS = frozenset({"frigga", "ultron", "howard"})
 _CLOUD_POLICIES = frozenset({"auto", "cloud", "claude"})
 
 

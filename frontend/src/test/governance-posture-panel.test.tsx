@@ -264,61 +264,6 @@ describe('PosturePanel — Telegram media role consent', () => {
 });
 
 
-describe('PosturePanel — separate camera model-data consent', () => {
-  const camera = { target_id: 'role:camera_descriptions', provider: 'compatible', model: 'camera-model', mode: 'dedicated',
-    policy: 'unknown', warning: 'Camera model policy is unknown.', scope: 'd'.repeat(64), acknowledged: false };
-  const judge = { ...camera, target_id: 'role:approval_judge', model: 'judge-model', scope: 'b'.repeat(64), acknowledged: true };
-  const media = { ...camera, target_id: 'role:telegram_media_reader', model: 'media-model', scope: 'c'.repeat(64), acknowledged: true };
-
-  it('changes only camera consent for three roles using the same provider', async () => {
-    let acknowledged = false;
-    const fn = vi.fn(async (_, options) => {
-      if (options?.method === 'POST') {
-        acknowledged = JSON.parse(options.body).acknowledged;
-        return { ok: true, status: 200, json: async () => ({ ok: true }) };
-      }
-      return { ok: true, status: 200, json: async () => ({ data_handling: {
-        role_settings_readable: true, targets: [judge, media, { ...camera, acknowledged }],
-      } }) };
-    });
-    global.fetch = fn;
-    render(<PosturePanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Allow unattended use for Camera descriptions' }));
-    await screen.findByRole('button', { name: 'Revoke unattended use for Camera descriptions' });
-    expect(screen.getByRole('button', { name: 'Revoke unattended use for Approval judge' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Revoke unattended use for Telegram image descriptions' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke unattended use for Camera descriptions' }));
-    await screen.findByRole('button', { name: 'Allow unattended use for Camera descriptions' });
-    expect(screen.getByRole('button', { name: 'Revoke unattended use for Approval judge' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Revoke unattended use for Telegram image descriptions' })).toBeTruthy();
-    const bodies = fn.mock.calls.filter(([, options]) => options?.method === 'POST').map(([, options]) => JSON.parse(options.body));
-    expect(bodies).toEqual([true, false].map(acknowledged => ({
-      target: camera.target_id, provider: camera.provider, scope: camera.scope, acknowledged,
-    })));
-    expect(screen.getByText(/compatible · dedicated · camera-model/)).toBeTruthy();
-    expect(screen.getByText(/Camera descriptions require a local VLM on the Nerva server/)).toBeTruthy();
-    expect(screen.getByText(/Unknown or training policies require separate model-data acknowledgment/)).toBeTruthy();
-    expect(screen.getByText(/does not enable camera capture, event description or remote destinations/)).toBeTruthy();
-    expect(screen.getByText(/does not replace household consent/)).toBeTruthy();
-  });
-
-  it('disables camera controls when shared role settings are unavailable', async () => {
-    mockFetch({ data_handling: { role_settings_readable: false, targets: [camera] } });
-    render(<PosturePanel />);
-    expect((await screen.findByRole('button', { name: 'Allow unattended use for Camera descriptions' })).disabled).toBe(true);
-    expect(screen.getByText(/Role consent settings unavailable/)).toBeTruthy();
-  });
-
-  it('preserves judge and Telegram controls when the camera target is absent', async () => {
-    mockFetch({ data_handling: { role_settings_readable: true, targets: [judge, media] } });
-    render(<PosturePanel />);
-    await screen.findByRole('button', { name: 'Revoke unattended use for Approval judge' });
-    expect(screen.getByRole('button', { name: 'Revoke unattended use for Telegram image descriptions' })).toBeTruthy();
-    expect(screen.queryByText('Camera descriptions')).toBeNull();
-    expect(screen.queryByRole('button', { name: /for Camera descriptions/ })).toBeNull();
-  });
-});
-
 describe('PosturePanel — separate video analysis consent', () => {
   it('sends the video role target and explains the separate approval', async () => {
     const target = { target_id: 'role:video_analysis', provider: 'openai-compatible', model: 'video-model',

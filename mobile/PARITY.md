@@ -142,8 +142,8 @@ H256 local update (2026-10-10): existing owner consent endpoints now refuse a
 damaged settings store before audit or grant/revoke. Their existing error path
 is retained; this adds no mobile consent or configuration-repair screen.
 
-Camera parity is read/search parity over the same bounded metadata API. Admin ONVIF onboarding is
-intentionally owner-HUD-only; native clients expose no discovery, frame, stream, or private URL.
+House Brain and Camera Intelligence (H30.5/H31.5) were removed 2026-11-25 by owner decision (`docs/decisions/2026-11-25-nerva-finish-line.md`): the native
+Home and Cameras tabs, their API clients and the `/api/house/*` and `/api/cameras/*` routes are gone.
 
 H063 gateway reset/index/stall policies are host/channel behavior, with no new
 mobile endpoint or lifecycle controls. Mobile HTTP chat keeps its existing
@@ -274,8 +274,6 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ✅ | H18.20 |
 | Media Director (O29, default-off) | `GET /api/media/devices`, `POST /api/media/devices`, `DELETE /api/media/devices/{device_id}`, `GET /api/media/session`, `POST /api/media/present`, `POST /api/media/restore/{device_id}` | ✅ | ✅ | H18.21 |
 | Local image generation (ComfyUI and configured images API, default-off) | `GET /api/media`, `POST /api/media/generate`, admin-only `GET /api/media/generation-tasks/{task_id}`, user-guarded `GET /api/media/generated/{artifact_id}` | ✅ Console → Build → Images: backend/model selection with per-backend edit/upscale capabilities, exact prompt, existing Inbox approval, one-task state, authenticated PNG preview/download and opt-in gallery; resume by task ID. Typed local API/ComfyUI history errors and proven cloud response failures stay distinct from uncertain outcomes; live service proof pending | 🟡 local candidate: exact-prompt local proposals, scoped task restoration, manual refresh, authenticated PNG preview and saved copy; shared reader distinguishes typed local API/ComfyUI history errors and narrowly proven cloud response failures, with no preview/resubmission; legacy/incomplete/ambiguous results stay uncertain and real-device/live-generator acceptance remains open | H18.27 / HA-4i-image / H517 |
-| House Brain (H30.5, default-off) | `GET /api/house/state`, `POST /api/house/control/{light,climate,security}`, admin-only `/api/house/security/{task_id}/{challenge,confirm}` | ✅ | ✅ | H30.5 |
-| Camera Intelligence (H31.5, default-off, metadata-only) | `GET /api/cameras/{status,events}`, `POST /api/cameras/search`, admin-only `POST /api/cameras/onvif/discover` | ✅ | ✅ | H31.5 |
 | Governed Capability Acquisition (H32.6, default-off) | user `GET /api/acquisition/{status,events}`; admin-only revoke, rollback, ledger export/purge | ✅ | ✅ | H32.6 |
 | Declared and active extension inspection (local V44/V46/V47) | user `GET /api/plugins/extensions`; offline host `nerva extensions doctor`, online `extensions list` | ✅ Build → Extensions read-only snapshot | ✅ Status → Extensions opt-in snapshot; user-token GET, connection/close fencing; live-device acceptance unverified | HA-4i-S1 |
 | Permission ledger (consent grants + revoke) | `GET /api/permissions`, `POST /api/permissions/{grant_id}/revoke` | ✅ | ⬜ | |
@@ -407,11 +405,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 > `ReadinessPanel` reads, plus the honest "harness pending — wired, not yet proven" note when
 > nothing has been VERIFIED yet. Read-only, matching the mobile-wide read-first pattern.
 
-> **H30.5 ✅ (delivered):** native House Brain parity is intentionally read-first: the Home tab
-> renders bounded rooms, devices, and pseudonymous presence, then hands governed work to the shared
-> Approvals inbox. Reversible and security proposals are visible there, but the security-device
-> challenge/confirmation ceremony stays on the owner HUD; the phone has no one-tap unlock/disarm
-> or admin confirmation endpoint.
+> **H30.5 (removed 2026-11-25):** the native House Brain tab was deleted with the house area.
 
 > **H32.6 ✅ (delivered):** native acquisition parity is intentionally read-only. The Acquire tab
 > shows lifecycle counts, reuse rate, signed sandbox-only package metadata, and bounded audit event
@@ -519,7 +513,7 @@ The optional governed image empty-retry budget is shown by the responsive-web
 composer before sending and by the local describe/screen panels. A changed budget
 invalidates old destination confirmations and unattended role grants. Native mobile
 has no editor or verified rendering for this server setting; native acceptance is
-still open. Existing camera and Telegram roles retain their local-only boundaries.
+still open. The existing Telegram role retains its local-only boundary.
 Native vision responses now prefer normalized visible text and can use structured
 reasoning when that text is absent, including thought text from Gemini video. The
 existing responsive-web answer surfaces receive this server-normalized text; no
@@ -548,10 +542,7 @@ descriptions with unknown or training policies. This acknowledgment neither gran
 remote image access nor changes household camera consent. Native role controls and
 live Telegram/device acceptance remain open.
 
-Responsive-web Trust also exposes the separate camera-description model-data role.
-Acknowledgment is independent of household consent and does not enable capture or
-remote inference. Native camera role controls, supported owner camera provisioning
-and live-device acceptance remain open.
+The camera-description model-data role was removed with camera intelligence (2026-11-25).
 
 
 Explicit OpenRouter image analysis (H277, 2026-10-02) is available through the

@@ -15,7 +15,7 @@
    - The fourth register reads feeds of its own (the record, the heartbeats), so it is mounted
      only while the viewport is that wide (§5.6: polled only while a page shows it). Without
      matchMedia (a test DOM) it is mounted and the stylesheet decides.
-   - Under the day register a quiet "More in Home · 10 pages" opens Home's other pages (§3.3):
+   - Under the day register a quiet "More in Home · 8 pages" opens Home's other pages (§3.3):
      Today has no contents column of its own. Below 1680px, where the day folds into its band, the
      same link ends the band and its list opens over the page (`popover`), so Home's pages are
      one click away at every width, not only through Ctrl K.
@@ -92,7 +92,7 @@ export function useMediaQuery(query: string, fallback: boolean): boolean {
   return matches;
 }
 
-/** "More in Home · 10 pages": Home's other pages behind a quiet link at the foot of the day
+/** "More in Home · 8 pages": Home's other pages behind a quiet link at the foot of the day
  *  register (§3.3), in the order of Home's contents. The list opens in place, or over the page
  *  (`popover`: at the end of the day band, where opening in place would push the registers down). */
 export function MoreInHome({ lang, navigate, popover = false }: { lang: Lang; navigate: (path: string) => void; popover?: boolean }) {

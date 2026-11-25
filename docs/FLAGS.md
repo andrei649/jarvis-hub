@@ -455,22 +455,6 @@ under the `llm.model_pull_max_gb` setting (`model_too_large`); one pull at a tim
 **Cost:** bandwidth and disk. Rollback is `ollama rm` (compensating, not automatic).
 **Revert:** unset; the route refuses `model_pull_disabled`.
 
-### `JARVIS_HESTIA_BRIDGE` · `JARVIS_WLED_URL`
-
-**Defaults: OFF · unset.**
-
-**`JARVIS_HESTIA_BRIDGE` ON:** `HestiaBridge.observe()` / `propose()` may run —
-observation is a strict-local snapshot with **aggregate occupancy only**, and every
-proposal becomes an ask-tier house task through `HouseActuator.request_*` →
-`govern_enqueue` (per-cycle, cooldown and daily caps in memory per process).
-**`JARVIS_WLED_URL`:** a LAN `http(s)` origin; unset ⇒ `wled_not_configured`. Writes
-are echo-verified (`"v": true`), unchanged scenes are a no-op, and an unreachable
-strip says `wled_unreachable` rather than guessing.
-**Both still require** `JARVIS_ACTION_KERNEL` + `JARVIS_UNIFIED_ACTION_API`: every
-`set_scene` crosses the kernel under the existing `house.control` kind, exactly like
-`HouseActuator.execute_task` (DENY → nothing sent, QUEUE → `approval_required`).
-**Revert:** unset either; nothing is driven.
-
 ### `JARVIS_WRITEBACK_LIVE` · `JARVIS_SOCIAL_LIVE` · `JARVIS_CALL_LIVE`
 
 **Defaults: all OFF.** These are the three *live rails*. OFF, each broker builds the
@@ -713,24 +697,19 @@ protection. See `agents/core/llm/data_handling.py` and the reported posture cove
 ### `security.data_training_role_ack` (H513 independent role consent)
 
 **Default: empty.** Admin Security Posture controls acknowledge one exact configured
-role: approval judge, Telegram image descriptions or camera descriptions. The
+role: approval judge or Telegram image descriptions. The
 finite `target` is added to the same audited acknowledgment API; provider grants
 and grants for another role never substitute for it. Generic settings/import/reset
 cannot create this permission. Unknown or training policies require acknowledgment;
 known-local policies do not. Warnings remain visible after a grant.
 
-**Risk and scope:** granting does not enable remote judging, remote image delivery,
-camera capture, event descriptions or household consent. Telegram and camera native
-VLM requests stay strictly on loopback. Custom camera endpoints remain unknown;
+**Risk and scope:** granting does not enable remote judging or remote image delivery.
+Telegram native VLM requests stay strictly on loopback;
 locality does not establish the server's data practices. Posture is pure metadata,
-not a probe or verification of provider terms. Unconfigured/disabled camera targets
-are omitted; camera provisioning remains separate H31 work.
+not a probe or verification of provider terms.
 
 **Revocation:** the role is checked before actual sends/retries and through awaited
-cleanup. The original household camera privacy lease is checked independently.
-Camera configuration uses the effective orchestrator settings view; changes become
-visible after its settings refresh, and an old cached runtime refuses changed
-configuration until rebuilt. Role revocation reads its durable store at dispatch.
+cleanup. Role revocation reads its durable store at dispatch.
 Neither mechanism recalls data already sent. Pure injected library adapters are
 not claimed to be universally mediated. See posture's current coverage statement.
 
@@ -741,7 +720,7 @@ control-character and non-ASCII values refuse. At 1, an image-bearing call insid
 the governed native vision scope may send the same prepared image/question to the
 same model once more after a structurally valid empty successful response. This
 covers the composer (including acknowledged remote use), local describe, screen
-reflex, unattended media reader and camera descriptions. Unguarded/direct backend
+reflex and unattended media reader. Unguarded/direct backend
 calls, ordinary text-only calls and injected library adapters gain no recovery.
 
 Enabled policy enters the frozen destination binding and unattended role scope.
@@ -1792,8 +1771,6 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `JARVIS_BROWSER_ALLOW_PRIVATE_URLS` | off (`browser_transport.py`) | `PinnedResolver` in `lan` mode; the driver route layer admits RFC1918/loopback literals | Governed browsing can reach house devices. Honest limit: `BrowserPolicy.domain_allowed` still runs `check_ssrf` in public mode, so end-to-end LAN browsing needs a `BrowserPolicy` lan mode too | Unset + restart: unpinned hosts fail at name resolution |
 | `JARVIS_COMPANY_MODE` | off (`autonomy/company_supervisor.py`) | Arms the work-run loop: one owner-approved goal worked across turns/reboots, ticked one governed step at a time | Sustained autonomous *sequencing*; authority is unchanged — every action still enters the approval queue, budgets (steps/seconds/deadline/interrupts) are hard, and only the judge can mark a run succeeded | Unset: every tick answers `disabled`; run rows remain as a record and are purged by a forget |
 | `JARVIS_MODEL_PULL` | off (`routers/model_setup.py`) | `POST /api/onboarding/model-pull` may reach `action:model.pull` | Bandwidth + disk; needs both posture flags, loopback Ollama, and stays under `llm.model_pull_max_gb`; rollback is a manual `ollama rm` | Unset: the route refuses `model_pull_disabled` |
-| `JARVIS_HESTIA_BRIDGE` | off (`house/hestia_bridge.py`) | Hestia may `observe()` (aggregate occupancy only) and `propose()` house tasks through `govern_enqueue` | Proposals land in the approval queue, capped per cycle/cooldown/day (in-memory, reset by a restart) | Unset + restart: no observation, no proposals |
-| `JARVIS_WLED_URL` | unset (`house/wled.py`) | Names a LAN `http(s)` WLED origin so orb state can drive the strip | Real light writes — still `house.control` through the kernel (DENY → nothing sent, QUEUE → `approval_required`); needs `JARVIS_ACTION_KERNEL` + `JARVIS_UNIFIED_ACTION_API` | Unset: `wled_not_configured`, nothing is sent |
 | `JARVIS_WRITEBACK_LIVE` | off (`writeback.py` `live_rail_enabled`) | APPROVED `writeback.*` / mapped `create_task` tasks perform the real Notion/GitHub/Calendar/Linear/Asana/Trello/Todoist/ClickUp/Sheets/M365 HTTP write | Real external writes after approval; refuses `credential_not_configured` without `<target>_token`; host allowlist asserted per send | Unset + restart: Null client, deferred/degraded results |
 | `JARVIS_SOCIAL_LIVE` | off (`social.py`) | `HttpSocialClient` posts/replies/DMs on X after approval | Real posts; needs secret `x_api_token`; Postiz path unaffected | Unset + restart: Null client |
 | `JARVIS_CALL_LIVE` | off (`autonomy/call_broker.py`) | `HttpCallClient` dials via Twilio/Telnyx after approval **and** within the interrupt budget | Real phone calls; refuses `credential_not_configured` / `call_config_missing:<keys>` before spending a budget slot; needs `JARVIS_CALL_CONFIG` | Unset + restart: Null client |
@@ -2052,7 +2029,7 @@ file or compose file needs no change. This page and the code keep the `JARVIS_` 
 - **Naming a variable works under either spelling too:** `--token-env NERVA_USER_TOKEN`,
   `NERVA_MCP_STDIO_ALLOWED_ENV=NERVA_HOME,NERVA_PROFILE` (the child receives
   `JARVIS_HOME` / `JARVIS_PROFILE`, exactly what the old spelling passes) and a
-  `${NERVA_HA_URL}` / `${env:NERVA_HA_URL}` reference in a setting.
+  `${NERVA_COMFYUI_URL}` / `${env:NERVA_COMFYUI_URL}` reference in a setting.
 - **References in a `.env`.** `${NAME}` and `${NAME:-default}` resolve under either
   spelling of a hub variable, from the environment first and the file's earlier lines
   second, in every layer, and (as python-dotenv always did) in every value, quoted or
@@ -2069,7 +2046,7 @@ file or compose file needs no change. This page and the code keep the `JARVIS_` 
      dollar sign as `${LITERAL_DOLLAR:-$}`.
 
   Everything else starts as before: a reference that is **defined** and blank, whatever
-  it builds (`HA_URL=` then `JARVIS_HA_URL=${HA_URL}`, a feature switched off; `PREFIX=`
+  it builds (`COMFY=` then `JARVIS_COMFYUI_URL=${COMFY}`, a feature switched off; `PREFIX=`
   then `JARVIS_LOG_FILE=${PREFIX}/var/log/hub.log`, an optional prefix), an address,
   allowlist, number or flag built from an unset reference (one warning names the
   variable), and any reference with a `:-default`. A path **written out** as the filesystem root (`JARVIS_FILE_ROOTS=/`)

@@ -1,6 +1,6 @@
-/* The local-only list includes hestia (PHASE_B_PLAN.md §5.3): the chat-history search reads the
+/* The local-only list (PHASE_B_PLAN.md §5.3): the chat-history search reads the
    hub's LOCAL_ONLY_AGENTS from signals/agents-policy.ts instead of its own hard-coded copy, so a
-   passage cited to hestia needs no cloud consent, as for frigga, ultron and howard. */
+   passage cited to frigga, ultron or howard needs no cloud consent. */
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
@@ -23,7 +23,7 @@ const transcript = { schema_version: 1, session_id: 'old', scope: 'retained_curr
     reference_revision: 'a'.repeat(64) }] };
 
 it.each([
-  ['hestia', true], ['frigga', true], ['ultron', true], ['howard', true], ['athena', false], ['jarvis', false],
+  ['frigga', true], ['ultron', true], ['howard', true], ['athena', false], ['jarvis', false],
 ])('treats %s as strictly local: %s', async (recipient, local) => {
   vi.mocked(apiPost).mockResolvedValue({ hits: [hit], truncated: false, stopped_by: null });
   vi.mocked(apiGet).mockResolvedValue(transcript);

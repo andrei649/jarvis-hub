@@ -181,7 +181,7 @@ async def test_all_backend_entrypoints_reject_changed_model_and_closed_scope(met
     assert getattr(raw, method).await_count == 1
 
 
-@pytest.mark.parametrize('agent', ['frigga', 'ultron', 'hestia'])
+@pytest.mark.parametrize('agent', ['frigga', 'ultron', 'howard'])
 def test_real_local_policy_rejects_cloud_pins(agent):
     router = router_fixture()
     router._select_backend_inner = HybridRouter._select_backend_inner.__get__(router)

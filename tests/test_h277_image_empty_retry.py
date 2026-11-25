@@ -10,17 +10,12 @@ import httpx
 import pytest
 
 from agents.core import settings_db
-from agents.core.cameras import vlm as camera_vlm
 from agents.core.channels.media_reader import InboundImageReader
 from agents.core.llm import vision_policy as vp
 from agents.core.llm import vlm
 from agents.core.llm.egress import llm_async_client
 from agents.core.llm.vision_retry import RETRY_NOTICE
 from agents.core.routers import composer_vision, multimodal
-from tests.test_h31_camera_pipeline import _event, _frame
-from tests.test_h513_camera_policy import grant as camera_grant
-from tests.test_h513_camera_policy import native as camera_native
-from tests.test_h513_camera_policy import state as camera_state
 from tests.test_h513_interactive_local_vision import PNG, invoke, rig
 from tests.test_h513_unattended_media_reader import grant as media_grant
 from tests.test_h513_unattended_media_reader import state as media_state
@@ -125,18 +120,6 @@ async def test_unattended_media_reader_recovers_under_role_grant(media_state, mo
     assert media_state.built[0].client.is_closed
 
 
-@pytest.mark.asyncio
-async def test_camera_description_recovers_under_role_grant(camera_state, monkeypatch):
-    monkeypatch.setenv("JARVIS_ROLE_VISION_EMPTY_RETRIES", "1")
-    camera_grant(camera_state)
-    sent = install_sequence(monkeypatch, camera_state.wire.built,
-                            [reply(""), reply('{"description":"An anonymous person is visible."}')])
-    out = await camera_native(camera_state).describe(_frame(), _event())
-    assert out == "An anonymous person is visible."
-    assert len(sent) == 2 and sent[0].content == sent[1].content
-    assert camera_state.wire.built[0].client.is_closed
-
-
 @pytest.mark.parametrize(("raw", "expected"), [
     (None, 0), ("", 0), ("   ", 0), ("0", 0), (" 1 ", 1),
 ])
@@ -181,18 +164,6 @@ async def test_media_grant_becomes_stale_when_budget_enabled(media_state, monkey
     assert RETRY_NOTICE in new.note and len(new.note) <= 500
     out = await InboundImageReader.from_env()(b"synthetic image")
     assert not out.ok and media_state.built == []
-
-
-@pytest.mark.asyncio
-async def test_camera_grant_becomes_stale_when_budget_enabled(camera_state, monkeypatch):
-    camera_grant(camera_state)
-    old = vp.describe_camera_data_target(camera_state.orch)
-    monkeypatch.setenv("JARVIS_ROLE_VISION_EMPTY_RETRIES", "1")
-    new = vp.describe_camera_data_target(camera_state.orch)
-    assert old.binding != new.binding
-    assert RETRY_NOTICE in new.note and len(new.note) <= 500
-    assert await camera_native(camera_state).describe(_frame(), _event()) is None
-    assert camera_state.wire.built == []
 
 
 @pytest.mark.asyncio

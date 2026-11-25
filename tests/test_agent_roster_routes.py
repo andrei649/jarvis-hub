@@ -277,7 +277,7 @@ def test_a_created_agent_retires_and_restores_and_jarvis_cannot_be_retired(http,
 def test_a_turn_for_a_retired_agent_goes_to_jarvis_on_both_chat_paths(http, hub, env, monkeypatch):
     """A retired agent's keyword rules no longer route to it: the turn is Jarvis's on the
     plain and the streaming chat path, no plugin is fetched on the retired agent's behalf,
-    and the same holds on the next boot. (Before, the keyword stage still picked friday or hestia,
+    and the same holds on the next boot. (Before, the keyword stage still picked friday or ultron,
     nobody live answered, and the reply was a hollow 'Done, sir.' or a false 'ran out of
     context'.)"""
     from agents.core.agent import Agent
@@ -289,7 +289,7 @@ def test_a_turn_for_a_retired_agent_goes_to_jarvis_on_both_chat_paths(http, hub,
     before = asyncio.run(hub.router.classify("what's the weather forecast", hub.agents))
     assert before.target_agents == ["friday"] and "weather" in before.context["keywords_found"]
 
-    for ident in ("friday", "hestia"):
+    for ident in ("friday", "ultron"):
         got = http.post(f"/api/admin/agents/{ident}/retire", json={"confirm": ident}, headers=HDR)
         assert got.status_code == 200, got.text
 
@@ -297,7 +297,7 @@ def test_a_turn_for_a_retired_agent_goes_to_jarvis_on_both_chat_paths(http, hub,
         intent = asyncio.run(orch.router.classify("what's the weather forecast", orch.agents))
         assert intent.target_agents == ["jarvis"] and intent.is_general
         assert "weather" not in intent.context.get("keywords_found", [])
-        deterministic = asyncio.run(orch.router.classify_deterministic("set the thermostat to 21", orch.agents))
+        deterministic = asyncio.run(orch.router.classify_deterministic("check the firewall", orch.agents))
         assert deterministic.target_agents == ["jarvis"]
 
     asked = []

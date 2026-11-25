@@ -46,9 +46,7 @@
    Why this is not a duplicate of anything shipped. GET /api/swarm/summary embeds the same
    presence snapshot (swarm.py:277-280), but the shipped SwarmPanel (gap.tsx) reads only
    agents/autonomy/missions/workflows/subagents/a2a/dev_locks and never touches `presence`.
-   The house presence panel in gap.tsx is agents/core/house/presence.py — per-room,
-   consent-gated occupancy, which autonomy/presence.py:1-23 explicitly disclaims any
-   relationship to. And the shipped COMMS inbox calls the SIBLING route
+   And the shipped COMMS inbox calls the SIBLING route
    /api/channels/inbox, which answers {"threads": []} both when the store is empty and when
    it is unbound (integrations.py:141-142) — so /api/channels/inbox/status carries the one
    flag that tells "nobody messaged you" apart from "nothing is being persisted".

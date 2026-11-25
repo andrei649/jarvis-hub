@@ -446,48 +446,6 @@ def unattended_media_request_scope(config, backend, *, resolve_config, frozen=No
         yield check
 
 
-def camera_vision_config(config):
-    from .vlm import VLMConfig
-    if config is None or not config.enabled:
-        raise VisionPolicyUnavailable('camera description disabled')
-    return VLMConfig('custom', config.endpoint, config.model, '', True)
-
-
-def camera_data_target(config):
-    identity = interactive_local_identity(camera_vision_config(config))
-    binding = ('camera-descriptions-v1', config.endpoint, config.model, config.enabled,
-               config.max_image_bytes, identity.binding)
-    return MediaDataTarget('role:camera_descriptions', identity.provider, config.model,
-                           'dedicated', identity.policy, _role_note(identity), binding)
-
-
-def describe_camera_data_target(role_context):
-    """Only explicit camera context resolves the pure configured role target."""
-    from agents.core.cameras.vlm import resolve_camera_vlm_config
-    try:
-        config = resolve_camera_vlm_config(role_context)
-        return camera_data_target(config) if config is not None else None
-    except Exception:
-        return None
-
-
-@contextmanager
-def unattended_camera_request_scope(config, backend, *, resolve_config, request_validity=None):
-    from .data_handling import authorize_role_target
-    frozen = interactive_local_identity(camera_vision_config(config))
-    target = camera_data_target(config)
-    def live_vision_config():
-        live = resolve_config()
-        if live != config:
-            raise VisionDestinationChanged('camera configuration changed')
-        return camera_vision_config(live)
-    with _native_request_scope(camera_vision_config(config), backend,
-            resolve_config=live_vision_config, frozen=frozen,
-            authorize=lambda: authorize_role_target(None, target, actual_use=False),
-            notice_purpose='role:camera_descriptions', request_validity=request_validity) as check:
-        yield check
-
-
 def public_origin(base_url):
     """Display only the configured scheme/host/port, never wire secrets or paths."""
     url = httpx.URL(base_url)

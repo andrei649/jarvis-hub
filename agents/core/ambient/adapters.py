@@ -1,4 +1,4 @@
-"""Allowlisted H30, H31, and legacy digital projections into AmbientEvent."""
+"""Allowlisted legacy digital projections into AmbientEvent."""
 
 from __future__ import annotations
 
@@ -6,11 +6,8 @@ import hashlib
 from collections.abc import Callable
 
 from agents.core.autonomy.observer import Signal
-from agents.core.cameras.feeds import CameraFeedEvent
-from agents.core.house.contracts import HouseEvent
 
 from .contracts import AmbientEvent, EventProvenance
-from .engine import AmbientEngine
 from .store import AmbientStore
 
 LEGACY_SOURCE_OWNERSHIP = (
@@ -21,52 +18,6 @@ LEGACY_SOURCE_OWNERSHIP = (
     {"source": "digital.finance", "legacy_owner": "EventWatcher", "ambient_adapter": "watcher.finance"},
     {"source": "digital.health", "legacy_owner": "EventWatcher", "ambient_adapter": "watcher.health"},
 )
-
-
-def house_event(event: HouseEvent, *, consent_generation: int) -> AmbientEvent:
-    if not isinstance(event, HouseEvent):
-        raise ValueError("ambient house adapter requires HouseEvent")
-    return AmbientEvent(
-        source="house",
-        schema="house.event.v1",
-        source_event_id=event.source_event_id,
-        subject_id=event.entity_id,
-        occurred_at=event.occurred_at,
-        observed_at=event.observed_at,
-        dedupe_key=event.dedupe_key,
-        provenance=EventProvenance(adapter="house.event", version=1),
-        attributes=(
-            ("event_type", event.event_type),
-            ("previous_state", event.previous_state),
-            ("current_state", event.current_state),
-        ),
-        privacy=event.privacy_class,
-        consent_generation=consent_generation,
-    )
-
-
-def camera_feed_event(event: CameraFeedEvent) -> AmbientEvent:
-    if not isinstance(event, CameraFeedEvent):
-        raise ValueError("ambient camera adapter requires CameraFeedEvent")
-    return AmbientEvent(
-        source="camera",
-        schema="camera.event.v1",
-        source_event_id=event.event_id,
-        subject_id=f"camera.{event.camera_id}",
-        occurred_at=event.occurred_at,
-        observed_at=event.observed_at,
-        dedupe_key=event.dedupe_key,
-        provenance=EventProvenance(adapter="camera.feed", version=1),
-        attributes=(
-            ("anonymous", True),
-            ("camera_id", event.camera_id),
-            ("confidence", event.confidence),
-            ("label", event.label),
-        ),
-        privacy="household",
-        consent_generation=event.consent_generation,
-        critical=False,
-    )
 
 
 def digital_signal_event(signal: Signal, *, observed_at: float, sequence: int) -> AmbientEvent:
@@ -97,22 +48,6 @@ def digital_signal_event(signal: Signal, *, observed_at: float, sequence: int) -
         consent_generation=0,
         critical=severity == "critical" and not signal.healthy,
     )
-
-
-class AmbientCameraFeedConsumer:
-    """Real H31 subscriber; every consume runs one bounded ambient tick."""
-
-    def __init__(self, engine: AmbientEngine) -> None:
-        if not isinstance(engine, AmbientEngine):
-            raise ValueError("ambient engine is required")
-        self._engine = engine
-
-    async def consume(self, event: CameraFeedEvent) -> None:
-        projected = camera_feed_event(event)
-        result = self._engine.submit(projected)
-        if result["status"] not in {"queued", "backpressured", "duplicate"}:
-            raise RuntimeError(str(result.get("reason") or "ambient_intake_failed"))
-        self._engine.process_tick()
 
 
 class SourceOwnershipManager:
@@ -180,10 +115,7 @@ class SourceOwnershipManager:
 
 
 __all__ = [
-    "AmbientCameraFeedConsumer",
     "LEGACY_SOURCE_OWNERSHIP",
     "SourceOwnershipManager",
-    "camera_feed_event",
     "digital_signal_event",
-    "house_event",
 ]

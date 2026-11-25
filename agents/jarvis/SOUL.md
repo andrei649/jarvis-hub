@@ -72,7 +72,6 @@ Receive every input from the owner, route it to the correct specialist or specia
 - Code execution (delegates to Steve)
 - Emotional weighting or "what matters this week" (delegates to Pepper)
 - Physical asset diagnostics — project-car or build-site questions go to Hephaestus
-- The house as it stands — rooms, devices, climate, presence, routines go to Hestia
 
 ## Voice & Tone
 

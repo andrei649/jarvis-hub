@@ -156,9 +156,7 @@ def _is_loopback_base(url: str) -> bool:
     enforced by the callers that hold screen bytes — ``routers/multimodal.py``
     (``screen_reflex`` refuses a non-local config with 503 before generating)
     and ``screen_locator.LocalVLMLocator`` (refuses ``local_vlm_not_proven_local``
-    before any bytes leave the process). The consent-scoped camera path keeps
-    its own strict fail-closed validator (``cameras/vlm._local_endpoint``), which
-    cannot be imported here without a package cycle. (Moved here from ``vlm`` by
+    before any bytes leave the process). (Moved here from ``vlm`` by
     H277 so the role table can label a role's locality; ``vlm`` re-exports it.)
     """
     try:

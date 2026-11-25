@@ -175,16 +175,6 @@ agents:
     plugins: [whatsapp-bridge]
     llm_policy: local
 
-  hestia:
-    name: Hestia
-    archetype: House Brain
-    status: active
-    tier: foundation
-    channel: local-only
-    heartbeat: "2h"
-    plugins: [homebridge, iot-control]
-    llm_policy: local
-
   howard:
     name: Howard
     archetype: Digital Twin / Archive

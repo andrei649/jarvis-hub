@@ -9,7 +9,7 @@
 ## 1. TL;DR / Orientation
 
 - Local-first multi-agent AI orchestration. Python 3.12 + FastAPI + LM Studio (port 1234).
-- 18 active agents (4 tiers, incl. Argus, Howard + Hestia), 14 bench agents (dormant, promotable at runtime).
+- 17 active agents (4 tiers, incl. Argus + Howard), 14 bench agents (dormant, promotable at runtime).
 - Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`); uvicorn binds on port 8080.
 - CLI REPL entry point: `agents/run.py` → `Orchestrator.handle_input`.
 - Everything routes through `agents/core/orchestrator.py:Orchestrator`.
@@ -501,9 +501,7 @@ under `agents/core/routers/<name>.py`.
 | `agents/core/support_bundle.py` | 0.55 design-partner diagnostic bundle (non-sensitive, allow-list) | `build_bundle` |
 | `agents/core/workflows/run_store.py` | 0.34 opt-in workflow run-history persistence (`JARVIS_WORKFLOW_PERSIST`) | `WorkflowRunStore` |
 | `agents/core/plugin_gate.py` | Per-agent plugin permission gate + CDX-11 least-privilege (`agents_served` wildcard withheld for external-write under hardening) | `PermissionGate.check_call`, `add_grant`, `least_privilege_from_env` |
-| `agents/core/house/` | H30 default-off Home Assistant adapter, private presence state, governed actuation, and room output | `HomeAssistantAdapter`, `HouseGraph`, `HouseActuator` |
-| `agents/core/cameras/` | H31 consent-bound Frigate events, privacy masks, local rules/VLM, encrypted vault, retrieval, and typed feeds | `CameraPrivacyPolicy`, `CameraIngestionService`, `CameraEventVault` |
-| `agents/core/ambient/` | H33 default-off declarative monitors over sanitized house/camera/digital events; durable debounce, health, journal, and source ownership | `AmbientEngine`, `MonitorRegistry`, `SourceOwnershipManager` |
+| `agents/core/ambient/` | H33 default-off declarative monitors over sanitized ambient/digital events; durable debounce, health, journal, and source ownership | `AmbientEngine`, `MonitorRegistry`, `SourceOwnershipManager` |
 
 ### Voice
 
@@ -637,8 +635,6 @@ Landed in `214bc5eb` (run `opus-integration`, PR #1039). Every runtime-visible m
 | `agents/core/routers/model_setup.py` | `GET /api/onboarding/model-plan` (tier card + plan, polled while a pull runs), `POST /api/onboarding/model-pull` via a request-scoped `CapabilityActionAPI` (kernel DENY → 403, QUEUE → 202) | `router` |
 | `agents/core/day_report.py` | Redacted, allow-listed, payload-free day report + Proof-of-Action receipts over the IntentLog; export writes under `data_path('reports')` through the kernel (kind `report.export`) | `build_day_report`, `render_report_html`, `DayReportExporter`, `EXPORT_CONTRACT`, `build_receipt`, `KIND` |
 | `agents/core/routers/report.py` | `GET /api/report/today` (`?format=html`), `POST /api/report/today/export`, `GET /api/report/receipt/{audit_id}` — all user-guarded | `router` |
-| `agents/core/house/hestia_bridge.py` | `HestiaBridge`: `observe()` (strict-local snapshot → shared `HouseGraph` projection + presence writer, aggregate occupancy only), `propose()` (explicit local rules → `HouseActuator.request_*` → kernel intake gate → `govern_enqueue`, agent `hestia`, ask floor, cooldown/daily caps), `ambient(state)` (orb state → strip). Flag `JARVIS_HESTIA_BRIDGE` | `HestiaBridge`, `from_orchestrator`, `observe`, `propose`, `ambient` |
-| `agents/core/house/wled.py` | H30.8 strict-local WLED ambient scenes mirroring the six orb states; **every** write is a `house.control` action through `CapabilityActionAPI`, echo-verified (`"v": true`), per-minute write budget, `wled_not_configured` / `wled_unreachable` named refusals. Flag `JARVIS_WLED_URL` | `WLEDBridge`, `WLED_SCENES`, `set_scene` |
 | `agents/core/mcp/http_transport.py` | Streamable HTTP client transport for MCP: POST JSON-RPC, `Mcp-Session-Id` capture/echo/release, negotiated `MCP-Protocol-Version`, JSON or SSE replies bounded to 256 events / 4 MiB, every byte through the SSRF-pinned `PluginHTTPClient`. Flag `JARVIS_MCP_HTTP_CLIENT` (default off) | `StreamableHttpTransport`, `SUPPORTED_TRANSPORTS`, `normalize_transport`, `transport_allowed` |
 | `agents/core/mcp/catalog.py` | G9 / H549 — the vendored Hermes MCP catalog (`agents/vendor/hermes/optional-mcps/`, 66 manifests, each re-checked against `MANIFEST.json`), Nerva's manifest reader, deep-link configs (32 KB, env values dropped, headers refused), the install plan and its digest, and the server secrets in the encrypted store (`mcp.secret.<server>.<NAME>`). Guide: `docs/MCP_CATALOG.md` | `load_catalog`, `resolve_plan`, `plan_digest`, `validate_inputs`, `store_secrets`, `secret_env_values` |
 | `agents/core/mcp/oauth_client.py` | G9 / H550, H692 — OAuth for a remote MCP server: RFC 9728 / 8414 discovery, DCR, PKCE, state + owner binding (hub callback cookie or relay), tokens in the secret store sent only to the server's origin, refresh (one per server), revocation on sign-out/remove, e-stop refusals | `start`, `complete`, `access_token`, `connect_headers`, `sign_out`, `status` |
@@ -867,7 +863,7 @@ never pull a strict-local agent to the cloud) → **(2)** `llm_policy` from the 
 
 | Policy | Agents |
 |--------|--------|
-| `local` | `frigga`, `ultron`, `howard`, `hestia` — never leave the machine; **fail closed** if local backend is down (no cloud fallback, ever) |
+| `local` | `frigga`, `ultron`, `howard` — never leave the machine; **fail closed** if local backend is down (no cloud fallback, ever) |
 | `claude` | `vision`, `steve`, `argus` (argus via registry) — Claude Sonnet via Anthropic API |
 | `cloud` | `athena` — Gemini flash via Gemini API |
 | `auto` | All others — local first, escalate on size/complexity |
@@ -1045,7 +1041,7 @@ Key env vars loaded at startup:
 
 ### Local-first rules
 
-- `frigga`, `ultron`, `howard`, `hestia` are `LOCAL_ONLY_AGENTS` in `hybrid_router.py` — never routed to cloud.
+- `frigga`, `ultron`, `howard` are `LOCAL_ONLY_AGENTS` in `hybrid_router.py` — never routed to cloud.
 - `frigga` has `cloud_fallback: false` in `agents.yaml` — hard rule.
 
 ### Skill/plugin loader patterns

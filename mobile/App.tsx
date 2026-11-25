@@ -9,9 +9,7 @@ import { AmbientScreen } from './src/screens/AmbientScreen';
 import { AcquisitionScreen } from './src/screens/AcquisitionScreen';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { CommsScreen } from './src/screens/CommsScreen';
-import { CameraScreen } from './src/screens/CameraScreen';
 import { CaptureScreen } from './src/screens/CaptureScreen';
-import { HouseScreen } from './src/screens/HouseScreen';
 import { MemoryScreen } from './src/screens/MemoryScreen';
 import { MediaScreen } from './src/screens/MediaScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
@@ -20,7 +18,7 @@ import { StatusScreen } from './src/screens/StatusScreen';
 import { TasksScreen } from './src/screens/TasksScreen';
 import { useThemeStyles, type Theme } from './src/theme';
 
-type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'ambient' | 'capture' | 'house' | 'cameras' | 'media' | 'acquisition' | 'comms' | 'skills' | 'status' | 'settings';
+type Tab = 'chat' | 'memory' | 'approvals' | 'tasks' | 'ambient' | 'capture' | 'media' | 'acquisition' | 'comms' | 'skills' | 'status' | 'settings';
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'chat', label: 'Chat', icon: '◉' },
@@ -29,8 +27,6 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'tasks', label: 'Tasks', icon: '▦' },
   { key: 'ambient', label: 'Watch', icon: '◉' },
   { key: 'capture', label: 'Capture', icon: '⎘' },
-  { key: 'house', label: 'Home', icon: '⌂' },
-  { key: 'cameras', label: 'Cameras', icon: '◫' },
   { key: 'media', label: 'Media', icon: '▷' },
   { key: 'acquisition', label: 'Acquire', icon: '⬡' },
   { key: 'comms', label: 'Comms', icon: '✉' },
@@ -47,8 +43,6 @@ const TITLES: Record<Tab, string> = {
   tasks: 'Tasks',
   ambient: 'Ambient Watch',
   capture: 'Capture Inbox',
-  house: 'House Brain',
-  cameras: 'Camera Intelligence',
   media: 'Media Director',
   acquisition: 'Capability Acquisition',
   comms: 'Comms',
@@ -75,8 +69,6 @@ function AppShell() {
         {tab === 'tasks' && <TasksScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'ambient' && <AmbientScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'capture' && <CaptureScreen onGoToSettings={() => setTab('settings')} />}
-        {tab === 'house' && <HouseScreen onGoToSettings={() => setTab('settings')} onGoToApprovals={() => setTab('approvals')} />}
-        {tab === 'cameras' && <CameraScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'media' && <MediaScreen onGoToSettings={() => setTab('settings')} onGoToApprovals={() => setTab('approvals')} />}
         {tab === 'acquisition' && <AcquisitionScreen onGoToSettings={() => setTab('settings')} />}
         {tab === 'comms' && <CommsScreen onGoToSettings={() => setTab('settings')} />}

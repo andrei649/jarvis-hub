@@ -40,11 +40,11 @@ WORKSPACE_OWNER = "7 of `docs/business/WORKSPACE_PILOT_SPEC.md`"
 OWNER = {
     "a2a": "08", "acquisition": "10 · 12", "actions": "07", "admin": "05 · 08",
     "agent-templates": "05", "agents": "02", "ambient": "12", "analytics": "09",
-    "arena": "10", "auth": "08", "autonomy": "07", "brain": "06", "browser": "12", "cameras": "12",
+    "arena": "10", "auth": "08", "autonomy": "07", "brain": "06", "browser": "12",
     "canvas": "05", "capabilities": "04", "capture": "09", "channels": "11",
     "coach": "05", "codeintel": "09", "cognition": "09", "context": "09", "cost": "09",
     "creative": "05", "dashboard": "05", "desktop": "06", "digest": "07", "eval": "10",
-    "feedback": "10", "files": "08", "health": "01", "house": "12", "ingestion": "09",
+    "feedback": "10", "files": "08", "health": "01", "ingestion": "09",
     "integrations": "11", "jobs": "07", "kg": "09", "learning": "07", "llm": "02", "local-docs": "09",
     "market": "05", "mcp": "08", "media": "12", "memory": "09", "mesh": "04",
     "metrics": "07", "missions": "07", "models": "02", "multimodal": "05", "nodes": "04",
@@ -272,7 +272,7 @@ def build() -> str:
     w("")
     w("**Pass C — payload-tier leak hunt.** For every `user`-tier and `open` route that returns a "
       "collection, read the body and ask: *does this contain anything the admin tier is meant to "
-      "gate?* (drafts, tool results, secrets, payloads, household identifiers, camera data). The "
+      "gate?* (drafts, tool results, secrets, payloads, household identifiers). The "
       "worked example is `GET /tasks`: it is user-tier while every `/autonomy/*` read is admin, so "
       "`format_task` (`agents/core/routers/dashboard.py`, BACKLOG **TASK-5**) strips `payload` and "
       "`result` on all three view paths — confirm both keys are **absent** from every task in "

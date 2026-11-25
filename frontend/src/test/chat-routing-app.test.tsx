@@ -880,17 +880,17 @@ it('says why a question was dropped, and that messages still go to the recipient
 });
 
 it('ends the line about a dropped question on Dismiss, or when the recipient changes', async () => {
-  const hestia = { id: 'hestia', name: 'Hestia', rosterSource: 'api', chat_routing: 'local', enabled: true };
-  liveRoster.agents = [...roster, hestia];
+  const howard = { id: 'howard', name: 'Howard', rosterSource: 'api', chat_routing: 'local', enabled: true };
+  liveRoster.agents = [...roster, howard];
   render(<App />);
   await screen.findByRole('combobox', { name: 'To' });
   const dropOnce = async (text: string) => {
-    liveRoster.agents = [...roster, hestia];
+    liveRoster.agents = [...roster, howard];
     await act(async () => { await liveRoster.refresh?.(); });
     await replyInFlight(text);
     runCommand('write to frigga', 'agent:write:frigga');
     await waitFor(() => expect(switchQuestion()).not.toBeNull());
-    liveRoster.agents = [roster[0], hestia];
+    liveRoster.agents = [roster[0], howard];
     await act(async () => { await liveRoster.refresh?.(); });
     expect(droppedLine()).not.toBeNull();
     await act(async () => { stream.release.forEach((release) => release()); });
@@ -902,8 +902,8 @@ it('ends the line about a dropped question on Dismiss, or when the recipient cha
   fireEvent.click(within(droppedLine()!).getByRole('button', { name: 'Dismiss' }));
   expect(droppedLine()).toBeNull();
   await dropOnce('Second reply');
-  fireEvent.change(picker(), { target: { value: 'hestia' } });
-  expect(picker().value).toBe('hestia');
+  fireEvent.change(picker(), { target: { value: 'howard' } });
+  expect(picker().value).toBe('howard');
   expect(droppedLine()).toBeNull();
   expect(sent.map((m) => m.agent)).toEqual(['jarvis', 'jarvis']);
 });
@@ -960,19 +960,19 @@ it('ends the line about a dropped question on a hands-free voice turn that is se
 });
 
 it('ends the line on a voice turn sent while another question is open, which goes to the recipient the head names and leaves that question open', async () => {
-  const hestia = { id: 'hestia', name: 'Hestia', rosterSource: 'api', chat_routing: 'local', enabled: true };
-  liveRoster.agents = [...roster, hestia];
+  const howard = { id: 'howard', name: 'Howard', rosterSource: 'api', chat_routing: 'local', enabled: true };
+  liveRoster.agents = [...roster, howard];
   render(<App />);
   await screen.findByRole('combobox', { name: 'To' });
   await replyInFlight('Keep going');
   runCommand('write to frigga', 'agent:write:frigga');
   await waitFor(() => expect(switchQuestion()).not.toBeNull());
-  liveRoster.agents = [roster[0], hestia];
+  liveRoster.agents = [roster[0], howard];
   await act(async () => { await liveRoster.refresh?.(); });
   expect(droppedLine()).not.toBeNull();
-  // a new question, for Hestia, asked while the reply is written; the reply then ends, unanswered
-  runCommand('write to hestia', 'agent:write:hestia');
-  await waitFor(() => expect(switchQuestion()?.getAttribute('data-recipient-switch')).toBe('hestia'));
+  // a new question, for Howard, asked while the reply is written; the reply then ends, unanswered
+  runCommand('write to howard', 'agent:write:howard');
+  await waitFor(() => expect(switchQuestion()?.getAttribute('data-recipient-switch')).toBe('howard'));
   await act(async () => { stream.release.forEach((release) => release()); });
   await waitFor(() => expect(reply()).toContain('Done'));
   expect(switchQuestion()?.getAttribute('data-recipient-switch-state')).toBe('ended');
@@ -983,7 +983,7 @@ it('ends the line on a voice turn sent while another question is open, which goe
   expect(sent[sent.length - 1]).toMatchObject({ message: 'Spoken while asked', agent: 'jarvis' });
   expect(head()).toBe('with Jarvis · Orchestrated');
   expect(picker().value).toBe('jarvis');
-  expect(switchQuestion()?.getAttribute('data-recipient-switch')).toBe('hestia');
+  expect(switchQuestion()?.getAttribute('data-recipient-switch')).toBe('howard');
   expect(droppedLine()).toBeNull();
 });
 

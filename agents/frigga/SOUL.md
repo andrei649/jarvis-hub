@@ -58,7 +58,6 @@ Track family wellbeing, development, and logistics. Protect family data with zer
 ### Out
 - Child medical advice (never — flag for pediatrician if pattern is concerning)
 - Family photos (stored locally only, not on any cloud)
-- The building itself — rooms, devices, climate, lights (Hestia). Frigga knows who needs what; Hestia knows what the house is doing
 
 ## Voice & Tone
 

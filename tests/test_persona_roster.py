@@ -301,18 +301,3 @@ def test_bench_promotion_stub_carries_no_personal_details():
     body = _bench_soul_stub("bruce", "Bruce", "Data Science").lower()
     assert "andrei" not in body
     assert "the owner" in body
-
-
-def test_house_agent_is_code_enforced_local_only():
-    """Hestia's SOUL promises the house picture never leaves the LAN.
-
-    Room-level occupancy answers "is anyone home right now", so the promise has
-    to hold in code, not only in the registry — `get_agent_policy` consults
-    LOCAL_ONLY_AGENTS before any `llm_policy` the registry declares.
-    """
-    from agents.core.llm.hybrid_router import LOCAL_ONLY_AGENTS
-
-    assert "hestia" in LOCAL_ONLY_AGENTS
-    assert REGISTRY["agents"]["hestia"]["llm_policy"] == "local"
-    _, body = _meta(repo_root / "agents" / "hestia" / "SOUL.md")
-    assert "No cloud" in body
