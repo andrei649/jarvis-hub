@@ -205,6 +205,24 @@ class TurnOutcomeCollector:
             self._failures += 1
             return True
 
+    def tool_activity_snapshot(self) -> dict | None:
+        """Counts for the ordinary reply while this measured turn is still open."""
+        with self._lock:
+            if not self._claimed or self._started_at is None or self._closed:
+                return None
+            return self._tool_counts()
+
+    def _tool_counts(self) -> dict:
+        """Both the stream and its stored reply take this snapshot under the turn lock."""
+        unknown = self._tool_attribution_unknown or self._tool_failure_unknown
+        return {
+            'proposed': self._proposed,
+            'queued': self._queued,
+            'executed': None if self._tool_attribution_unknown else self._executed,
+            'failures': None if unknown else self._failures,
+            'basis': 'unknown' if unknown else 'observed',
+        }
+
     def visible_output(self, piece: str) -> bool:
         with self._lock:
             if self._closed or type(piece) is not str:
@@ -300,15 +318,7 @@ class TurnOutcomeCollector:
                     'unanswered_tool_results': pending,
                 }
             if self._completion is not None or self._proposed or self._queued or self._executed or self._failures:
-                result['tools'] = {
-                    'proposed': self._proposed,
-                    'queued': self._queued,
-                    'executed': None if self._tool_attribution_unknown else self._executed,
-                    'failures': None if self._tool_attribution_unknown or self._tool_failure_unknown
-                                else self._failures,
-                    'basis': 'unknown' if self._tool_attribution_unknown or self._tool_failure_unknown
-                             else 'observed',
-                }
+                result['tools'] = self._tool_counts()
             if self._completion is not None:
                 resolved: set[str] = set()
                 pending: list[tuple[int, str, str]] = []

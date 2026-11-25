@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { AppState, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Text, TextInput } from './ThemedText';
@@ -15,7 +15,8 @@ type Review = { proof: SelectedReview; candidate: ImageCandidate; images: Select
   revision: number; generation: number; count: number };
 type Turn = NonNullable<ReturnType<Conversation['beginSelectedImage']>>;
 type Props = { config: ServerConfig; scope: string; connectionEpoch: number; sessionId: string | null;
-  agent: string; chat: Conversation; sending: boolean; onClose: () => void; onInspectHistory: () => void };
+  agent: string; chat: Conversation; sending: boolean; onClose: () => void; onInspectHistory: () => void;
+  draftPendingRef?: React.Ref<() => boolean> };
 const limited = <T,>(operation: Promise<T>, ms: number): Promise<T> => new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error('Selected image operation timed out')), ms);
   operation.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
@@ -39,7 +40,7 @@ function waitForActive(signal: AbortSignal): Promise<void> {
 
 /** Owner-only, explicit review/send surface. Exported picker data stays only in mounted memory. */
 export function SelectedImages({ config, scope, connectionEpoch, sessionId, agent, chat, sending,
-  onClose, onInspectHistory }: Props) {
+  onClose, onInspectHistory, draftPendingRef }: Props) {
   const { styles } = useThemeStyles(makeStyles);
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState<SelectedSnapshot[]>([]);
@@ -59,6 +60,8 @@ export function SelectedImages({ config, scope, connectionEpoch, sessionId, agen
   const pickerOpen = useRef(false);
   const pickerWait = useRef<AbortController | null>(null);
   const turn = useRef<Turn | null>(null);
+  useImperativeHandle(draftPendingRef, () => () => Boolean(prompt.length || images.length || handles.length
+    || pickerOpen.current || busy === 'prepare' || busy === 'send'), [prompt, images.length, handles.length, busy]);
 
   const revoke = useCallback((clearImages: boolean) => {
     ++generation.current;

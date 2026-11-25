@@ -24,11 +24,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import stat
 
 import pytest
 
 from agents.core.channels.pairing import ALLOWED, PENDING, UNKNOWN, SenderPairing
+from tests.private_file_permissions import assert_private_file
 
 CODE = "correct-horse-battery-staple"
 
@@ -296,7 +296,7 @@ def test_the_pairing_store_file_is_owner_only(store, store_path):
     """0644 on a default umask meant every account on the box could read the
     pairing state. Hashing the credentials does not excuse that."""
     store.set_code(CODE)
-    assert stat.S_IMODE(store_path.stat().st_mode) == 0o600
+    assert_private_file(store_path)
 
 
 def test_every_json_store_write_lands_owner_only(tmp_path):
@@ -306,10 +306,10 @@ def test_every_json_store_write_lands_owner_only(tmp_path):
 
     target = tmp_path / "anything.json"
     atomic_write_json(target, {"x": 1})
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert_private_file(target)
     # a rewrite over an existing file keeps it owner-only too
     atomic_write_json(target, {"x": 2})
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    assert_private_file(target)
 
 
 # ── shapes that must narrow rather than raise ────────────────────────────────
@@ -440,9 +440,7 @@ def test_the_payload_is_never_written_into_a_world_readable_file(tmp_path, monke
 
     atomic_write_json(target, {"code": {"salt": "s", "hash": "h"}})
 
-    assert stat.S_IMODE(target.stat().st_mode) == 0o600, (
-        "the payload was written into a file created with the default umask mode"
-    )
+    assert_private_file(target)
 
 
 def test_the_write_is_still_atomic_and_still_cleans_up_after_itself(tmp_path):

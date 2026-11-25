@@ -14,8 +14,9 @@ from tests.test_hermes_kanban_dispatcher import OWNER, create, fixture_runtime, 
 
 async def approve_cards(controller, orch, *agents):
     tids = [create(controller, assignee=agent) for agent in agents]
-    queued = (await controller.request(OWNER, limit=16))["queued"]
-    assert len(queued) == len(tids)
+    intake = await controller.request(OWNER, limit=16)
+    queued = intake["queued"]
+    assert len(queued) == len(tids), intake
     for row in queued:
         orch.autonomy_queue.transition(
             row["queue_id"], TaskStatus.APPROVED, decided_by="owner", decision="approve"
@@ -61,6 +62,108 @@ async def test_two_signed_workers_overlap_with_distinct_runs_and_permits(tmp_pat
     assert all(read(c, tid).status == "done" for tid in tids)
     assert all(orch.autonomy_queue.get(qid).status == "done" for qid in qids)
     assert current_context() is None and orch.autonomy._execution_context.get() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cap,overlap", [(2, True), (1, False)])
+async def test_late_signed_approval_fills_only_a_free_slot(tmp_path, monkeypatch, cap, overlap):
+    c, orch, settings, _, _ = fixture_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr("agents.core.autonomy.worker._PARALLEL_REFILL_SECONDS", 0.02)
+    limits = c._admission_limits
+    checked = []
+
+    def observed_limits(tier):
+        checked.append(tier)
+        return limits(tier)
+
+    monkeypatch.setattr(c, "_admission_limits", observed_limits)
+    settings.update({"llm.kanban_max_workers": 2, "llm.kanban_max_workers_per_agent": 1})
+    original = c.runner
+    first_id = create(c, assignee="jarvis")
+    second_id = create(c, assignee="reviewer")
+    queued = (await c.request(OWNER, limit=16))["queued"]
+    assert {row["task_id"] for row in queued} == {first_id, second_id}
+    qids = {row["task_id"]: row["queue_id"] for row in queued}
+    orch.autonomy_queue.transition(qids[first_id], TaskStatus.APPROVED,
+                                   decided_by="owner", decision="approve")
+    first_entered = asyncio.Event()
+    second_entered = asyncio.Event()
+    release_first = asyncio.Event()
+
+    async def runner(*args, **kwargs):
+        if kwargs["agent_id"] == "jarvis":
+            first_entered.set()
+            await release_first.wait()
+        else:
+            second_entered.set()
+        return await original(*args, **kwargs)
+
+    c.runner = runner
+    active_tick = asyncio.create_task(c.approved_tick())
+    try:
+        await asyncio.wait_for(first_entered.wait(), timeout=3)
+        settings["llm.kanban_max_workers"] = cap
+        orch.autonomy_queue.transition(qids[second_id], TaskStatus.APPROVED,
+                                       decided_by="owner", decision="approve")
+        if overlap:
+            await asyncio.wait_for(second_entered.wait(), timeout=3)
+            assert not release_first.is_set()
+        else:
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(second_entered.wait(), timeout=0.3)
+            assert len(checked) > 1
+    finally:
+        release_first.set()
+        await active_tick
+    if not overlap:
+        await c.approved_tick()
+    assert orch.autonomy_queue.get(qids[first_id]).status == "done"
+    assert orch.autonomy_queue.get(qids[second_id]).status == "done"
+
+
+@pytest.mark.asyncio
+async def test_late_approval_waits_for_autonomy_estop_to_clear(tmp_path, monkeypatch):
+    c, orch, settings, _, _ = fixture_runtime(tmp_path, monkeypatch)
+    monkeypatch.setattr("agents.core.autonomy.worker._PARALLEL_REFILL_SECONDS", 0.02)
+    settings.update({"llm.kanban_max_workers": 2, "llm.kanban_max_workers_per_agent": 1})
+    first_id = create(c, assignee="jarvis")
+    second_id = create(c, assignee="reviewer")
+    queued = (await c.request(OWNER, limit=16))["queued"]
+    qids = {row["task_id"]: row["queue_id"] for row in queued}
+    assert set(qids) == {first_id, second_id}
+    orch.autonomy_queue.transition(qids[first_id], TaskStatus.APPROVED,
+                                   decided_by="owner", decision="approve")
+    entered_first = asyncio.Event()
+    entered_second = asyncio.Event()
+    release_first = asyncio.Event()
+    original = c.runner
+
+    async def runner(*args, **kwargs):
+        if kwargs["agent_id"] == "jarvis":
+            entered_first.set()
+            await release_first.wait()
+        else:
+            entered_second.set()
+        return await original(*args, **kwargs)
+
+    c.runner = runner
+    active_tick = asyncio.create_task(c.approved_tick())
+    try:
+        await asyncio.wait_for(entered_first.wait(), timeout=3)
+        paused = [True]
+        monkeypatch.setattr("agents.core.estop.check_paused", lambda *_args: paused[0])
+        orch.autonomy_queue.transition(qids[second_id], TaskStatus.APPROVED,
+                                       decided_by="owner", decision="approve")
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(entered_second.wait(), timeout=0.2)
+        paused[0] = False
+        await asyncio.wait_for(entered_second.wait(), timeout=3)
+        assert not release_first.is_set()
+    finally:
+        release_first.set()
+        await active_tick
+    assert orch.autonomy_queue.get(qids[first_id]).status == "done"
+    assert orch.autonomy_queue.get(qids[second_id]).status == "done"
 
 
 @pytest.mark.asyncio

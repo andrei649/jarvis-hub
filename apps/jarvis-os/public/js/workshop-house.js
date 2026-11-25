@@ -86,6 +86,7 @@ export class HouseWorkshop {
       poolBackPalmsAndFlowers: false,
       poolLoungeChairs: false,
       showRoof: false,
+      roofVisibilityOverride: null,
       showRoomLabels: false,
       explodedLayers: false,
     };
@@ -138,9 +139,11 @@ export class HouseWorkshop {
     this.scene.add(this.sunLight);
 
     this.houseRoot = new THREE.Group();
+    this.houseRoot.name = "Pool Home Plan";
     this.scene.add(this.houseRoot);
 
     this.miniatureEnvGroup = new THREE.Group();
+    this.miniatureEnvGroup.name = "Desert diorama";
     this.scene.add(this.miniatureEnvGroup);
     this._buildMiniatureDesertEnvironment();
     this.miniatureEnvGroup.visible = false;
@@ -276,7 +279,9 @@ export class HouseWorkshop {
       roughness: 0.88,
       metalness: 0.02,
     });
+    sandMat.name = "Desert sand";
     const desertMesh = new THREE.Mesh(sandGeo, sandMat);
+    desertMesh.name = "Sculpted desert terrain";
     desertMesh.rotation.x = -Math.PI / 2;
     desertMesh.position.y = -0.12;
     desertMesh.receiveShadow = true;
@@ -284,6 +289,7 @@ export class HouseWorkshop {
 
     // Rustic Stone Perimeter Wall + Glowing Corner Lanterns
     const stoneMat = new THREE.MeshStandardMaterial({ color: 0xbba58b, roughness: 0.92 });
+    stoneMat.name = "Perimeter stone";
     const wallSpecs = [
       [0, 0.55, -10.8, 25.8, 1.1, 0.45], // North back wall
       [-12.8, 0.55, 0, 0.45, 1.1, 22.0], // West wall
@@ -292,6 +298,7 @@ export class HouseWorkshop {
     ];
     for (const [x, y, z, w, h, d] of wallSpecs) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), stoneMat);
+      m.name = "Perimeter stone wall";
       m.position.set(x, y, z);
       m.castShadow = true;
       m.receiveShadow = true;
@@ -304,6 +311,7 @@ export class HouseWorkshop {
       emissive: 0xffa94d,
       emissiveIntensity: 3.0,
     });
+    lanternMat.name = "Warm lantern glass";
     const pillarCoords = [
       [-12.8, -10.8],
       [12.8, -10.8],
@@ -314,11 +322,13 @@ export class HouseWorkshop {
     ];
     for (const [px, pz] of pillarCoords) {
       const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.45, 0.72), stoneMat);
+      pillar.name = "Stone lantern pillar";
       pillar.position.set(px, 0.72, pz);
       pillar.castShadow = true;
       this.miniatureEnvGroup.add(pillar);
 
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.36, 0.32), lanternMat);
+      lamp.name = "Glowing lantern";
       lamp.position.set(px, 1.62, pz);
       this.miniatureEnvGroup.add(lamp);
 
@@ -338,6 +348,7 @@ export class HouseWorkshop {
     ];
     for (const [tx, tz, sc] of pineSpots) {
       const pine = this._createPineTree(sc);
+      pine.name = "Desert pine";
       pine.position.set(tx, 0, tz);
       this.miniatureEnvGroup.add(pine);
     }
@@ -376,14 +387,27 @@ export class HouseWorkshop {
     wallGroup.add(cap);
 
     wallGroup.position.set(x, 0, z);
+    wallGroup.userData.floorFootprint = { x, z, w, d };
     parent.add(wallGroup);
     return wallGroup;
   }
 
   _rebuildArchitecture() {
-    while (this.houseRoot.children.length > 0) {
-      this.houseRoot.remove(this.houseRoot.children[0]);
-    }
+    const geometries = new Set();
+    const materials = new Set();
+    const textures = new Set();
+    this.houseRoot.traverse((object) => {
+      if (object.geometry) geometries.add(object.geometry);
+      for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+        if (!material) continue;
+        materials.add(material);
+        for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+      }
+    });
+    geometries.forEach((geometry) => geometry.dispose());
+    textures.forEach((texture) => texture.dispose());
+    materials.forEach((material) => material.dispose());
+    this.houseRoot.clear();
 
     this.stepGroups = {
       grounds: new THREE.Group(),
@@ -394,20 +418,25 @@ export class HouseWorkshop {
       roof: new THREE.Group(),
       warmLights: new THREE.Group(),
     };
+    Object.entries(this.stepGroups).forEach(([key, group]) => {
+      group.name = ({ grounds: "Grounds and floors", pool: "Pool terrace", walls: "Walls and garage", living: "Living, dining and kitchen", bedrooms: "Bedroom and bath", roof: "Roof", warmLights: "Interior lights" })[key];
+    });
     Object.values(this.stepGroups).forEach((g) => this.houseRoot.add(g));
 
     const isMini = this.viewMode === "miniature";
-    const extLiving = this.state.livingRoomExtraMeters * 0.55; // scaled cleanly
-    const extKitchen = this.state.kitchenExtraMeters * 0.45;
+    const extLiving = this.state.livingRoomExtraMeters;
+    const extKitchen = this.state.kitchenExtraMeters;
 
     this.wallMat = new THREE.MeshStandardMaterial({
       color: isMini ? 0xf3e7d3 : 0xf6f5f0,
       roughness: 0.78,
     });
+    this.wallMat.name = "Plaster walls";
     this.wallCapMat = new THREE.MeshStandardMaterial({
       color: isMini ? 0x2b211a : 0x1e293b,
       roughness: 0.5,
     });
+    this.wallCapMat.name = "Dark wall caps";
     this.windowGlassMat = new THREE.MeshStandardMaterial({
       color: 0x0f2922,
       roughness: 0.15,
@@ -415,13 +444,16 @@ export class HouseWorkshop {
       transparent: true,
       opacity: 0.78,
     });
+    this.windowGlassMat.name = "Window glass";
 
     // 1. GROUNDS & INTERIOR FLOOR SLAB
     const lawnMat = new THREE.MeshStandardMaterial({
       color: isMini ? 0x4f7f30 : 0x65b741,
       roughness: 0.88,
     });
+    lawnMat.name = "Lawn grass";
     const lawnSlab = new THREE.Mesh(new THREE.BoxGeometry(24.8, 0.28, 21.0), lawnMat);
+    lawnSlab.name = "Lawn slab";
     lawnSlab.position.set(0, -0.14, 0);
     lawnSlab.receiveShadow = true;
     this.stepGroups.grounds.add(lawnSlab);
@@ -432,6 +464,7 @@ export class HouseWorkshop {
       new THREE.BoxGeometry(17.6 + extKitchen, 0.14, 11.6 + extLiving),
       new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.65 })
     );
+    interiorFloor.name = "Interior tiled floor";
     interiorFloor.position.set(0.2 + extKitchen * 0.5, 0.07, 2.2 + extLiving * 0.5);
     interiorFloor.receiveShadow = true;
     this.stepGroups.grounds.add(interiorFloor);
@@ -441,6 +474,7 @@ export class HouseWorkshop {
       new THREE.BoxGeometry(6.4, 0.15, 6.6),
       new THREE.MeshStandardMaterial({ color: isMini ? 0xd6cfc4 : 0xe2e8f0, roughness: 0.8 })
     );
+    garageFloor.name = "Garage floor";
     garageFloor.position.set(5.8, 0.075, 5.4);
     garageFloor.receiveShadow = true;
     this.stepGroups.grounds.add(garageFloor);
@@ -465,6 +499,7 @@ export class HouseWorkshop {
       new THREE.BoxGeometry(15.6, 0.16, 5.4),
       new THREE.MeshStandardMaterial({ map: deckTex, roughness: 0.72 })
     );
+    poolDeck.name = "Pool deck";
     poolDeck.position.set(-0.2, 0.08, -6.2);
     poolDeck.receiveShadow = true;
     this.stepGroups.pool.add(poolDeck);
@@ -478,20 +513,26 @@ export class HouseWorkshop {
       transparent: true,
       opacity: 0.9,
     });
+    waterMat.name = "Pool water";
     const mainPool = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.18, 2.8), waterMat);
+    mainPool.name = "Swimming pool";
     mainPool.position.set(-1.2, 0.12, -6.8);
     const spaPool = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.24, 1.7), waterMat);
+    spaPool.name = "Spa pool";
     spaPool.position.set(-6.9, 0.16, -6.2);
     this.stepGroups.pool.add(mainPool, spaPool);
 
     // Lanai Patio Dining Set & Columns
     const teakMat = new THREE.MeshStandardMaterial({ color: 0x925c2c, roughness: 0.65 });
+    teakMat.name = "Teak furniture";
     const patioTable = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.55, 1.05), teakMat);
+    patioTable.name = "Patio dining table";
     patioTable.position.set(3.2, 0.42, -5.2);
     patioTable.castShadow = true;
     this.stepGroups.pool.add(patioTable);
 
     const colMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5 });
+    colMat.name = "White columns";
     for (const cx of [1.2, 4.2, 6.8]) {
       const col = new THREE.Mesh(new THREE.BoxGeometry(0.28, 2.5, 0.28), colMat);
       col.position.set(cx, 1.25, -6.5);
@@ -611,8 +652,10 @@ export class HouseWorkshop {
 
     if (this.state.garageCars || this.state.centeredDoorNoStairs) {
       const suv = this._createCar(0x2c4a63, true);
+      suv.name = "Garage SUV";
       suv.position.set(4.5, 0.14, 5.4);
       const sedan = this._createCar(0xf1efe9, false);
+      sedan.name = "Garage sedan";
       sedan.position.set(7.1, 0.14, 5.4);
       W.add(suv, sedan);
     }
@@ -620,14 +663,17 @@ export class HouseWorkshop {
     // 4. LIVING, DINING & KITCHEN FURNITURE
     const L = this.stepGroups.living;
     const sofaMat = new THREE.MeshStandardMaterial({ color: 0x8eaec4, roughness: 0.75 });
+    sofaMat.name = "Sofa upholstery";
     const rug = new THREE.Mesh(
       new THREE.BoxGeometry(3.6, 0.03, 4.2 + extLiving * 0.5),
       new THREE.MeshStandardMaterial({ color: 0xf5efe6, roughness: 0.92 })
     );
+    rug.name = "Living room rug";
     rug.position.set(-1.1, 0.16, 0.8 + extLiving * 0.35);
     L.add(rug);
 
     const sofaMain = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.68, 2.9), sofaMat);
+    sofaMain.name = "Living room sofa";
     sofaMain.position.set(0.15, 0.48, 0.8 + extLiving * 0.35);
     sofaMain.castShadow = true;
     const sofaBack = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.92, 2.9), sofaMat);
@@ -635,11 +681,13 @@ export class HouseWorkshop {
     L.add(sofaMain, sofaBack);
 
     const coffeeTable = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.38, 1.45), teakMat);
+    coffeeTable.name = "Coffee table";
     coffeeTable.position.set(-1.05, 0.34, 0.8 + extLiving * 0.35);
     coffeeTable.castShadow = true;
     L.add(coffeeTable);
 
     const chairMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.7 });
+    chairMat.name = "Armchair upholstery";
     for (const cz of [-1.1, 2.7 + extLiving * 0.65]) {
       const armchair = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.68, 0.88), chairMat);
       armchair.position.set(-1.1, 0.48, cz);
@@ -649,16 +697,20 @@ export class HouseWorkshop {
 
     // Dining Table + 6 Chairs
     const diningTable = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.74, 2.35), teakMat);
+    diningTable.name = "Dining table";
     diningTable.position.set(2.5, 0.5, 0.4);
     diningTable.castShadow = true;
     L.add(diningTable);
 
     // Waterfall Kitchen Island + Cabinetry
     const marbleMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.25 });
+    marbleMat.name = "White marble";
     const island = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.88, 3.1), marbleMat);
+    island.name = "Kitchen island";
     island.position.set(5.1, 0.58, -0.2);
     island.castShadow = true;
     const backCounter = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.88, 4.2), marbleMat);
+    backCounter.name = "Kitchen counter";
     backCounter.position.set(6.9 + extKitchen * 0.4, 0.58, -0.4);
     backCounter.castShadow = true;
     L.add(island, backCounter);
@@ -666,6 +718,7 @@ export class HouseWorkshop {
     // 5. BEDROOM & MASTER BATH FIXTURES
     const B = this.stepGroups.bedrooms;
     const bedFrame = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.52, 2.15), marbleMat);
+    bedFrame.name = "Bed frame";
     bedFrame.position.set(-7.1, 0.4, -1.4);
     bedFrame.castShadow = true;
     const blanket = new THREE.Mesh(
@@ -677,9 +730,11 @@ export class HouseWorkshop {
 
     // Soaking Tub & Dual Vanity
     const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.48, 0.58, 24), marbleMat);
+    tub.name = "Soaking tub";
     tub.scale.set(1, 1, 1.65);
     tub.position.set(-7.4, 0.42, 6.2);
     const vanity = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.82, 2.4), marbleMat);
+    vanity.name = "Bathroom vanity";
     vanity.position.set(-4.2, 0.54, 5.6);
     B.add(tub, vanity);
 
@@ -688,6 +743,7 @@ export class HouseWorkshop {
       new THREE.BoxGeometry(18.6 + extKitchen, 0.24, 13.4 + extLiving),
       new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.65, transparent: true, opacity: 0.92 })
     );
+    roofMesh.name = "Roof overhang";
     roofMesh.position.set(0.3 + extKitchen * 0.5, 2.75, 2.4 + extLiving * 0.5);
     this.stepGroups.roof.add(roofMesh);
     this.stepGroups.roof.visible = this.state.showRoof;
@@ -712,7 +768,7 @@ export class HouseWorkshop {
       this.stepGroups.walls.position.y = 2.2;
       this.stepGroups.living.position.y = 4.2;
       this.stepGroups.bedrooms.position.y = 4.2;
-      this.stepGroups.roof.visible = true;
+      this.stepGroups.roof.visible = this.state.roofVisibilityOverride ?? true;
       this.stepGroups.roof.position.y = 6.6;
     }
 
@@ -760,10 +816,12 @@ export class HouseWorkshop {
 
   unmount() {
     this.active = false;
+    this.sequence = (this.sequence || 0) + 1;
     document.getElementById("exploded-callout-layer").classList.add("hidden");
   }
 
   playInitialBuild(onStepProgress, onComplete, onMiniatureReady) {
+    const sequence = this.sequence = (this.sequence || 0) + 1;
     this.viewMode = "3d";
     this.miniatureReady = false;
     this._rebuildArchitecture();
@@ -789,7 +847,7 @@ export class HouseWorkshop {
     const labels = order.map((o) => o.label);
 
     const stepFn = () => {
-      if (!this.active) return;
+      if (!this.active || sequence !== this.sequence) return;
       const key = order[idx].key;
       if (key === "roof") {
         this.stepGroups.roof.visible = this.state.showRoof;
@@ -804,6 +862,7 @@ export class HouseWorkshop {
         if (onComplete) onComplete();
         // Background craft of the Photorealistic Miniature
         setTimeout(() => {
+          if (!this.active || sequence !== this.sequence) return;
           this.miniatureReady = true;
           if (onMiniatureReady) onMiniatureReady();
         }, 2100);
@@ -813,6 +872,7 @@ export class HouseWorkshop {
   }
 
   applyEdit(params = {}, onStepProgress, onComplete) {
+    const sequence = this.sequence = (this.sequence || 0) + 1;
     const steps = [];
 
     if (params.centerDoorRemoveStairs) {
@@ -840,9 +900,17 @@ export class HouseWorkshop {
       this.state.poolLoungeChairs = true;
       steps.push("Placing poolside sun loungers");
     }
-    if (params.toggleRoof) {
-      this.state.showRoof = !this.state.showRoof;
+    if (params.toggleRoof && typeof params.showRoof !== "boolean") {
+      this.state.showRoof = !this.stepGroups.roof.visible;
+      this.state.roofVisibilityOverride = this.state.showRoof;
       steps.push(this.state.showRoof ? "Closing modern overhang roof" : "Opening architectural cutaway");
+    }
+    if (typeof params.showRoof === "boolean") {
+      if (this.stepGroups.roof.visible !== params.showRoof) {
+        steps.push(params.showRoof ? "Showing the roof" : "Hiding the roof");
+      }
+      this.state.showRoof = params.showRoof;
+      this.state.roofVisibilityOverride = params.showRoof;
     }
     if (typeof params.showLabels === "boolean") {
       this.state.showRoomLabels = params.showLabels;
@@ -853,7 +921,11 @@ export class HouseWorkshop {
       steps.push(params.explodedHouse ? "Separating architectural layers" : "Reassembling floor plan slab");
     }
 
-    if (steps.length === 0) steps.push("Updating 3D architectural geometry");
+    if (steps.length === 0) {
+      if (onStepProgress) onStepProgress([], 0);
+      if (onComplete) onComplete();
+      return;
+    }
 
     this._rebuildArchitecture();
 
@@ -866,6 +938,7 @@ export class HouseWorkshop {
 
     let idx = 0;
     const next = () => {
+      if (!this.active || sequence !== this.sequence) return;
       if (onStepProgress) onStepProgress(steps, idx);
       idx++;
       if (idx < steps.length) setTimeout(next, 320);
@@ -875,6 +948,7 @@ export class HouseWorkshop {
   }
 
   setViewMode(mode) {
+    this.sequence = (this.sequence || 0) + 1;
     this.viewMode = mode === "miniature" ? "miniature" : "3d";
     this._rebuildArchitecture();
     if (this.viewMode === "miniature") {
@@ -892,9 +966,41 @@ export class HouseWorkshop {
     }
   }
 
+  projectSnapshot() {
+    return {
+      version: 1,
+      view: "house",
+      camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray() },
+      state: { mode: this.viewMode, ...this.state },
+    };
+  }
+
+  restoreProject(project) {
+    this.sequence = (this.sequence || 0) + 1;
+    this.cameraGoal = null;
+    this.viewMode = project.state.mode;
+    this.state = { ...project.state };
+    delete this.state.mode;
+    this._rebuildArchitecture();
+    this.miniatureReady = true;
+    this.camera.position.fromArray(project.camera.position);
+    this.controls.target.fromArray(project.camera.target);
+    this.controls.update();
+  }
+
   capturePNG() {
     this.renderer.render(this.scene, this.camera);
     return this.renderer.domElement.toDataURL("image/png");
+  }
+
+  roomLabels() {
+    return [
+      { name: "Master Suite", x: -6.2, z: -1.4, y: 1.4 },
+      { name: "Great Room", x: -0.8, z: 1.0 + this.state.livingRoomExtraMeters * 0.5, y: 1.4 },
+      { name: "Kitchen & Dining", x: 4.5 + this.state.kitchenExtraMeters * 0.5, z: 0, y: 1.4 },
+      { name: "Swimming Pool", x: -1.2, z: -6.8, y: 0.6 },
+      { name: "2-Car Garage", x: 5.8, z: 5.4, y: 1.4 },
+    ];
   }
 
   _updateRoomCallouts() {
@@ -906,19 +1012,11 @@ export class HouseWorkshop {
     layer.classList.remove("hidden");
     this.calloutSvg.innerHTML = "";
 
-    const rooms = [
-      { name: "Master Suite", pos: new THREE.Vector3(-6.2, 1.4, -1.4) },
-      { name: "Great Room", pos: new THREE.Vector3(-0.8, 1.4, 1.0) },
-      { name: "Kitchen & Dining", pos: new THREE.Vector3(4.5, 1.4, 0.0) },
-      { name: "Swimming Pool (11.5m × 4.8m)", pos: new THREE.Vector3(-1.2, 0.6, -6.8) },
-      { name: "2-Car Garage", pos: new THREE.Vector3(5.8, 1.4, 5.4) },
-    ];
-
     const w = window.innerWidth;
     const h = window.innerHeight;
     let html = "";
-    for (const r of rooms) {
-      const ndc = r.pos.clone().project(this.camera);
+    for (const r of this.roomLabels()) {
+      const ndc = new THREE.Vector3(r.x, r.y, r.z).project(this.camera);
       if (ndc.z > 1) continue;
       const sx = (ndc.x * 0.5 + 0.5) * w;
       const sy = (-ndc.y * 0.5 + 0.5) * h;

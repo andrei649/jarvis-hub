@@ -17,9 +17,27 @@ import html
 import logging
 import re
 
+from fastapi import Request
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("jarvis.web")
+
+
+async def read_bounded_body(request: Request, limit: int) -> bytes | None:
+    """Read at most limit bytes, including for requests sent without Content-Length."""
+    declared = request.headers.get("content-length", "")
+    if declared.isascii() and declared.isdigit():
+        try:
+            if int(declared) > limit:
+                return None
+        except ValueError:
+            return None
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > limit:
+            return None
+        body.extend(chunk)
+    return bytes(body)
 
 
 def nocache_json(content: dict, status_code: int = 200) -> JSONResponse:

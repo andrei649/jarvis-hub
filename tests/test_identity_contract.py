@@ -56,12 +56,39 @@ def test_the_contract_names_every_rule_the_row_accepted():
         assert rule in text, rule
 
 
+def test_shipped_system_language_rule_reaches_frigga_and_other_personas():
+    """The owner's named output language wins for replies and drafted material.
+
+    Assert the real system prompt, not just a document excerpt: Frigga's household
+    language default and another agent's technical language default cannot replace
+    the shared instruction. Local IDENTITY overrides retain their existing precedence.
+    """
+    contract = _contract().lower()
+    for agent_id in ("frigga", "steve"):
+        system = _agent(agent_id).system_prompt().lower()
+        assert system.startswith(contract), agent_id
+        language_at = contract.find("language")
+        assert language_at >= 0, "the shipped system needs an output-language rule"
+        language_lines = contract[language_at: language_at + 1000]
+        for term in ("explicit", "reply", "draft", "current", "quoted", "attachment"):
+            assert term in language_lines, f"shared system language rule lacks {term!r} for {agent_id}"
+        assert "persona" in language_lines, "the explicit request must outrank persona language defaults"
+
+
 def test_the_banned_exploration_line_is_absent_and_the_warning_is_kept():
     raw = SHIPPED.read_text(encoding="utf-8")
     sent = _contract().lower()
     assert "efficient in your exploration" not in sent and "explore less" not in sent
     assert 'never add "be targeted and efficient in your exploration"' in raw.lower()
     assert "<!--" not in sent and "maintainers" not in sent.lower()
+
+
+def test_default_frigga_grounds_household_details_in_owner_data(monkeypatch):
+    monkeypatch.setattr(agent_mod, "soul_path_for", lambda _: REPO / "agents" / "frigga" / "SOUL.md")
+    persona = _agent("frigga").soul["content"].lower()
+    assert "the small business run by the owner's partner" not in persona
+    assert "always loaded (local only)" not in persona
+    assert "household facts" in persona and "owner" in persona and "retrieved" in persona
 
 
 def test_the_repo_root_soul_mirrors_the_contract():

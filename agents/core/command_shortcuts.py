@@ -14,7 +14,7 @@ from typing import Any
 from . import quick_commands, settings_db
 from .channels.native_metadata import name_allowed
 from .commands import ALIASES, CommandRegistry
-from .skills import bundles, slash_load, switches
+from .skills import bundles, procedure_revision, slash_load, switches
 
 MAX_ROWS = 256
 MAX_SKILL_CANDIDATES = 512
@@ -45,7 +45,7 @@ def _quick_inventory() -> dict[str, Any]:
     return raw
 
 
-def project(registry: CommandRegistry, loader: Any, *, slots: int) -> Projection:
+def project(registry: CommandRegistry, loader: Any, *, slots: int, agent: str | None = None) -> Projection:
     """Return executable owner shortcuts, with registry/alias precedence reserved.
 
     The 512-skill ceiling bounds the resolver's full-pool scan for every skill.
@@ -138,7 +138,7 @@ def project(registry: CommandRegistry, loader: Any, *, slots: int) -> Projection
                 if taken(name):
                     collisions += 1
                     continue
-                if loader.catalog_gate(skill):
+                if loader.catalog_gate(skill, agent):
                     continue
                 inv = slash_load.resolve("/" + name, loader, taken=taken)
                 if inv is None or inv.problem or inv.skill_name != raw:
@@ -150,7 +150,10 @@ def project(registry: CommandRegistry, loader: Any, *, slots: int) -> Projection
             if len(rows) >= slots:
                 truncated = True
                 break
-            rows.append(_row("skill", name, f"/{name}"))
+            row = _row("skill", name, f"/{name}")
+            if agent and procedure_revision.candidate(loader, skill, agent):
+                row["editable_procedure"] = True
+            rows.append(row)
     finally:
         switches.reset_turn_channel(token)
     if collisions:

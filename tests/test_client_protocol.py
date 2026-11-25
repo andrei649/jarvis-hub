@@ -78,20 +78,22 @@ def test_openapi_schemas_media_and_handler_gaps_are_honest():
         stream["stream_events"]["end"]
     )
     schemas = payload["components"]["schemas"]
-    # ChatAttachment: G11 review M2's editor content beside the prompt (ChatRequest.attachments).
     assert set(schemas) == {
         "ChatRequest", "ChatAttachment", "ChatResponse", "TurnNotice", "TurnOutcome", "TurnCompletion",
-        "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation", "TurnRecall", "TurnUsageDetail",
+        "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation", "TurnRecall", "TurnUsageDetail", "ModelCall",
+        "HistoryReference", "BoardReference", "BoardSource",
     }
-    assert schemas["ChatRequest"] == source["components"]["schemas"]["ChatRequest"]
-    assert schemas["ChatAttachment"] == source["components"]["schemas"]["ChatAttachment"]
+    for name, schema in schemas.items():
+        assert schema == source["components"]["schemas"][name]
     assert schemas["ChatAttachment"]["additionalProperties"] is False
     assert set(schemas["ChatAttachment"]["required"]) == {"name", "text"}
-    assert schemas["ChatResponse"] == source["components"]["schemas"]["ChatResponse"]
-    assert schemas["TurnNotice"] == source["components"]["schemas"]["TurnNotice"]
-    for name in ("TurnOutcome", "TurnCompletion", "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation",
-                 "TurnRecall", "TurnUsageDetail"):
-        assert schemas[name] == source["components"]["schemas"][name]
+    receipt_fields = {"board", "task_id", "source", "sha256"}
+    assert set(schemas["BoardSource"]["properties"]) == receipt_fields
+    assert set(schemas["BoardReference"]["required"]) == receipt_fields | {"excerpt"}
+    assert schemas["HistoryReference"]["properties"]["allow_cloud"]["default"] is False
+    assert schemas["ChatRequest"]["properties"]["allow_board_cloud"]["default"] is False
+    assert set(schemas["ModelCall"]["required"]) == {"provider", "model"}
+    assert set(schemas["ModelCall"]["properties"]) == {"provider", "model"}
     # H220: current-turn usage preserves uncertainty and qualified cost provenance.
     detail = schemas["TurnUsageDetail"]["properties"]
     assert set(detail) == {

@@ -134,6 +134,7 @@ type KanbanMessages = {
   noDescription: string
   result: string
   latestSummary: string
+  noRecordedResult: string
   dependencies: string
   blockedBy: string
   blocks: string
@@ -353,6 +354,7 @@ export const en: KanbanMessages = {
   noDescription: 'No description yet.',
   result: 'Result',
   latestSummary: 'Latest summary',
+  noRecordedResult: 'No result recorded',
   dependencies: 'Dependencies',
   blockedBy: 'Blocked by',
   blocks: 'Blocks',
@@ -566,6 +568,7 @@ const ja: KanbanMessages = {
   noDescription: 'まだ説明はありません。',
   result: '結果',
   latestSummary: '最新のサマリー',
+  noRecordedResult: '記録された結果はありません',
   dependencies: '依存関係',
   blockedBy: 'ブロック元',
   blocks: 'ブロック先',
@@ -778,6 +781,7 @@ const zh: KanbanMessages = {
   noDescription: '暂无描述。',
   result: '结果',
   latestSummary: '最新摘要',
+  noRecordedResult: '未记录结果',
   dependencies: '依赖关系',
   blockedBy: '受阻于',
   blocks: '阻塞',
@@ -988,6 +992,7 @@ const zhHant: KanbanMessages = {
   noDescription: '尚無描述。',
   result: '結果',
   latestSummary: '最新摘要',
+  noRecordedResult: '未記錄結果',
   dependencies: '相依關係',
   blockedBy: '受阻於',
   blocks: '阻擋',

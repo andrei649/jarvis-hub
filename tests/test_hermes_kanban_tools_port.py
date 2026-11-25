@@ -61,6 +61,33 @@ async def test_real_rpc_durable_create_comment_attach_show_complete(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_rpc_office_attach_rejects_invalid_payloads_before_storage(tmp_path):
+    server = server_for(tmp_path)
+    tid = (await call(server, "kanban_create", {"title": "synthetic export", "assignee": "jarvis"}))["task_id"]
+    base = {"task_id": tid, "filename": "report.docx"}
+    for payload in (
+        {},
+        {"office": {"format": "docx", "text": "okay"}, "content_base64": "eA=="},
+        {"office": {"format": "docx", "text": "okay", "path": "secret"}},
+        {"office": {"format": "pdf", "text": "okay"}},
+        {"office": {"format": "docx", "text": ""}},
+        {"office": {"format": "xlsx", "rows": [["x"]]}},
+        {"office": {"format": "docx", "text": "okay"}, "content_type": "text/plain"},
+    ):
+        assert (await call(server, "kanban_attach", {**base, **payload}))["ok"] is False
+    with kanban_scope(KanbanContext(tmp_path, "jarvis", can_mutate=True)), kb.connect_closing() as conn:
+        own = kb.create_task(conn, title="own", assignee="jarvis")
+        other = kb.create_task(conn, title="other", assignee="jarvis")
+        run = kb.claim_task(conn, own)
+    with kanban_scope(KanbanContext(tmp_path, "jarvis", task_id=own, run_id=run.current_run_id, can_mutate=True)):
+        assert (await call(server, "kanban_attach", {"task_id": other, "filename": "no.docx",
+                                                     "office": {"format": "docx", "text": "no"}}))["ok"] is False
+    with kanban_scope(KanbanContext(tmp_path, "jarvis", can_mutate=True)), kb.connect_closing() as conn:
+        assert kb.list_attachments(conn, tid) == []
+        assert kb.list_attachments(conn, other) == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("owner,enabled", [(False, True), (True, False)])
 async def test_non_owner_or_disabled_calls_do_not_create_state(tmp_path, owner, enabled):
     answer = await call(server_for(tmp_path, owner=owner, enabled=enabled), "kanban_create",

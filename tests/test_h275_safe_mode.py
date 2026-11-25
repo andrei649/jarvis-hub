@@ -656,7 +656,7 @@ def test_no_gate_reads_the_flag():
 
 def test_every_reader_of_the_flag_only_leaves_something_out():
     """The one list of modules that read it; a new reader has to be added here, on purpose."""
-    readers = sorted(str(p.relative_to(REPO)) for p in (REPO / "agents").rglob("*.py")
+    readers = sorted(p.relative_to(REPO).as_posix() for p in (REPO / "agents").rglob("*.py")
                      if "safe_mode" in p.read_text(encoding="utf-8") and p.name != "safe_mode.py")
     assert readers == sorted([
         # H227: the inspector's status line and `nerva inspect` only report the flag.
@@ -706,6 +706,7 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/memory_tool.py",
         # H422: GET /api/memory only reports that safe mode keeps the curated memory out.
         "agents/core/routers/memory_kg.py",
+        "agents/core/routers/dashboard.py",  # safe mode refuses saving a chat fact
         # G12: the OpenAI-compatible API is a door the owner opened; safe mode keeps it shut.
         "agents/core/openai_api/policy.py",
         "agents/core/orchestrator.py",

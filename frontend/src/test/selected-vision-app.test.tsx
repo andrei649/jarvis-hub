@@ -5,7 +5,15 @@ import App from '../app';
 
 vi.mock('../voice',()=>({useVoice:()=>({active:false,toggle:()=>{}})}));
 vi.mock('../mesh',()=>({NeuralMesh:({onSelect}:any)=><><button onClick={()=>onSelect('frigga')}>Select Frigga</button><button onClick={()=>onSelect('jarvis')}>Select Jarvis</button></>,isExecutingAgent:()=>false}));
-vi.mock('../api/loaders',()=>({loadJarvisData:async()=>({}),createLatestRefreshRunner:()=>({refresh:()=>{},stop:()=>{}})}));
+vi.mock('../api/loaders',()=>({
+  loadJarvisData:async()=>({agents:[
+    {id:'jarvis',name:'Jarvis',rosterSource:'api',enabled:true},
+    {id:'frigga',name:'Frigga',rosterSource:'api',enabled:true},
+  ],ticker:[],tasks:[],calendar:[],heartbeat:[],decisions:[],weather:null,
+    sys:null,live:true,serverUp:true,sources:{agents:true,tasks:false,trust:false},
+    llm:{state:'unknown',model:null,residents:[]},trust:{mic:'on',strict_local:false}}),
+  createLatestRefreshRunner:({loadData,commitData}:any)=>({refresh:async()=>commitData(await loadData()),stop:()=>{}}),
+}));
 vi.mock('../api/live',()=>({PREVIEW_MODE_LIVE_KEYS:{},useLiveModes:()=>({live:{}})}));
 vi.mock('../analytics',()=>({initAnalytics:()=>{},trackPageview:()=>{}}));
 vi.mock('../gap',()=>({FirstRunGate:()=>null}));

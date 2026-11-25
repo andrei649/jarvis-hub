@@ -45,7 +45,7 @@ function needsOwnerSession(method: string): boolean {
  * It shares the HUD's header credentials, but never prompts, follows redirects,
  * or retries a mutation. Callers bound and validate the response body. */
 export function apiFetchOnce(path: string, opts: {
-  method?: 'GET' | 'POST'; body?: unknown; admin?: boolean; signal?: AbortSignal; accept?: string;
+  method?: 'GET' | 'POST' | 'DELETE'; body?: unknown; admin?: boolean; signal?: AbortSignal; accept?: string;
 } = {}): Promise<Response> {
   if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || /[\u0000-\u0020\u007f]/.test(path)) {
     return Promise.reject(new Error('same-origin path required'));
@@ -58,17 +58,42 @@ export function apiFetchOnce(path: string, opts: {
     redirect: 'error', credentials: 'same-origin', cache: 'no-store' });
 }
 
+/** One-attempt, same-origin Office preview. The raw file carries no local name or path. */
+export async function apiPostOfficePreview(file: File, kind: 'docx' | 'xlsx', signal: AbortSignal, offset = 0): Promise<Response> {
+  if (needsOwnerSession('POST')) await loadOwnerSession();
+  const headers = buildHeaders(false, 'POST');
+  headers['Content-Type'] = 'application/octet-stream';
+  return fetch(appUrl(`/api/canvas/office-preview?kind=${kind}${offset ? `&offset=${offset}` : ''}`), {
+    method: 'POST', headers, body: file, signal, redirect: 'error',
+    credentials: 'same-origin', cache: 'no-store',
+  });
+}
+
+/** One-attempt Blender inspection: raw bytes only, with the same owner write protections. */
+export async function apiPostBlenderPreview(file: File, signal: AbortSignal): Promise<Response> {
+  if (needsOwnerSession('POST')) await loadOwnerSession();
+  const headers = buildHeaders(true, 'POST');
+  headers['Content-Type'] = 'application/octet-stream';
+  return fetch(appUrl('/api/canvas/blender-preview'), {
+    method: 'POST', headers, body: file, signal, redirect: 'error',
+    credentials: 'same-origin', cache: 'no-store',
+  });
+}
+
 let _prompted = false;
+
+type ReadOptions = { admin?: boolean; cache?: RequestCache; redirect?: RequestRedirect };
 
 async function request(
   method: string,
   path: string,
   body?: unknown,
-  opts: { admin?: boolean; signal?: AbortSignal; _retried?: boolean } = {},
+  opts: ReadOptions & { signal?: AbortSignal; _retried?: boolean } = {},
 ): Promise<Response> {
   // Awaited only when needed: on loopback the fetch still starts synchronously.
   if (needsOwnerSession(method)) await loadOwnerSession();
-  const init: RequestInit = { method, headers: buildHeaders(opts.admin, method), signal: opts.signal };
+  const init: RequestInit = { method, headers: buildHeaders(opts.admin, method), signal: opts.signal, credentials: 'same-origin',
+    cache: opts.cache, redirect: opts.redirect };
   if (body !== undefined) {
     (init.headers as Record<string, string>)['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
@@ -162,7 +187,7 @@ function failWithBody(method: string, path: string, status: number, body: unknow
     (review of #1321). Every other refusal is still recorded and thrown. */
 export type AcceptRefusal = (status: number, body: unknown) => boolean;
 
-export async function apiGet<T = unknown>(path: string, opts?: { admin?: boolean }): Promise<T> {
+export async function apiGet<T = unknown>(path: string, opts?: ReadOptions): Promise<T> {
   const res = await request('GET', path, undefined, opts);
   if (!res.ok) {
     // The refusal body rides along (`err.body`), as it does for a mutation: a caller can
@@ -185,6 +210,45 @@ export async function apiGetBlob(path: string, opts?: { admin?: boolean }): Prom
     throw Object.assign(new Error(`GET ${path} -> ${res.status}`), { status: res.status, body });
   }
   return res.blob();
+}
+
+/** Same guarded write path as apiPost, for the Canvas Office export's binary response. */
+export async function apiExportOffice(body: { format: 'docx'; text: string } | { format: 'xlsx'; rows: string[][] }): Promise<Blob> {
+  const res = await request('POST', '/api/canvas/export', body);
+  if (!res.ok) await failMutation('POST', '/api/canvas/export', res);
+  const expected = body.format === 'docx'
+    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (res.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase() !== expected) {
+    throw new Error('unexpected Office export response');
+  }
+  return res.blob();
+}
+
+/** Export owner-reviewed OBJ as a native Blender project, without storing the source. */
+export async function apiExportBlender(source: string): Promise<Blob> {
+  if (needsOwnerSession('POST')) await loadOwnerSession();
+  const headers = buildHeaders(true, 'POST');
+  headers.Accept = 'application/x-blender';
+  headers['Content-Type'] = 'text/plain; charset=utf-8';
+  const res = await fetch(appUrl('/api/canvas/blender-export'), {
+    method: 'POST', headers, body: source, credentials: 'same-origin',
+    cache: 'no-store', redirect: 'error',
+  });
+  if (!res.ok) await failMutation('POST', '/api/canvas/blender-export', res);
+  if (res.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase() !== 'application/x-blender'
+      || !/^attachment;\s*filename="?[\w .-]+\.blend"?$/i.test(res.headers.get('Content-Disposition') || '')) {
+    throw new Error('unexpected Blender export response');
+  }
+  const blob = await res.blob();
+  if (!blob.size || blob.size > 64 * 1024 * 1024) throw new Error('invalid Blender project');
+  const header = new Uint8Array(await blob.slice(0, 17).arrayBuffer());
+  const headerText = new TextDecoder('ascii').decode(header);
+  const native = /^BLENDER[_-][vV][0-9]{3}$/.test(headerText.slice(0, 12))
+    || /^BLENDER[0-9]{2}-[0-9]{2}[vV][0-9]{4}$/.test(headerText);
+  const zstd = header.length >= 4 && header[0] === 0x28 && header[1] === 0xb5 && header[2] === 0x2f && header[3] === 0xfd;
+  if (!native && !zstd) throw new Error('invalid Blender project');
+  return blob;
 }
 
 /** H162 review m4 — a large download that never sits whole in the page's memory.
@@ -247,7 +311,8 @@ export async function postStream(
   opts: { admin?: boolean; signal?: AbortSignal } = {},
 ): Promise<void> {
   const res = await request('POST', path, body, opts);
-  if (!res.ok || !res.body) throw Object.assign(new Error(`stream ${path} -> ${res.status}`), { status: res.status });
+  if (!res.ok) await failMutation('POST', path, res);
+  if (!res.body) throw Object.assign(new Error(`stream ${path} -> ${res.status}`), { status: res.status });
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '';

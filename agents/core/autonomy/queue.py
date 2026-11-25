@@ -5593,7 +5593,7 @@ class TaskQueue:
         return [_delegation_row(dict(r)) for r in rows]
 
     def runnable(self, limit: int = 10, max_tier: Optional[int] = None, *,
-                 task_id: int | None = None) -> list[Task]:
+                 task_id: int | None = None, kind: str | None = None) -> list[Task]:
         """Approved tasks that have not exhausted their retry budget.
 
         `max_tier` (optional) caps the risk tier — the night shift passes 1 to
@@ -5615,6 +5615,9 @@ class TaskQueue:
         if task_id is not None:
             clause += " AND id=?"
             params.append(task_id)
+        if kind is not None:
+            clause += " AND kind=?"
+            params.append(kind)
         params.append(limit)
         with self._lock:
             rows = self._conn.execute(

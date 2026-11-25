@@ -50,6 +50,7 @@ export interface AgentResp {
   status?: string;
   model?: string;
   enabled?: boolean;
+  chat_routing?: 'orchestrated' | 'local' | 'cloud_only' | 'cloud_preferred' | 'claude_preferred' | 'auto' | null;
   has_heartbeat?: boolean;
   tier?: string;
   role?: string;

@@ -57,6 +57,10 @@ class _RequestGuard:
 _physical_guard: ContextVar[_RequestGuard | None] = ContextVar("h513_physical_request_guard", default=None)
 
 
+def physical_request_guard_active() -> bool:
+    return _physical_guard.get() is not None
+
+
 @contextmanager
 def physical_request_scope(check, *, request_check=None):
     """Bind a routed call's guard, never mutate the shared backend/client.
@@ -98,7 +102,9 @@ def auxiliary_request_scope(router, backend, model, *, role, request_check=None)
                          principal=principal, origin=DEFAULT_ACTION_ORIGIN)
 
     check()
-    with physical_request_scope(check, request_check=request_check):
+    from .request_context import without_primary_ollama
+
+    with without_primary_ollama(), physical_request_scope(check, request_check=request_check):
         yield
 
 

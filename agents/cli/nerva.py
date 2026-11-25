@@ -2273,9 +2273,34 @@ def _editor_failure(exc: OSError) -> str:
 
     if isinstance(exc, FileNotFoundError):
         return "not found"
-    if isinstance(exc, PermissionError) or exc.errno == errno.ENOEXEC or getattr(exc, "winerror", None) == 193:
+    # Windows can report either a bad image (193) or an incompatible machine type (216).
+    if isinstance(exc, PermissionError) or exc.errno == errno.ENOEXEC or getattr(exc, "winerror", None) in (193, 216):
         return "not executable"
     return "could not start"
+
+
+def _edit_private_document(ctx: Context, document: str, *, name: str) -> str | None:
+    """Open a private scratch file in the selected editor and read back its edits."""
+    import tempfile
+
+    from agents.core.persistence.private_file import private_staging_path
+
+    argv = _editor_argv(ctx.environ)
+    # Editors can create swap files and replace the original on save.
+    with tempfile.TemporaryDirectory(prefix="nerva-edit-") as directory, private_staging_path(
+        Path(directory) / name
+    ) as temporary:
+        temporary.write_text(document, encoding="utf-8")
+        try:
+            status = _run_editor(argv, str(temporary))
+        except OSError as exc:
+            ctx.err.write(f"editor {_plain(argv[0], 80)} {_editor_failure(exc)} — set $VISUAL or $EDITOR "
+                          "to one; nothing changed\n")
+            return None
+        if status != 0:
+            ctx.err.write(f"editor exited {status}; nothing changed\n")
+            return None
+        return temporary.read_text(encoding="utf-8")
 
 
 def _edit_document(settings: Any) -> tuple[str, dict[str, Mapping[str, Any]]]:
@@ -2336,28 +2361,10 @@ def _config_edit(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
     """``nerva config edit`` — the declared settings in ``$VISUAL``/``$EDITOR``; only the
     values that differ afterwards are written, each through ``config set``'s checks, and
     every line that cannot be written is named. A failed editor writes nothing."""
-    import contextlib
-    import tempfile
-
     document, editable = _edit_document(settings)
-    argv = _editor_argv(ctx.environ)
-    fd, temporary = tempfile.mkstemp(prefix="nerva-config-", suffix=".conf")   # owner-only (0600)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(document)
-        try:
-            status = _run_editor(argv, temporary)
-        except OSError as exc:
-            ctx.err.write(f"editor {_plain(argv[0], 80)} {_editor_failure(exc)} — set $VISUAL or $EDITOR "
-                          "to one; nothing changed\n")
-            return EXIT_FAILED
-        if status != 0:
-            ctx.err.write(f"editor exited {status}; nothing changed\n")
-            return EXIT_FAILED
-        edited = Path(temporary).read_text(encoding="utf-8")
-    finally:
-        with contextlib.suppress(OSError):
-            os.unlink(temporary)
+    edited = _edit_private_document(ctx, document, name="nerva-config.conf")
+    if edited is None:
+        return EXIT_FAILED
     values, rejected = ({}, []) if edited == document else _parse_edit(edited)
     changed: list[str] = []
     for name, value in values.items():
@@ -5017,7 +5024,8 @@ def cmd_journey(ns: argparse.Namespace, ctx: Context) -> int:
                           "nothing changed\n")
             return EXIT_FAILED
         before = str((entry.get("content") if skill else entry.get("value")) or "")
-        edited = _journey_edit_in_editor(ctx, before, suffix=".md" if skill else ".txt")
+        document = before if before.endswith("\n") else before + "\n"
+        edited = _edit_private_document(ctx, document, name="nerva-journey.md" if skill else "nerva-journey.txt")
         if edited is None:
             return EXIT_FAILED
         if edited.strip() == before.strip():
@@ -5153,32 +5161,6 @@ def _journey_write(ctx: Context, call: Callable[[], Any]) -> Any:
             ctx.err.write(f"{exc.reason}; nothing changed\n")
             return _REFUSED
         raise
-
-
-def _journey_edit_in_editor(ctx: Context, before: str, *, suffix: str = ".txt") -> str | None:
-    """The owner's ``$VISUAL``/``$EDITOR`` on one entry's text, in an owner-only temporary
-    file removed afterwards; what was saved, or None (said why) when the editor failed."""
-    import contextlib
-    import tempfile
-
-    argv = _editor_argv(ctx.environ)
-    fd, temporary = tempfile.mkstemp(prefix="nerva-journey-", suffix=suffix)   # owner-only (0600)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(before if before.endswith("\n") else before + "\n")
-        try:
-            status = _run_editor(argv, temporary)
-        except OSError as exc:
-            ctx.err.write(f"editor {_plain(argv[0], 80)} {_editor_failure(exc)} — set $VISUAL or $EDITOR "
-                          "to one; nothing changed\n")
-            return None
-        if status != 0:
-            ctx.err.write(f"editor exited {status}; nothing changed\n")
-            return None
-        return Path(temporary).read_text(encoding="utf-8")
-    finally:
-        with contextlib.suppress(OSError):
-            os.unlink(temporary)
 
 
 def _json_option(flag: str, text: str, *, an_object: bool = False):
@@ -5924,6 +5906,10 @@ _NOT_AN_ANSWER: dict[str, str] = {
     # agents.core.llm.base.LOCAL_SELECTION_UNAVAILABLE_REPLY
     "\u26a0\ufe0f No local language model is available. Start LM Studio or Ollama and try again.":
         "no local model is available",
+    # agents.core.llm.base.CLOUD_SELECTION_UNAVAILABLE_REPLY
+    "\u26a0\ufe0f Athena requires a cloud route. "
+    "Choose an available cloud provider or switch to Frigga for a local answer.":
+        "Athena has no eligible cloud route",
     # agents.core.llm.base.THINKING_EXHAUSTED_REPLY
     "\u26a0\ufe0f The model spent its whole answer budget thinking and produced no visible "
     "answer. Ask again more narrowly, or raise llm.max_tokens (or load a larger-context model).":

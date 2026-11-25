@@ -1483,7 +1483,7 @@ def register_skill_tools(
             try:
                 # H349: written by the model's tool inside a turn, so never auto-curated.
                 created = target.generate_skill(actor, description.strip(), [s.strip() for s in steps],
-                                                write_origin="assistant_tool")
+                                                write_origin="assistant_tool", procedure_agents=[actor])
             except Exception:
                 logger.warning("skill_propose: generate_skill failed", exc_info=True)
                 created = None

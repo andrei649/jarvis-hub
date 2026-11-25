@@ -314,7 +314,8 @@ class MemoryManager:
 
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
                        channel: str = None, tools: list[str] | None = None,
-                       media: dict | None = None):
+                       media: dict | None = None, model_calls: list[dict] | None = None,
+                       tool_activity: dict | None = None):
         async with self._lock:
             self._ensure_rewind_ready(session_id)
             imported = False
@@ -341,14 +342,19 @@ class MemoryManager:
                         _load_locked(SimpleNamespace(memory=self, checkpoints=manager), session_id)
             self._bind_history_instance(session_id)
             self._check_rewind_head_before_append(session_id)
+            if tool_activity is not None and (role != "assistant" or imported or _EMBED_UNTRUSTED.get() or _turn_untrusted()
+                    or session_id in self.conversation.foreign_origins):
+                tool_activity = None
             try:
                 # H443: the channel rides along to the write guard.
                 extra = {"channel": channel} if channel else {}
-                if tools or media is not None:
+                if tools or media is not None or model_calls or tool_activity is not None:
                     append_receipt = await self.conversation.add_turn(
                         session_id, role, content, agent_id,
                         **({"tools": tools} if tools else {}),
-                        **({"media": media} if media is not None else {}), **extra)
+                        **({"media": media} if media is not None else {}),
+                        **({"model_calls": model_calls} if model_calls else {}),
+                        **({"tool_activity": tool_activity} if tool_activity is not None else {}), **extra)
                 else:
                     append_receipt = await self.conversation.add_turn(
                         session_id, role, content, agent_id, **extra)
@@ -609,10 +615,12 @@ class MemoryManager:
             self._ensure_rewind_ready(session_id)
             return await self.conversation.get_context(session_id, last_n)
 
-    async def get_history(self, session_id: str, last_n: int = None) -> list[dict]:
+    async def get_history(self, session_id: str, last_n: int = None,
+                          *, include_board_sources: bool = False) -> list[dict]:
         async with self._lock:
             self._ensure_rewind_ready(session_id)
-            return await self.conversation.get_history(session_id, last_n)
+            return await self.conversation.get_history(session_id, last_n,
+                                                       include_board_sources=include_board_sources)
 
     async def update_agent_context(self, agent_id: str, key: str, value):
         async with self._lock:

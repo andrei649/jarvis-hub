@@ -305,6 +305,10 @@ IN_HANDLER_TIER_SITES = {
     "agents/web.py:_user_guard": ("tests/test_user_guard_hf1.py::test_user_guard_token",),
     "agents/web.py:_web_principal": (
         "tests/test_commands_catalog.py::test_bad_owner_token_and_query_flag_cannot_reveal_owner_commands",),
+    "agents/web.py:_history_source": (
+        "tests/test_session_transcript.py::test_history_reference_owner_cloud_command_and_stale_refusals_before_model",),
+    "agents/web.py:_pin_sourced_destination": (
+        "tests/test_board_chat_reference_api.py::test_source_denials_and_digest_race_never_start_a_turn",),
     "agents/web.py:_request_is_authed": ("tests/test_rate_limit_hf2.py::test_request_is_authed_requires_valid_token",),
     "agents/web.py:_mcp_identity_check": (
         "tests/test_h273e_provenance_review.py::"
@@ -326,7 +330,10 @@ IN_HANDLER_TIER_SITES = {
         _H441 + "test_guest_list_is_not_emptied_by_twenty_newer_foreign_sessions"),
     # H440: resume by title resolves among native sessions only for anyone but the owner.
     "agents/core/routers/sessions.py:resume_session": (
-        "tests/test_h440_title_lineage.py::test_a_guest_cannot_resume_an_imported_session_by_its_title",),
+        "tests/test_h440_title_lineage.py::test_a_guest_cannot_resume_an_imported_session_by_its_title",
+        "tests/test_session_transcript.py::test_board_receipt_only_in_owner_resume_projection"),
+    "agents/core/routers/memory_hud.py:memory": (
+        "tests/test_session_transcript.py::test_board_receipt_only_in_owner_resume_projection",),
     "agents/core/routers/sessions.py:get_recent_plans": (
         _H441 + "test_recent_todo_omits_foreign_plans_and_native_stamps_remain_usable",),
     "agents/core/routers/canvas.py:canvas_post": (

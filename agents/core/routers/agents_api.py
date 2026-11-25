@@ -25,15 +25,24 @@ import logging
 import re
 import sys
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 import agents as _agents_pkg
 from agents.core import soul_edit
 from agents.core.app_state import get_orch
-from agents.core.routers._deps import admin_guard, user_guard
+from agents.core.commands import Principal
+from agents.core.llm.hybrid_router import (
+    CLOUD_ONLY_AGENTS,
+    POLICY_AUTO,
+    POLICY_CLAUDE,
+    POLICY_CLOUD,
+    POLICY_LOCAL,
+)
+from agents.core.routers._deps import admin_guard, owner_web_principal, user_guard
 from agents.core.web_helpers import nocache_json
 
 logger = logging.getLogger("jarvis.agents_api")
@@ -56,9 +65,123 @@ def _enrich_agents():
     return sys.modules.get("agents.web")._enrich_agents()
 
 
+def _agent_settings():
+    return sys.modules.get("agents.web")._AGENT_SETTINGS
+
+
 @router.get("/api/agents", dependencies=[Depends(user_guard)])
 async def api_agents():
-    return nocache_json({"agents": _enrich_agents()})
+    roster = _enrich_agents()
+    runtime = getattr(get_orch(), "llm_router", None)
+    get_policy = getattr(runtime, "get_agent_policy", None)
+    policies = {
+        POLICY_LOCAL: "local", POLICY_CLOUD: "cloud_preferred",
+        POLICY_CLAUDE: "claude_preferred", POLICY_AUTO: "auto",
+    }
+    agents = []
+    for row in roster:
+        routing = None
+        if callable(get_policy):
+            try:
+                policy = get_policy(row["id"])
+                routing = policies.get(policy) if type(policy) is str else None
+                if routing is not None:
+                    if row["id"] == "jarvis":
+                        routing = "orchestrated"  # Web chat sends Jarvis through the orchestrator.
+                    elif row["id"] in CLOUD_ONLY_AGENTS and policy == POLICY_CLOUD:
+                        routing = "cloud_only"
+            except Exception:
+                logger.debug("Agent routing policy unavailable")
+        agents.append({**row, "chat_routing": routing})
+    return nocache_json({"agents": agents})
+
+
+class AgentOpinionsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(..., min_length=1, max_length=4096)
+    agents: list[str] = Field(..., min_length=2, max_length=2)
+    allow_cloud: bool = Field(default=False, strict=True)
+
+    @field_validator("question", mode="before")
+    @classmethod
+    def trim_question(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def distinct_agents(self):
+        if self.agents[0] == self.agents[1] or any(not _AGENT_ID_RE.fullmatch(aid) for aid in self.agents):
+            raise ValueError("two distinct agent IDs required")
+        return self
+
+
+class AgentOpinion(BaseModel):
+    agent: str
+    ok: bool
+    text: str | None = None
+    model: str | None = None
+    route: str | None = None
+    reason: str | None = None
+
+
+class AgentOpinionsResponse(BaseModel):
+    opinions: list[AgentOpinion]
+
+
+@router.post("/api/agents/opinions", dependencies=[Depends(admin_guard)],
+             response_model=AgentOpinionsResponse, response_model_exclude_none=True)
+async def agent_opinions(body: AgentOpinionsBody, request: Request, response: Response,
+                         principal: Annotated[Principal, Depends(owner_web_principal)]):
+    """Ask two active agents the same text-only question without starting a task or chat."""
+    orch = get_orch()
+    if orch is None or getattr(orch, "llm_router", None) is None:
+        raise HTTPException(status_code=503, detail="router_unavailable")
+    settings = _agent_settings()
+    if any(aid not in orch.agents or settings.get(aid, {}).get("enabled") is False
+           for aid in body.agents):
+        raise HTTPException(status_code=422, detail="agent_unavailable")
+
+    from agents.core.agent_opinions import acquire_comparison, release_comparison, run_opinions
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
+
+    web = sys.modules.get("agents.web")
+    labels = {
+        aid: (str(settings.get(aid, {}).get("name") or orch.agents[aid].name)[:80],
+              str(settings.get(aid, {}).get("role") or web._AGENT_META.get(aid, {}).get("role")
+                  or getattr(orch.agents[aid], "role", "") or "assistant")[:120])
+        for aid in body.agents
+    }
+    if not acquire_comparison():
+        raise HTTPException(status_code=429, detail="comparison_busy")
+    try:
+        token = bind_turn_principal(principal)
+        try:
+            if await request.is_disconnected():
+                raise HTTPException(status_code=499, detail="comparison_disconnected")
+            work = asyncio.create_task(run_opinions(orch.llm_router, body.question, body.agents,
+                                                     allow_cloud=body.allow_cloud, labels=labels))
+
+            async def watch_disconnect():
+                while not await request.is_disconnected():
+                    await asyncio.sleep(0.1)
+
+            watcher = asyncio.create_task(watch_disconnect())
+            try:
+                done, _ = await asyncio.wait({work, watcher}, return_when=asyncio.FIRST_COMPLETED)
+                if watcher in done:
+                    raise HTTPException(status_code=499, detail="comparison_disconnected")
+                opinions = await work
+            finally:
+                for task in (work, watcher):
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(work, watcher, return_exceptions=True)
+        finally:
+            reset_turn_principal(token)
+    finally:
+        release_comparison()
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return AgentOpinionsResponse(opinions=opinions)
 
 
 def _soul_guard_verdict(content: str, filename: str) -> dict:

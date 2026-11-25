@@ -22,6 +22,9 @@ const HUB_ROUTES = {
   "/brain/note": "/api/os/brain/note",
   "/brain/retrieve": "/api/os/brain/retrieve",
   "/brain/capture": "/api/os/brain/capture",
+  "/workshop/edit": "/api/os/workshop/edit",
+  "/workshop/projects": "/api/os/workshop/projects",
+  "/workshop/project": "/api/os/workshop/project",
 };
 
 function apiUrl(path) {
@@ -114,14 +117,15 @@ export async function chat({ prompt, brain, context }) {
     return data && data.reply && data.mode !== "local" ? data : null;
   }
 
-  // Hub: fetch the matching vault notes, then hand them to the orchestrator as fenced
-  // attachments (content, never the owner's words) beside the question as typed.
+  // The owner's choice applies to one AI message, including one sent by voice.
+  const choice = document.getElementById("vault-grounding");
   let grounding = { attachments: [], focus: null };
-  try {
+  if (choice?.checked) {
+    choice.checked = false;
     const res = await apiGet(`/brain/retrieve?q=${encodeURIComponent(prompt)}`);
-    if (res.ok) grounding = await res.json();
-  } catch (_) {
-    /* no vault grounding this turn */
+    if (!res.ok) throw new Error("Could not check vault notes");
+    grounding = await res.json();
+    if (grounding?.ok !== true || !Array.isArray(grounding.attachments)) throw new Error("Could not check vault notes");
   }
 
   const body = { message: prompt.slice(0, 4096) };
@@ -142,6 +146,7 @@ export async function chat({ prompt, brain, context }) {
       ? { type: "focus_hub", params: { query: grounding.focus } }
       : { type: "none", params: {} },
     provider: "nerva hub",
+    vaultSources: grounding.attachments.map(note => note.name),
   };
 }
 
@@ -164,6 +169,10 @@ export async function tts(text) {
 export function applyBackendMode() {
   if (!HUB) return;
   document.body.dataset.backend = "hub";
+  const hubChat = document.getElementById("hub-chat-link");
+  hubChat.href = HUB_ROOT + "/v2/chat";
+  hubChat.hidden = false;
+  document.getElementById("vault-grounding-choice").hidden = false;
   for (const el of document.querySelectorAll("[data-standalone-only]")) {
     el.hidden = true;
   }

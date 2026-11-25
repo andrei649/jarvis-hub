@@ -12,11 +12,11 @@ import json
 import re
 import sqlite3
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing, contextmanager, suppress
+from contextlib import closing, contextmanager, nullcontext, suppress
 from contextvars import copy_context
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from email import policy
 from email.message import Message
 from email.parser import BytesParser
@@ -30,12 +30,14 @@ from agents.core.app_state import get_orch
 from agents.core.commands import Principal
 from agents.core.file_tools import FileScope, FileScopeError
 
-from . import projects
+from . import dispatch_store, projects
+from .chat_sources import BoardReference, recorded_source
 from .cli_upstream.board_selection import select_board
-from .context import require_context, require_mutation
+from .context import kanban_scope, require_context, require_mutation
 from .task_creation import create_task as create_scoped_task
 from .upstream import kanban_db as kb
 from .upstream import kanban_diagnostics as kd
+from .upstream.compat import normalize_profile_name
 from .workspaces import _git_root
 
 router = APIRouter()
@@ -88,15 +90,20 @@ def _board(raw: str | None, *, must_exist: bool = True) -> str:
 
 
 @contextmanager
-def _conn(raw: str | None = None, *, mutate: bool = False) -> Iterator[tuple[str, sqlite3.Connection]]:
-    _scope(mutate=mutate)
+def _conn(raw: str | None = None, *, mutate: bool = False, read_only: bool = False) -> Iterator[tuple[str, sqlite3.Connection]]:
+    context = _scope(mutate=mutate)
     board = _board(raw)
-    expected = (_scope().home.expanduser().resolve() / "kanban.db" if board == kb.DEFAULT_BOARD
+    expected = (context.home.expanduser().resolve() / "kanban.db" if board == kb.DEFAULT_BOARD
                 else kb.board_dir(board) / "kanban.db")
     if kb.kanban_db_path(board).resolve() != expected:
         raise _error(403, "board database escapes the scoped data home")
     try:
-        with kb.scoped_current_board(board), closing(kb.connect(board=board)) as conn:
+        if read_only and not expected.is_file():
+            raise _error(404, "board database not found")
+        scope = kanban_scope(replace(context, can_mutate=False)) if read_only else nullcontext()
+        with scope, kb.scoped_current_board(board), closing(kb.connect(board=board)) as conn:
+            if read_only:
+                conn.execute("BEGIN")
             yield board, conn
     except (ValueError, PermissionError) as exc:
         raise _error(400 if isinstance(exc, ValueError) else 403, str(exc)) from exc
@@ -107,6 +114,42 @@ def _task(conn, task_id: str):
     if task is None:
         raise _error(404, f"task {task_id} not found")
     return task
+
+
+def verify_chat_sources(references: list[BoardReference]) -> list[dict]:
+    _verified_chat_rows(references)
+    return [ref.model_dump(exclude={"excerpt"}) for ref in references]
+
+
+def _verified_chat_rows(references: list[BoardReference]):
+    tasks = [None] * len(references)
+    for board in dict.fromkeys(ref.board for ref in references):
+        with _conn(board, read_only=True) as (_, conn):
+            for index, ref in enumerate(references):
+                if ref.board != board:
+                    continue
+                task = _task(conn, ref.task_id)
+                current = recorded_source(task.result, kb.latest_summary(conn, task.id))
+                if (task.status != "done" or current is None or current[0] != ref.source
+                        or current[2] != ref.sha256 or not ref.excerpt.strip() or ref.excerpt not in current[1]):
+                    raise _error(409, "board_source_changed")
+                tasks[index] = task
+    return list(zip(references, tasks, strict=True))
+
+
+def preview_board_note(references: list[BoardReference]) -> dict[str, str]:
+    sections = []
+    for ref, task in _verified_chat_rows(references):
+        payload = (f"Task: {json.dumps(task.title, ensure_ascii=False)}\n"
+                   f"Source: {'Recorded result' if ref.source == 'result' else 'Latest summary'}\n"
+                   f"SHA-256: {ref.sha256}\nExcerpt:\n{ref.excerpt}")
+        fence = "`" * max(3, max((len(run) for run in re.findall(r"`+", payload)), default=0) + 1)
+        sections.append(f"## {ref.board}/{ref.task_id}\n\n{fence}text\n{payload}\n{fence}")
+    content = ("# Board results\n\nSelected excerpts from completed tasks. "
+               "SHA-256 identifies each full recorded source.\n\n" + "\n\n".join(sections) + "\n")
+    if len(content) > 100_000:
+        raise _error(413, "board_note_too_large")
+    return {"title": "Board results", "content": content}
 
 
 def _run(conn, run_id: int):
@@ -239,7 +282,7 @@ def get_board(tenant: str | None = None, include_archived: bool = False, board: 
 @router.get("/tasks/{task_id}")
 def get_task(task_id: str, board: str | None = None, run_state_type: str | None = None,
              run_state_name: str | None = None):
-    with _conn(board) as (_slug, conn):
+    with _conn(board, read_only=True) as (_slug, conn):
         if (run_state_type is None) != (run_state_name is None) or run_state_type not in (None, "status", "outcome"):
             raise _error(400, "run_state_type and run_state_name must be paired; type is status or outcome")
         task = _task(conn, task_id)
@@ -248,6 +291,9 @@ def get_task(task_id: str, board: str | None = None, run_state_type: str | None 
         summaries = kb.latest_summaries(conn, links["children"])
         view = _task_view(task, summary=kb.latest_summary(conn, task_id),
                           run_start=kb.current_run_started_ats(conn, [task_id]).get(task_id))
+        if task.status == "done" and (source := recorded_source(task.result, view["latest_summary"])):
+            view["board_source_sha256"] = source[2]
+        view["recoverable_run_id"] = dispatch_store.recoverable_run_id(conn, task)
         task_diags = _diagnostics(conn, [task_id]).get(task_id, [])
         if task_diags:
             view["diagnostics"] = task_diags
@@ -259,6 +305,7 @@ def get_task(task_id: str, board: str | None = None, run_state_type: str | None 
                 "link_tasks": [{"id": t.id, "title": t.title, "status": t.status} for t in
                                (kb.get_task(conn, x) for x in links["parents"] + links["children"]) if t],
                 "child_results": [{"id": c.id, "title": c.title, "status": c.status,
+                                   "assignee": c.assignee,
                                    "latest_summary": summaries.get(c.id), "result": c.result} for c in children if c],
                 "runs": [asdict(r) for r in kb.list_runs(conn, task_id, state_type=run_state_type,
                                                           state_name=run_state_name)]}
@@ -585,12 +632,60 @@ def get_run(run_id: int, board: str | None = None):
 @router.get("/workers/active")
 def list_active_workers(board: str | None = None):
     with _conn(board) as (_slug, conn):
+        from .dispatcher import _probe_attempt_receipt
+        from .upstream import kanban_db_dispatch as kbd
+
         rows = conn.execute("SELECT r.id AS run_id, r.task_id, t.title AS task_title, t.status AS task_status, "
-                            "t.assignee AS task_assignee, r.profile, r.worker_pid, r.started_at, r.claim_lock, "
-                            "r.claim_expires, r.last_heartbeat_at, r.max_runtime_seconds FROM task_runs r "
-                            "JOIN tasks t ON t.id = r.task_id WHERE r.ended_at IS NULL "
-                            "AND r.worker_pid IS NOT NULL AND t.status = 'running' ORDER BY r.started_at").fetchall()
-        return {"workers": [dict(r) for r in rows], "count": len(rows), "checked_at": int(time.time())}
+                            "t.assignee AS task_assignee, r.profile, r.worker_pid, r.worker_started_at, "
+                            "r.started_at, r.claim_lock, r.claim_expires, r.last_heartbeat_at, "
+                            "r.max_runtime_seconds FROM task_runs r JOIN tasks t ON t.id = r.task_id "
+                            "AND t.current_run_id = r.id WHERE r.ended_at IS NULL AND r.status = 'running' "
+                            "AND t.status = 'running' AND r.claim_lock IS NOT NULL "
+                            "AND t.claim_lock = r.claim_lock ORDER BY r.started_at").fetchall()
+        native = {}
+        if any(row["worker_pid"] is None and row["claim_lock"].startswith("nerva:") for row in rows):
+            try:
+                native = {r["run_id"]: r for r in conn.execute(
+                    "SELECT id, task_id, run_id, state, recovery_dev, recovery_ino, recovery_pid "
+                    "FROM nerva_dispatches WHERE state='running' AND run_id IS NOT NULL")}
+            except sqlite3.OperationalError as exc:
+                if "no such table: nerva_dispatches" not in str(exc):
+                    raise _error(503, "active worker status unavailable") from exc
+                native = {}  # a board created before native dispatch existed
+        workers = []
+        for row in rows:
+            if row["worker_pid"] is not None:
+                active = (kbd._pid_alive(row["worker_pid"])
+                          and (row["worker_started_at"] == kbd.UNVERIFIED_WORKER_FINGERPRINT
+                               or not kbd._pid_recycled(row["worker_pid"], row["worker_started_at"])))
+            else:
+                record = native.get(row["run_id"])
+                active = False
+                if row["claim_lock"].startswith("nerva:"):
+                    if (record is None or record["task_id"] != row["task_id"]
+                            or row["claim_lock"] != "nerva:" + record["id"]):
+                        status = "unverifiable"
+                    else:
+                        with _probe_attempt_receipt(_scope().home, record, observer=True) as status:
+                            pass
+                    if status == "unverifiable":
+                        # A normal finish may have removed the receipt since the first SELECT.
+                        current = conn.execute(
+                            "SELECT 1 FROM task_runs r JOIN tasks t ON t.id=r.task_id "
+                            "AND t.current_run_id=r.id WHERE r.id=? AND r.task_id=? "
+                            "AND r.status='running' AND r.ended_at IS NULL "
+                            "AND t.status='running' AND r.claim_lock=? AND t.claim_lock=?",
+                            (row["run_id"], row["task_id"], row["claim_lock"], row["claim_lock"]),
+                        ).fetchone()
+                        if current is not None:
+                            raise _error(503, "active worker status unavailable")
+                        continue
+                    active = status == "held"
+            if active:
+                worker = dict(row)
+                worker.pop("worker_started_at")
+                workers.append(worker)
+        return {"workers": workers, "count": len(workers), "checked_at": int(time.time())}
 
 
 @router.get("/diagnostics")
@@ -769,18 +864,21 @@ def delete_board(slug: str, delete: bool = False):
     return {"result": result, "current": _board(None)}
 
 
+def _dispatch_adapter():
+    coordinator = getattr(get_orch(), "_autonomy", None)
+    adapter = coordinator.kanban_dispatcher() if coordinator else None
+    if adapter is None:
+        _unavailable("signed queue dispatch")
+    return adapter
+
+
 @router.post("/dispatch")
 async def dispatch(dry_run: bool = False, max_n: int = Query(8, alias="max", ge=1, le=16), board: str | None = None):
     _scope(mutate=True)
     slug = _board(board)
     if dry_run:
         _unavailable("dispatch preview")
-    orch = get_orch()
-    coordinator = getattr(orch, "_autonomy", None) if orch else None
-    adapter = coordinator.kanban_dispatcher() if coordinator else None
-    if adapter is None:
-        _unavailable("signed queue dispatch")
-    return await adapter.request(Principal(channel="web", admin=True), board=slug, limit=max_n)
+    return await _dispatch_adapter().request(Principal(channel="web", admin=True), board=slug, limit=max_n)
 
 
 # Preserve the donor route shapes while explicit Nerva adapters are built.
@@ -792,6 +890,11 @@ class EmptyBody(StrictBody):
 
 class ReasonBody(StrictBody):
     reason: str | None = None
+
+
+class RecoverRunBody(StrictBody):
+    expected_run_id: int = Field(strict=True, ge=1, le=2**63 - 1)
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class ReassignBody(StrictBody):
@@ -902,9 +1005,27 @@ def terminate_run(run_id: int, payload: ReasonBody, board: str | None = None):
 
 
 @router.post("/tasks/{task_id}/reclaim")
-def reclaim(task_id: str, payload: ReasonBody, board: str | None = None):
-    _scope(mutate=True)
-    _unavailable("worker reclaim")
+async def reclaim(task_id: str, payload: RecoverRunBody, board: str | None = None):
+    owner = _scope(mutate=True)
+    with _conn(board, mutate=True) as (slug, conn):
+        _task(conn, task_id)
+    with kanban_scope(replace(owner, board=slug)):
+        result = await _dispatch_adapter().recover_interrupted(
+            task_id, board=slug, expected_run_id=payload.expected_run_id, reason=payload.reason)
+    if result.get("ok"):
+        return result
+    reason = result.get("reason")
+    if reason == "active_attempt":
+        raise _error(409, "This worker is still active.")
+    if reason == "owner_required":
+        raise _error(403, "Recovery requires the owner of this board.")
+    if reason == "recovery_busy":
+        raise _error(409, "A board update is in progress. Refresh the run history and try again.")
+    if reason == "replaced_attempt":
+        raise _error(409, "This attempt is no longer current. Check the history for a newer attempt.")
+    if reason == "governed_worker_unavailable":
+        _unavailable("governed worker recovery")
+    raise _error(409, "This attempt could not be verified for recovery. Refresh its run history.")
 
 
 @router.post("/tasks/{task_id}/reassign")
@@ -966,7 +1087,17 @@ def switch_board(slug: str):
 @router.get("/profiles")
 def profiles():
     _scope()
-    _unavailable("profile inventory")
+    agents = getattr(get_orch(), "agents", None)
+    if not isinstance(agents, Mapping):
+        raise _error(503, "live agent roster unavailable")
+    return {
+        "profiles": [
+            {"name": name, "is_default": False, "description": "", "description_auto": False}
+            for name in sorted(name for name in agents
+                               if isinstance(name, str) and name.strip() and name == normalize_profile_name(name))
+        ],
+        "editable": False,
+    }
 
 
 @router.patch("/profiles/{profile_name}")

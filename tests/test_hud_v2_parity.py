@@ -45,11 +45,16 @@ RULES = [
     # below reads frontend/src/workspace like any other client.
     ("/api/workspace", "workspace"),
     ("/workspace", "workspace"),
-    # ANDREI OS — the imported 3D-galaxy interface, served at /os from apps/jarvis-os/public
-    # (not a v2 mode). Its page calls every /api/os route through public/js/api.js, which the
-    # caller gate below reads like any other client.
-    ("/api/os", "jarvis-os"),
-    ("/os", "jarvis-os"),
+    # The HUD text composer offers scoped note retrieval; the /os graph and
+    # remaining note/capture controls stay in the separate browser page.
+    ("/api/os/brain/retrieve", "cockpit"),
+    ("/api/os/brain/note", "cockpit"),
+    ("/api/kanban/board-note/preview", "cockpit"),
+    ("/api/os/workshop/project", "cockpit"),  # GET project and projects; saving stays in /os.
+    # Separate /os client exists, but HUD V2 has no native entry/control for
+    # the rest: docs/design/HUD_V2_REMAINING.md and mobile/PARITY.md.
+    ("/api/os/", "HUD_GAP:jarvis-os"),
+    ("/os", "HUD_GAP:jarvis-os"),
     # machine-facing — intentionally not a HUD surface
     ("/.well-known/", "NOT_IN_HUD"),
     ("/healthz", "NOT_IN_HUD"),  # H23.11 liveness probe (LB / systemd / Docker HEALTHCHECK)
@@ -78,6 +83,7 @@ RULES = [
     ("/chat", "cockpit"),
     ("/api/status", "cockpit"),
     ("/status", "cockpit"),
+    ("/api/agents/opinions", "cockpit"),
     ("/api/agents", "agents"),
     ("/agents", "agents"),
     ("/dashboard", "cockpit"),
@@ -314,6 +320,28 @@ def test_core_surfaces_each_cover_a_route():
     covered = {_classify(p) for p in _routes()}
     missing = [s for s in CORE_SURFACES if s not in covered]
     assert not missing, f"v2 surfaces with no mapped route (IA regression?): {missing}"
+
+
+def test_jarvis_os_is_an_explicit_native_hud_and_mobile_gap():
+    """The HUD offers scoped note and project reads. The editor lives in /os."""
+    routes = {p for p in _routes() if p.startswith("/api/os/") or p in {"/os", "/os/{path:path}"}}
+    assert len(routes) >= 7
+    notes = {"/api/os/brain/retrieve", "/api/os/brain/note"}
+    assert notes <= routes and all(_classify(path) == "cockpit" for path in notes)
+    projects = {"/api/os/workshop/projects", "/api/os/workshop/project"}
+    assert projects <= routes and all(_classify(path) == "cockpit" for path in projects)
+    picker = (REPO / "frontend/src/workshop-projects.tsx").read_text(encoding="utf-8")
+    assert all(path in picker for path in projects)
+    assert {_classify(p) for p in routes - projects - notes} == {"HUD_GAP:jarvis-os"}
+    lookup = (REPO / "frontend/src/composer-vault.tsx").read_text(encoding="utf-8")
+    cockpit = (REPO / "frontend/src/cockpit.tsx").read_text(encoding="utf-8")
+    assert all(path in lookup for path in notes) and "apiFetchOnce(" in lookup
+    assert "./composer-vault" in cockpit and "<VaultNoteReview draft={vault}/>" in cockpit
+    for file in ("docs/design/HUD_V2_REMAINING.md", "mobile/PARITY.md"):
+        doc = (REPO / file).read_text(encoding="utf-8")
+        assert "ANDREI OS" in doc and "H18.38" in doc
+        for route in ("/api/os/status", "/api/os/brain/note", "/api/os/brain/retrieve", "/api/os/brain/capture"):
+            assert route in doc
 
 
 def _assert_console_registration(source: str, group: str, component: str):
@@ -573,12 +601,6 @@ MACHINE_FACING: dict[str, str] = {
         "H019: user-guarded slot-holder listing read by `nerva status` (agents/cli/nerva.py); "
         "the public GET /status keeps counts only and the HUD does not render holders"
     ),
-    "/api/dashboard/today/entries":
-        "H046: every learned entry whatever its age, with its id, read by `nerva journey list` "
-        "(agents/cli/nerva.py), Hermes's `journey list` lookup table; the HUD's TODAY card reads "
-        "the windowed feed (GET /api/dashboard/today) and edits or forgets an entry by its id "
-        "under /api/dashboard/today/entries/{entry_id}, whose literal path makes this one look "
-        "called as a substring",
     "/api/skills/bundles/reload":
         "H026: `nerva skills bundles reload` (agents/cli/nerva.py) re-reads hand-edited bundle "
         "files and reports the changes; the HUD's GET /api/skills/bundles already re-scans a "
@@ -694,9 +716,10 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # H075/H581: approved backend dispatch exists; dedicated board/worker
-    # controls remain in HUD_V2_REMAINING.md and native task H18.34.
-    "/api/autonomy/kanban/dispatch",
+    # These process-adapter routes still return 503; the drawer uses durable run details and reclaim.
+    "/api/kanban/runs/{run_id}/inspect",
+    "/api/kanban/runs/{run_id}/terminate",
+    "/api/kanban/tasks/{task_id}/log",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
     # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
     # string and returns `base` (a hardcoded module constant) plus `configured` (an
@@ -781,8 +804,6 @@ KANBAN_HTTP_CONSUMERS: dict[str, tuple[str, str, str]] = {
     "/api/kanban/profiles/{profile_name}/describe-auto": ("`${root}/profiles/${encodeURIComponent(profileName)}/describe-auto`", "describeProfileAuto", "board.tsx"),
     "/api/kanban/projects": ("root + '/projects'", "fetchProjects", "KanbanView.tsx"),
     "/api/kanban/runs/{run_id}": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}`, slug)", "fetchRun", "drawer.tsx"),
-    "/api/kanban/runs/{run_id}/inspect": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/inspect`, slug)", "inspectRun", "drawer.tsx"),
-    "/api/kanban/runs/{run_id}/terminate": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/terminate`, slug)", "terminateRun", "drawer.tsx"),
     "/api/kanban/stats": ("scopedPath('/stats', slug)", "fetchStats", "KanbanView.tsx"),
     "/api/kanban/tasks": ("scopedPath('/tasks', slug)", "createTask", "board.tsx"),
     "/api/kanban/tasks/bulk": ("scopedPath('/tasks/bulk', slug)", "bulkTasks", "KanbanView.tsx"),
@@ -792,7 +813,6 @@ KANBAN_HTTP_CONSUMERS: dict[str, tuple[str, str, str]] = {
     "/api/kanban/tasks/{task_id}/decompose": ("scopedPath(`/tasks/${encodeURIComponent(id)}/decompose`, slug)", "decomposeTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/estimate": ("scopedPath(`/tasks/${encodeURIComponent(id)}/estimate`, slug)", "estimateTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/home-subscribe/{platform}": ("scopedPath(`/tasks/${encodeURIComponent(id)}/home-subscribe/${encodeURIComponent(platform)}`, slug)", "subscribeTaskChannel", "drawer.tsx"),
-    "/api/kanban/tasks/{task_id}/log": ("scopedPath(`/tasks/${encodeURIComponent(id)}/log`, slug)", "fetchLog", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/reassign": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reassign`, slug)", "reassignTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/reclaim": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reclaim`, slug)", "reclaimTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/specify": ("scopedPath(`/tasks/${encodeURIComponent(id)}/specify`, slug)", "specifyTask", "drawer.tsx"),
@@ -806,7 +826,7 @@ def test_mounted_kanban_composed_callers_are_accounted_for():
     host = files["frontend/src/gap.tsx"]
     view = files["frontend/src/panels/kanban/KanbanView.tsx"]
     drawer = files["frontend/src/panels/kanban/drawer.tsx"]
-    assert "<KanbanView />" in host and "createKanbanSocket(" in view
+    assert re.search(r"<KanbanView\b", host) and "createKanbanSocket(" in view
     assert "const root = '/api/kanban'" in transport
     assert "root + '/events'" in transport and "new WebSocket(kanbanEventsUrl" in transport
     assert "unlinkPath(" in transport and re.search(r"\bremoveLink\(", drawer)
@@ -818,7 +838,10 @@ def test_mounted_kanban_composed_callers_are_accounted_for():
         assert path in routes, f"{path} is no longer a server route"
         assert expression in transport, f"{path} transport expression changed"
         assert re.search(rf"\b{re.escape(function)}\(", client), f"{path} lost its mounted UI call"
-        assert not _has_caller(path, blob), f"{path} became literal; remove computed classification"
+        # A static URL ends at its delimiter. /board-note/preview cannot call /board.
+        literal = (_has_caller(path, blob) if "{" in path else
+                   re.search(re.escape(path) + r"""(?=/?['"`?#])""", blob))
+        assert not literal, f"{path} became literal; remove computed classification"
         assert path in COMPUTED_URL_CALLERS, f"{path} is absent from computed callers"
         assert path not in UNCALLED_BACKLOG, f"{path} still claims no client caller"
 
@@ -829,6 +852,20 @@ def test_kanban_route_gap_document_matches_the_uncalled_routes():
     documented = set(re.findall(r"^- `(/api/kanban/[^`]+)`$", section, flags=re.MULTILINE))
     uncalled = {path for path in UNCALLED_BACKLOG if path.startswith("/api/kanban/")}
     assert documented == uncalled
+
+
+def test_mounted_autonomy_kanban_dispatch_caller_is_accounted_for():
+    files = _client_files()
+    panel = files["frontend/src/panels/autonomy-legacy.tsx"]
+    routes = set(_snapshot_routes())
+    path = "/api/autonomy/kanban/dispatch"
+    assert path in routes
+    assert _classify(path) == "autonomy"
+    assert "AutonomyControlPanel" in files["frontend/src/gap.tsx"]
+    assert '"component": "AutonomyControlPanel"' in files["frontend/src/console-routes.ts"]
+    assert "const KANBAN_DISPATCH_PATH = '/api/autonomy/kanban/dispatch'" in panel
+    assert "actA(KANBAN_DISPATCH_PATH," in panel
+    assert path not in UNCALLED_BACKLOG
 
 # The owner panel composes these exact URLs from BASE and its encoded key helper.
 # The dedicated gate verifies both the mounted panel and the actual request expression.
@@ -1084,6 +1121,10 @@ def test_the_curated_memory_routes_are_called_by_their_panel_not_by_a_longer_pat
     the reset by their own paths; pin that the panel names each one whole, so the next
     time the gate's verdict for them is not the accident again."""
     source = (REPO / "frontend/src/panels/long-term-memory.tsx").read_text(encoding="utf-8")
+    saved = (REPO / "frontend/src/panels/saved-facts.tsx").read_text(encoding="utf-8")
+    assert "'/api/dashboard/today/entries'" in saved
+    assert "<SavedFacts" in (REPO / "frontend/src/modes.tsx").read_text(encoding="utf-8")
+    assert "/api/dashboard/today/entries" not in MACHINE_FACING
     for path in ("/api/memory", "/api/memory/switch", "/api/memory/reset"):
         assert re.search(re.escape(f"'{path}'"), source), f"the Long-Term Memory panel does not call {path}"
         assert path not in MACHINE_FACING, f"{path} has a HUD caller; it is not machine-facing"

@@ -31,6 +31,7 @@ import errno
 import os
 import stat
 import sys
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -126,6 +127,21 @@ class _PosixApi:
         while view:
             view = view[os.write(handle, view):]
 
+    def identity(self, handle: int) -> tuple[int, int]:
+        info = os.fstat(handle)
+        return info.st_dev, info.st_ino
+
+    def flush(self, handle: int) -> None:
+        os.fsync(handle)
+
+    def publish(self, parent: int, handle: int, temporary: str, final: str) -> None:
+        os.link(temporary, final, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
+        os.unlink(temporary, dir_fd=parent)
+        os.fsync(parent)
+
+    def discard(self, parent: int, handle: int, temporary: str) -> None:
+        os.unlink(temporary, dir_fd=parent)
+
     def close(self, handle: int) -> None:
         os.close(handle)
 
@@ -186,10 +202,26 @@ class _WindowsApi:
         self.k.SetFilePointerEx.restype = w.BOOL
         self.k.CloseHandle.argtypes = (w.HANDLE,)
         self.k.CloseHandle.restype = w.BOOL
+        self.k.FlushFileBuffers.argtypes = (w.HANDLE,)
+        self.k.FlushFileBuffers.restype = w.BOOL
+        self.k.SetFileInformationByHandle.argtypes = (w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD)
+        self.k.SetFileInformationByHandle.restype = w.BOOL
+
+        class FileIdInfo(ctypes.Structure):
+            _fields_ = [("VolumeSerialNumber", ctypes.c_uint64), ("FileId", ctypes.c_ubyte * 16)]
+
+        class RenameInfo(ctypes.Structure):
+            _fields_ = [("ReplaceIfExists", w.DWORD), ("RootDirectory", w.HANDLE),
+                        ("FileNameLength", w.DWORD), ("FileName", w.WCHAR * 1)]
+
+        self.FileIdInfo, self.RenameInfo = FileIdInfo, RenameInfo
         self.n.NtCreateFile.argtypes = (
             ctypes.POINTER(w.HANDLE), w.DWORD, ctypes.POINTER(ObjAttr), ctypes.POINTER(IoStatus),
             ctypes.c_void_p, w.DWORD, w.DWORD, w.DWORD, w.DWORD, ctypes.c_void_p, w.DWORD)
         self.n.NtCreateFile.restype = ctypes.c_long
+        self.n.NtSetInformationFile.argtypes = (w.HANDLE, ctypes.POINTER(IoStatus),
+                                               ctypes.c_void_p, w.ULONG, w.ULONG)
+        self.n.NtSetInformationFile.restype = ctypes.c_long
         self.n.RtlNtStatusToDosError.argtypes = (w.ULONG,)
         self.n.RtlNtStatusToDosError.restype = w.ULONG
 
@@ -298,6 +330,44 @@ class _WindowsApi:
         return self._nt_open(parent, name, access=0x2 | 0x80 | 0x100000, share=0x1,
                              disposition=2, options=0x40)
 
+    def create_publish_file(self, parent: int, name: str) -> int:
+        return self._nt_open(parent, name, access=0x2 | 0x80 | 0x10000 | 0x100000,
+                             share=self._SHARE_ALL, disposition=2, options=0x40)
+
+    def identity(self, handle: int) -> tuple[int, str]:
+        info = self._info(handle, 18, self.FileIdInfo)  # FileIdInfo
+        return int(info.VolumeSerialNumber), bytes(info.FileId).hex()
+
+    def flush(self, handle: int) -> None:
+        if not self.k.FlushFileBuffers(handle):
+            raise self._last_error("flush")
+
+    def publish(self, parent: int, handle: int, temporary: str, final: str) -> None:
+        encoded = final.encode("utf-16-le")
+        size = self.c.sizeof(self.RenameInfo) + len(encoded)
+        buffer = self.c.create_string_buffer(size)
+        info = self.c.cast(buffer, self.c.POINTER(self.RenameInfo)).contents
+        info.ReplaceIfExists = 0
+        info.RootDirectory = parent
+        info.FileNameLength = len(encoded)
+        self.c.memmove(self.c.addressof(buffer) + self.RenameInfo.FileName.offset,
+                       encoded, len(encoded))
+        io = self.IoStatus()
+        status = self.n.NtSetInformationFile(handle, self.c.byref(io), buffer, size,
+                                             10)  # FileRenameInformation
+        if status < 0:
+            code = status & 0xFFFFFFFF
+            if code == self._STATUS_COLLISION:
+                raise FileExistsError(errno.EEXIST, "already exists", final)
+            dos = int(self.n.RtlNtStatusToDosError(code))
+            raise OSError(dos, f"publish failed (winerror {dos}, status {code:#x})", final)
+
+    def discard(self, parent: int, handle: int, temporary: str) -> None:
+        flag = self.w.BOOLEAN(1)
+        if not self.k.SetFileInformationByHandle(handle, 4, self.c.byref(flag),
+                                                 self.c.sizeof(flag)):  # FileDispositionInfo
+            raise self._last_error("discard")
+
     def write(self, handle: int, data: bytes) -> None:
         offset = 0
         while offset < len(data):
@@ -373,6 +443,19 @@ class VaultFs:
     def close_dir(self, handle: int) -> None:
         self._api.close(handle)
 
+    def dir_identity(self, parts) -> tuple:
+        handle = self.open_dir(parts)
+        try:
+            return self._api.identity(handle)
+        finally:
+            self._api.close(handle)
+
+    def folder_identity(self, handle: int) -> tuple:
+        return self._api.identity(handle)
+
+    def root_identity(self) -> tuple:
+        return self._api.identity(self._root)
+
     def _parent_of(self, parts) -> tuple[int, bool]:
         parts = tuple(parts)
         if not parts:
@@ -417,21 +500,25 @@ class VaultFs:
             if owned:
                 self._api.close(parent)
 
-    def walk(self, want=lambda name: True, cap=lambda name: 0):
+    def walk(self, want=lambda name: True, cap=lambda name: 0,
+             allow_dir=lambda parts: True, allow_file=lambda parts: True):
         """Yield `(parts, entry, data)` for every wanted plain file, folders in sorted order.
 
         Dot-names are skipped. Links, reparse points and multiply-linked files are not
         followed and not yielded; they are recorded in `skipped`. `cap(name)` is how many
         bytes of that file to read (0 reads nothing).
         """
-        yield from self._walk(self._root, (), want, cap)
+        yield from self._walk(self._root, (), want, cap, allow_dir, allow_file)
 
-    def _walk(self, handle: int, prefix: tuple, want, cap):
+    def _walk(self, handle: int, prefix: tuple, want, cap, allow_dir, allow_file):
         folders = []
         for name in sorted(self._api.list_names(handle)):
             if name.startswith("."):
                 continue
             parts = prefix + (name,)
+            # Decide from the listed name before opening a file or descending a folder.
+            if not allow_dir(parts) and not allow_file(parts):
+                continue
             try:
                 check_name(name)
                 child, entry = self._api.open_child(handle, name)
@@ -442,9 +529,10 @@ class VaultFs:
                 continue                      # vanished or unreadable between list and open
             try:
                 if entry.is_dir:
-                    folders.append(name)
+                    if allow_dir(parts):
+                        folders.append(name)
                     continue
-                if not want(name):
+                if not allow_file(parts) or not want(name):
                     continue
                 try:
                     self._check_links(entry)
@@ -465,13 +553,13 @@ class VaultFs:
                 continue
             try:
                 if entry.is_dir:
-                    yield from self._walk(child, prefix + (name,), want, cap)
+                    yield from self._walk(child, prefix + (name,), want, cap, allow_dir, allow_file)
             finally:
                 self._api.close(child)
 
     # -- writes ----------------------------------------------------
 
-    def create_exclusive(self, dir_parts, name: str, data: bytes) -> None:
+    def create_exclusive(self, dir_parts, name: str, data: bytes, *, create_dirs: bool = True) -> None:
         """Create `name` inside the folder `dir_parts`; `FileExistsError` if it is taken.
 
         The folder is made if missing. It and every ancestor must be real folders inside
@@ -479,7 +567,10 @@ class VaultFs:
         written, and the file is created relative to the verified folder's handle.
         """
         check_name(name)
-        folder = self.open_dir(tuple(dir_parts), create=True)
+        try:
+            folder = self.open_dir(tuple(dir_parts), create=create_dirs)
+        except FileNotFoundError as exc:
+            raise UnsafePath("inbox folder does not exist") from exc
         try:
             handle = self._api.create_file(folder, name)
             try:
@@ -488,3 +579,22 @@ class VaultFs:
                 self._api.close(handle)
         finally:
             self._api.close(folder)
+
+    def publish_in(self, folder: int, name: str, data: bytes) -> None:
+        """Publish complete bytes through a pinned folder, without replacing an entry."""
+        check_name(name)
+        temporary = ".chat-note-" + uuid.uuid4().hex + ".tmp"
+        create = getattr(self._api, "create_publish_file", self._api.create_file)
+        handle = create(folder, temporary)
+        published = False
+        try:
+            self._api.write(handle, data)
+            self._api.flush(handle)
+            self._api.publish(folder, handle, temporary, name)
+            published = True
+        finally:
+            try:
+                if not published:
+                    self._api.discard(folder, handle, temporary)
+            finally:
+                self._api.close(handle)

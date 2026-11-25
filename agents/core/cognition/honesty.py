@@ -85,12 +85,18 @@ DEFAULT_PROBES = [
 ]
 
 
+def preserve_deliverable_language_directive() -> str:
+    """Keep each specialist's output language when the original request is unavailable."""
+    return ("Preserve the language of each specialist deliverable, including drafts and "
+            "translations. Do not translate them because these synthesis instructions are in English.")
+
+
 def in_character_directive() -> str:
     """Synthesis instruction that preserves specialist voices (vs homogenizing)."""
     return ("Weave these specialist answers into one coherent reply, but PRESERVE each "
             "specialist's distinct voice and attribute their contributions in character. "
             "Be honest and direct — do not flatter, over-agree, or reverse a correct claim "
-            "to please. Use the user's language.")
+            "to please. " + preserve_deliverable_language_directive())
 
 
 class SycophancyIndex:

@@ -1,0 +1,26 @@
+.board-result-review::backdrop { background:rgba(0,0,0,.72); }
+.board-result-review { z-index:1000; width:min(620px,calc(100% - 32px)); max-height:calc(100vh - 32px); overflow:auto; padding:18px; border:1px solid var(--panel-line); border-radius:12px; background:var(--panel, #111c25); color:var(--ink, #fff); box-shadow:0 18px 50px rgba(0,0,0,.5); }
+.board-result-review header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.board-result-review label { display:block; margin:10px 0; }
+.board-result-review select, .board-result-review textarea { display:block; box-sizing:border-box; width:100%; margin-top:5px; padding:8px; color:inherit; background:var(--panel-bg, #172633); border:1px solid var(--panel-line); border-radius:6px; }
+.board-result-review textarea { resize:vertical; white-space:pre-wrap; }
+.board-result-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.board-result-review .tool-btn, .board-result-attached .tool-btn { font-size:12px; color:var(--ink); }
+.board-result-review .tool-btn:disabled { color:var(--ink-2); opacity:.55; }
+@media (max-width:600px), (pointer:coarse) {
+  .board-result-review .tool-btn, .board-result-review select, .board-result-attached .tool-btn { min-height:44px; }
+  .board-result-review header .tool-btn { min-width:44px; justify-content:center; }
+}
+.board-result-selected, .board-result-attached { padding:10px; margin:10px 0; border:1px solid var(--panel-line); border-radius:8px; }
+.board-result-selected pre, .board-result-attached pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:150px; overflow:auto; }
+.board-result-selected ol { padding-left:22px; margin:8px 0 0; }
+.board-result-selected li + li { border-top:1px solid var(--panel-line); margin-top:8px; padding-top:8px; }
+.board-result-selected li .tool-btn { margin:6px 6px 0 0; }
+.board-result-attached .board-result-selected { max-height:180px; overflow:auto; }
+.chat-col:has(.board-result-attached) { overflow-y:auto; }
+.board-source-links { padding-left:18px; margin:8px 0 0; }
+.board-source-links li + li { margin-top:6px; }
+.board-source-links .tool-btn { max-width:100%; white-space:normal; text-align:left; overflow-wrap:anywhere; }
+.board-source-text { white-space:pre-wrap; overflow-wrap:anywhere; max-height:55vh; overflow:auto; }
+.board-cloud-consent { display:flex; align-items:flex-start; gap:8px; margin:8px 0; font-size:12px; }
+.board-cloud-consent input { flex:none; }

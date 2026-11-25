@@ -8,7 +8,81 @@ import pytest
 from agents.core.llm.egress import llm_async_client
 from agents.core.llm.tool_protocol import TokenUsage
 from agents.core.llm.usage_context import report_text_usage
-from agents.core.turn_usage import model_usage_scope, turn_usage_scope
+from agents.core.turn_usage import (
+    model_calls_from_snapshot,
+    model_usage_scope,
+    turn_usage_scope,
+    wire_model_usage_scope,
+)
+
+
+def test_model_calls_require_complete_bounded_physical_breakdown():
+    usage = {"schema": "nerva.turn.usage.v1", "api_calls": 3,
+             "breakdown_truncated": False, "breakdown": [
+                 {"provider": "lm-studio", "model": "qwen3:7b", "api_calls": 2},
+                 {"provider": "gemini", "model": "gemini-2.5-flash", "api_calls": 1}]}
+    assert model_calls_from_snapshot(usage) == [
+        {"provider": "lm-studio", "model": "qwen3:7b"},
+        {"provider": "gemini", "model": "gemini-2.5-flash"}]
+    for change in ({"api_calls": None}, {"api_calls": 0}, {"api_calls": 4},
+                   {"breakdown_truncated": True}, {"breakdown": []},
+                   {"breakdown": usage["breakdown"] * 2}):
+        assert model_calls_from_snapshot({**usage, **change}) is None
+    for row in ({"provider": None}, {"model": ""}, {"api_calls": 0},
+                {"api_calls": 1.0}, {"provider": "x" * 65}, {"model": "x" * 121}):
+        assert model_calls_from_snapshot({**usage, "breakdown": [{**usage["breakdown"][0], **row},
+                                                       usage["breakdown"][1]]}) is None
+    assert model_calls_from_snapshot({**usage, "breakdown": usage["breakdown"] * 5,
+                                      "api_calls": 15}) is None
+
+
+@pytest.mark.asyncio
+async def test_committed_model_calls_are_session_bound_and_frozen():
+    with turn_usage_scope() as collector:
+        assert collector.claim_session("session-a")
+        await _send()
+        assert collector.commit_reply("session-a") == [{"provider": "openrouter", "model": "claude-sonnet-5"}]
+        await _send(model="other-model")
+        assert collector.reply_model_calls("session-a") == [{"provider": "openrouter", "model": "claude-sonnet-5"}]
+        assert collector.reply_model_calls("session-b") is None
+        assert not collector.claim_session("session-b")
+        assert collector.reply_model_calls("session-a") is None
+
+
+@pytest.mark.asyncio
+async def test_wire_model_scope_keeps_outer_status_identity_and_context():
+    wire = "qwen3:7b:local"
+    client = llm_async_client("ollama", transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"ok": True})))
+    try:
+        with turn_usage_scope() as collector:
+            assert collector.bind_status_scope(("owner", "session", "instance"))
+            with (
+                model_usage_scope(model="qwen3:7b", route="local", agent_id="frigga",
+                                  context_window=8192),
+                wire_model_usage_scope(model=wire, route="local"),
+            ):
+                await client.post("http://localhost:11434/api/chat", json={"model": wire})
+                report_text_usage(TokenUsage(input_tokens=10, output_tokens=5,
+                                             counts_complete=True,
+                                             prompt_counts_complete=True))
+            status = collector.status_snapshot()
+            assert status["model"] == wire
+            assert status["context_detail"] == {"prompt_tokens": 10, "window_tokens": 8192}
+            assert collector._status_key == ("owner", "session", "instance", "frigga", "local",
+                                             "ollama", wire)
+        with (
+            turn_usage_scope() as collector,
+            model_usage_scope(model="qwen3:7b", route="local", agent_id="frigga",
+                              context_window=8192, primary=False),
+            wire_model_usage_scope(model=wire, route="local"),
+        ):
+            await client.post("http://localhost:11434/api/chat", json={"model": wire})
+            assert next(iter(collector._pending.values())).primary is False
+            report_text_usage(TokenUsage(input_tokens=1, output_tokens=1,
+                                         counts_complete=True))
+    finally:
+        await client.aclose()
 
 
 async def _send(provider="openrouter", *, url="https://openrouter.ai/api/v1/chat/completions",

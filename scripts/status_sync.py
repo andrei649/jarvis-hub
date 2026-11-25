@@ -13,9 +13,11 @@ Sources (reused, not duplicated):
   * routes → ``tests/_snapshots/route_surface.json`` — the route-parity guard's
     canonical, de-duplicated METHOD+PATH surface, already kept honest by CI. Reading
     the snapshot avoids importing the whole app just to count routes.
-  * tests  → ``pytest --collect-only -q`` — the exact collected-test count when
-    explicitly refreshing counts; ``project-status.json`` is the tracked count source
-    for the fast generated-artifact gate.
+  * tests → one ``pytest --collect-only`` invocation: collected items plus its
+    collection-phase JUnit reports. A module skipped at import adds a JUnit
+    outcome without adding a collected item. This predicts the full-run JUnit
+    aggregate that CI checks; it is not a claim that every outcome executed.
+    ``project-status.json`` is the tracked source for the fast artifact gate.
 
 There are deliberately two policies:
 
@@ -73,8 +75,8 @@ GENERATED_DOCS = {
 }
 
 # The header tokens, e.g. "Tests:** ~3,011 collected" and "HTTP routes:** 327".
-# Accept the historical ``passed`` wording on input so the generator migrates old docs.
-_TESTS_RE = re.compile(r"(Tests:\*\* ~)([\d,]+)(?: passed| collected)")
+# Accept historical wording while migrating to JUnit-compatible reported outcomes.
+_TESTS_RE = re.compile(r"(Tests:\*\* ~)([\d,]+)(?: passed| collected| reported)")
 _FRONTEND_TESTS_RE = re.compile(r"(frontend \*\*)([\d,]+)( vitest\*\*)")
 _MOBILE_TESTS_RE = re.compile(r"(mobile \*\*)([\d,]+)( jest\*\*)")
 _ROUTES_RE = re.compile(r"(HTTP routes:\*\* )(\d+)")
@@ -90,35 +92,52 @@ def count_routes() -> int:
 
 
 def count_tests(repo: Path = REPO) -> int:
-    """Collected-test count via ``pytest --collect-only``.
+    """Predict the full-run JUnit count without executing test bodies.
 
     ``-o addopts=""`` clears the repo's ini ``addopts`` (which sets ``-q``; a second
     ``-q`` would suppress the "N tests collected" summary), and ``-p no:xdist`` keeps
-    collection on the master process so the count is printed once. Heavy (imports
-    every test module) — call only from the CLI paths, never from a unit test (it
-    would recurse into a full collection).
+    collection on the master so the count prints once. Collection-only JUnit has
+    no ordinary item results; it records module-level skips separately. Add those
+    reports once to match CI's full JUnit aggregate (runtime skips are already
+    collected items). Heavy — CLI only; never recurse into the project from tests.
     """
     if os.environ.get("PYTEST_CURRENT_TEST"):
         raise RuntimeError(
             "refusing nested pytest collection; use --reuse-test-counts inside a pytest run"
         )
-    proc = subprocess.run(  # noqa: S603  # nosec B603
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "--collect-only",
-            "-q",
-            "-p",
-            "no:xdist",
-            "-o",
-            "addopts=",
-        ],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-    )
-    return parse_pytest_count(proc.stdout + "\n" + proc.stderr, proc.returncode)
+    # Keep lightweight consumers (e.g. backlog --help) stdlib-only on import.
+    from defusedxml import ElementTree
+    from defusedxml.common import DefusedXmlException
+
+    with tempfile.TemporaryDirectory(prefix="nerva-test-count-") as temporary:
+        report = Path(temporary) / "collection.xml"
+        proc = subprocess.run(  # noqa: S603  # nosec B603
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "--collect-only",
+                "-q",
+                "-p",
+                "no:xdist",
+                "-o",
+                "addopts=",
+                f"--junitxml={report}",
+            ],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+        )
+        # Never turn a failed collection into a successfully updated counter.
+        collected = parse_pytest_count(proc.stdout + "\n" + proc.stderr, proc.returncode)
+        try:
+            xml = report.read_text(encoding="utf-8")
+            # Only our local pytest subprocess produces this private report.
+            ElementTree.fromstring(xml)
+            collection_reports = parse_junit_test_count(xml)
+        except (OSError, ElementTree.ParseError, DefusedXmlException, ValueError):
+            raise RuntimeError("pytest collection report missing or invalid") from None
+        return collected + collection_reports
 
 
 def parse_pytest_count(output: str, returncode: int) -> int:
@@ -640,7 +659,7 @@ def apply_to_status(
     digits change — surrounding version numbers, route-counts-in-prose, etc. are
     left untouched (single, anchored substitution per token)."""
     if tests is not None:
-        text = _TESTS_RE.sub(lambda m: f"{m.group(1)}{_fmt(tests)} collected", text, count=1)
+        text = _TESTS_RE.sub(lambda m: f"{m.group(1)}{_fmt(tests)} reported", text, count=1)
     if frontend is not None:
         text = _FRONTEND_TESTS_RE.sub(
             lambda m: f"{m.group(1)}{_fmt(frontend)}{m.group(3)}", text, count=1

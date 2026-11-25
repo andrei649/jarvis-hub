@@ -23,9 +23,11 @@ class _RecordingBackend:
     """Captures the model name it was asked to generate with."""
     def __init__(self):
         self.model_used = None
+        self.prompt_used = None
 
     async def generate(self, model="", prompt="", system="", **kwargs):
         self.model_used = model
+        self.prompt_used = prompt
         return "fused reply"
 
 
@@ -68,6 +70,22 @@ async def test_synthesize_keeps_configured_model_when_route_has_none():
     agent = _jarvis_agent(_RoutingRouter(backend, routed_model="", route_name="local"))
     await agent.synthesize({"friday": "a", "gecko": "b"}, intent=None)
     assert backend.model_used == "configured-default-model"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("in_character", [False, True])
+async def test_synthesize_preserves_specialist_deliverable_languages(in_character):
+    backend = _RecordingBackend()
+    agent = _jarvis_agent(_RoutingRouter(backend, routed_model="local-model"))
+
+    await agent.synthesize({"athena": "French draft: Bonjour, voisins.",
+                            "stark": "English source quote: Hello, neighbors."},
+                           intent=None, in_character=in_character)
+
+    assert "French draft: Bonjour, voisins." in backend.prompt_used
+    assert "Preserve" in backend.prompt_used and "language" in backend.prompt_used
+    assert "draft" in backend.prompt_used and "translation" in backend.prompt_used
+    assert "Use the user's language" not in backend.prompt_used
 
 
 # ── CDX-4 ─────────────────────────────────────────────────────────────────────

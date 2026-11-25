@@ -185,8 +185,9 @@ class _Win32Kernel:
         try:
             stdin_child, stdin_parent = pipe(duplex=True, overlapped=(False, True))
             stdout_parent, stdout_child = pipe(overlapped=(True, False))
+            # FILE_SHARE_READ | FILE_SHARE_WRITE; CPython's _winapi omits these names.
             stderr_child = _winapi.CreateFile('NUL', _winapi.GENERIC_WRITE,
-                _winapi.FILE_SHARE_READ | _winapi.FILE_SHARE_WRITE, 0,
+                0x1 | 0x2, 0,
                 _winapi.OPEN_EXISTING, 0, 0)
             return stdin_parent, stdin_child, stdout_parent, stdout_child, stderr_child
         except BaseException:
@@ -475,13 +476,13 @@ class OwnedJobProcess:
             if end >= 0:
                 line = bytes(buffer[:end])
                 del buffer[:end + 1]
-                return line
+                return line.removesuffix(b'\r')
             chunk = await self.reader.read(_CHUNK)
             if not chunk:
                 if buffer:
                     line = bytes(buffer)
                     buffer.clear()
-                    return line
+                    return line.removesuffix(b'\r')
                 return None
             search_from = len(buffer)
             buffer.extend(chunk)

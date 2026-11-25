@@ -96,8 +96,8 @@ def test_the_detail_carries_skill_md_and_the_code_the_owner_would_approve(hub):
     assert paths[0] == "SKILL.md" and "main.py" in paths and "references/notes.md" in paths
     assert "PENDING_REVIEW" not in paths
     files = {f["path"]: f for f in detail["files"]}
-    assert files["main.py"]["text"] == (skill_dir / "main.py").read_text(encoding="utf-8")
-    assert files["SKILL.md"]["text"] == (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert files["main.py"]["text"] == (skill_dir / "main.py").read_bytes().decode("utf-8")
+    assert files["SKILL.md"]["text"] == (skill_dir / "SKILL.md").read_bytes().decode("utf-8")
     assert files["main.py"]["truncated"] is False and len(files["main.py"]["sha256"]) == 64
     assert "agent=pepper" in detail["review_note"] and "organize the morning inbox" in detail["review_note"]
     assert isinstance(detail["warnings"], list)
@@ -209,7 +209,7 @@ def test_the_detail_route_serves_the_whole_content(hub, client):
     assert reply.status_code == 200 and reply.headers["cache-control"] == "no-store"
     body = reply.json()
     files = {f["path"]: f for f in body["files"]}
-    assert files["main.py"]["text"] == (hub.root / folder / "main.py").read_text(encoding="utf-8")
+    assert files["main.py"]["text"] == (hub.root / folder / "main.py").read_bytes().decode("utf-8")
     assert body["quarantined"] is True
     assert client.get(f"/api/skills/pending/{name}").status_code == 401
     assert client.get("/api/skills/pending/nothing-here", headers=ADMIN).status_code == 404

@@ -17,3 +17,5 @@
 # Keep Vite's HTML source and generated shell byte-reproducible on Windows.
 frontend/index.html text eol=lf
 agents/web/v2/index.html text eol=lf
+frontend/workspace.html text eol=lf
+agents/web/workspace/workspace.html text eol=lf

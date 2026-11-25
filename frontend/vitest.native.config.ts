@@ -17,6 +17,7 @@ export default defineConfig({
     'expo-audio': local('./native-tests/support/audio.ts'),
     'react-native-svg': local('./native-tests/support/svg.tsx'),
     'expo-image-picker': local('./native-tests/support/picker.ts'),
+    'expo/fetch': local('./native-tests/support/fetch.ts'),
     'expo-crypto': local('./native-tests/support/crypto.ts'),
   } },
   test: { name: 'native-appearance', environment: 'jsdom', globals: true, include: ['native-tests/*.test.tsx'], maxWorkers: 1 },

@@ -40,6 +40,7 @@ from agents.core.env_config import env_flag, env_str
 from agents.core.paths import data_root
 
 from .base import LLMBackend, is_degraded_reply
+from .physical_local import hard_local_moa_call
 from .tokenizer import estimate_tokens
 
 PRESET_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
@@ -589,6 +590,7 @@ class MoACommitteeBackend(LLMBackend):
         _RECENT_RUNS.appendleft(entry)
         return entry
 
+    @hard_local_moa_call
     async def generate(
         self,
         model: str,
@@ -641,6 +643,7 @@ class MoACommitteeBackend(LLMBackend):
         )
         return final
 
+    @hard_local_moa_call
     async def generate_stream(
         self,
         model: str,

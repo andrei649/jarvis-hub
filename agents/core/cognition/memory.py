@@ -707,9 +707,13 @@ class CoreMemory(JsonStore):
             return existing[0]
         bak = path.with_name(f"{path.name}.{time.strftime('%Y%m%dT%H%M%S')}-{digest[:12]}.bak")
         try:
-            fd = os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with os.fdopen(fd, "wb") as out:
-                out.write(data)
+            if os.name == "nt":
+                from agents.core.persistence.private_file import atomic_private_write
+                atomic_private_write(bak, lambda stage: stage.write_bytes(data), exclusive=True)
+            else:
+                fd = os.open(bak, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, "wb") as out:
+                    out.write(data)
         except OSError:
             logger.warning("core memory: the hand-edited %s could not be copied", path, exc_info=True)
             raise CoreMemoryDrift(path, None, "a copy of it could not be kept") from None

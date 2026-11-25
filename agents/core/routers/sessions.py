@@ -34,7 +34,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, StrictInt, field_validator
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard, user_guard
@@ -82,6 +82,85 @@ class ImportSessionRequest(BaseModel):
     turns: list[dict]
     request_id: UUID
     source_sha256: str | None = None
+
+
+class SearchSessionsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    query: str
+    limit: StrictInt = 20
+
+
+class SearchSessionHit(BaseModel):
+    session_id: str
+    turn: int
+    role: str
+    timestamp: str | None
+    agent_id: str | None
+    snippet: str
+
+
+class SearchSessionsResponse(BaseModel):
+    hits: list[SearchSessionHit]
+    truncated: bool
+    stopped_by: str | None
+
+
+@router.post("/sessions/search", dependencies=[Depends(admin_guard)], response_model=SearchSessionsResponse)
+async def search_session_messages(body: SearchSessionsRequest):
+    """Find retained user/assistant turns; project only current owner-readable text."""
+    import asyncio
+
+    from agents.core.memory.session_search import _match_turn, _snippet, preflight, search_sessions
+    from agents.core.security.quarantine import detect_injection_normalized
+    from agents.core.session_continuation import ContinuationRefused
+    from agents.core.session_transcript import read_transcript
+    from agents.core.tool_rpc import ToolRPCValidationError
+
+    orch = get_orch()
+    if orch is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503, headers=_NO_STORE)
+    try:
+        clean = preflight({"query": body.query, "limit": body.limit})
+    except ToolRPCValidationError as exc:
+        return JSONResponse({"error": exc.reason}, status_code=400, headers=_NO_STORE)
+    try:
+        # The index narrows candidates; the transcript reader rechecks current durable
+        # identity and redacts the full turn before a snippet is ever derived.
+        candidates = await asyncio.to_thread(search_sessions, clean["query"], limit=20)
+        terms = candidates["terms"]
+        histories = {}
+        hits = []
+        unavailable = False
+        for candidate in candidates["hits"]:
+            if candidate.get("injection_flagged"):
+                continue
+            sid = candidate["session_id"]
+            if sid not in histories:
+                try:
+                    histories[sid] = json.loads(await read_transcript(orch, sid))["turns"]
+                except ContinuationRefused:
+                    histories[sid] = None
+                    unavailable = True
+            turns = histories[sid]
+            if turns is None:
+                continue
+            turn = next((row for row in turns if row["turn"] == candidate["turn"]), None)
+            if turn is None or turn["role"] != candidate["role"]:
+                continue
+            matched = _match_turn(turn, terms, None)
+            if matched is None or detect_injection_normalized(turn["content"]):
+                continue
+            _, first, redacted = matched
+            hits.append({"session_id": sid, "turn": turn["turn"], "role": turn["role"],
+                         "timestamp": turn["timestamp"], "agent_id": turn["agent_id"],
+                         "snippet": _snippet(redacted, first)})
+    except Exception:
+        _log.exception("Failed to search session messages")
+        return JSONResponse({"error": "session_search_unavailable"}, status_code=503, headers=_NO_STORE)
+    stopped_by = candidates["stopped_by"] or ("history_unavailable" if unavailable else
+                                              "limit" if len(hits) > clean["limit"] else None)
+    return JSONResponse({"hits": hits[:clean["limit"]], "truncated": stopped_by is not None,
+                         "stopped_by": stopped_by}, headers=_NO_STORE)
 
 
 @router.post("/sessions/import", dependencies=[Depends(admin_guard)])
@@ -392,7 +471,7 @@ _NO_STORE = {"Cache-Control": "no-store"}
 
 
 @router.get("/sessions/{session_id}/transcript", dependencies=[Depends(admin_guard)])
-async def get_session_transcript(session_id: str, download: bool = False):
+async def get_session_transcript(session_id: str, download: bool = False, references: bool = False):
     """Preview or download retained user/assistant text with secret redaction."""
     from fastapi.responses import Response
 
@@ -403,7 +482,7 @@ async def get_session_transcript(session_id: str, download: bool = False):
     if orch is None:
         return JSONResponse({"error": "not initialized"}, status_code=503, headers=_NO_STORE)
     try:
-        raw = await read_transcript(orch, session_id)
+        raw = await read_transcript(orch, session_id, references=references)
     except ContinuationRefused as exc:
         return JSONResponse({"error": exc.reason}, status_code=exc.status, headers=_NO_STORE)
     except Exception:
@@ -552,7 +631,8 @@ async def resume_session(req: Request):
     checkpoints = getattr(orch, "checkpoints", None)
     if checkpoints is not None:
         _keep(checkpoints, sid)   # H218: resuming an archived chat brings it back (H262: pin kept, kept_at stamped)
-    history = await orch.memory.get_history(sid)
+    from agents import web
+    history = await orch.memory.get_history(sid, include_board_sources=web._web_principal(req).admin)
     from agents.core.memory.recap import render_recap
 
     # H441 — the recap is rendered from the stored turns, never by a model; "turns"

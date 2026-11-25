@@ -33,6 +33,11 @@ const DOC = [
 ].join('\n');
 
 describe('Markdown — structure', () => {
+  it('keeps the starting number when a reply resumes a list after a paragraph', () => {
+    const { container } = render(<Markdown text={'4. Open the scene.\n5. Select the label.\n\nAfter saving:\n\n6) Run the scene.'} />);
+    expect([...container.querySelectorAll('ol')].map(list => list.start)).toEqual([4, 6]);
+  });
+
   it('renders headings, lists, a fence, a table, a quote and a rule', () => {
     const { container } = render(<Markdown text={DOC} />);
     expect(container.querySelector('h1').textContent).toBe('Title');

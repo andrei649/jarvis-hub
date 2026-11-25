@@ -11,8 +11,9 @@ from typing import Optional
 
 from .conversation_clock import CLOCK_UNSET, CompactionClockRefused
 from .env_config import env_int
-from .llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY
 from .llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
+from .llm.physical_local import hard_local_agent_call, hard_local_synthesis
+from .reply_language import append_reply_language
 from .security import bind_guardrails
 from .security.quarantine import (
     collapse_whitespace,
@@ -908,15 +909,18 @@ class Agent:
                 if getattr(pipeline, "messages", None):
                     self._note_archive_recall("unavailable")
 
-        return (
+        skill_hint = ""
+        if context.get("_can_propose_skill_marker") is True:
+            skill_hint = ("If this task produced a reusable procedure, end your response with "
+                          "'[learn: task description | step1,step2,step3 | command_name]' "
+                          "to propose it for review. ")
+        prompt = (
             f"{skills_block}{agent_block}{rag_block}"
             f"User said: {text}\n"
             f"Respond as {self.name}.\n\n"
-            f"IMPORTANT: If this is a complex multi-step task you solved elegantly, "
-            f"end your response with '[learn: task description | step1,step2,step3 | command_name]' "
-            f"to save it as a reusable skill. "
-            f"You can also hand off to another agent with '[handoff:agent_id]'."
+            f"{skill_hint}You can also hand off to another agent with '[handoff:agent_id]'."
         )
+        return append_reply_language(prompt, context.get("_reply_language"))
 
     @staticmethod
     def _note_archive_recall(basis: str, wrapped=None) -> None:
@@ -958,11 +962,17 @@ class Agent:
 
         return record
 
+    @hard_local_agent_call
     async def generate_response(self, backend, model, prompt, system, max_tokens,
                                 temperature, on_token=None, wall_seconds=None,
                                 usage_sink=None, session_id=None, effective_window=None,
                                 clock_snapshot=CLOCK_UNSET, prepared_route=None,
                                 cached_input_tokens=0) -> str:
+        import asyncio
+        from contextlib import nullcontext
+
+        deadline = asyncio.get_running_loop().time() + wall_seconds if wall_seconds is not None else None
+
         from .channels.session_lifecycle import session_activity_callback
         from .conversation_clock import capture_clock, clock_scope
         from .llm.request_context import current_session, session_scope
@@ -1023,6 +1033,32 @@ class Agent:
                 window_tokens=effective_window.tokens if effective_window is not None else None,
                 max_tokens=max_tokens,
             )
+        from .llm.base import OllamaBackend
+        from .llm.data_handling import physical_request_guard_active
+        from .llm.physical_local import ollama_local_selector, physical_local_required
+        from .llm.request_context import (
+            job_reasoning_active,
+            primary_ollama_no_think,
+            selected_reasoning,
+        )
+
+        no_think_scope = nullcontext()
+        recoverable_ollama = None
+        from .security.guardrails import GuardrailsEngine
+
+        native = backend._backend if type(backend) is GuardrailsEngine else backend
+        if type(native) is OllamaBackend and not physical_request_guard_active() and not job_reasoning_active():
+            check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
+            if callable(check):
+                from .llm.model_roles import public_local_origin
+
+                effort = selected_reasoning(None)
+                wire_model = ollama_local_selector(model) if physical_local_required() else model
+                if effort == "none" and await native.verified_no_think(wire_model, lambda: check(backend, model)):
+                    no_think_scope = primary_ollama_no_think(native, wire_model)
+                elif (effort is None and public_local_origin(native.base_url)
+                      and getattr(native.client, "base_url", None)):
+                    recoverable_ollama = (native, wire_model, deadline)
         sink = usage_sink if usage_sink is not None else current_observer()
         reported_prompt_usage = []
         if compaction is not None and compaction.session_id == sid and compaction.enabled:
@@ -1040,15 +1076,17 @@ class Agent:
               text_usage_scope(None),
               trajectory.capture(agent_id=getattr(self, "id", ""), model=model, system=system,
                                  prompt=prompt) as recorded):
-            response = await self._generate_response(
-                backend, model, prompt, system, max_tokens, temperature,
-                on_token=on_token, wall_seconds=wall_seconds,
-                usage_sink=observer if sink is not None else None,
-                effective_window=effective_window,
-                prepared_route=prepared_route,
-                cached_input_tokens=cached_input_tokens,
-                compaction=compaction if compaction is not None and compaction.session_id == sid else None,
-            )
+            with no_think_scope:
+                response = await self._generate_response(
+                    backend, model, prompt, system, max_tokens, temperature,
+                    on_token=on_token, wall_seconds=wall_seconds,
+                    usage_sink=observer if sink is not None else None,
+                    effective_window=effective_window,
+                    prepared_route=prepared_route,
+                    cached_input_tokens=cached_input_tokens,
+                    compaction=compaction if compaction is not None and compaction.session_id == sid else None,
+                    **({"recoverable_ollama": recoverable_ollama} if recoverable_ollama else {}),
+                )
             if egress_scrubber is not None and raw_on_token is not None:
                 flushed_tail = egress_scrubber.flush()
                 if flushed_tail:
@@ -1122,6 +1160,7 @@ class Agent:
         prepared_route=None,
         cached_input_tokens=0,
         compaction=None,
+        recoverable_ollama=None,
     ) -> str:
         """Generate through the optional tool loop or the legacy backend path.
 
@@ -1220,39 +1259,36 @@ class Agent:
 
         check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
         guard = (lambda: check(backend, model)) if callable(check) else None
-        with text_usage_scope(usage_sink), physical_request_scope(guard):
-            if callable(check):
-                check(backend, model)
-            if on_token and hasattr(backend, "generate_stream"):
-                response = await backend.generate_stream(
-                    model=model,
-                    prompt=prompt,
-                    system=system,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    on_token=on_token,
-                )
-                steering.acknowledge()
-                note_plain_response(response)
-                return response
+        streaming = on_token and hasattr(backend, "generate_stream")
+        generate = backend.generate_stream if streaming else backend.generate
+        options = {"on_token": on_token} if streaming else {}
 
-            response = await backend.generate(
-                model=model,
-                prompt=prompt,
-                system=system,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-            steering.acknowledge()
-            if on_token:
-                emitted = on_token(response)
-                if inspect.isawaitable(emitted):
-                    await emitted
-            note_plain_response(response)
-            return response
+        async def send(*, request_check=None):
+            if request_check is not None:
+                check_final_request(prompt)
+            with physical_request_scope(guard, request_check=request_check):
+                if guard:
+                    guard()
+                return await generate(model=model, prompt=prompt, system=system, max_tokens=max_tokens,
+                                      temperature=temperature, **options)
+
+        with text_usage_scope(usage_sink):
+            if recoverable_ollama:
+                native, wire_model, deadline = recoverable_ollama
+                response = await native.recover_primary_text(wire_model, send, guard, deadline)
+            else:
+                response = await send()
+        steering.acknowledge()
+        if on_token and not streaming:
+            emitted = on_token(response)
+            if inspect.isawaitable(emitted):
+                await emitted
+        note_plain_response(response)
+        return response
 
     async def process(self, text: str, context: dict, *, prepared=None) -> str:
         system_prompt = self.system_prompt()
+        system_prompt = append_reply_language(system_prompt, (context or {}).get("_reply_language"))
         model = self.default_model()
 
         if not self.llm_router:
@@ -1277,10 +1313,10 @@ class Agent:
                 res = (prepared.backend, prepared.model, prepared.route)
             else:
                 res = self.llm_router.select_backend(self.id, prompt)
-        except LocalBackendUnavailableError:
+        except LocalBackendUnavailableError as exc:
             from .turn_outcome import record_agent_observation
             record_agent_observation(self.id, 'unavailable')
-            return LOCAL_SELECTION_UNAVAILABLE_REPLY
+            return exc.public_reply
         route_name = ""
         if isinstance(res, tuple) and len(res) == 3:
             backend, routed_model, route_name = res
@@ -1419,6 +1455,7 @@ class Agent:
             return set()
         return {a for a, resp in responses.items() if a in LOCAL_ONLY_AGENTS and resp}
 
+    @hard_local_synthesis
     async def synthesize(self, responses: dict[str, str], intent, in_character: bool = False) -> str:
         jarvis_only = all(k == "jarvis" for k in responses)
         if jarvis_only:
@@ -1440,20 +1477,24 @@ class Agent:
         model = self.config.get("model", "google/gemma-4-31b-a4b")
         system_prompt = self.system_prompt()
 
+        from .cognition.honesty import (
+            in_character_directive,
+            preserve_deliverable_language_directive,
+        )
+
         if in_character:
-            directive = (
-                "Weave these specialist answers into one coherent reply, but PRESERVE each "
-                "specialist's distinct voice and attribute their contributions in character. "
-                "Be honest and direct — do not flatter, over-agree, or reverse a correct claim "
-                "to please. Use the user's language."
-            )
+            directive = in_character_directive()
         else:
-            directive = "Be concise. Use the user's language. Do not mention internal agent IDs."
+            directive = ("Be concise. Do not mention internal agent IDs. "
+                         + preserve_deliverable_language_directive())
         prompt = (
             f"Synthesize the following specialist responses into a single, coherent reply for the user:\n"
             f"{agent_reports}\n\n"
             f"{directive}"
         )
+        reply_language = (getattr(intent, "context", None) or {}).get("_reply_language")
+        system_prompt = append_reply_language(system_prompt, reply_language)
+        prompt = append_reply_language(prompt, reply_language)
 
         # SEC-B1 / the adversarial audit's §15.4 finding. The prompt built above embeds
         # every contributor's RAW output, and this method then routed as `self.id` —

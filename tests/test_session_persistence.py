@@ -29,6 +29,32 @@ async def test_persistence_roundtrip_across_restart(tmp_path, monkeypatch):
     assert [t["content"] for t in hist] == ["salut", "bună, domnule"]
 
 
+async def test_native_assistant_model_calls_survive_restart_and_resume(tmp_path, monkeypatch):
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    calls = [{"provider": "lm-studio", "model": "qwen3:7b"}]
+    memory = ConversationMemory(persist=True)
+    await memory.new_session("session_calls")
+    await memory.add_turn("session_calls", "user", "hello")
+    await memory.add_turn("session_calls", "assistant", "answer", model_calls=calls)
+    await memory.new_session("session_other")
+    await memory.add_turn("session_other", "user", "other")
+
+    restarted = ConversationMemory(persist=True)
+    assert await restarted.resume_session("session_calls")
+    rows = await restarted.get_history("session_calls")
+    assert "model_calls" not in rows[0]
+    assert rows[1]["model_calls"] == calls
+
+
+def test_imported_turn_extras_cannot_supply_model_calls():
+    from agents.core.memory.conversation import Turn
+
+    calls = [{"provider": "gemini", "model": "gemini-2.5-flash"}]
+    assert "model_calls" not in Turn("user", "text", model_calls=calls).to_dict()
+    assert "model_calls" not in Turn("assistant", "text", foreign_origin="claude",
+                                     model_calls=calls).to_dict()
+
+
 async def test_resume_specific_session(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     m = ConversationMemory(persist=True)

@@ -800,7 +800,7 @@ class BackgroundReviewer:
             # H349: the background review is the agent's own initiative (curated).
             name = self._skills.generate_skill(
                 label, update["task"], update["steps"] or ["(captured from review)"],
-                write_origin="background_review")
+                write_origin="background_review", procedure_agents=["all"])
             if name:
                 actions.append(f"Skill '{name}' proposed (quarantined, pending review)" + (_UNCLEAN if unclean else ""))
                 return True

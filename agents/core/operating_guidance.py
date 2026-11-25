@@ -282,7 +282,7 @@ def _execution_guidance(tools: set[str]) -> str:
             "- Git history, branches, diffs → use terminal_run",
         ))
     if read:
-        mandatory.append("- File contents → use file_read")
+        mandatory.append("- File contents requested by path → use file_read. Read attached excerpts directly.")
     if search:
         mandatory.append("- Matches across files (literal, or regex=true) and files by glob → use file_search")
     if terminal:
@@ -308,7 +308,7 @@ def _execution_guidance(tools: set[str]) -> str:
             "- 'What time is it?' → check with terminal_run (don't guess)",
         ))
     if read:
-        act.append("- 'What does this file say?' → check the provided path with file_read")
+        act.append("- 'Read this path' → check the provided path with file_read")
     if code and not terminal:
         act.append("- 'What is this calculation?' → calculate with execute_code")
     act.extend((
@@ -332,7 +332,7 @@ def _google_guidance(tools: set[str]) -> str:
     ]
     if read or search or terminal:
         checks = ", ".join(detail for available, detail in (
-            (read, "file_read for actual file contents"),
+            (read, "file_read for file contents requested by path"),
             (search, "file_search for matching snippets"),
             (terminal, "terminal_run for project structure and file metadata"),
         ) if available)

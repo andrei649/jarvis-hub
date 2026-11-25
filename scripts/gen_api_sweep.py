@@ -99,6 +99,11 @@ EXPECT_OVERRIDES = {
 }
 
 PROBE_OVERRIDES = {
+    "POST /sessions/search": (
+        '`POST $B/sessions/search` with the owner header and JSON `{"query":"project notes","limit":5}`',
+        "**200** with up to five matching retained messages and a truncation flag. "
+        "The current conversation stays selected.",
+    ),
     "GET /api/admin/llm/provider-credentials": (
         '`curl -sS -G -H "X-Admin-Token: $JARVIS_ADMIN_TOKEN" '
         '--data-urlencode "provider=$INSTALLED_SIGNED_PROVIDER" '

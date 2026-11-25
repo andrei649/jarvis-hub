@@ -21,6 +21,7 @@ TASKS = {
     "review": "JARVIS_AUX_REVIEW_MODEL",
     "compression": "JARVIS_AUX_COMPRESSION_MODEL",
 }
+FAKE_SAFE_TASKS = tuple(task for task in TASKS if task != "review")
 
 
 @pytest.fixture
@@ -61,7 +62,7 @@ def producer(monkeypatch):
                            calls=calls, invoke=invoke)
 
 
-@pytest.mark.parametrize("task", TASKS)
+@pytest.mark.parametrize("task", FAKE_SAFE_TASKS)
 async def test_each_producer_uses_its_own_model_without_changing_active(producer, monkeypatch, task):
     for other, name in TASKS.items():
         monkeypatch.setenv(name, f"configured-{other}")
@@ -104,18 +105,18 @@ def test_title_override_is_deliberate_while_other_tasks_keep_active_fallback():
         assert resolve_auxiliary_model(task, "large-chat-70b", env={}) == "large-chat-70b"
 
 
-@pytest.mark.parametrize("task", TASKS)
+@pytest.mark.parametrize("task", FAKE_SAFE_TASKS)
 async def test_unset_and_space_only_use_each_tasks_default_selection(producer, monkeypatch, task):
     assert await producer.invoke(task) == "local answer"
     assert producer.calls[-1][1]["model"] == (DEFAULT_LOCAL_MODEL if task == "session_title" else "active-local")
     monkeypatch.setenv(TASKS[task], "   ")
     producer.router.active_model = None
     await producer.invoke(task)
-    expected = "google/gemma-4-31b-a4b" if task == "review" else DEFAULT_LOCAL_MODEL
+    expected = DEFAULT_LOCAL_MODEL
     assert producer.calls[-1][1]["model"] == expected
 
 
-@pytest.mark.parametrize("task", TASKS)
+@pytest.mark.parametrize("task", FAKE_SAFE_TASKS)
 async def test_override_is_read_for_each_invocation(producer, monkeypatch, task):
     generate = (producer.orch._session_titler() if task == "session_title" else
                 producer.orch._query_rewriter() if task == "query_rewrite" else None)
@@ -165,7 +166,7 @@ def test_resolver_refuses_nonprintable_model_id(bad):
         resolve_auxiliary_model("review", "active", env={TASKS["review"]: bad})
 
 
-@pytest.mark.parametrize("task", TASKS)
+@pytest.mark.parametrize("task", FAKE_SAFE_TASKS)
 async def test_printable_unicode_override_reaches_real_producer(producer, monkeypatch, task):
     monkeypatch.setenv(TASKS[task], "local-模型")
     await producer.invoke(task)
@@ -205,7 +206,7 @@ async def test_cloud_only_router_never_generates(producer, task):
     assert producer.calls == []
 
 
-@pytest.mark.parametrize("task", TASKS)
+@pytest.mark.parametrize("task", FAKE_SAFE_TASKS)
 async def test_qwen_suffix_depends_on_selected_model_and_task(producer, monkeypatch, task):
     monkeypatch.setenv(TASKS[task], "Qwen3-selected")
     await producer.invoke(task)
@@ -244,27 +245,27 @@ async def test_concurrent_tasks_capture_independent_models_and_physical_guards(p
 
     producer.backend.generate = generate
     try:
-        tasks = [asyncio.create_task(producer.invoke(task)) for task in ("session_title", "review")]
+        tasks = [asyncio.create_task(producer.invoke(task)) for task in ("session_title", "query_rewrite")]
         await arrived.wait()
-        assert set(entered) == {"parallel-session_title", "parallel-review"}
+        assert set(entered) == {"parallel-session_title", "parallel-query_rewrite"}
         release.set()
         assert await asyncio.gather(*tasks) == ["local answer", "local answer"]
         assert len(sent) == 2
         assert {(model, role) for model, role in seen} == {
-            ("parallel-session_title", "session_title"), ("parallel-review", "review")}
+            ("parallel-session_title", "session_title"), ("parallel-query_rewrite", "query_rewrite")}
         assert len(seen) == 4  # each preflight and physical send
     finally:
         await client.aclose()
 
 
 async def test_policy_change_before_actual_send_refuses_request(producer, monkeypatch):
-    monkeypatch.setenv(TASKS["review"], "review-specific")
+    monkeypatch.setenv(TASKS["query_rewrite"], "rewrite-specific")
     sent = []
     client = llm_async_client("lm-studio", transport=httpx.MockTransport(
         lambda request: sent.append(request) or httpx.Response(200)))
 
     async def generate(**kwargs):
-        assert kwargs["model"] == "review-specific"
+        assert kwargs["model"] == "rewrite-specific"
         producer.backend.base_url = "https://changed.invalid"
         await client.post("http://127.0.0.1:1234/send")
         return "local answer"
@@ -272,7 +273,7 @@ async def test_policy_change_before_actual_send_refuses_request(producer, monkey
     producer.backend.generate = generate
     try:
         with pytest.raises(data_handling.DataHandlingRefused):
-            await producer.invoke("review")
+            await producer.invoke("query_rewrite")
         assert sent == []
     finally:
         await client.aclose()

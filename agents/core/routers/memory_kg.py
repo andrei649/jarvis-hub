@@ -30,7 +30,7 @@ import contextlib
 import logging
 import math
 import time
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
@@ -41,7 +41,7 @@ from agents.core.automation_contracts import ContractTemplate, contract_denial, 
 from agents.core.memory.consolidation import (
     ADD, DELETE, UPDATE, ListStore, existing_from_hits, validate_plan,
 )
-from agents.core.routers._deps import admin_guard, user_guard
+from agents.core.routers._deps import admin_guard, owner_web_principal, user_guard
 from agents.core.routers._component import require_component
 from agents.core.security import quarantine, taint
 from agents.core.security.rag_guard import REDACTION, provenance_from_hit
@@ -63,8 +63,9 @@ _KG_WRITE_OPS = frozenset({
     "delete_relation",
     "add_fact",
     "ingest",
-    # H046: a learned entry of the timeline (a curated ring's fact, a learned skill or a
-    # fact-store row) changed or deleted by its id (routers/dashboard.py).
+    # H046: a learned entry of the timeline created, changed or deleted through
+    # routers/dashboard.py.
+    "add_learning",
     "edit_learning",
     "delete_learning",
 })
@@ -1017,6 +1018,39 @@ async def memory_core():
     if drift:
         body["drift"] = drift
     return nocache_json(body)
+
+
+class SavedChatFact(BaseModel):
+    entry_id: str
+    store: Literal["memory", "user"]
+    value: str
+
+
+class SavedChatFacts(BaseModel):
+    entries: list[SavedChatFact]
+
+
+@router.get("/api/memory/core/facts", dependencies=[Depends(owner_web_principal)],
+            response_model=SavedChatFacts)
+async def chat_saved_facts(store: Literal["memory", "user"]):
+    """The one curated store the owner chose when replacing a saved fact from chat."""
+    from agents.core.memory.timeline import ring_fact_id
+    from agents.core.memory_tool import TARGETS, MemoryToolError, _read_rings
+
+    living = _memory_module(get_orch())
+    if living is None:
+        return nocache_json({"error": "Curated memory is unavailable."}, status_code=503)
+
+    def entries():
+        _read_rings(living, only=store)
+        return [{"entry_id": ring_fact_id(store, value), "store": store, "value": value}
+                for value in getattr(living, TARGETS[store]).list()]
+
+    try:
+        return nocache_json({"entries": await asyncio.to_thread(entries)})
+    except MemoryToolError as exc:
+        return nocache_json({"error": "Cannot read the selected saved facts.", "reason": exc.reason},
+                            status_code=409)
 
 
 @router.post("/api/memory/core/undo", dependencies=[Depends(admin_guard)])

@@ -7,6 +7,34 @@ question of *which hub surfaces the mobile app has caught up to*.
 This file is the single source of truth for that gap. Backlog tasks for closing it live under
 **`BACKLOG.md` → ORIZONT 18**.
 
+Browser Chat, Cockpit and native Chat can search retained message text via
+`POST /sessions/search`. On mobile, **History → Search messages** opens an
+owner search. **Review source** reads the exact saved turn. **Continue this
+conversation** verifies it again and reopens the session with the typed draft.
+In web Chat, Cockpit and native Chat, the owner can also quote a passage in the
+current conversation. Native Chat offers **Use passage in next message** after
+review. Sending rechecks the saved text and attaches a citation to the question.
+A recipient that may use a cloud model requires explicit consent.
+
+The browser HUD can download a completed reply as a Word document and individual
+tables as Excel workbooks through `POST /api/canvas/export`. The native apps
+still need a download or share action for these outputs. In web Chat and
+Cockpit, owners can compare selected passages from multiple Word and Excel
+files in one message. The native apps still need a document picker and passage review.
+
+Web Chat and Cockpit can create a Kanban triage task from a message and attach
+reviewed results from up to eight completed tasks to a single question. Each
+passage identifies its source board and task. In the web apps the owner can
+reopen each cited task from the saved question. Native Chat still needs task
+creation, the result picker and the saved-source viewer. In Chat and Cockpit
+the web picker can also create an editable Obsidian note from the selection.
+Native Chat still needs this board-to-note action.
+
+Web Chat, Cockpit and native Chat save reviewed replies as Markdown notes in
+the connected Obsidian inbox. On mobile, **Open saved note** reads the
+current note from the original hub vault. The device can also open its own
+Obsidian copy when the same vault is available locally.
+
 ## The sync rule (how the bridge works)
 
 > When a browser/HUD change adds or modifies a **user-facing endpoint or capability**, in the
@@ -19,6 +47,19 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 > become iOS/Android tasks** instead of silently drifting.
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
+
+### ANDREI OS gaps (2026-11-17, post-merge #1370 review)
+
+| Surface | API | Separate browser `/os/` | Native HUD V2 | Native mobile | Task |
+|---|---|---|---|---|---|
+| 3D workshop, local model edits, saved versions and professional exports | `POST /api/os/workshop/edit`, `GET/POST /api/os/workshop/projects`, `GET /api/os/workshop/project` | Robot, house and miniature with named vault versions and GLB download. The house exports SVG or a JSX script that creates an editable floor plan in desktop Illustrator. | Artifacts reopens versions, chat reviews their state and task comments can link them | ⬜ native scene editor, project picker and export actions remain open | H18.38 |
+| ANDREI OS vault status, graph, note inspection, retrieval and inbox capture | `GET /api/os/status`, `GET /api/os/brain`, `GET /api/os/brain/note`, `GET /api/os/brain/retrieve`, `POST /api/os/brain/capture`, `POST /api/os/brain/chat-note` | ✅ graph, source links and capture | Text composer opens matching passages in long notes, rechecks the selected text and can include its relative path in the saved message. Completed replies can be edited and saved into the vault inbox. | Chat attaches matching excerpts from across a note, saves completed replies to the vault inbox and reopens saved notes. Vault graph navigation and manual passage selection remain open. | H18.38 |
+| Standalone provider keys, cloud chat consent and local vault paths | Standalone `/api/config`, `/api/status`, `/api/chat` | ✅ standalone Settings; hub hides AI Connections | ➖ standalone-only settings | ➖ standalone-only settings | Intentional standalone-only scope |
+
+The `/os/` page calling hub routes is browser integration evidence, not HUD V2 or
+native mobile parity. Hub chat uses its separate `/chat`; the standalone consent
+repair neither changes nor demonstrates a bypass of that policy. H18.38 remains
+open; no physical device or native client acceptance is claimed.
 
 SEC-B6 local source candidate (2026-11-03): twelve owner-content reads now require
 user credentials: `GET /api/oracle/status`, `GET /agents`, the three
@@ -175,13 +216,17 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Chat/session protocol discovery | `GET /v1/capabilities` | ➖ machine-readable client contract; no HUD control | ➖ available to authenticated clients; current native transport remains fixed to its tested contract, runtime negotiation is not implemented | H477 partial |
 | Owner checkpoint operations (H011, partial) | Existing `POST /chat`, `POST /chat/stream`; no new route | Owner inventory, diff, selected/force restore and index maintenance through typed commands and host CLI; signed human task + kernel execution; successful restore rewinds only the current last-user exchange | ⬜ dedicated checkpoint UI and native acceptance; no native implementation claimed | H011 / H18.26; size/retention controls and complete checkpoint-owned payload cleanup remain open; shared blobs retained |
 | Chat history persistence | — (client-side) | ✅ | ✅ | H18.2 |
-| Agent selection | user `GET /api/agents`, `agent` param | ✅ | ✅ | H18.3 |
+| Agent selection | user `GET /api/agents`, `chat_routing`, chat `agent` parameter | Chat and Cockpit retain the conversation's recipient across reloads in the same tab and show the configured policy. | The native chat picker lists enabled agents, shows the routing policy and saves the choice in device preferences. | H18.3 |
+| Compare two agents | owner `POST /api/agents/opinions`, user `POST /api/os/brain/chat-note` and `GET /api/os/brain/note` | Chat and Cockpit show separate answers. Each answer can be reviewed and saved to Obsidian with its question and attribution. | Native Chat compares two agents, keeps the original draft and can save either answer with its source. Open the saved note from its card to see later vault edits. | Chat |
 | Owner browser sign-in (H509, partial) | `GET /api/auth/session`, `POST /api/auth/login`, `/logout`, `/logout-all` (admin) | ✅ sign-in screen on a networked origin, CSRF on cookie writes, sign-out / sign-out everywhere | ➖ intentionally browser-only: the native app keeps its header token (no cookie jar to protect) | G13 |
 | Runtime Inspector (H227) | Existing admin inspector route | ✅ model/route resolution, unresolved/legacy/withheld states and fixed empty-turn limits | ⬜ dedicated native inspector; intentional owner administration gap | H18.26 / H227 |
-| Durable Kanban and approved workers (H075/H581, partial) | Owner `/kanban` and `nerva kanban`, scoped admin `/api/kanban` board/task/file APIs and authenticated board event WebSocket; signed dispatch queue, bounded parallel workers, cancellation and separately approved URL attachments; flags default off | 🟡 ProjectsMode board and task drawer: board/task CRUD, bulk changes, comments, local attachment upload/download, project/profile/orchestration reads, explicit dispatch request, event refresh with reconnect and poll; existing approval queue. Advanced profile/orchestration/log/model/transfer and worker/recovery actions remain open; file-mutation callback prerequisite is not wired | ⬜ native board/worker controls and attachments | H18.34 / H075 / H581; no full Hermes parity or native acceptance claimed |
+| Durable Kanban and approved workers (H075/H581, partial) | Owner `/kanban` and `nerva kanban`, scoped admin `/api/kanban` board/task/file APIs, authenticated board events, signed dispatch, bounded parallel workers, cancellation and separately approved URL attachments. Flags default off. | 🟡 Projects supports board/task CRUD, bulk changes, comments, local attachments, project/profile/orchestration reads, owner dispatch and event refresh. The task editor can assign or reassign a registered hub agent. The board shows active workers and links to their tasks. A prerequisite task shows its children's results. Worker history records attempts and results. Recovery checks the exact native attempt and holds uncertain work for owner review. Raw worker logs, process inspection/termination and advanced profile/orchestration/model/transfer actions remain open. | ⬜ native board/worker controls and attachments | H18.34 / H075 / H581 |
 | Markdown rendering | — (client-side) | ✅ | ✅ | H18.4 |
 | Status / telemetry | `GET /status` | ✅ | ✅; local refresh-order fix protects model/Trust/brief data and loading/error state from older responses | H18.1; [refresh evidence](docs/native-status-refresh-order.md) |
 | Sessions (resume) | `GET /sessions`, `POST /sessions/resume` | ✅ | ✅ | H18.5 |
+| Direct reply for one text message | Existing `reasoning` field on `POST /chat/stream` | Select **Direct reply** and send the message | **Send direct reply** submits the current draft with the same preference | H18.5 |
+| Models called for a chat reply | `POST /chat`, `POST /chat/stream`, `POST /sessions/resume` | Measured provider and model on the live and reopened reply | Native chat lists the provider and model for completed replies with a server receipt, including after reopening the conversation. | H18.5 |
+| Agent tool activity for a chat reply | Chat outcome and saved native assistant turn | Chat and Cockpit show recorded executions for that reply, including after reopening | Native chat shows the same measurement and retains it in the connection-scoped history | H18.5 |
 | Voice / TTS | `POST /tts` | ✅ | ✅ | H18.5 |
 | Speech-only verifier advisory filtering (H526 checkpoint) | Shared hub TTS normalizer; footer-only replies return 204 | Whole replies and live deltas filter the exact structured advisory; visible text stays intact | Existing native `/tts` path inherits hub normalization; no separate client parser or device-audio claim | H526 final whole-contract acceptance pending |
 | Approved speech command configuration | `GET/POST /api/admin/voice/commands` | ✅ Settings → Voice → Command providers; independent named TTS/STT, signed registration, human approval, revisioned clear and STT selection | ⬜ native provider configuration; hub TTS playback remains available | H517 / H613; vendor/plugin breadth remains open |
@@ -190,6 +235,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Tasks board | `GET /tasks` | ✅ | ✅ | H18.13 |
 | Ticker | `GET /ticker` | ✅ | ✅ | H18.14 |
 | Skills browser | `GET /skills` | ✅ | ✅ | H18.15 |
+| Teach, correct and reuse a procedure | Owner `/refine`, `POST /api/skills/procedures`, `GET` and `POST /api/skills/procedures/revision`, pending skill review, and agent-filtered `GET /api/commands?agent=…` | In Chat and Cockpit, teach the replying agent a procedure or use **Skills → Edit steps** to propose a correction. Console shows the original and revised instructions for review. | In Chat → Commands → Skills, pick an approved skill for the current agent. Search by name when several are available. Selecting it keeps the task text in the editor. Teaching, editing steps and reviewing proposed changes are available in the web HUD. | The previous steps stay active until the change is applied. The same shortcut then uses the revised steps across chats and hub restarts. |
 | Conditional model-facing skill offers (H328) | Shared prompt catalog and `skills_list` gates now recognize native Kanban and supported toolset members | ✅ shared runtime | ✅ same server-side turn policy; no new native control | H328 |
 | Resource-pressure warnings (H161) | `GET /api/system/pressure`, `POST /api/system/pressure/dismiss`; unreadable volumes retain their warning until confirmed recovery | ✅ existing ranked banner | ⬜ native banner/dismissal reader remains open | H161 |
 | App-timezone schedules (H450) | Existing schedule preview and jobs APIs use the same active application zone; saved zone changes apply to running jobs after restart | ✅ existing Jobs preview/create/edit | ⬜ native job administration remains open; shared backend behavior applies to all callers | H450 |
@@ -220,6 +266,11 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Security posture | public `GET /api/security/kill-switch` exact `{global, any_halted, halted_count}`; admin `GET /api/security/kill-switch/details` full `{global, halted}`; `GET /api/security/{governance,loop-breaker}` (open), `GET /api/security/posture` (admin) | ✅ aggregate warnings in Trust/Console; legacy admin details | ✅ read-only aggregate Status, scoped/global/unknown distinct; no device acceptance claimed | H18.18 |
 | Health/readiness probes | `GET /healthz`, `GET /readyz` | ✅ | ➖ | — |
 | First-run command center (0.19) | `GET /api/onboarding/command-center` | ✅ | ✅ | H18.19 |
+| Compare selected Word and Excel passages in one chat message | `POST /api/canvas/office-preview`, `POST /chat/stream` | ✅ Includes paging through long Word documents | ❌ | Native document selection and passage review pending |
+| Inspect a Blender project and attach selected inventory text | `POST /api/canvas/blender-preview` | ✅ | ❌ | Native Blender file selection and review pending |
+| Request an editable Blender mesh and download a native project | `POST /api/canvas/blender-export` | ✅ Chat and Cockpit | ❌ | Native mesh preview and project download pending |
+| Review Godot project source and download a scene or script from a reply | Browser-local file review and download | ✅ Chat and Cockpit | ❌ | Native mobile file selection and Godot downloads pending |
+| Compose an agent reply as a layered Photoshop document | Browser-local PSD download | ✅ Chat and Cockpit | ❌ | Native mobile composition and export pending |
 | Artifacts workspace (Canvas) | `GET /api/canvas`, `POST /api/canvas/post`, `POST /api/canvas/{id}/pin`, `DELETE /api/canvas/{id}` | ✅ | ✅ | H18.20 |
 | Media Director (O29, default-off) | `GET /api/media/devices`, `POST /api/media/devices`, `DELETE /api/media/devices/{device_id}`, `GET /api/media/session`, `POST /api/media/present`, `POST /api/media/restore/{device_id}` | ✅ | ✅ | H18.21 |
 | Local image generation (ComfyUI and configured images API, default-off) | `GET /api/media`, `POST /api/media/generate`, admin-only `GET /api/media/generation-tasks/{task_id}`, user-guarded `GET /api/media/generated/{artifact_id}` | ✅ Console → Build → Images: backend/model selection with per-backend edit/upscale capabilities, exact prompt, existing Inbox approval, one-task state, authenticated PNG preview/download and opt-in gallery; resume by task ID. Typed local API/ComfyUI history errors and proven cloud response failures stay distinct from uncertain outcomes; live service proof pending | 🟡 local candidate: exact-prompt local proposals, scoped task restoration, manual refresh, authenticated PNG preview and saved copy; shared reader distinguishes typed local API/ComfyUI history errors and narrowly proven cloud response failures, with no preview/resubmission; legacy/incomplete/ambiguous results stay uncertain and real-device/live-generator acceptance remains open | H18.27 / HA-4i-image / H517 |
@@ -252,7 +303,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Service status and slot holders (H019) | `GET /status` `service` and `slots` blocks; user `GET /api/status/slots` (holders) | ➖ read by `nerva status`; the HUD does not render them | ➖ host CLI administration; no native surface planned | H019 |
 | Per-turn memory recall line (H430) | `outcome.recall` on `/chat` and the SSE end event (`nerva.recall-status.v1` per provider, last prefetch only); channel reply footers | ✅ HUD turn outcome shows the recall line; Telegram and other channel replies carry it as a text footer, never in a spoken clip | ⬜ native chat does not render the recall line yet; the server already sends it in the shared payload | H18.36 / H430 |
 | Agent roster: create, rename, retire, restore (H202) | admin `GET /api/admin/agents/roster`, `POST /api/admin/agents`, `POST /api/admin/agents/{agent_id}/rename`, `/retire`, `/restore` | ✅ agent dossier dialogs beside the SOUL editor; `nerva agents list\|create\|rename\|retire\|restore` | ⬜ no native roster editor; retired agents drop out of the shared agent list and routing for every client | H18.37 / H202 |
-| Learning journey: list, show, edit, forget a learned entry (H046) | user `GET /api/dashboard/today/entries`, `GET /api/dashboard/today/entries/{entry_id}`; admin `PATCH` and `DELETE /api/dashboard/today/entries/{entry_id}` (cross `kg.write`); timeline entries on `GET /api/dashboard/today` carry ids | ✅ TODAY card edits and forgets a learned entry; `nerva journey` (aliases `learning`, `memory-graph`) | ⬜ the native Today board is not built yet (see the Today board row) | H18.37 / H046 |
+| Learning journey and curated facts (H046) | User GET of `/api/dashboard/today/entries` and its individual entries. The owner picker reads one store at `GET /api/memory/core/facts?store=memory\|user`. Admin POST, PATCH and DELETE cross `kg.write`. Undo uses `POST /api/memory/core/undo`. | ✅ Memory, Chat and Cockpit can save, replace or forget a curated fact and undo a confirmed removal. The TODAY card and `nerva journey` manage learned entries. | Native Chat can save, replace or forget a selected Agent notes or User profile fact and undo its removal. The native Today board remains open. | H18.37 / H046 |
 | Skill delete in a batch, with the skill that absorbs it (H330) | admin `POST /api/skills/batch` takes `absorbed_into` on a delete (also with `dry_run`); the answer carries `references` (what moves to that skill, what still names the deleted one); `GET /api/skills/batches` lists them beside each proposed batch's diffs | ✅ Skill Batches panel shows each delete's references beside the diffs | ➖ owner desktop administration of skill batches; no native batch review planned | H330 |
 | Usage and billing estimates (H220, local candidate) | admin `GET /api/admin/apm` adds measured local/cloud/unknown rollups; existing chat outcome carries selected current-turn usage and estimated cost | Usage/Billing panel, Command Center link and shared context/usage strip; pending integration acceptance | ⬜ no native aggregate spend/breakdown or new usage-detail renderer; existing shared backend governance applies | H220 |
 | Optional repository skills and verified upstream import (H696/H334, local candidate) | user `GET /skills/hermes/catalog`, `GET /skills/imported`; admin `GET /api/skills/optional/catalog`, `POST /api/skills/optional/install`, `POST /skills/import`; pending approval requires the reviewed fingerprint | Skills Import displays tiers and exact catalog selection; generic imports collect immutable commit, entry and reference digests; current install and network decisions permit only quarantine for separate owner review | ➖ owner desktop skill installation; native read-only skill browser remains, no native install control or device acceptance claimed | H696/H334 |
@@ -600,6 +651,9 @@ Browser accessibility readiness (2026-10-09): the HUD Admin EstopCard exposes it
 The owner desktop HUD has Console → Admin → Custom Endpoints and the CLI has `nerva provider custom`. Ten admin-only routes under `/api/admin/llm/custom-endpoints` manage named entries, activation/clear, validation and endpoint credentials. Native mobile has no corresponding configuration or secret-entry surface; this remains owner desktop administration. The generated desktop route manifest includes the new panel, with floating chat routes unchanged. Local source/frontend tests do not establish a native GUI, physical-device or live endpoint result.
 
 ## Governed fresh-profile browser sessions (2026-10-29)
+
+As of 2026-11-22, Windows can host owner-approved Chrome actions and recover
+interrupted sessions. Browser controls remain in the desktop Operator.
 
 The desktop Operator exposes owner-approved start/act/close and grounded refs with bounded admin-only session/task projections. Native mobile has no equivalent browser session controls and no owner-profile access. The local Mac Chrome fixture verifies source behavior, not physical-device/live-Hub acceptance. Advanced browser/profile/engine requirements remain separate.
 

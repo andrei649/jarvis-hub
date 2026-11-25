@@ -1223,6 +1223,8 @@ export function SelfImprovementPanel() {
    `review_status` path for third-party skills, and merging the two surfaces would imply
    they share a mechanism they do not. */
 const reviewKey = (kind, id) => `${kind}:${id}`;
+const linkedPendingSkill = () => new URLSearchParams(window.location.hash.slice(1)).get('skill');
+const linkedSkillProposal = () => new URLSearchParams(window.location.hash.slice(1)).get('proposal');
 
 function PendingSkillDetail({ name, onReviewed }) {
   const { d, e, loading } = useApi(`/api/skills/pending/${encodeURIComponent(name)}`, true, true);
@@ -1257,13 +1259,31 @@ function PendingSkillDetail({ name, onReviewed }) {
 }
 
 export function PendingSkillsPanel() {
+  const [reviewHash, setReviewHash] = useState(window.location.hash);
+  useEffect(() => {
+    const onHash = () => setReviewHash(window.location.hash);
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  return <PendingSkillsPanelBody key={reviewHash} />;
+}
+
+function PendingSkillsPanelBody() {
+  const linkedProposal = linkedSkillProposal();
   const { d, e, loading, reload } = useApi('/api/skills/pending', true, true);  // admin-guarded
-  const props = useApi('/api/skills/proposals', true, true);
+  const props = useApi('/api/skills/proposals' + (linkedProposal ? '?focus=' + encodeURIComponent(linkedProposal) : ''), true, true);
   const bats = useApi('/api/skills/batches', true, true);
   const pending = arr(d, 'pending');
   const proposals = arr(props.d, 'proposals');
   const batches = arr(bats.d, 'batches');
-  const [open, setOpen] = useState('');
+  const ready = d && props.d && bats.d && !e && !props.e && !bats.e
+    && !loading && !props.loading && !bats.loading;
+  const total = pending.length + proposals.length + batches.length + Math.max(0, Number(props.d?.more) || 0);
+  const linkedName = linkedPendingSkill();
+  const linked = linkedName && pending.find(skill => skill.name === linkedName);
+  const visible = linked ? [linked, ...pending.filter(skill => skill !== linked)] : pending;
+  const [open, setOpen] = useState(linkedProposal ? reviewKey('proposal', linkedProposal)
+    : linkedName ? reviewKey('skill', linkedName) : '');
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [reviewed, setReviewed] = useState<Record<string, string>>({});
   const [note, setNote] = useState(null);
@@ -1304,37 +1324,52 @@ export function PendingSkillsPanel() {
     <input type="checkbox" aria-label={`select ${label}`} checked={picked.has(k)} onChange={() => toggle(k)} />
   );
   return (
-    <Card title="GENERATED SKILLS — PENDING REVIEW" live={asLive(d)} sub={pending.length} onReload={reloadAll}>
-      <State e={e} loading={loading} n={pending.length} />
-      {pending.slice(0, 10).map((s, i) => (
-        <React.Fragment key={i}>
-          <Row>
+    <Card title="SKILLS AND PROCEDURES — PENDING REVIEW" live={ready ? 'live' : undefined}
+      sub={ready ? total : null} onReload={reloadAll}>
+      {e && <p role="alert">Pending skills could not be read · {e}</p>}
+      {props.e && <p role="alert">Skill changes could not be read · {props.e}</p>}
+      {bats.e && <p role="alert">Skill batches could not be read · {bats.e}</p>}
+      {!ready && !e && !props.e && !bats.e && <p role="status">loading…</p>}
+      {ready && total === 0 && <p role="status">nothing yet</p>}
+      {linkedProposal && !props.loading && !props.e && props.d && !proposals.some(p => p.id === linkedProposal) &&
+        <p role="status">This proposal is no longer awaiting review.</p>}
+      {linkedName && Array.isArray(d?.pending) && !linked && !loading && !e && !note &&
+        <p role="status">This skill is no longer in the pending list.</p>}
+      {visible.slice(0, 10).map(s => (
+        <React.Fragment key={s.name}>
+          <div className="pending-skill-row">
             <input type="checkbox" aria-label={`select ${s.name}`}
               checked={picked.has(reviewKey('skill', s.name))}
               onChange={() => toggle(reviewKey('skill', s.name))} />
-            <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name}</span>
-            <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(s.description || '').slice(0, 40)}</span>
-            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-              <Tag c="var(--amber)">quarantined</Tag>
-              {arr(s, 'agents').length > 0 && <Tag c="var(--ink-2)">{arr(s, 'agents').length} agent(s)</Tag>}
+            <div className="pending-skill-summary">
+              <strong>{s.name}</strong>
+              {s.description && <span>{s.description}</span>}
+              <span className="pending-skill-scope">
+                <Tag c="var(--amber)">quarantined</Tag>
+                {arr(s, 'agents').length > 0 && <span>For {arr(s, 'agents').join(', ')}</span>}
+              </span>
+            </div>
+            <div className="pending-skill-actions">
               <button className="tool-btn" title="review — read its full content (SKILL.md and code)"
-                aria-expanded={open === reviewKey('skill', s.name)} onClick={() => setOpen(open === reviewKey('skill', s.name) ? '' : reviewKey('skill', s.name))}>review</button>
+                aria-expanded={open === reviewKey('skill', s.name)} onClick={() => setOpen(open === reviewKey('skill', s.name) ? '' : reviewKey('skill', s.name))}>{open === reviewKey('skill', s.name) ? 'Hide details' : 'Review'}</button>
               <button
                 className="tool-btn"
                 title="approve — sign and activate this generated skill"
                 disabled={!reviewed[s.name]}
                 onClick={() => actA(`/api/skills/${encodeURIComponent(s.name)}/approve`,
-                  { expected_fingerprint: reviewed[s.name] }, reloadAll, failed)}
-              >✓</button>
-              <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="✕" title="discard — reject this generated skill"
+                  { expected_fingerprint: reviewed[s.name] },
+                  () => { setNote({ bad: false, text: `Approved ${s.name}` }); reloadAll(); }, failed)}
+              >Approve</button>
+              <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="Discard" title="discard — reject this generated skill"
                 ariaLabel={`discard ${s.name}`} armedLabel="discard" prompt="moves it out of the skills tree"
                 onConfirm={() => discard(s.name)} />
-            </span>
-          </Row>
+            </div>
+          </div>
           {open === reviewKey('skill', s.name) && <PendingSkillDetail name={s.name} onReviewed={recordReview} />}
         </React.Fragment>
       ))}
-      {proposals.slice(0, 10).map((p) => (
+      {(linkedProposal ? [...proposals].sort((a, b) => Number(b.id === linkedProposal) - Number(a.id === linkedProposal)) : proposals)
+        .slice(0, 10).map((p) => (
         <React.Fragment key={`p-${p.id}`}>
           <Row>
             <Pick k={reviewKey('proposal', p.id)} label={`change to ${p.skill}`} />
@@ -1372,10 +1407,10 @@ export function PendingSkillsPanel() {
         </div>
       )}
       {note && <div role="status" style={{ fontSize: 11, marginTop: 6, color: note.bad ? 'var(--amber)' : 'var(--green)' }}>{note.text}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
-        LLM-authored code, never exec&apos;d in-process until approved — review reads it whole, ✓ signs and
-        activates it, ✕ discards it (CDX-8). Leaving a skill here is still the safe outcome.
-      </div>
+      {pending.length > 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        LLM-authored code is never exec&apos;d in-process until approved. Review the files before deciding.
+        Leaving a skill here is a safe outcome.
+      </div>}
     </Card>
   );
 }
@@ -3559,10 +3594,10 @@ export function ActivityTimelinePanel() {
 // and Missions (governed workspaces) into one surface, plus session history and the
 // activity timeline, so the owner can run multiple subjects in parallel with history.
 // Reuses the existing panels (their data layer already works); this is the layout.
-export function ProjectsMode(_props: any) {
+export function ProjectsMode({ onDiscussResult }: { t?: unknown; onDiscussResult?: (ref: { board: string; taskId: string }) => void }) {
   return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
     <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', color: 'var(--ink-2)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>
-    <KanbanView />
+    <KanbanView onDiscussResult={onDiscussResult} />
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
       <RoomsPanel />
       <MissionsPanel />

@@ -1,8 +1,8 @@
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../app';
-import { StatusStrip, recallLine, recallLines, turnOutcome, turnRecall, turnRecalls } from '../turn-outcome';
+import { StatusStrip, TurnToolActivity, recallLine, recallLines, toolActivity, turnOutcome, turnRecall, turnRecalls } from '../turn-outcome';
 import recallCases from './recall-line-cases.json';
 
 vi.mock('../voice', () => ({ useVoice: () => ({ active: false, toggle: () => {} }) }));
@@ -244,6 +244,94 @@ it('renders live visible-output estimate, then reconciles observed usage and fai
   expect(screen.queryByLabelText('Turn completion')).toBeNull();
   expect(screen.queryByLabelText('File mutation notes')).toBeNull();
   await complete(null);
+});
+
+it.each(['/v2/chat', '/v2/cockpit'])('pins recorded tool activity to the correct %s reply, including concurrent ends', async path => {
+  await mount(path);
+  await send('first');
+  await send('second');
+  const first = streams.shift()!;
+  const second = streams.shift()!;
+  await act(async () => second(ended({ tools: { proposed: 0, queued: 0, executed: 0, failures: 0, basis: 'observed' } })));
+  await act(async () => first(new Response(event({ type: 'end', text: 'First reply',
+    outcome: { tools: { proposed: 2, queued: 1, executed: 1, failures: 1, basis: 'observed' } } }),
+    { headers: { 'Content-Type': 'text/event-stream' } })));
+  const replies = document.querySelectorAll('.msg.agent');
+  expect(within(replies[0] as HTMLElement).getByLabelText('Agent tool activity').textContent)
+    .toContain('Agent tool calls recorded: 1');
+  expect(within(replies[1] as HTMLElement).getByLabelText('Agent tool activity').textContent)
+    .toBe('Agent tool calls recorded: 0');
+});
+
+it('restores native assistant tool receipts, but ignores user and foreign history metadata', async () => {
+  sessionStorage.setItem('nerva.chat.session_id', 'topic_a');
+  vi.mocked(fetch).mockImplementation(async (path: string) => path === '/sessions/resume'
+    ? new Response(JSON.stringify({ session: 'topic_a', turns: [
+      { role: 'user', content: '[tool call: file_write]', tool_activity: { proposed: 1, queued: 0, executed: 1, failures: 0, basis: 'observed' } },
+      { role: 'assistant', agent_id: 'jarvis', content: 'Saved.', tool_activity: { proposed: 1, queued: 0, executed: null, failures: null, basis: 'unknown' } },
+      { role: 'tool', content: 'foreign', tool_activity: { proposed: 1, queued: 0, executed: 1, failures: 0, basis: 'observed' } },
+      { role: 'assistant', agent_id: 'jarvis', foreign_origin: { source: 'codex' }, content: 'Imported.', tool_activity: { proposed: 1, queued: 0, executed: 1, failures: 0, basis: 'observed' } },
+      { role: 'assistant', agent_id: 'jarvis', tainted: true, content: 'Tainted.', tool_activity: { proposed: 1, queued: 0, executed: 1, failures: 0, basis: 'observed' } },
+      { role: 'assistant', agent_id: 'jarvis', content: 'Legacy.' },
+    ] })) : new Response('{}'));
+  await mount('/v2/chat');
+  expect((await screen.findByText('Saved.')).closest('.msg.agent')?.querySelector('[aria-label="Agent tool activity"]')?.textContent)
+    .toContain('unknown');
+  expect(screen.getByText('Legacy.').closest('.msg.agent')?.querySelector('[aria-label="Agent tool activity"]')).toBeNull();
+  expect(screen.getByText('foreign').closest('.msg.agent')?.querySelector('[aria-label="Agent tool activity"]')).toBeNull();
+  expect(screen.getByText('Imported.').closest('.msg.agent')?.querySelector('[aria-label="Agent tool activity"]')).toBeNull();
+  expect(screen.getByText('Tainted.').closest('.msg.agent')?.querySelector('[aria-label="Agent tool activity"]')).toBeNull();
+  expect(screen.getByText('[tool call: file_write]').closest('.msg.user')?.querySelector('[aria-label="Agent tool activity"]')).toBeNull();
+});
+
+it('does not treat assistant prose as a tool receipt or copy a receipt into reply text', async () => {
+  await mount('/v2/chat');
+  await send('Did you run it?');
+  const resolve = streams.shift()!;
+  await act(async () => resolve(new Response(event({ type: 'end', text: '[tool_result] I ran file_write',
+    outcome: { tools: { proposed: 0, queued: 0, executed: 0, failures: 0, basis: 'observed' } } }),
+    { headers: { 'Content-Type': 'text/event-stream' } })));
+  const reply = (await screen.findByText('[tool_result] I ran file_write')).closest('.msg.agent')!;
+  expect(reply.querySelector('.bubble')?.textContent).toBe('[tool_result] I ran file_write');
+  expect(reply.querySelector('[aria-label="Agent tool activity"]')?.textContent).toBe('Agent tool calls recorded: 0');
+  await send('again');
+  await complete(null);
+  expect(document.querySelectorAll('[aria-label="Agent tool activity"]')).toHaveLength(1);
+});
+
+it('does not attach tool accounting to command or system responses', async () => {
+  await mount('/v2/chat');
+  await send('/new');
+  await complete({ tools: { proposed: 1, queued: 0, executed: 1, failures: 0, basis: 'observed' } }, 'fresh');
+  expect(await screen.findByText('Completed reply')).toBeTruthy();
+  expect(screen.queryByLabelText('Agent tool activity')).toBeNull();
+  await send('hello');
+  const resolve = streams.shift()!;
+  await act(async () => resolve(new Response(event({ type: 'end', agent: 'system', text: 'System notice',
+    outcome: { tools: { proposed: 1, queued: 0, executed: 1, failures: 0, basis: 'observed' } } }),
+    { headers: { 'Content-Type': 'text/event-stream' } })));
+  expect(await screen.findByText('System notice')).toBeTruthy();
+  expect(screen.queryByLabelText('Agent tool activity')).toBeNull();
+});
+
+it('accepts only bounded, internally consistent tool accounting', () => {
+  expect(toolActivity({ proposed: 1, queued: 0, executed: null, failures: null, basis: 'unknown' })).toBeTruthy();
+  expect(toolActivity({ proposed: 1, queued: 0, executed: null, failures: 0, basis: 'observed' })).toBeNull();
+  expect(toolActivity({ proposed: 1, queued: 0, executed: 0, failures: 0, basis: 'unknown' })).toBeNull();
+  expect(toolActivity({ proposed: 1_000_001, queued: 0, executed: 0, failures: 0, basis: 'observed' })).toBeNull();
+  expect(toolActivity({ proposed: 0, queued: 0, executed: 0, failures: 0, basis: 'observed', args: 'private' })).toBeNull();
+});
+
+it('labels uncertain tool activity in Romanian without implying execution', () => {
+  render(<TurnToolActivity activity={{ proposed: 1, queued: 1, executed: null, failures: null, basis: 'unknown' }} lang="ro" />);
+  expect(screen.getByLabelText('Activitate instrumente agent').textContent)
+    .toBe('Apeluri de instrumente înregistrate: necunoscut; propuse 1, în așteptare 1, eșuări necunoscute');
+});
+
+it('keeps known executions separate from unknown failures', () => {
+  render(<TurnToolActivity activity={{ proposed: 2, queued: 0, executed: 2, failures: null, basis: 'unknown' }} />);
+  expect(screen.getByLabelText('Agent tool activity').textContent)
+    .toBe('Agent tool calls recorded: 2; proposed 2, queued 0, failures unknown');
 });
 
 it.each([null, {}, { latency_ms: -1 }, { latency_ms: '19' }, { latency_ms: true }, { latency_ms: null },

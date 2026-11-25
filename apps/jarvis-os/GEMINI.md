@@ -18,6 +18,12 @@ This workspace contains **ANDREI OS / AI WORKSHOP OS — J.A.R.V.I.S.**, an inte
 - `public/js/api.js` is the single place that calls a backend; keep every `fetch` there. Asset URLs stay relative and three.js stays vendored (`public/vendor/three/`) — the hub's CSP blocks CDNs.
 
 ## Security rules to keep
+- Standalone chat defaults to Ollama/offline vault synthesis. `cloudConsent` must
+  be exactly JSON `true`, both when the request starts and at every remote dispatch;
+  credentials, CLI login and legacy `auto` never grant consent. Keep the late
+  post-probe revocation checks, local model provenance, fully tagged `:local`
+  selector and proxy/redirect refusal. Unknown/older model runtimes fail offline;
+  never retry with an unrestricted model name. Hub `/os` uses separate `/chat` policy.
 - Vault and repo files are read, and inbox notes created, only through `vault_fs.py` (handle-relative, no symlink/junction followed, hard links refused unless `JARVIS_OS_ALLOW_HARDLINKS=1`). Never add a `Path.read_text` / `open(path)` on a vault path, and never add a path-based fallback.
 - `/api/brain/note` is an allowlist of Markdown the graph indexed (`read_indexed_note`). Do not turn it back into a path check.
 - Untrusted text reaches the DOM only through `public/js/templates.js` (escaped). No raw `${...}` of vault, model or server text inside an `innerHTML` template.

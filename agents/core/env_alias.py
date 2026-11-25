@@ -311,6 +311,7 @@ PATH_TYPED = frozenset({
     "CA_BUNDLE", "WASM_PYTHON", "TERMINAL_SSH_KNOWN_HOSTS",
     "MANAGED_DIR",                                                      # where the administrator's pins live (G1)
     "OS_VAULT_PATH",                                                    # the Obsidian vault the /os interface indexes
+    "OS_PROJECT_INDEX_PATH", "OS_PROJECT_REGISTER_DIR",                   # vault-relative project index and register
     "LSP_TOOLS_DIR",                                                    # where approved language servers install (H055)
     "E2E_SYNC_DIR",                                                     # ciphertext spool directory (H040)
 })

@@ -2,8 +2,8 @@ import { Text, TextInput } from './ThemedText';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { projectSessionTranscript } from '../api/sessionTranscript';
-import { ApiError, fetchSessionTranscript, fetchSessions, fetchSessionsPage, resumeSession, resumeTarget, type HistoryTurn, type SessionInfo, type SessionTranscript } from '../api/client';
+import { historyRequiresCloudConsent, projectSessionTranscript, validHistoryReference, type HistorySelection } from '../api/sessionTranscript';
+import { ApiError, fetchSessionTranscript, fetchSessions, fetchSessionsPage, resumeSession, resumeTarget, searchSessionMessages, verifiedSessionTurn, type HistoryTurn, type SessionInfo, type SessionMessageHit, type SessionTranscript } from '../api/client';
 import { useServer } from '../context/ServerContext';
 import { useThemeStyles, type Theme } from '../theme';
 
@@ -12,15 +12,35 @@ export function SessionsModal({
   visible,
   onClose,
   onResumed,
+  resumeBlockReason,
+  hasDraft,
+  recipient,
+  onUseSource,
+  sourceBlockReason,
+  startInMessages = false,
 }: {
   visible: boolean;
   onClose: () => void;
   onResumed: (sessionId: string, turns: HistoryTurn[]) => void;
+  resumeBlockReason?: () => string | null;
+  hasDraft?: boolean;
+  recipient?: string;
+  onUseSource?: (selection: HistorySelection) => boolean;
+  sourceBlockReason?: () => string | null;
+  startInMessages?: boolean;
 }) {
   const { theme, styles } = useThemeStyles(makeStyles);
   const { config, connectionEpoch } = useServer();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<'sessions' | 'messages'>(startInMessages ? 'messages' : 'sessions');
+  const [messageQuery, setMessageQuery] = useState('');
+  const [messageResults, setMessageResults] = useState<{ hits: SessionMessageHit[]; truncated: boolean; stopped_by: string | null; request: number } | null>(null);
+  const [reviewed, setReviewed] = useState<{ hit: SessionMessageHit; turn: SessionTranscript['turns'][number]; request: number } | null>(null);
+  const [messageBusy, setMessageBusy] = useState<'search' | 'review' | 'continue' | 'stage' | null>(null);
+  const [messageError, setMessageError] = useState<string | null>(null);
+  const [passage, setPassage] = useState('');
+  const [cloudAllowed, setCloudAllowed] = useState(false);
   const [agentFilter, setAgentFilter] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState('All dates');
   const [loading, setLoading] = useState(false);
@@ -42,9 +62,12 @@ export function SessionsModal({
   const listBusy = useRef(false);
   const olderBusy = useRef(false);
   const resumeBusy = useRef(false);
+  const messageEpoch = useRef(0);
+  const messageBusyRef = useRef(false);
+  const messageScope = useRef({ config, connectionEpoch });
   const seenCursors = useRef(new Set<string>());
-  const scope = useRef({ config, connectionEpoch, visible });
-  scope.current = { config, connectionEpoch, visible };
+  const scope = useRef({ config, connectionEpoch, visible, recipient });
+  scope.current = { config, connectionEpoch, visible, recipient };
 
   const isCurrent = useCallback((request: number) => epoch.current === request
     && scope.current.visible && scope.current.config === config
@@ -65,14 +88,32 @@ export function SessionsModal({
     && scope.current.visible && scope.current.config === config
     && scope.current.connectionEpoch === connectionEpoch, [config, connectionEpoch]);
 
+  const messageCurrent = useCallback((request: number) => messageEpoch.current === request
+    && messageScope.current.config === config && messageScope.current.connectionEpoch === connectionEpoch
+    && scope.current.visible && scope.current.config === config
+    && scope.current.connectionEpoch === connectionEpoch && scope.current.recipient === recipient,
+    [config, connectionEpoch, recipient]);
+
+  const clearMessageSearch = useCallback(() => {
+    ++messageEpoch.current;
+    messageBusyRef.current = false;
+    setMessageResults(null);
+    setReviewed(null);
+    setPassage('');
+    setCloudAllowed(false);
+    setMessageBusy(null);
+    setMessageError(null);
+  }, []);
+
   const close = useCallback(() => {
     clearTranscript();
+    clearMessageSearch();
     ++epoch.current;
     listBusy.current = false;
     olderBusy.current = false;
     resumeBusy.current = false;
     onClose();
-  }, [onClose, clearTranscript]);
+  }, [onClose, clearTranscript, clearMessageSearch]);
 
   const load = useCallback(async () => {
     if (resumeBusy.current || !scope.current.visible) return;
@@ -147,6 +188,7 @@ export function SessionsModal({
 
   useEffect(() => {
     clearTranscript();
+    clearMessageSearch();
     ++epoch.current;
     listBusy.current = false;
     olderBusy.current = false;
@@ -155,6 +197,8 @@ export function SessionsModal({
     setSessions([]);
     setBusyId(null);
     setQuery('');
+    setMode(startInMessages ? 'messages' : 'sessions');
+    setMessageQuery('');
     setAgentFilter(null);
     setDateFilter('All dates');
     setNextCursor(null);
@@ -163,8 +207,8 @@ export function SessionsModal({
     setLoadingOlder(false);
     setError(null);
     if (visible) load();
-    return () => { ++epoch.current; ++transcriptEpoch.current; };
-  }, [visible, load, connectionEpoch, clearTranscript]);
+    return () => { ++epoch.current; ++transcriptEpoch.current; ++messageEpoch.current; };
+  }, [visible, load, connectionEpoch, recipient, startInMessages, clearTranscript, clearMessageSearch]);
 
   const normalizedQuery = query.trim().toLowerCase();
   const filtersActive = agentFilter !== null || dateFilter !== 'All dates';
@@ -188,34 +232,165 @@ export function SessionsModal({
   });
 
   const resume = useCallback(
-    async (id: string) => {
-      if (resumeBusy.current || listBusy.current || !scope.current.visible) return;
+    async (id: string, verify?: () => Promise<boolean>, searchRequest?: number) => {
+      if (resumeBusy.current || (listBusy.current && !verify) || !scope.current.visible
+        || scope.current.config !== config || scope.current.connectionEpoch !== connectionEpoch) return;
+      const blocked = resumeBlockReason?.();
+      if (blocked) { if (verify) setMessageError(blocked); else setError(blocked); return; }
       clearTranscript();
       resumeBusy.current = true;
+      listBusy.current = false;
       olderBusy.current = false;
       const request = ++epoch.current;
+      setLoading(false);
       setLoadingOlder(false);
       setBusyId(id);
       setError(null);
+      if (verify) setMessageBusy('continue');
       try {
+        if (verify) {
+          if (!await verify() || !isCurrent(request) || !messageCurrent(searchRequest!)) return;
+          const afterReadBlock = resumeBlockReason?.();
+          if (afterReadBlock) { setMessageError(afterReadBlock); return; }
+        }
         const res = await resumeSession(config, id);
-        if (!isCurrent(request)) return;
+        if (!isCurrent(request) || (searchRequest !== undefined && !messageCurrent(searchRequest))) return;
         if (!res.ok || res.session !== id || !Array.isArray(res.turns)) {
           throw new ApiError('The hub did not resume the selected session');
         }
         onResumed(res.session || id, res.turns || []);
         close();
       } catch (e) {
-        if (isCurrent(request)) setError(e instanceof ApiError ? e.message : 'Failed to resume session');
+        if (isCurrent(request)) {
+          if (verify) setMessageError('Could not reopen this conversation. Try again.');
+          else setError(e instanceof ApiError ? e.message : 'Failed to resume session');
+        }
       } finally {
         if (isCurrent(request)) {
           resumeBusy.current = false;
           setBusyId(null);
+          if (verify) setMessageBusy(null);
         }
       }
     },
-    [config, onResumed, close, isCurrent, clearTranscript],
+    [config, connectionEpoch, onResumed, close, isCurrent, clearTranscript, messageCurrent, resumeBlockReason],
   );
+
+  const switchMode = (next: 'sessions' | 'messages') => {
+    if (next === mode) return;
+    clearTranscript();
+    clearMessageSearch();
+    setMessageQuery('');
+    setMode(next);
+  };
+
+  const changeMessageQuery = (value: string) => {
+    clearMessageSearch();
+    messageScope.current = { config, connectionEpoch };
+    setMessageQuery(value);
+  };
+
+  const searchMessages = async () => {
+    const submitted = messageQuery.trim();
+    if (!submitted || messageBusyRef.current || resumeBusy.current || mode !== 'messages'
+      || !scope.current.visible || scope.current.config !== config || scope.current.connectionEpoch !== connectionEpoch
+      || messageScope.current.config !== config || messageScope.current.connectionEpoch !== connectionEpoch) return;
+    const request = ++messageEpoch.current;
+    messageScope.current = { config, connectionEpoch };
+    messageBusyRef.current = true;
+    setMessageBusy('search');
+    setMessageResults(null);
+    setReviewed(null);
+    setMessageError(null);
+    try {
+      const result = await searchSessionMessages(config, submitted);
+      if (messageCurrent(request)) setMessageResults({ ...result, request });
+    } catch (e) {
+      if (messageCurrent(request)) setMessageError(e instanceof ApiError ? e.message : 'Could not search saved messages. Try again.');
+    } finally {
+      if (messageCurrent(request)) { messageBusyRef.current = false; setMessageBusy(null); }
+    }
+  };
+
+  const reviewMessage = async (hit: SessionMessageHit, resultRequest: number) => {
+    if (messageBusyRef.current || resumeBusy.current || !messageCurrent(resultRequest)) return;
+    const request = ++messageEpoch.current;
+    messageBusyRef.current = true;
+    setMessageBusy('review');
+    setReviewed(null);
+    setPassage('');
+    setCloudAllowed(false);
+    setMessageError(null);
+    try {
+      const transcript = await fetchSessionTranscript(config, hit.session_id, !!onUseSource);
+      if (!messageCurrent(request)) return;
+      const turn = verifiedSessionTurn(transcript, hit, !!onUseSource);
+      if (!turn) { setMessageResults(null); setMessageError('This saved turn changed or cannot be verified. Search again.'); return; }
+      setMessageResults(previous => previous ? { ...previous, request } : null);
+      setReviewed({ hit, turn, request });
+    } catch {
+      if (messageCurrent(request)) setMessageError('Could not verify the saved turn. Search again.');
+    } finally {
+      if (messageCurrent(request)) { messageBusyRef.current = false; setMessageBusy(null); }
+    }
+  };
+
+  const stageSource = async (review: NonNullable<typeof reviewed>) => {
+    if (!onUseSource || !recipient || messageBusyRef.current || resumeBusy.current || !messageCurrent(review.request)) return;
+    const blocked = sourceBlockReason?.();
+    if (blocked) { setMessageError(blocked); return; }
+    const reference = { session_id: review.hit.session_id, turn: review.hit.turn,
+      revision: review.turn.reference_revision || '', excerpt: passage, allow_cloud: cloudAllowed };
+    if (!validHistoryReference(reference) || !review.turn.content.includes(passage)) {
+      setMessageError('Choose an exact passage from this message (up to 8,000 UTF-8 bytes).'); return;
+    }
+    const requiresConsent = historyRequiresCloudConsent(recipient);
+    if (requiresConsent && !cloudAllowed) { setMessageError(`Allow this passage for ${recipient} before using it.`); return; }
+    messageBusyRef.current = true;
+    setMessageBusy('stage');
+    setMessageError(null);
+    try {
+      const current = await fetchSessionTranscript(config, review.hit.session_id, true);
+      if (!messageCurrent(review.request) || scope.current.recipient !== recipient) return;
+      const turn = verifiedSessionTurn(current, review.hit, true);
+      if (!turn || turn.reference_revision !== reference.revision || turn.content !== review.turn.content) {
+        setReviewed(null); setMessageResults(null);
+        setMessageError('This saved turn changed or cannot be verified. Search again.'); return;
+      }
+      const afterReadBlock = sourceBlockReason?.();
+      if (afterReadBlock) { setMessageError(afterReadBlock); return; }
+      if (!onUseSource({ reference: { ...reference, allow_cloud: requiresConsent && cloudAllowed }, role: turn.role })) {
+        setMessageError('Could not stage this passage. Try again.'); return;
+      }
+      close();
+    } catch {
+      if (messageCurrent(review.request)) setMessageError('Could not verify the saved turn. Search again.');
+    } finally {
+      if (messageCurrent(review.request)) { messageBusyRef.current = false; setMessageBusy(null); }
+    }
+  };
+
+  const continueMessage = (hit: SessionMessageHit, reviewedTurn: SessionTranscript['turns'][number], request: number) => {
+    if (messageBusyRef.current || resumeBusy.current || !messageCurrent(request)) return;
+    setMessageError(null);
+    void resume(hit.session_id, async () => {
+      try {
+        const transcript = await fetchSessionTranscript(config, hit.session_id);
+        if (!messageCurrent(request)) return false;
+        const latestTurn = verifiedSessionTurn(transcript, hit);
+        if (!latestTurn || latestTurn.content !== reviewedTurn.content) {
+          setReviewed(null);
+          setMessageResults(null);
+          setMessageError('This saved turn changed or cannot be verified. Search again.');
+          return false;
+        }
+        return true;
+      } catch {
+        if (messageCurrent(request)) setMessageError('Could not verify the saved turn. Search again.');
+        return false;
+      }
+    }, request);
+  };
 
   const previewTranscript = useCallback(async (id: string) => {
     if (resumeBusy.current || listBusy.current || !scope.current.visible
@@ -273,18 +448,38 @@ export function SessionsModal({
   const changeDateFilter = (value: string) => { clearTranscript(); setDateFilter(value); };
   const resetFilters = () => { clearTranscript(); setAgentFilter(null); setDateFilter('All dates'); };
   const currentPreview = preview && transcriptCurrent(preview.request) ? preview.document : null;
+  const currentMessageResults = messageResults && messageCurrent(messageResults.request) ? messageResults : null;
+  const currentReview = reviewed && messageCurrent(reviewed.request) ? reviewed : null;
+  const messageTitle = (id: string) => sessions.find((session) => session.id === id)?.title?.trim() || 'Saved message';
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
       <Pressable style={styles.backdrop} onPress={close}>
         <Pressable style={styles.sheet} onPress={() => {}}>
           <View style={styles.header}>
-            <Text style={styles.title}>Resume session</Text>
-            <Pressable onPress={load} hitSlop={8} disabled={!!busyId}
+            <Text style={styles.title}>History</Text>
+            {mode === 'sessions' && <Pressable onPress={load} hitSlop={8} disabled={!!busyId}
               accessibilityRole="button" accessibilityLabel="Refresh recent sessions">
               <Text style={styles.refresh}>↻</Text>
+            </Pressable>}
+            <Pressable onPress={close} style={styles.historyClose} accessibilityRole="button" accessibilityLabel="Close history">
+              <Text style={styles.clear}>Close</Text>
             </Pressable>
           </View>
+          {!(mode === 'messages' && currentReview) && <View style={styles.modeRow} accessibilityLabel="History mode">
+            <Pressable onPress={() => switchMode('sessions')} accessibilityRole="button"
+              accessibilityLabel="Browse sessions" accessibilityState={{ selected: mode === 'sessions' }}
+              style={[styles.filterChip, mode === 'sessions' && styles.selectedChip]}>
+              <Text style={styles.clear}>Browse sessions</Text>
+            </Pressable>
+            <Pressable onPress={() => switchMode('messages')} accessibilityRole="button"
+              accessibilityLabel="Search messages" accessibilityState={{ selected: mode === 'messages' }}
+              style={[styles.filterChip, styles.messageMode, mode === 'messages' && styles.selectedChip]}>
+              <Text style={styles.clear}>Search messages</Text>
+            </Pressable>
+          </View>}
+
+          {mode === 'sessions' ? <>
 
           <TextInput
             value={query}
@@ -429,6 +624,87 @@ export function SessionsModal({
               <Text style={styles.clear}>{loadingOlder ? 'Loading older…' : 'Load older'}</Text>
             </Pressable>
           )}
+          </> : <>
+            {!currentReview && <>
+            <Text style={styles.helper}>Searches saved message text. Review a result to see its current redacted source.</Text>
+            <TextInput value={messageScope.current.config === config && messageScope.current.connectionEpoch === connectionEpoch ? messageQuery : ''} onChangeText={changeMessageQuery}
+              onSubmitEditing={searchMessages} returnKeyType="search"
+              placeholder="Search saved message text" placeholderTextColor={theme.textDim}
+              accessibilityLabel="Search saved message text" maxLength={256}
+              autoCapitalize="none" autoCorrect={false} style={styles.search} />
+            <Pressable onPress={searchMessages} disabled={!messageQuery.trim() || !!messageBusy || !!busyId
+              || messageScope.current.config !== config || messageScope.current.connectionEpoch !== connectionEpoch}
+              style={styles.messageAction} accessibilityRole="button" accessibilityLabel="Submit message search">
+              <Text style={styles.clear}>{messageBusy === 'search' ? 'Searching…' : 'Search messages'}</Text>
+            </Pressable>
+            </>}
+            {messageError && <Text style={styles.error} accessibilityRole="alert">{messageError}</Text>}
+            {messageBusy === 'review' && <Text style={styles.helper}>Opening saved turn…</Text>}
+            {messageBusy === 'continue' && <Text style={styles.helper}>Reopening conversation…</Text>}
+            <ScrollView style={styles.messageScroll} nestedScrollEnabled accessibilityLabel="Message search results">
+              {currentReview ? <View accessibilityLabel="Verified saved turn">
+                <Pressable onPress={() => { setReviewed(null); setPassage(''); setCloudAllowed(false); }} disabled={!!messageBusy || !!busyId}
+                  style={styles.messageAction} accessibilityRole="button" accessibilityLabel="Back to message results">
+                  <Text style={styles.clear}>Back to results</Text>
+                </Pressable>
+                <Text style={styles.title}>{messageTitle(currentReview.hit.session_id)}</Text>
+                <Text selectable style={styles.provenance}>Session {currentReview.hit.session_id}</Text>
+                <Text style={styles.optMeta}>Message {currentReview.hit.turn + 1} · {currentReview.turn.role} · {currentReview.turn.agent_id || 'Unassigned'} · {formatDate(currentReview.turn.timestamp) || 'Unknown time'}</Text>
+                {passage !== currentReview.turn.content &&
+                  <Text selectable style={styles.messageContent}>{currentReview.turn.content}</Text>}
+                {onUseSource && recipient && !currentReview.turn.reference_revision &&
+                  <Text style={styles.optMeta}>Source staging is unavailable because this message has no verified reference. You can still review or continue.</Text>}
+                {onUseSource && recipient && currentReview.turn.reference_revision && <>
+                  <Text style={styles.optMeta}>Use a passage from this saved message in your next message to {recipient}. This only stages the source.</Text>
+                  <Pressable onPress={() => {
+                    const whole = { session_id: currentReview.hit.session_id, turn: currentReview.hit.turn,
+                      revision: currentReview.turn.reference_revision!, excerpt: currentReview.turn.content, allow_cloud: false };
+                    if (!validHistoryReference(whole)) {
+                      setMessageError('Whole message exceeds 8,000 UTF-8 bytes. Choose an exact passage.'); return;
+                    }
+                    setPassage(currentReview.turn.content); setMessageError(null);
+                  }}
+                    disabled={!!messageBusy} style={styles.messageAction} accessibilityRole="button" accessibilityLabel="Use entire message">
+                    <Text style={styles.clear}>Use entire message</Text>
+                  </Pressable>
+                  <TextInput value={passage} editable={!messageBusy} onChangeText={(value) => { setPassage(value); setMessageError(null); }}
+                    multiline maxLength={8000} style={styles.passageInput} placeholder="Type or paste an exact passage"
+                    placeholderTextColor={theme.textDim} accessibilityLabel="Exact passage" />
+                  {historyRequiresCloudConsent(recipient) &&
+                    <Pressable onPress={() => setCloudAllowed(value => !value)} disabled={!!messageBusy} style={styles.messageAction}
+                      accessibilityRole="checkbox" accessibilityState={{ checked: cloudAllowed }} aria-checked={cloudAllowed}
+                      accessibilityLabel={`Allow this passage for ${recipient}`}>
+                      <Text style={styles.clear}>{cloudAllowed ? '☑' : '☐'} Allow this passage for {recipient}</Text>
+                    </Pressable>}
+                  <Pressable onPress={() => { void stageSource(currentReview); }} disabled={!!messageBusy || !!busyId}
+                    style={styles.messageContinue} accessibilityRole="button" accessibilityLabel="Use passage in next message">
+                    <Text style={styles.continueText}>{messageBusy === 'stage' ? 'Verifying passage…' : 'Use passage in next message'}</Text>
+                  </Pressable>
+                </>}
+                {hasDraft && <Text style={styles.optMeta}>Your typed message will stay in the composer.</Text>}
+                <Pressable onPress={() => continueMessage(currentReview.hit, currentReview.turn, currentReview.request)}
+                  disabled={!!messageBusy || !!busyId} style={styles.messageContinue} accessibilityRole="button"
+                  accessibilityLabel={`Continue session ${currentReview.hit.session_id}`}>
+                  <Text style={styles.continueText}>Continue this conversation</Text>
+                </Pressable>
+              </View> : <>
+              {currentMessageResults?.truncated && <Text style={styles.helper}>Results are limited; this is not a complete archive search.</Text>}
+              {currentMessageResults?.stopped_by && <Text style={styles.helper}>Search stopped: {currentMessageResults.stopped_by}</Text>}
+              {currentMessageResults?.hits.length === 0 && <Text style={styles.empty}>No saved messages match.</Text>}
+              {currentMessageResults?.hits.map((hit) => <View key={`${hit.session_id}:${hit.turn}`} style={styles.messageHit}>
+                <Text style={styles.optTitle}>{messageTitle(hit.session_id)}</Text>
+                <Text style={styles.optMeta}>Message {hit.turn + 1} · {hit.role} · {hit.agent_id || 'Unassigned'} · {formatDate(hit.timestamp || undefined) || 'Unknown time'}</Text>
+                <Text selectable style={styles.provenance}>Session {hit.session_id}</Text>
+                <Text style={styles.transcriptText}>{hit.snippet}</Text>
+                <Pressable onPress={() => reviewMessage(hit, currentMessageResults.request)}
+                  disabled={!!messageBusy || !!busyId} style={styles.messageAction} accessibilityRole="button"
+                  accessibilityLabel={`Review saved turn ${hit.turn + 1} in session ${hit.session_id}`}>
+                  <Text style={styles.clear}>Review source</Text>
+                </Pressable>
+              </View>)}
+              </>}
+            </ScrollView>
+          </>}
         </Pressable>
       </Pressable>
     </Modal>
@@ -479,6 +755,9 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   helper: { color: theme.textDim, fontSize: 11, flex: 1, paddingRight: 8 },
   filterScroll: { flexGrow: 0, flexShrink: 0, marginTop: 8 },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 4 },
+  modeRow: { flexDirection: 'row', marginBottom: 8 },
+  messageMode: { minHeight: 44, justifyContent: 'center' },
+  historyClose: { minHeight: 44, minWidth: 64, alignItems: 'center', justifyContent: 'center' },
   filterChip: { paddingHorizontal: 8, marginRight: 6, marginBottom: 4, borderRadius: 8, borderWidth: 1, borderColor: theme.border },
   selectedChip: { borderColor: theme.accent, backgroundColor: theme.surface },
   dateGroup: { color: theme.textDim, fontSize: 12, fontWeight: '600', marginTop: 12 },
@@ -487,6 +766,17 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   spinner: { marginVertical: 16 },
   error: { color: theme.danger, fontSize: 13, marginVertical: 8 },
   list: { flexGrow: 0, flexShrink: 1 },
+  messageScroll: { flexShrink: 1, minHeight: 0, maxHeight: 360, marginTop: 8 },
+  messageHit: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.border },
+  messageAction: { minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 12,
+    borderWidth: 1, borderColor: theme.border, borderRadius: 8, marginTop: 8 },
+  messageContinue: { minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 12,
+    backgroundColor: theme.accentDim, borderWidth: 1, borderColor: theme.accent, borderRadius: 8, marginTop: 12 },
+  continueText: { color: theme.text, fontSize: 14, fontWeight: '700' },
+  provenance: { color: theme.textDim, fontSize: 11, marginTop: 2 },
+  messageContent: { color: theme.text, fontSize: 14, lineHeight: 20, marginVertical: 12 },
+  passageInput: { color: theme.text, borderWidth: 1, borderColor: theme.border, borderRadius: 8,
+    minHeight: 88, maxHeight: 160, padding: 12, marginTop: 8, textAlignVertical: 'top' },
   loadOlder: { alignItems: 'center', paddingVertical: 8 },
   option: {
     flexDirection: 'row',

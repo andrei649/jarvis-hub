@@ -43,6 +43,7 @@ def _logsafe(value: object) -> str:
     return str(value).replace("\r", " ").replace("\n", " ")
 
 DB_PATH = data_path("settings.db")
+DEFAULT_REVIEW_MAX_TOKENS = 1024
 
 # ── secret-field encryption at rest (AUD-1 / F2) ──────────────────
 # Credential-bearing settings must never sit in settings.db as plaintext. These
@@ -461,11 +462,8 @@ DEFAULTS: list[dict[str, Any]] = [
     # missing keys to False, so this row changes nothing at runtime — it just makes
     # the existing gate visible and toggleable.
     dict(category="cognition", key="review_enabled",      value=False, label="Per-turn background review (H20 learning loop)", kind="toggle"),
-    # learning — the H20 review loop's knobs, read by BackgroundReviewer and the review's
-    # local model call. They had no rows, so the admin API skipped them and
-    # `nerva config set` refused them, while /refine's replies named them (review-H465c
-    # m-2). The values are the ones the code already defaulted to: seeding changes nothing.
-    dict(category="learning", key="review_max_tokens", value=512, label="Review answer budget in tokens (1–32768; a cut-off review names this)", kind="number"),
+    # Learning budgets are seeded only for missing rows, preserving each profile's choices.
+    dict(category="learning", key="review_max_tokens", value=DEFAULT_REVIEW_MAX_TOKENS, label="Review answer budget in tokens (1–32768; a cut-off review names this)", kind="number"),
     dict(category="learning", key="review_daily_budget", value=20, label="Reviews a day, per-turn and /refine together (0 = none)", kind="number"),
     dict(category="learning", key="review_cadence", value="every_turn", label="Per-turn review cadence", kind="select", opts=["every_turn", "every_n_turns", "idle_gap"]),
     dict(category="learning", key="review_every_n", value=3, label="Review every N turns (cadence every_n_turns)", kind="number"),

@@ -12,7 +12,9 @@ export interface KanbanTask {
   priority?: number
   tenant?: null | string
   created_at?: number
+  result?: null | string
   latest_summary?: null | string
+  board_source_sha256?: null | string
   comment_count?: number
   link_counts?: { parents: number; children: number }
   /** N-of-M child completion, or null when the task has no children. */
@@ -26,6 +28,9 @@ export interface KanbanTask {
   current_run_started_at?: null | number
   worker_pid?: null | number
   last_heartbeat_at?: null | number
+  current_run_id?: null | number
+  /** Present only when the native hub can check this exact run for recovery. */
+  recoverable_run_id?: null | number
 }
 
 export interface KanbanColumn {
@@ -108,7 +113,6 @@ export interface KanbanLinkTask {
  *  `started_at`/`worker_pid`/`last_heartbeat_at` are inherited — they live on
  *  KanbanTask now that the board's liveness arc reads them. */
 export interface KanbanTaskFull extends KanbanTask {
-  result?: null | string
   created_by?: null | string
   /** Per-task worker overrides. Null/absent = the assigned profile's own
    *  model, provider, and reasoning effort decide. */
@@ -136,6 +140,7 @@ export interface KanbanTaskDetail {
   attachments?: KanbanAttachment[] | null
   links: { parents: string[]; children: string[] }
   link_tasks?: KanbanLinkTask[] | null
+  child_results?: (KanbanLinkTask & Pick<KanbanTaskFull, 'assignee' | 'result' | 'latest_summary'>)[] | null
   runs: KanbanRun[]
 }
 
@@ -222,6 +227,12 @@ export interface KanbanProfile {
   is_default: boolean
   description: string
   description_auto: boolean
+}
+
+export interface KanbanProfilesResponse {
+  profiles: KanbanProfile[]
+  /** Native registered agents can be assigned here but their descriptions are read-only. */
+  editable?: boolean
 }
 
 /** GET /assignees — on-disk profiles + task assignees with per-status counts. */

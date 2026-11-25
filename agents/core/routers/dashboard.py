@@ -29,9 +29,10 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from agents.core.app_state import get_orch
+from agents.core.memory_tool import MAX_FACT_CHARS
 from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.web_helpers import nocache_json
 
@@ -291,6 +292,13 @@ class TimelineEntryEdit(BaseModel):
     value: StrictStr = Field(..., max_length=100_000)
 
 
+class TimelineEntryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    store: Literal["memory", "user"]
+    value: StrictStr = Field(..., max_length=MAX_FACT_CHARS)
+
+
 _ID_HELP = ("not a timeline entry id: memory:<memory|user>:<digest>, skill:<name>, learning:<n>, "
             "action:<n> or followup:<reason>:<source>")
 
@@ -525,6 +533,39 @@ async def dashboard_today_entries(store: Literal["facts", "memory", "user", "ski
     if drift:
         body["drift"] = drift
     return nocache_json(body)
+
+
+@router.post("/api/dashboard/today/entries", dependencies=[Depends(admin_guard)])
+async def dashboard_today_entry_create(body: TimelineEntryCreate, req: Request = None):
+    """Save one owner supplied fact in the curated agent notes or user profile."""
+    orch = get_orch()
+    if not orch:
+        return nocache_json({"error": "not initialized"}, status_code=503)
+    denied = _learning_write_denied(orch, _write_payload("add_learning", body.store, "", len(body.value)), req)
+    if denied is not None:
+        return denied
+    from agents.core import safe_mode
+    from agents.core.memory_tool import MemoryToolError, owner_add, switched_on
+
+    cog = getattr(orch, "cognition", None)
+    try:
+        enabled = (cog is not None and cog.sub_enabled("memory_enabled") is True
+                   and switched_on(getattr(orch, "get_setting", None)) and not safe_mode.enabled())
+    except Exception:
+        enabled = False
+    if not enabled:
+        return _ring_refusal(MemoryToolError("memory_disabled", "memory is switched off on this hub"))
+    try:
+        result = await asyncio.to_thread(owner_add, _rings_module(orch), body.store, body.value,
+                                         audit=getattr(orch, "intent_log", None))
+    except MemoryToolError as exc:
+        return _ring_refusal(exc)
+    if result["changed"]:
+        _ring_written(orch)
+    reply = {"ok": True, "changed": bool(result["changed"]), "entry": result["entry"]}
+    if result.get("undo_ref"):
+        reply["undo_ref"] = result["undo_ref"]
+    return nocache_json(reply)
 
 
 def _find_ring_fact(orch, store: str, entry_id: str):

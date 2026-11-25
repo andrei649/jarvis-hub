@@ -59,6 +59,31 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it('keeps the active reply when the owner opens History and tries to resume a conversation', async () => {
+  seedChat();
+  mount();
+  await screen.findByText('Saved topic');
+  const active = send('In progress');
+  fireEvent.click(screen.getByText('History'));
+  fireEvent.click(await screen.findByText('Earlier topic'));
+  await screen.findByText('Finish or stop the current reply before switching conversations.');
+  expect(active.aborted).toBe(false);
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/sessions/resume'))).toBe(false);
+});
+
+it('keeps the unsent image question in its conversation when the owner inspects History', async () => {
+  seedChat();
+  mount();
+  await screen.findByText('Saved topic');
+  fireEvent.click(screen.getByLabelText('Selected images'));
+  fireEvent.change(await screen.findByLabelText('Image question'), { target: { value: 'What is on this drawing?' } });
+  fireEvent.click(screen.getByText('History'));
+  fireEvent.click(await screen.findByText('Earlier topic'));
+  await screen.findByText('Finish or close the image draft before switching conversations.');
+  expect((screen.getByLabelText('Image question') as HTMLInputElement).value).toBe('What is on this drawing?');
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/sessions/resume'))).toBe(false);
+});
+
 it('rehydrates the mounted screen and continues the same ID after an app restart', async () => {
   seedChat();
   const first = mount();

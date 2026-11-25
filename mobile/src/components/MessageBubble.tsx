@@ -20,12 +20,18 @@ export function MessageBubble({
   speaking,
   onSave,
   saveState,
+  onSaveNote,
+  savedNotePath,
+  onRemember,
 }: {
   message: ChatMessage;
   onSpeak?: (text: string) => void;
   speaking?: boolean;
   onSave?: () => void;
   saveState?: SaveState;
+  onSaveNote?: () => void;
+  savedNotePath?: string;
+  onRemember?: () => void;
 }) {
   const { theme, styles } = useThemeStyles(makeStyles);
   const isUser = message.role === 'user';
@@ -34,6 +40,12 @@ export function MessageBubble({
   // Explicit save-to-artifacts: only completed, non-error assistant replies,
   // never while streaming, and only when the screen opts in — never automatic.
   const canSave = !isUser && !message.pending && !message.error && message.text.length > 0 && !!onSave;
+  const canRemember = isUser && !message.pending && !message.error && !!message.text.trim() && !!onRemember;
+  const canSaveNote = !isUser && message.completed === true && !message.pending && !message.error
+    && !!message.text.trim() && !!onSaveNote;
+  const modelCalls = !isUser && !message.pending && !message.error && message.text.length > 0
+    ? message.modelCalls : undefined;
+  const activity = !isUser && message.completed && !message.pending && !message.error ? message.toolActivity : undefined;
 
   return (
     <View style={[styles.row, isUser ? styles.rowUser : styles.rowAssistant]}>
@@ -45,8 +57,34 @@ export function MessageBubble({
         ) : (
           <Markdown text={message.text} />
         )}
-        {(canSpeak || canSave) && (
+        {isUser && message.historySource && <Text style={styles.modelCall}>
+          {`Chat source: ${message.historySource.session_id} · message ${message.historySource.turn + 1} · ${message.historySource.role}`}
+        </Text>}
+        {activity && <Text style={styles.modelCall}>
+          Agent tool calls recorded: {activity.executed ?? 'unknown'}
+          {activity.proposed > 0 ? ` · Proposed: ${activity.proposed}` : ''}
+          {activity.queued > 0 ? ` · Queued: ${activity.queued}` : ''}
+          {activity.failures === null ? ' · Failures: unknown' : activity.failures > 0 ? ` · Failed: ${activity.failures}` : ''}
+        </Text>}
+        {modelCalls?.length ? (
+          <View style={styles.modelCalls}>
+            <Text style={styles.modelCallsTitle}>Models called</Text>
+            {modelCalls.map(call => (
+              <Text key={JSON.stringify([call.provider, call.model])} style={styles.modelCall}
+                accessibilityLabel={`Provider ${call.provider}, model ${call.model}`}>
+                {call.provider} · {call.model}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+        {(canSpeak || canSave || canRemember || canSaveNote) && (
           <View style={styles.actions}>
+            {canRemember && (
+              <Pressable style={[styles.savePill, styles.rememberPill]} onPress={onRemember} hitSlop={8}
+                accessibilityRole="button" accessibilityLabel="Remember message">
+                <Text style={styles.saveText}>Remember message</Text>
+              </Pressable>
+            )}
             {canSpeak && (
               <Pressable
                 style={styles.speak}
@@ -74,6 +112,12 @@ export function MessageBubble({
                 >
                   {saveState ? SAVE_LABELS[saveState] : '⬒ save'}
                 </Text>
+              </Pressable>
+            )}
+            {canSaveNote && (
+              <Pressable style={[styles.savePill, styles.rememberPill]} onPress={onSaveNote} hitSlop={8}
+                accessibilityRole="button" accessibilityLabel={savedNotePath ? 'Open saved Obsidian note' : 'Save to Obsidian'}>
+                <Text style={styles.saveText}>{savedNotePath ? 'Open saved note' : 'Save to Obsidian'}</Text>
               </Pressable>
             )}
           </View>
@@ -105,7 +149,10 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
     borderBottomLeftRadius: 4,
   },
   userText: { color: theme.text, fontSize: 15, lineHeight: 21 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 },
+  modelCalls: { borderTopWidth: 1, borderTopColor: theme.border, marginTop: 10, paddingTop: 7, gap: 3 },
+  modelCallsTitle: { color: theme.textDim, fontSize: 11, fontWeight: '600' },
+  modelCall: { color: theme.textDim, fontSize: 12, lineHeight: 17, flexShrink: 1 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginTop: 6 },
   speak: { alignSelf: 'flex-start' },
   speakIcon: { fontSize: 14, color: theme.textDim },
   savePill: {
@@ -115,6 +162,7 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
+  rememberPill: { minHeight: 44, justifyContent: 'center' },
   saveText: { fontSize: 11, color: theme.textDim },
   saveOk: { color: theme.ok },
   saveErr: { color: theme.warn },

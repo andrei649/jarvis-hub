@@ -199,3 +199,89 @@ Acest document este raportul cumulativ unic menținut lot cu lot conform mandatu
 - **Contracte Hermes:** `474` rămase `partial` (din `697` total; `187 equivalent`, `0 missing`, `36 excluded`).
 - **HUD `UNCALLED_BACKLOG`:** `8` rute rămase după integrarea Lot 5 (`antigravity/lot5-kanban`), toate fiind refuzuri/aliasuri arhitecturale deliberate (`STAYS UNWIRED ON PURPOSE` / `RESTORED`).
 - **Porți de release & backlog:** porțile deschise din `project-status.json` (`A1`, `A3`, `A4`, `A6`), rularea integrală CI pe Ubuntu/Windows pentru Draft PR-urile `#1365`–`#1368`, cele 2 regresii pre-existente la baza `ffbfce81`, conectarea în producție a `AdaptiveCostCascade` (dacă se dorește în Lot 6), plus acceptanța pe provideri live și dispozitive fizice/mobile.
+
+
+## 2026-11-17 — #1370 post-merge standalone privacy and settings repair
+
+Goal: fix confirmed standalone cloud-consent, settings-key and hardlink-config
+findings, and record genuine HUD/mobile gaps. Base
+`3a482575ec9d3f59d6baa47d70cf4455d5f84572`; isolated branch
+`fix/jarvis-os-cloud-consent`, lease none. Scope: `apps/jarvis-os/`, focused
+regressions, parity ledgers/H18.38, generated status and repair evidence.
+
+Local-first default and strict saved/request cloud consent now fence every
+fallback, late metadata/auth probes and remote/custom endpoints. Local Ollama
+uses refreshed model provenance and a fully tagged `:local` selector; older
+servers fail offline. OpenRouter masks and unrelated secret saves are preserved;
+failed consent saves remain visibly failed. `allowHardLinks` loads/saves its JSON
+boolean with default false. Provenance-based vault containment remains intact.
+No real accounts, notes, live vault configuration or service activation used.
+
+Builder: Codex (host-selected model/effort); separate read-only reviewer used the
+host-selected model/effort without override. Reviewer found and rechecked concrete
+revocation/model-locality/save gaps; all were repaired. Final focused integration
+300 pass, shipped settings4 pass, Ruff/policy/Hermes/status checks and synthetic
+install preflight pass. Root HUD250 passes. Initial full backend:36557 passed,
+163 skipped,208 failed,141 errors. Base rerun reproduced348/349 failures/errors;
+private workspace temp root resolves provider-store ancestry failures (347/349
+pass), leaving two baseline-reproduced G17 process-group assertions. Full backend
+is not declared green; see detailed evidence for names and snapshot limits.
+See [repair evidence](../../reviews/2026-11-17-jarvis-os-consent.md) for exact scope,
+commands/outcomes and unexecuted acceptance. Next: commit/push and open **draft only**. No ready, merge, deploy or workflow changes.
+
+
+## 2026-11-17 — PR #1372 JUnit-compatible count correction
+
+Base/head investigated: `3f47f602ffb21bf00e062d3e2599642a4792b02d`. Hosted
+Linux attempt 2 passed backend Test and Hermes23/23, failing only count37071 vs
+tracked37070. No hosted XML artifact was uploaded. Local collection evidence
+shows37070 items plus one JUnit collection-skip report for the missing Discord
+module. The previous generator omitted that report.
+
+The generator now predicts the exact-JUnit outcome total from one collect-only
+invocation and its private validated collection XML; runtime skips are not doubled,
+collection/report failures refuse to update, and the nested-project guard stays.
+CI parser/comparison/verification functions remain unchanged. XML support is lazy
+so bare-Python backlog/help still works; eight regressions cover the behavior.
+Actual regeneration yields37079 reported outcomes, not a hand-set count.
+
+Final focused integration70 passed; repository Ruff, targeted Bandit, live count
+and generated-status checks pass. Read-only review found the eager import issue,
+which received a red/green compatibility regression and fix. New-head hosted CI
+remains pending after the follow-up push. No workflow/security settings, merge,
+ready promotion, deploy, credentials or real-data activation changed. See
+[exact count evidence](../../reviews/2026-11-17-jarvis-os-count.md). Rollback is a
+revert of this count follow-up commit.
+
+## 2026-11-25 — harness PR #1380 CI repair
+
+The HUD compiles shared TypeScript using its own configuration in a frontend-only
+install. Both typechecks, all 3,577 Vitest cases and both committed bundle comparisons
+passed on isolated Linux. Ruff and baseline Bandit passed. The profile launcher
+rejects a relative interpreter and its regression checks fixed arguments, filtered
+environment, shell-free execution and foreground interrupt handling. Bandit findings
+B404, B606 and B603 were reviewed at the three individual launcher lines. The
+baseline and workflow are unchanged. The vault containment run passed 96 cases on
+local Windows and skipped two requiring symlink privileges. GitHub covers those two.
+
+The Linux collection matched the tracked 37,681 outcomes (37,680 tests plus one
+collection skip). Hosted verification is the next step. The current
+[handoff](../2026-11-23-ai-harness-checkpoint.md) records the separate Windows
+transcript export and main-branch CI findings. Revert the CI repair commit to roll
+back this unit.
+
+### Full Ubuntu run and follow-up
+
+The hosted runner passed all 98 native Windows vault cases, including the two
+symlink cases. HUD, security scans and lockfiles passed. The first full Ubuntu
+run exposed 15 failures. The follow-up aligns the resume test doubles with the
+keyword-only source-receipt parameter, verifies the three new chat schemas,
+regenerates the API manual, and pins the binding writer at its actual callsite.
+The validation handler uses the matched route so invalid chat and board inputs
+stay redacted under a deployment prefix. The cross-loop denial test waits for
+actual delivery and holds the requester until the decision is committed.
+
+All 409 tests in the ten affected modules passed on isolated Linux, with zero
+skips. The status generator ran both JavaScript suites and counted 37,687 backend
+outcomes, 3,577 HUD tests and 535 mobile tests. The six additional cases cover
+validation under a path prefix. The full hosted Ubuntu rerun is pending.

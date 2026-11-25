@@ -3,6 +3,7 @@ import { webcrypto } from 'node:crypto';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from '../app';
+import { Conversation } from '../cockpit';
 
 type Stream = { body: { message: string; agent: string }; event: (frame: any) => void; signal: AbortSignal; resolve: () => void };
 const streams: Stream[] = [];
@@ -72,15 +73,46 @@ it('keeps both replies in their own bubbles when the older stream finishes later
     streams[1].event({ type: 'token', text: 'Second partial' });
     streams[0].event({ type: 'start', agent: 'jarvis' });
     streams[0].event({ type: 'token', text: 'First partial' });
-    streams[0].event({ type: 'end', text: 'First final', agent: 'jarvis' });
+    streams[0].event({ type: 'end', text: 'First final', agent: 'jarvis', model_calls: [{provider:'ollama',model:'first-model'}] });
   });
   expect(screen.getByText('First final')).toBeTruthy();
   expect(screen.getByText('Second partial')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Stop generating' })).toBeTruthy();
-  act(() => streams[1].event({ type: 'end', text: 'Second final', agent: 'jarvis' }));
+  act(() => streams[1].event({ type: 'end', text: 'Second final', agent: 'jarvis', model_calls: [{provider:'openai',model:'second-model'}] }));
   await act(async () => releaseOld({ decision: { agents_selected: ['jarvis'], local: true }, plugins: ['old-plugin'] }));
-  expect(screen.getByText('First final').closest('.msg.agent')?.querySelector('.prov-chip')?.textContent).toContain('1 plugins');
-  expect(screen.getByText('Second final').closest('.msg.agent')?.querySelector('.prov-chip')?.textContent).toContain('0 plugins');
+  expect(screen.getByText('First final').closest('.msg.agent')?.querySelector('.prov-chip')?.textContent).toContain('ollama / first-model');
+  expect(screen.getByText('Second final').closest('.msg.agent')?.querySelector('.prov-chip')?.textContent).toContain('openai / second-model');
+  expect(screen.getByText('First final').closest('.msg.agent')?.textContent).not.toContain('old-plugin');
+});
+
+it('shows only a validated receipt, even when usage is mixed or incomplete', async () => {
+  render(<App />);
+  await send('Mixed call');
+  await send('No receipt');
+  await waitFor(() => expect(streams).toHaveLength(2));
+  act(() => {
+    streams[0].event({ type:'end', text:'Mixed final', model_calls:[
+      {provider:'ollama',model:'local-model'}, {provider:'openai',model:'remote-model'},
+    ], usage:{api_calls:2,breakdown:[{provider:'ollama',model:'local-model',input_tokens:null},
+      {provider:'openai',model:'remote-model',input_tokens:10}]} });
+    streams[1].event({ type:'end', text:'No receipt final', usage:{api_calls:1,breakdown:[{provider:'openai',model:'unattributed'}]} });
+  });
+  const mixed = screen.getByText('Mixed final').closest('.msg.agent')!;
+  expect(mixed.querySelector('.prov-chip')?.textContent).toContain('ollama / local-model · openai / remote-model');
+  expect(screen.getByText('No receipt final').closest('.msg.agent')?.querySelector('.prov-chip')).toBeNull();
+  fireEvent.click(mixed.querySelector('.prov-chip')!);
+  expect(screen.getByRole('dialog', { name: 'MODELS CALLED' })).toBeTruthy();
+  expect(screen.getByText(/Physical execution location was not reported/)).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole('dialog', { name: 'MODELS CALLED' }), {key:'Escape'});
+  expect(screen.queryByRole('dialog', { name: 'MODELS CALLED' })).toBeNull();
+});
+
+it('does not render the legacy demo provenance as measured model calls', async () => {
+  render(<Conversation messages={[{role:'agent',who:'jarvis',text:'Sample reply',prov:{
+    agents:['jarvis'],plugins:['gmail'],local:true,conf:0.9,
+  }}]} thinking={null} onProv={vi.fn()} />);
+  expect(screen.getByText('Sample reply')).toBeTruthy();
+  expect(document.querySelector('.prov-chip')).toBeNull();
 });
 
 it('Stop aborts every pending stream and settles the voice turn', async () => {

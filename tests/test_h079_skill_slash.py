@@ -70,6 +70,16 @@ async def test_owner_slash_loads_one_skill_through_shared_turn(tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_explicit_agent_outside_skill_scope_stops_before_usage_or_model(tmp_path, monkeypatch, stream):
+    orch, seen = _hub(tmp_path, monkeypatch, _md_skill("weather", agents=("hermes",)))
+    reply, _ = await _say(orch, "/weather tomorrow", agent_override="athena", stream=stream)
+    assert "Nothing was sent to the model" in reply
+    assert not seen.bumps and not seen.sent
+    orch.checkpoints.close()
+
+
+@pytest.mark.asyncio
 async def test_non_owner_and_unknown_skill_do_not_reach_model(tmp_path, monkeypatch):
     orch, seen = _hub(tmp_path, monkeypatch, _md_skill("weather"))
     denied, _ = await _say(orch, "/weather private", admin=False)

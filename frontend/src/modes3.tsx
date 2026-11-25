@@ -5,6 +5,7 @@ import { queueChannelReply, togglePlugin, getEstopStatus, engageEstop, resumeEst
 import { RoomsPanel } from './gap';
 import { ConfirmAction, RISK_TIER } from './confirm';
 import { HermesRuntimePanel } from './hermes-runtime-panel';
+import { RoutingPolicyLabel, selectableChatAgents } from './chat-routing-policy';
 /* HUD v2 · MODES III — Chat (focus), Comms, Admin */
 
 function SubH3({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
@@ -20,17 +21,27 @@ function NotConnected({ what }: { what?: string }){
 }
 
 /* ============ CHAT · distraction-free ============ */
-function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, lang, t, agent, sessionId, selectedTurn, outcome, power }: any){
+function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, lang, t, agent, sessionId, selectedTurn, outcome, power, agents = [], demo = false, onSelectAgent, recipientStatus, boardResultForChat, onBoardResultReviewed, canContinue }: any){
+  const selected = demo ? V2.AGENTS.find(a => a.id === agent) : agents.find(a => a.id === agent && a.rosterSource === 'api');
+  const choices = selectableChatAgents(agents, demo);
+  const name = selected?.name || (agent ? agent.charAt(0).toUpperCase() + agent.slice(1) : lang === 'ro' ? 'Alege un agent înainte de a trimite mesajul' : 'Choose an agent before sending');
   return (
     <div className="chat-wrap" style={{ height:'100%', maxHeight:'100%', minHeight:0 }}>
       <div className="chat-col" style={{ height:'100%', maxHeight:'100%', minHeight:0 }}>
         <div className="chat-head">
-          <span className="chat-glyph"><Gl3 id="jarvis" size={20}/></span>
-          <div><div className="chat-title">{t.directLine} · NERVA</div><div className="chat-sub">{t.focusHintChat}</div></div>
-          <span className="chat-live"><span className="sdot active"></span>local</span>
+          <span className="chat-glyph"><Gl3 id={agent} size={20}/></span>
+          <div className="chat-identity"><div className="chat-title">{t.directLine} · {choices.length && onSelectAgent ?
+            <select aria-label={lang === 'ro' ? 'Agent selectat' : 'Selected agent'} value={agent} onChange={event => onSelectAgent(event.target.value)}>
+              {!choices.some(a => a.id === agent) && <option value={agent} disabled>{name}</option>}
+              {choices.map(a => <option key={a.id} value={a.id}>{a.name || a.id}</option>)}
+            </select> : name}</div><div className="chat-sub">{t.focusHintChat}</div></div>
+          <RoutingPolicyLabel selected={selected} demo={demo} lang={lang}/>
         </div>
-        <Conversation messages={messages} thinking={thinking} onStop={onStop} onProv={onProv} lang={lang} t={t}/>
-        <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t} agent={agent} sessionId={sessionId} selectedTurn={selectedTurn} outcome={outcome} power={power}/>
+        <Conversation messages={messages} thinking={thinking} onStop={onStop} onProv={onProv} exportAllowed={selectedTurn && !demo}
+          messageActionsAllowed={selectedTurn} messageScope={`${agent}:${sessionId}`} lang={lang} t={t}/>
+        <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t} lang={lang} demo={demo} agent={agent} recipientStatus={recipientStatus} sessionId={sessionId} selectedTurn={selectedTurn} outcome={outcome} power={power}
+          agents={agents} boardResultForChat={boardResultForChat} onBoardResultReviewed={onBoardResultReviewed}
+          turnActive={!!thinking} canContinue={canContinue}/>
       </div>
     </div>
   );

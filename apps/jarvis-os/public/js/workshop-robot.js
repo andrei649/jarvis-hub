@@ -178,6 +178,7 @@ export class RobotWorkshop {
   }
 
   _registerPart(group, config) {
+    group.name = config.label;
     group.position.copy(config.basePos);
     this.robotRoot.add(group);
     this.parts.push({
@@ -194,6 +195,7 @@ export class RobotWorkshop {
 
   _buildRobot() {
     this.robotRoot = new THREE.Group();
+    this.robotRoot.name = "Jarvis Reactor Companion";
     // Slight rotation in exploded view aligns eye to front-left like the video
     this.scene.add(this.robotRoot);
 
@@ -245,6 +247,13 @@ export class RobotWorkshop {
       emissive: 0x00ff88,
       emissiveIntensity: 2.2,
     });
+    alumMat.name = "Brushed aluminium";
+    darkMetalMat.name = "Dark metal";
+    this.fabricMat.name = "Acoustic fabric";
+    this.shellMat.name = "Soft-touch shell";
+    this.housingMat.name = "Anodised housing";
+    this.reactorRingMat.name = "Emerald reactor light";
+    this.waistLedMat.name = "Emerald indicator light";
 
     // 1. Aluminium base (step 0)
     const baseGrp = new THREE.Group();
@@ -550,11 +559,13 @@ export class RobotWorkshop {
 
   unmount() {
     this.active = false;
+    this.sequence = (this.sequence || 0) + 1;
     this.calloutSvg.innerHTML = "";
     this.calloutLabelsEl.innerHTML = "";
   }
 
   playProgressiveBuild(onStepProgress, onComplete) {
+    const sequence = this.sequence = (this.sequence || 0) + 1;
     this.explodeTarget = 0;
     this.explodeCurrent = 0;
     this.robotRoot.rotation.y = 0.35;
@@ -582,7 +593,7 @@ export class RobotWorkshop {
 
     let currentStep = 0;
     const advance = () => {
-      if (!this.active) return;
+      if (!this.active || sequence !== this.sequence) return;
       this.parts.forEach((p) => {
         if (p.stepIndex <= currentStep) p.group.visible = true;
       });
@@ -598,21 +609,26 @@ export class RobotWorkshop {
   }
 
   applyMaterialEdit(params = {}, onStepProgress, onComplete) {
+    const sequence = this.sequence = (this.sequence || 0) + 1;
     const steps = [];
 
     if (params.housingColor) {
       const c = params.housingColor.toLowerCase();
-      if (c.includes("red") || c === "#c81e2b") {
+      if (/^#[0-9a-f]{6}$/.test(c)) {
+        this.housingMat.color.set(c);
+        this.housingPartEntry.label = `Anodised reactor housing ${c}`;
+        steps.push(`Setting housing color to ${c}`);
+      } else if (c.includes("red")) {
         this.housingMat.color.set("#b91c1c");
         this.housingMat.metalness = 0.84;
         this.housingMat.roughness = 0.24;
         this.housingPartEntry.label = "Red anodised reactor housing";
         steps.push("Anodising the housing red");
-      } else if (c.includes("gold") || c === "#f59e0b") {
+      } else if (c.includes("gold")) {
         this.housingMat.color.set("#f59e0b");
         this.housingPartEntry.label = "Gold anodised reactor housing";
         steps.push("Anodising the housing gold");
-      } else if (c.includes("blue") || c === "#3b82f6") {
+      } else if (c.includes("blue")) {
         this.housingMat.color.set("#2563eb");
         this.housingPartEntry.label = "Cobalt anodised reactor housing";
         steps.push("Anodising the housing cobalt blue");
@@ -621,6 +637,8 @@ export class RobotWorkshop {
         this.housingPartEntry.label = "Anodised reactor housing";
         steps.push("Machining brushed silver housing");
       }
+      this.housingPartEntry.group.name = this.housingPartEntry.label;
+      this.housingMat.name = this.housingPartEntry.label;
     }
 
     if (params.ringColor) {
@@ -638,10 +656,15 @@ export class RobotWorkshop {
       steps.push("Refinishing soft-touch body shell");
     }
 
-    steps.push("Waking the reactor");
+    if (steps.length === 0) {
+      if (onStepProgress) onStepProgress([], 0);
+      if (onComplete) onComplete();
+      return;
+    }
 
     let idx = 0;
     const stepTimer = () => {
+      if (sequence !== this.sequence || !this.active) return;
       if (onStepProgress) onStepProgress(steps, idx);
       idx++;
       if (idx < steps.length) setTimeout(stepTimer, 340);
@@ -651,6 +674,7 @@ export class RobotWorkshop {
   }
 
   setExploded(exploded) {
+    this.sequence = (this.sequence || 0) + 1;
     this.explodeTarget = exploded ? 1 : 0;
     this.parts.forEach((p) => (p.group.visible = true));
 
@@ -673,8 +697,53 @@ export class RobotWorkshop {
   }
 
   setExplodeAmount(val01) {
+    this.sequence = (this.sequence || 0) + 1;
     this.explodeTarget = THREE.MathUtils.clamp(val01, 0, 1);
     this.targetRotY = this.explodeTarget > 0.25 ? -0.68 : 0.35;
+  }
+
+  projectSnapshot() {
+    return {
+      version: 1,
+      view: "robot",
+      camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray() },
+      state: {
+        housingColor: `#${this.housingMat.color.getHexString()}`,
+        ringColor: `#${this.reactorRingMat.color.getHexString()}`,
+        shellColor: `#${this.shellMat.color.getHexString()}`,
+        metalness: this.housingMat.metalness,
+        roughness: this.housingMat.roughness,
+        explode: this.explodeTarget,
+      },
+    };
+  }
+
+  restoreProject(project) {
+    this.sequence = (this.sequence || 0) + 1;
+    this.cameraGoal = null;
+    this.housingMat.color.set(project.state.housingColor);
+    this.housingMat.metalness = project.state.metalness;
+    this.housingMat.roughness = project.state.roughness;
+    this.shellMat.color.set(project.state.shellColor);
+    this.reactorRingMat.color.set(project.state.ringColor);
+    this.reactorRingMat.emissive.set(project.state.ringColor);
+    this.waistLedMat.color.set(project.state.ringColor);
+    this.waistLedMat.emissive.set(project.state.ringColor);
+    this.reactorLight.color.set(project.state.ringColor);
+    this.housingPartEntry.label = `Anodised reactor housing ${project.state.housingColor}`;
+    this.housingPartEntry.group.name = this.housingPartEntry.label;
+    this.housingMat.name = this.housingPartEntry.label;
+    this.explodeTarget = this.explodeCurrent = project.state.explode;
+    this.targetRotY = this.explodeTarget > 0.25 ? -0.68 : 0.35;
+    this.robotRoot.rotation.y = this.targetRotY;
+    this.parts.forEach((part) => {
+      part.group.visible = true;
+      part.group.position.lerpVectors(part.basePos, part.explodePos, this.explodeCurrent);
+    });
+    this.floorMesh.visible = this.explodeCurrent < 0.35;
+    this.camera.position.fromArray(project.camera.position);
+    this.controls.target.fromArray(project.camera.target);
+    this.controls.update();
   }
 
   capturePNG() {

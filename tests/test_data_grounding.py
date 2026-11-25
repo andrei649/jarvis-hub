@@ -18,6 +18,7 @@ repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
+from agents.core import context_refs
 from agents.core.orchestrator import Orchestrator
 
 
@@ -40,6 +41,22 @@ def test_block_names_only_truthy_connected_sources():
     header = b.split("connected this turn:")[1].splitlines()[0]
     assert "calendar" in header and "email" in header
     assert "weather" not in header          # empty value → not a live source
+
+
+def test_attached_passage_is_readable_evidence_without_live_service_access():
+    question = "Which item is listed?"
+    source = context_refs.attach_editor_content(None, question, [{"name": "dispatch", "text": "item 72"}])
+    warning = context_refs.Expansion(question, warnings=["missing file"], block="missing file")
+    for expansion, present in ((source, True), (warning, False), (None, False)):
+        token = context_refs.bind_attached(expansion)
+        try:
+            block = _orch()._data_grounding_block({})
+            assert ("Answer the question from the supplied excerpts" in block) == present
+            assert "Report ONLY data shown" not in block
+            assert "connected this turn: none" in block
+            assert "item 72" not in block
+        finally:
+            context_refs.reset_attached(token)
 
 
 async def test_grounding_flows_into_agent_turn_text():

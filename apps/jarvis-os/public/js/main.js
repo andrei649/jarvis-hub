@@ -1,8 +1,10 @@
 import { createBrainDataset, hydrateServerBrainDataset } from "./brain-data.js";
 import { KnowledgeGalaxy } from "./galaxy.js";
+import { obsidianOpenUri } from "./obsidian-source.js";
 import { JarvisHUD } from "./jarvis-hud.js";
 import { RobotWorkshop } from "./workshop-robot.js";
 import { HouseWorkshop } from "./workshop-house.js";
+import { WorkshopProjects } from "./workshop-projects.js";
 import { ComputerUseController } from "./computer-use.js";
 import { AgentEngine } from "./agent-engine.js";
 import { HUB, apiGet, apiPost, applyBackendMode } from "./api.js";
@@ -11,6 +13,7 @@ import { escapeHtml, filterRowsHtml, hubRowsHtml, modelOptionsHtml, sourceCardsH
 class JarvisOSApp {
   constructor() {
     this.activeView = "galaxy"; // 'galaxy' | 'robot' | 'house' | 'computer'
+    this.workshopViewRevision = 0;
     this.dataset = createBrainDataset();
     this.oauthPollTimer = null;
 
@@ -34,11 +37,11 @@ class JarvisOSApp {
 
     this.robotWorkshop = new RobotWorkshop(workshopCanvasWrap, calloutSvg, calloutLabels);
     this.houseWorkshop = new HouseWorkshop(workshopCanvasWrap, calloutSvg, calloutLabels);
+    this.projects = new WorkshopProjects(this);
     this.computerUse = new ComputerUseController(this.hud);
     this.agent = new AgentEngine(this);
 
     this.telemetryStart = performance.now();
-    this.tokenCounter = 0;
 
     this._restoreVisualPrefs();
     this._populateSidebarHubsAndFilters();
@@ -70,11 +73,14 @@ class JarvisOSApp {
         this._renderDiscoveredSources(data.discoveredSources || []);
         const skipped = data.skipped && data.skipped.count ? data.skipped : null;
         const vaultMsg = document.getElementById("vault-status-msg");
+        if (vaultMsg) vaultMsg.textContent = data.mode === "demo_550"
+          ? "Showing the demo graph. Connect a vault to browse your notes."
+          : `${data.discoveredSources?.[0]?.detail || "Vault indexed"}.`;
         if (skipped && vaultMsg) {
           const why = Object.entries(skipped.reasons || {})
             .map(([reason, count]) => `${count} ${reason}`)
             .join(", ");
-          vaultMsg.textContent = `${skipped.count} vault entries were left out because they are links (${why}).`;
+          vaultMsg.textContent += ` Skipped ${skipped.count} entries (${why}).`;
         }
       }
     } catch (_) {
@@ -150,6 +156,7 @@ class JarvisOSApp {
     const topNeighbors = neighborIndices.slice(0, 8).map((i) => this.dataset.nodes[i]).filter(Boolean);
     const card = document.getElementById("inspector-card");
     const cleanBody = (node.body || "").replace(/^#+\s*/gm, "").trim();
+    const sourceUri = obsidianOpenUri(node.obsidianSource);
 
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;">
@@ -162,6 +169,7 @@ class JarvisOSApp {
         <span>${neighborIndices.length} links</span>
       </div>
       ${node.relPath ? `<div class="inspector-path-badge">${this._escapeHtml(node.relPath)}</div>` : ""}
+      ${sourceUri ? `<a class="inspector-source-link" href="${this._escapeHtml(sourceUri)}">Open in Obsidian</a>` : ""}
       <div class="inspector-node-body" id="inspector-body-content">${this._escapeHtml(cleanBody)}</div>
       <div class="inspector-neighbors">
         ${topNeighbors
@@ -265,9 +273,11 @@ class JarvisOSApp {
       document.getElementById("settings-active-engine").textContent = engineLabel;
       document.getElementById("hud-engine-pill").textContent = `AI: ${engineLabel}`;
 
-      document.getElementById("cfg-preferred-provider").value = st.preferredProvider || "auto";
+      document.getElementById("cfg-preferred-provider").value = st.preferredProvider || "ollama";
+      document.getElementById("cfg-cloud-consent").checked = st.cloudConsent === true;
       document.getElementById("cfg-vault-mode").value = st.vaultMode || "andrei_plus_nerva";
       document.getElementById("cfg-vault-path").value = st.vaultPath || "";
+      if (st.inboxFolder) document.getElementById("inbox-capture-msg").textContent = `Saves new notes to ${st.inboxFolder}/`;
       document.getElementById("cfg-nerva-path").value = st.nervaPath || "";
       document.getElementById("cfg-ollama-url").value = st.ollamaUrl || "http://127.0.0.1:11434";
       document.getElementById("cfg-openrouter-url").value = st.openrouterUrl || "";
@@ -316,6 +326,7 @@ class JarvisOSApp {
       const setKeyBadge = (badgeId, inputId, hasKey, defaultLabel = "Optional") => {
         const b = document.getElementById(badgeId);
         const inp = document.getElementById(inputId);
+        if (!b || !inp) return;
         if (hasKey) {
           b.textContent = "● Key Saved";
           b.className = "conn-pill connected";
@@ -330,7 +341,7 @@ class JarvisOSApp {
       setKeyBadge("badge-anthropic", "cfg-anthropic", p.anthropic);
       setKeyBadge("badge-openai", "cfg-openai", p.openai);
       setKeyBadge("badge-gemini", "cfg-gemini", p.gemini);
-      setKeyBadge("badge-openrouter", "cfg-openrouter", p.openrouter);
+      setKeyBadge("badge-openrouter", "cfg-openrouter-key", p.openrouter);
       if (p.elevenlabs) {
         setKeyBadge("badge-elevenlabs", "cfg-elevenlabs", true);
       } else {
@@ -372,6 +383,7 @@ class JarvisOSApp {
      WORKSHOP OVERLAY MANAGEMENT (ROBOT & FLOOR PLAN STUDIO)
      ========================================================= */
   _showBuildChecklist(stateTitle, thinkingLabel, thinkingDesc, steps, activeIdx, completed = false) {
+    this._workshopHasBuildStatus = true;
     const card = document.getElementById("build-status-card");
     card.classList.remove("hidden");
     document.getElementById("build-card-body").classList.remove("hidden");
@@ -394,13 +406,13 @@ class JarvisOSApp {
   }
 
   openRobotWorkshop(animateBuild = true) {
+    this._cancelWorkshopExport();
     this.computerUse.close();
     this.houseWorkshop.unmount();
 
     this.activeView = "robot";
     document.body.dataset.view = "robot";
     this.telemetryStart = performance.now();
-    this.tokenCounter = 2.4;
 
     document.getElementById("workshop-overlay").classList.remove("hidden");
     document.getElementById("workshop-header-left").classList.remove("hidden");
@@ -415,10 +427,9 @@ class JarvisOSApp {
       const startTs = performance.now();
       this.robotWorkshop.playProgressiveBuild(
         (steps, idx) => {
-          this.tokenCounter = +(3.2 + idx * 1.85).toFixed(1);
           this._showBuildChecklist(
             "BUILDING",
-            "FABLE IS THINKING",
+            "Assembling the model",
             "Setting the frame deck and the battery cradle heights, then wiring the tick handler so the ring and tick group pulse with the voice level.",
             steps,
             idx,
@@ -427,10 +438,9 @@ class JarvisOSApp {
         },
         () => {
           const secs = ((performance.now() - startTs) / 1000).toFixed(1);
-          this.tokenCounter = 16.7;
           this._showBuildChecklist(
             "BUILT",
-            `THOUGHT IT THROUGH IN ${secs} S`,
+            `Assembly complete in ${secs} s`,
             "15 precision-machined parts assembled with PBR studio materials and exploded-view vectors ready.",
             [
               "Turning the aluminium foot",
@@ -449,7 +459,9 @@ class JarvisOSApp {
         }
       );
     } else {
-      this.robotWorkshop.parts.forEach((p) => (p.group.visible = true));
+      this._workshopHasBuildStatus = false;
+      this.robotWorkshop.setExploded(false);
+      document.getElementById("build-status-card").classList.add("hidden");
       this.hud.setStatus("online");
     }
   }
@@ -463,11 +475,16 @@ class JarvisOSApp {
       <input id="rb-explode-slider" type="range" min="0" max="100" value="${Math.round(this.robotWorkshop.explodeTarget * 100)}" style="width:88px; accent-color:#22c55e; margin:0 6px;" title="Explode Offset" />
       <button id="rb-red-btn" class="top-pill-btn">🔴 Red Housing</button>
       <button id="rb-save-btn" class="top-pill-btn">Save picture</button>
+      <button id="rb-projects-btn" class="top-pill-btn" aria-haspopup="dialog">Projects</button>
+      ${HUB ? '<button id="rb-ai-edit-btn" class="top-pill-btn">Edit with AI</button>' : ''}
+      <button id="rb-export-btn" class="top-pill-btn" ${this._workshopExportRequest ? "disabled" : ""}>Blender / Godot (.glb)</button>
+      <span id="workshop-export-status" role="status" aria-live="polite">${this._workshopExportStatus || ""}</span>
     `;
 
     document.getElementById("rb-assemble-btn").addEventListener("click", () => this.setRobotExploded(false));
     document.getElementById("rb-explode-btn").addEventListener("click", () => this.setRobotExploded(true));
     document.getElementById("rb-explode-slider").addEventListener("input", (e) => {
+      this._cancelWorkshopExport();
       this.robotWorkshop.setExplodeAmount(Number(e.target.value) / 100);
     });
     document.getElementById("rb-red-btn").addEventListener("click", () => {
@@ -476,38 +493,23 @@ class JarvisOSApp {
     document.getElementById("rb-save-btn").addEventListener("click", () => {
       this._downloadDataUrl(this.robotWorkshop.capturePNG(), "jarvis-reactor-companion.png");
     });
+    document.getElementById("rb-export-btn").addEventListener("click", () => this.exportWorkshopModel());
+    document.getElementById("rb-projects-btn").addEventListener("click", () => this.projects.open());
+    document.getElementById("rb-ai-edit-btn")?.addEventListener("click", () => this._focusWorkshopPrompt());
   }
 
   editRobot(params) {
+    this._cancelWorkshopExport();
     this.hud.setStatus("working");
-    this.robotWorkshop.applyMaterialEdit(
-      params,
-      (steps, idx) => {
-        this.tokenCounter = +(this.tokenCounter + 0.6).toFixed(1);
-        this._showBuildChecklist(
-          "CHANGING",
-          "FABLE IS THINKING",
-          "Updating material shaders on matching part names while preserving reactor core state...",
-          steps,
-          idx,
-          false
-        );
-      },
-      () => {
-        this._showBuildChecklist(
-          "BUILT",
-          "THOUGHT IT THROUGH IN 1.4 S",
-          "Live shader & anodised bezel update applied in-place without scene reset.",
-          ["Anodising housing finish", "Restoring the emerald ring", "Waking the reactor"],
-          3,
-          true
-        );
-        this.hud.setStatus("online");
-      }
-    );
+    this.robotWorkshop.applyMaterialEdit(params, (steps, idx) => {
+      if (idx !== 0) return;
+      this._showBuildChecklist(steps.length ? "UPDATED" : "NO CHANGE", steps.length ? "Model materials updated" : "Materials unchanged", "The current 3D model reflects this request.", steps, steps.length, true);
+      this.hud.setStatus("online");
+    });
   }
 
   setRobotExploded(exploded) {
+    this._cancelWorkshopExport();
     this.robotWorkshop.setExploded(exploded);
     if (exploded) {
       document.getElementById("build-status-card").classList.add("hidden");
@@ -516,13 +518,13 @@ class JarvisOSApp {
   }
 
   openHouseWorkshop(animateBuild = true) {
+    this._cancelWorkshopExport();
     this.computerUse.close();
     this.robotWorkshop.unmount();
 
     this.activeView = "house";
     document.body.dataset.view = "house";
     this.telemetryStart = performance.now();
-    this.tokenCounter = 3.8;
 
     document.getElementById("workshop-overlay").classList.remove("hidden");
     document.getElementById("workshop-header-left").classList.remove("hidden");
@@ -536,10 +538,9 @@ class JarvisOSApp {
       this.hud.setStatus("working");
       this.houseWorkshop.playInitialBuild(
         (steps, idx) => {
-          this.tokenCounter = +(4.1 + idx * 1.15).toFixed(1);
           this._showBuildChecklist(
             "BUILDING",
-            "THOUGHT IT THROUGH IN 2.4 S",
+            "Assembling the model",
             "Extruding architectural wall boundaries, placing interior furniture at offset coordinates, and pouring the pool terrace...",
             steps,
             idx,
@@ -547,10 +548,9 @@ class JarvisOSApp {
           );
         },
         () => {
-          this.tokenCounter = 10.1;
           this._showBuildChecklist(
             "BUILT",
-            "THOUGHT IT THROUGH IN 2.4 S",
+            "Model assembled",
             "21m × 18m villa ready for live voice remodeling — try 'remove front stairs', 'enlarge living room', or 'add palm trees behind the pool'.",
             [
               "Raising the walls",
@@ -570,6 +570,8 @@ class JarvisOSApp {
         }
       );
     } else {
+      this._workshopHasBuildStatus = false;
+      document.getElementById("build-status-card").classList.add("hidden");
       this._renderHouseTopBar(false);
     }
   }
@@ -581,6 +583,12 @@ class JarvisOSApp {
       <button id="hs-3d-btn" class="top-pill-btn ${mode === "3d" ? "active" : ""}">3D model</button>
       <button id="hs-mini-btn" class="top-pill-btn ${mode === "miniature" ? "active" : ""}">Miniature</button>
       <button id="hs-save-btn" class="top-pill-btn">Save picture</button>
+      <button id="hs-projects-btn" class="top-pill-btn" aria-haspopup="dialog">Projects</button>
+      ${HUB ? '<button id="hs-ai-edit-btn" class="top-pill-btn">Edit with AI</button>' : ''}
+      <button id="hs-export-btn" class="top-pill-btn" ${this._workshopExportRequest ? "disabled" : ""}>Blender / Godot (.glb)</button>
+      <button id="hs-ai-btn" class="top-pill-btn" title="Download a script that builds the current drawing in Illustrator" ${this._workshopExportRequest ? "disabled" : ""}>Illustrator script (.jsx)</button>
+      <button id="hs-svg-btn" class="top-pill-btn" ${this._workshopExportRequest ? "disabled" : ""}>Export floor plan as SVG for Illustrator (.svg)</button>
+      <span id="workshop-export-status" role="status" aria-live="polite">${this._workshopExportStatus || ""}</span>
       ${
         craftingMiniature
           ? `<span class="crafting-badge"><span class="spinner-ring"></span> Crafting the miniature</span>`
@@ -593,55 +601,37 @@ class JarvisOSApp {
     document.getElementById("hs-save-btn").addEventListener("click", () => {
       this._downloadDataUrl(this.houseWorkshop.capturePNG(), `pool-home-${mode}.png`);
     });
+    document.getElementById("hs-export-btn").addEventListener("click", () => this.exportWorkshopModel());
+    document.getElementById("hs-ai-btn").addEventListener("click", () => this.exportWorkshopModel("jsx"));
+    document.getElementById("hs-svg-btn").addEventListener("click", () => this.exportHouseFloorPlan());
+    document.getElementById("hs-projects-btn").addEventListener("click", () => this.projects.open());
+    document.getElementById("hs-ai-edit-btn")?.addEventListener("click", () => this._focusWorkshopPrompt());
   }
 
   switchHouseTab(mode) {
+    this._cancelWorkshopExport();
     this.houseWorkshop.setViewMode(mode);
     const isMini = mode === "miniature";
     document.getElementById("your-picture-card").classList.toggle("hidden", isMini);
-    document.getElementById("build-status-card").classList.toggle("hidden", isMini);
+    document.getElementById("build-status-card").classList.toggle("hidden", isMini || !this._workshopHasBuildStatus);
     document.getElementById("workshop-header-left").classList.toggle("hidden", isMini);
     this._renderHouseTopBar(false);
   }
 
   editHouse(params) {
+    this._cancelWorkshopExport();
     this.hud.setStatus("working");
-    this.houseWorkshop.applyEdit(
-      params,
-      (steps, idx) => {
-        this.tokenCounter = +(this.tokenCounter + 1.4).toFixed(1);
-        this._showBuildChecklist(
-          "CHANGING",
-          "THOUGHT IT THROUGH IN 1.8 S",
-          "Recomputing wall footprints, roof overhangs, and exterior landscaping idempotently...",
-          steps,
-          idx,
-          false
-        );
-      },
-      () => {
-        this._showBuildChecklist(
-          "BUILT",
-          "THOUGHT IT THROUGH IN 1.8 S",
-          "Live architectural modifications applied to both the 3D model and Miniature diorama.",
-          [
-            "Restoring the living room wall",
-            "Rearranging the larger room",
-            "Fitting bedroom and baths",
-            "Pouring the pool terrace",
-            "Centring the entry porch",
-            "Planting beyond the pool",
-          ],
-          6,
-          true
-        );
-        this._renderHouseTopBar(false);
-        this.hud.setStatus("online");
-      }
-    );
+    this.houseWorkshop.applyEdit(params, (steps, idx) => {
+      if (idx !== 0) return;
+      this._showBuildChecklist(steps.length ? "UPDATED" : "NO CHANGE", steps.length ? "Model updated" : "Model unchanged", "The current 3D model reflects this request.", steps, steps.length, true);
+      this._renderHouseTopBar(false);
+      this.hud.setStatus("online");
+    });
   }
 
   openComputerUse() {
+    this.projects?.close(false);
+    this._cancelWorkshopExport();
     this.robotWorkshop.unmount();
     this.houseWorkshop.unmount();
     document.getElementById("workshop-overlay").classList.add("hidden");
@@ -651,6 +641,8 @@ class JarvisOSApp {
   }
 
   closeOverlays() {
+    this.projects?.close(false);
+    this._cancelWorkshopExport();
     this.robotWorkshop.unmount();
     this.houseWorkshop.unmount();
     this.computerUse.close();
@@ -668,6 +660,111 @@ class JarvisOSApp {
     a.click();
     this.hud.showSubtitle(`Saved high-resolution snapshot "${filename}", sir.`);
   }
+
+  _cancelWorkshopExport() {
+    this.workshopViewRevision = (this.workshopViewRevision || 0) + 1;
+    this._workshopExportRequest = null;
+    this._workshopExportStatus = "";
+    const status = document.getElementById("workshop-export-status");
+    if (status) status.textContent = "";
+    const button = document.getElementById(this.activeView === "robot" ? "rb-export-btn" : "hs-export-btn");
+    if (button) button.disabled = false;
+    const svgButton = document.getElementById("hs-svg-btn");
+    if (svgButton) svgButton.disabled = false;
+    const aiButton = document.getElementById("hs-ai-btn");
+    if (aiButton) aiButton.disabled = false;
+  }
+
+  _focusWorkshopPrompt() {
+    if (!HUB || (this.activeView !== "robot" && this.activeView !== "house")) return;
+    const input = document.getElementById("jarvis-prompt-input");
+    if (!input) return;
+    if (!input.value.trim()) input.value = "Edit model: ";
+    else if (!/^edit model:/i.test(input.value.trimStart())) input.value = `Edit model: ${input.value}`;
+    input.title = `Describe an edit to the ${this.activeView === "robot" ? "robot" : "house"} model`;
+    input.focus();
+  }
+
+  restoreWorkshopProject(project) {
+    if (project.view === "robot") {
+      this.openRobotWorkshop(false);
+      this.robotWorkshop.restoreProject(project);
+      this._renderRobotTopBar();
+    } else {
+      this.openHouseWorkshop(false);
+      this.houseWorkshop.restoreProject(project);
+      const mini = project.state.mode === "miniature";
+      document.getElementById("your-picture-card").classList.toggle("hidden", mini);
+      document.getElementById("workshop-header-left").classList.toggle("hidden", mini);
+      this._renderHouseTopBar(false);
+    }
+    document.getElementById("build-status-card").classList.add("hidden");
+    this.hud.setStatus("online");
+  }
+
+  async exportWorkshopModel(format = "glb") {
+    const view = this.activeView;
+    if (!['glb', 'svg', 'jsx'].includes(format) ||
+        (format !== "glb" ? view !== "house" : view !== "robot" && view !== "house") || this._workshopExportRequest) return false;
+    const mode = view === "house" ? this.houseWorkshop.viewMode : null;
+    const roots = format !== "glb" ? null : view === "robot" ? [this.robotWorkshop.robotRoot]
+      : mode === "miniature" ? [this.houseWorkshop.houseRoot, this.houseWorkshop.miniatureEnvGroup]
+        : [this.houseWorkshop.houseRoot];
+    const filename = format !== "glb" ? `pool-home-floor-plan.${format}`
+      : view === "robot" ? "jarvis-reactor-companion.glb" : `pool-home-${mode}.glb`;
+    const request = {};
+    this._workshopExportRequest = request;
+    this._workshopExportStatus = format !== "glb" ? "Exporting floor plan…" : "Exporting model…";
+    const status = document.getElementById("workshop-export-status");
+    const button = document.getElementById(view === "robot" ? "rb-export-btn" : "hs-export-btn");
+    const svgButton = view === "house" ? document.getElementById("hs-svg-btn") : null;
+    const aiButton = view === "house" ? document.getElementById("hs-ai-btn") : null;
+    if (status) status.textContent = this._workshopExportStatus;
+    if (button) button.disabled = true;
+    if (svgButton) svgButton.disabled = true;
+    if (aiButton) aiButton.disabled = true;
+    try {
+      const exporter = await import("./workshop-export.js");
+      if (this._workshopExportRequest !== request || this.activeView !== view) return false;
+      const blob = format === "svg"
+        ? new Blob([exporter.houseFloorPlanSVG(this.houseWorkshop)], { type: "image/svg+xml;charset=utf-8" })
+        : format === "jsx"
+          ? new Blob([exporter.houseFloorPlanIllustratorScript(this.houseWorkshop)], { type: "application/octet-stream" })
+        : await exporter.workshopGLB(roots);
+      if (this._workshopExportRequest !== request || this.activeView !== view ||
+          (view === "house" && this.houseWorkshop.viewMode !== mode)) return false;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      try { a.click(); } finally {
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+      this._workshopExportStatus = format === "jsx"
+        ? `Downloaded ${filename}. In Illustrator, choose File › Scripts › Other Script, open the download, then save your drawing as .ai.`
+        : format === "glb" ? `Downloaded ${filename}. Drop it into Godot’s FileSystem dock or import it as glTF in Blender.` : `Downloaded ${filename}`;
+      if (status) status.textContent = this._workshopExportStatus;
+      this.hud.showSubtitle(format === "jsx" ? this._workshopExportStatus : `Saved editable ${format === "glb" ? "model" : "floor plan"} "${filename}", sir.`);
+      return true;
+    } catch (error) {
+      if (this._workshopExportRequest === request) {
+        this._workshopExportStatus = format !== "glb" ? "Could not export floor plan. Please try again." : "Could not export model. Please try again.";
+        if (status) status.textContent = this._workshopExportStatus;
+      }
+      return false;
+    } finally {
+      if (this._workshopExportRequest === request) {
+        this._workshopExportRequest = null;
+        if (button) button.disabled = false;
+        if (svgButton) svgButton.disabled = false;
+        if (aiButton) aiButton.disabled = false;
+      }
+    }
+  }
+
+  exportHouseFloorPlan() { return this.exportWorkshopModel("svg"); }
 
   /* =========================================================
      GLOBAL UI & KEYBOARD EVENT BINDINGS
@@ -896,6 +993,7 @@ class JarvisOSApp {
     const saveAllSettings = async (statusElId) => {
       const payload = {
         preferredProvider: document.getElementById("cfg-preferred-provider").value,
+        cloudConsent: document.getElementById("cfg-cloud-consent").checked,
         vaultMode: document.getElementById("cfg-vault-mode").value,
         vaultPath: document.getElementById("cfg-vault-path").value,
         nervaPath: document.getElementById("cfg-nerva-path").value,
@@ -911,7 +1009,18 @@ class JarvisOSApp {
         elevenlabsVoiceId: document.getElementById("cfg-elevenlabs-voice").value,
       };
       // On the hub, providers, keys and paths are the hub's own: only re-index.
-      const data = HUB ? { activeEngine: "nerva hub" } : await (await apiPost("/config", payload)).json();
+      let data = { activeEngine: "nerva hub" };
+      try {
+        if (!HUB) {
+          const response = await apiPost("/config", payload);
+          data = await response.json();
+          if (!response.ok || data.ok !== true) throw new Error("Settings were not saved");
+        }
+      } catch (_) {
+        const msgEl = document.getElementById(statusElId);
+        if (msgEl) msgEl.textContent = "Could not save or confirm settings. Refresh status before relying on this change, or retry.";
+        return;
+      }
       await this.refreshAIStatus(true);
       await this.loadServerBrain(true);
       const msgEl = document.getElementById(statusElId);
@@ -923,7 +1032,7 @@ class JarvisOSApp {
     document.getElementById("cfg-save-btn").addEventListener("click", () => saveAllSettings("cfg-status-msg"));
     document.getElementById("btn-save-vault").addEventListener("click", () => saveAllSettings("vault-status-msg"));
 
-    // Quick Capture Note to 08 Inbox
+    // Quick capture into the configured inbox.
     document.getElementById("btn-capture-inbox").addEventListener("click", async () => {
       const titleInput = document.getElementById("inbox-note-title");
       const bodyInput = document.getElementById("inbox-note-body");
@@ -934,9 +1043,21 @@ class JarvisOSApp {
         msgEl.textContent = "Enter a title or note content first.";
         return;
       }
-      msgEl.textContent = "Saving note to 08 Inbox...";
-      const res = await apiPost("/brain/capture", { title, content });
-      const data = await res.json();
+      const saveButton = document.getElementById("btn-capture-inbox");
+      if (saveButton.disabled) return;
+      saveButton.disabled = true;
+      msgEl.textContent = "Saving note…";
+      let data;
+      try {
+        const res = await apiPost("/brain/capture", { title, content });
+        data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "The hub could not confirm the save.");
+      } catch (err) {
+        msgEl.textContent = `Check the vault before retrying. ${err.message || "Could not confirm the save."}`;
+        return;
+      } finally {
+        saveButton.disabled = false;
+      }
       if (data.ok) {
         titleInput.value = "";
         bodyInput.value = "";
@@ -944,10 +1065,10 @@ class JarvisOSApp {
         await this.loadServerBrain(true);
         this.closeSettings();
         if (data.node?.title) {
-          const idx = this.dataset.nodes.findIndex((n) => n.title === data.node.title);
+          const idx = this.dataset.nodes.findIndex((n) => n.relPath === data.node.relPath);
           if (idx >= 0) this.galaxy.focusNode(idx, true);
         }
-        this.hud.speak(`Saved "${data.node?.title || title}" to your Andrei OS Inbox and linked it in the galaxy, sir.`);
+        this.hud.showSubtitle(`Saved ${data.node?.relPath || data.path}`);
       } else {
         msgEl.textContent = `Error: ${data.error || "Could not write note"}`;
       }
@@ -976,11 +1097,9 @@ class JarvisOSApp {
   _loadCustomFloorplanFile(file) {
     const reader = new FileReader();
     reader.onload = () => {
+      this.openHouseWorkshop(false);
       document.getElementById("your-picture-img").src = reader.result;
-      document.getElementById("workshop-title").textContent = file.name.replace(/\.[^.]+$/, "");
-      if (this.hud.brain !== "fable-5.2") this.hud.setBrain("fable-5.2", false);
-      this.openHouseWorkshop(true);
-      this.hud.speak(`Blueprint "${file.name}" ingested, sir. Extruding walls and furnishing the 3D layout now.`);
+      this.hud.speak(`Reference image "${file.name}" loaded beside the Pool Home example model.`);
     };
     reader.readAsDataURL(file);
   }
@@ -1000,7 +1119,6 @@ class JarvisOSApp {
         const mins = Math.floor(elapsedSec / 60);
         const secs = String(elapsedSec % 60).padStart(2, "0");
         document.getElementById("workshop-timer").textContent = `${mins}:${secs}`;
-        document.getElementById("workshop-tokens").textContent = `${this.tokenCounter.toFixed(1)}K tokens`;
 
         if (this.activeView === "robot") {
           this.robotWorkshop.tick(dt, this.hud.voiceLevel);
@@ -1017,4 +1135,15 @@ class JarvisOSApp {
 
 window.addEventListener("DOMContentLoaded", () => {
   window.jarvisApp = new JarvisOSApp();
+  const params = new URLSearchParams(window.location.search);
+  const project = params.get("project");
+  if (project) {
+    window.jarvisApp.openRobotWorkshop(false);
+    window.jarvisApp.projects.open({ refresh: false });
+    window.jarvisApp.projects.load(project);
+    return;
+  }
+  const studio = params.get("studio");
+  if (studio === "robot") window.jarvisApp.openRobotWorkshop(false);
+  else if (studio === "house") window.jarvisApp.openHouseWorkshop(false);
 });

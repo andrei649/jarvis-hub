@@ -47,7 +47,7 @@ def test_web_shortcuts_log_only_taken_skill_names(monkeypatch, caplog):
             self.skills = {name: SimpleNamespace(name=name, path=None,
                                                  description="PRIVATE BODY") for name in names}
 
-        def catalog_gate(self, skill):
+        def catalog_gate(self, skill, agent=None):
             return ""
 
     monkeypatch.setattr(command_shortcuts, "_quick_inventory", lambda: {

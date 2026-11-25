@@ -1,4 +1,4 @@
-import { internalLink } from './base-path';
+import { appUrl, internalLink } from './base-path';
 /* HUD v2 · ARTIFACTS — saved-response workspace over the governed Agent Canvas
    (H12.18 backend). The cockpit gets a third center tab that lists Canvas
    elements from GET /api/canvas and lets the owner pin/unpin/delete them, plus
@@ -13,9 +13,11 @@ import { internalLink } from './base-path';
      load with referrerPolicy="no-referrer";
    - nothing here auto-saves — a reply is persisted only on a user click. */
 import { BinaryArtifacts } from './panels/binary-artifacts';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost, apiDelete } from './api/client';
 import { Markdown } from './markdown';
+import { OfficeExportButton } from './office-export';
+import { WorkshopProjects, type WorkshopRef } from './workshop-projects';
 
 /* Canvas bounds Markdown bodies to 4,000 chars (agents/core/canvas.py). Send no
    more than the backend keeps, and disclose visibly when the copy was cut. */
@@ -178,7 +180,8 @@ function fmtWhen(ts) {
   try { return new Date(n * 1000).toLocaleString(); } catch { return '—'; }
 }
 
-function ArtifactCard({ el, L, onPin, onDelete }) {
+function ArtifactCard({ el, L, onPin, onDelete, lang, exportAllowed }) {
+  const p = el.payload || {};
   return (
     <div className="art-card" data-type={el.type}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -190,6 +193,10 @@ function ArtifactCard({ el, L, onPin, onDelete }) {
       </div>
       <div className="art-body"><ArtifactBody el={el} L={L} /></div>
       <div className="art-actions">
+        {exportAllowed && el.type === 'markdown' && typeof p.body === 'string' && p.body &&
+          <OfficeExportButton data={{ format: 'docx', text: Array.from(p.body).slice(0, MARKDOWN_LIMIT).join('') }} lang={lang} />}
+        {exportAllowed && el.type === 'table' && Array.isArray(p.columns) && p.columns.length > 0 &&
+          <OfficeExportButton data={{ format: 'xlsx', rows: [p.columns.map(String), ...(Array.isArray(p.rows) ? p.rows : []).map(row => Array.isArray(row) ? row.map(String) : [])] }} lang={lang} />}
         <button className="tool-btn" onClick={() => onPin(el)}>{el.pinned ? L.unpin : L.pin}</button>
         <button className="tool-btn danger" onClick={() => onDelete(el)}>{L.del}</button>
       </div>
@@ -198,12 +205,16 @@ function ArtifactCard({ el, L, onPin, onDelete }) {
 }
 
 /* ── the Artifacts center-tab panel ──────────────────────────────────────── */
-function ArtifactsPanel({ refreshKey = 0, lang }: { refreshKey?: number; lang?: string }) {
+function ArtifactsPanel({ refreshKey = 0, lang, exportAllowed = true, onDiscussProject, onInspectBlend }: {
+  refreshKey?: number; lang?: string; exportAllowed?: boolean; onDiscussProject?: (project: WorkshopRef) => void;
+  onInspectBlend?: (file: File) => boolean;
+}) {
   const L = labels(lang);
   const [els, setEls] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const blendPicker = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     setLoading(true); setLoadErr(null); setActionErr(null);
@@ -235,8 +246,28 @@ function ArtifactsPanel({ refreshKey = 0, lang }: { refreshKey?: number; lang?: 
         <span className="art-count">
           {els !== null && !loading && !loadErr ? `${els.length} artifact${els.length === 1 ? '' : 's'}` : ''}
         </span>
+        <a className="tool-btn" href={appUrl('/os/?studio=robot')} target="_blank" rel="noreferrer">
+          {lang === 'ro' ? 'Deschide atelierul 3D' : 'Open 3D workshop'}
+        </a>
+        {exportAllowed && onInspectBlend && <>
+          <input hidden type="file" ref={blendPicker} accept=".blend" aria-label={lang === 'ro' ? 'Alege un proiect Blender' : 'Choose a Blender project'}
+            onChange={event => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file) return;
+              if (!/\.blend$/i.test(file.name)) { setActionErr(lang === 'ro' ? 'Alege un fișier .blend.' : 'Choose a .blend file.'); return; }
+              if (!onInspectBlend(file)) setActionErr(lang === 'ro'
+                ? 'Încheie sau elimină atașamentul sau comanda din ciornă, apoi alege din nou proiectul.'
+                : 'Finish or remove the current attachment or slash command, then choose the project again.');
+            }}/>
+          <button type="button" className="tool-btn" onClick={() => blendPicker.current?.click()}>
+            {lang === 'ro' ? 'Inspectează un fișier Blender' : 'Inspect Blender file'}
+          </button>
+        </>}
         <button className="tool-btn" onClick={load} title="refresh artifacts">↻ {L.refresh}</button>
       </div>
+      {exportAllowed && <WorkshopProjects lang={lang} actionLabel={lang === 'ro' ? 'Discută în chat' : 'Discuss in chat'}
+        onChoose={onDiscussProject}/>}
       <BinaryArtifacts />
       {actionErr && <div className="art-note err" role="alert">{actionErr}</div>}
       {loading ? (
@@ -249,7 +280,7 @@ function ArtifactsPanel({ refreshKey = 0, lang }: { refreshKey?: number; lang?: 
         <div className="art-note">{L.empty}</div>
       ) : (
         <div className="art-list">
-          {els.map((el) => <ArtifactCard key={el.id} el={el} L={L} onPin={togglePin} onDelete={remove} />)}
+          {els.map((el) => <ArtifactCard key={el.id} el={el} L={L} onPin={togglePin} onDelete={remove} lang={lang} exportAllowed={exportAllowed} />)}
         </div>
       )}
     </div>

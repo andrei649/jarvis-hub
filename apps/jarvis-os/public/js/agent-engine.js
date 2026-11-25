@@ -4,7 +4,15 @@
  * - Live RAG-grounded AI responses via `/api/chat` (Anthropic Subscription CLI, Cloud APIs, Local Ollama, Vault RAG).
  */
 
-import { chat } from "./api.js";
+import { HUB, apiPost, chat } from "./api.js";
+
+const editLabels = {
+  housingColor: "Housing", ringColor: "Ring", shellColor: "Shell",
+  enlargeKitchen: "Kitchen", enlargeLivingRoom: "Living room",
+  addGarageCars: "Garage cars", addPoolPalmsAndFlowers: "Pool planting",
+  addLoungeChairs: "Lounge chairs", centerDoorRemoveStairs: "Step-free entry",
+  explodedHouse: "Exploded view", showLabels: "Room labels", showRoof: "Roof",
+};
 
 export class AgentEngine {
   constructor(app) {
@@ -16,6 +24,22 @@ export class AgentEngine {
     if (!text) return;
 
     this.app.hud.logReflex(`USER: "${text}"`);
+    const edit = /^edit model\s*:\s*([\s\S]*)$/i.exec(text);
+    if (HUB && edit) {
+      await this._editWorkshop(edit[1].trim());
+      return;
+    }
+    if (/^(?:export|save)(?: (?:this|the|my|current))?(?: (?:3d )?(?:model|scene|robot|house|miniature))? (?:for|to|as) (?:blender|godot|glb)\.?$/i.test(text)) {
+      if (["robot", "house"].includes(this.app.activeView)) await this.app.exportWorkshopModel();
+      else this.app.hud.showSubtitle("Open a workshop model to export it.");
+      return;
+    }
+    const floorPlanExport = /^(?:export|save)(?: (?:this|the|my|current))?(?: (?:house )?floor plan)? (?:for|to|as) (illustrator|jsx|svg)(?: file)?\.?$/i.exec(text);
+    if (floorPlanExport) {
+      if (this.app.activeView === "house") await this.app.exportWorkshopModel(floorPlanExport[1].toLowerCase() === "svg" ? "svg" : "jsx");
+      else this.app.hud.showSubtitle("Open the house workshop to export its floor plan.");
+      return;
+    }
     this.app.hud.setStatus("thinking");
 
     // 1. High-precision deterministic matching for 3D Studio, CAD, Meta Ads & UI navigation commands
@@ -41,6 +65,9 @@ export class AgentEngine {
         if (data.provider) {
           this.app.hud.logReflex(`ENGINE: ${data.provider}`);
         }
+        if (data.vaultSources?.length) {
+          this.app.hud.logReflex(`Vault excerpts sent: ${data.vaultSources.join(", ")}`);
+        }
         await this._executeDecision(data);
         return;
       }
@@ -60,9 +87,86 @@ export class AgentEngine {
       return;
     }
 
-    this.app.hud.speak(
-      `Ready on ${this.app.hud.brain === "fable-5.2" ? "Claude Fable 5.2" : "Opus 5.5"}, sir. Open Settings to check AI provider connections or ask about any note in your Second Brain.`
-    );
+    this.app.hud.speak(HUB
+      ? "Hub chat is unavailable. You can still open either workshop or search the vault."
+      : "Open Settings to check your provider connection, or search your Second Brain.");
+  }
+
+  async _editWorkshop(instruction) {
+    const { activeView: view, workshopViewRevision: revision, hud } = this.app;
+    if (!["robot", "house"].includes(view)) {
+      hud.showSubtitle("Open the robot or house workshop first.");
+      return;
+    }
+    if (!instruction || instruction.length > 1000) {
+      hud.showSubtitle("Describe a model edit in 1–1,000 characters.");
+      return;
+    }
+    if (this.pendingEdit?.view === view && this.pendingEdit.revision === revision) {
+      hud.showSubtitle("The local model is still working on this edit.");
+      return;
+    }
+    const pending = { view, revision };
+    this.pendingEdit = pending;
+    const current = () => this.pendingEdit === pending && this.app.activeView === view
+      && this.app.workshopViewRevision === revision;
+    hud.setStatus("thinking");
+    hud.showSubtitle("Planning your workshop edit locally…");
+    try {
+      const res = await apiPost("/workshop/edit", { view, instruction });
+      if (!current()) return;
+      if (!res.ok) {
+        const message = res.status === 422 ? "This edit could not be applied to the current model."
+          : res.status === 429 ? "The local editor is busy. Try again in a moment."
+          : "The local editor is unavailable. Your model is unchanged.";
+        hud.showSubtitle(message);
+        hud.setStatus("online");
+        return;
+      }
+      const plan = await res.json();
+      if (!current()) return;
+      if (plan?.ok !== true || !plan.params || typeof plan.params !== "object" || Array.isArray(plan.params)) {
+        throw new Error("Missing workshop edit");
+      }
+      const params = { ...plan.params };
+      if (view === "house") {
+        const { state, stepGroups } = this.app.houseWorkshop;
+        const roofVisible = stepGroups?.roof.visible ?? state.showRoof;
+        if (params.showRoof === roofVisible && !("explodedHouse" in params)) delete params.showRoof;
+        for (const [key, room, extra, limit] of [
+          ["enlargeKitchen", "kitchen", state.kitchenExtraMeters, 4],
+          ["enlargeLivingRoom", "living room", state.livingRoomExtraMeters, 5],
+        ]) {
+          if (key in params && (extra + params[key] < 0 || extra + params[key] > limit)) {
+            hud.showSubtitle(`The ${room} extension must stay between 0 and ${limit} m. It is currently ${extra} m.`);
+            hud.setStatus("online");
+            return;
+          }
+        }
+      }
+      if (Object.keys(params).length === 0) {
+        hud.showSubtitle("The model already has that setting.");
+        hud.setStatus("online");
+        return;
+      }
+      if (view === "robot") this.app.editRobot(params);
+      else this.app.editHouse(params);
+      const changes = Object.entries(plan.params).map(([key, value]) => {
+        if (typeof value === "number") return `${editLabels[key]} ${value > 0 ? "+" : ""}${value} m`;
+        if (typeof value === "boolean") return `${editLabels[key]} ${value ? "on" : "off"}`;
+        return `${editLabels[key]} ${value}`;
+      });
+      const receipt = "Local edit · " + changes.join(" · ");
+      hud.showSubtitle(receipt);
+      hud.logReflex(receipt);
+    } catch {
+      if (current()) {
+        hud.showSubtitle("Could not finish the local edit. Try again.");
+        hud.setStatus("online");
+      }
+    } finally {
+      if (this.pendingEdit === pending) this.pendingEdit = null;
+    }
   }
 
   _parseLocalIntent(text) {
@@ -140,11 +244,11 @@ export class AgentEngine {
     ) {
       const params = {};
       if (/red|crimson/.test(q) && /(housing|eye|bezel|ring|outer)/.test(q)) {
-        params.housingColor = "#c81e2b";
+        params.housingColor = "red";
       } else if (/gold/.test(q)) {
         params.housingColor = "#f59e0b";
       } else if (/blue|cobalt/.test(q)) {
-        params.housingColor = "#3b82f6";
+        params.housingColor = "blue";
       } else if (/silver|aluminium|aluminum/.test(q)) {
         params.housingColor = "silver";
       }
@@ -161,12 +265,12 @@ export class AgentEngine {
 
       if (/white.*(shell|body)/.test(q)) params.shellColor = "#e5e7eb";
       if (/black.*(shell|body)/.test(q)) params.shellColor = "#131720";
-      if (!Object.keys(params).length) params.housingColor = "#c81e2b";
+      if (!Object.keys(params).length) params.housingColor = "red";
 
       const reply =
-        params.housingColor === "#c81e2b" && params.ringColor === "#10b981"
+        params.housingColor === "red" && params.ringColor === "#10b981"
           ? "Anodised crimson on the outer housing with the emerald reactor ring intact, sir. Rather sharp."
-          : params.housingColor === "#c81e2b"
+          : params.housingColor === "red"
           ? "Red on the reactor housing, sir. Emerald was getting rather smug anyway."
           : "Updating the chassis finish right away, sir.";
 
@@ -309,6 +413,10 @@ export class AgentEngine {
         this.app.openSettings(p.tab || "ai");
         break;
       case "switch_brain":
+        if (HUB) {
+          await this.app.hud.speak("Use Hub chat to choose an agent. Workshop AI edits use the local model.");
+          return;
+        }
         this.app.hud.setBrain(p.brain || "fable-5.2", false);
         break;
       case "open_robot":
