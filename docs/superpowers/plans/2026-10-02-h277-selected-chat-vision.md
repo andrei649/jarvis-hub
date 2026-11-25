@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, FastAPI, Pydantic, React/TypeScript, pytest, Vitest.
 
-**Spec:** `docs/hermes/h277-main-route-image-design-2026-10-02.md`.
+**Spec:** `docs/archive/hermes/h277-main-route-image-design-2026-10-02.md`.
 
 **Checkpoint (2026-10-02T11:27Z):** base/head `12ed8203`; this plan's local
 changes are in `agents/core/llm/vision_{turn,capability}.py`,

@@ -98,10 +98,10 @@ partial, and H516 rendered video remains missing.
 | `frontend/src/api/images.ts`, `frontend/src/panels/images.tsx` | Provider-specific model parsing and usable controls |
 | `frontend/src/test/images-api.test.ts`, `frontend/src/test/images-panel.test.tsx` | Selection, default model and incompatible-state regressions |
 | `agents/web/v2/index.html`, `agents/web/v2/assets/` | Regenerated committed HUD bundle |
-| `docs/hermes/h517-local-provider-plan.md`, `docs/hermes/h517-provider-registration-design.md`, `docs/hermes/local-image-providers.md` | Chosen contract, superseded design and operator guide |
+| `docs/archive/hermes/h517-local-provider-plan.md`, `docs/archive/hermes/h517-provider-registration-design.md`, `docs/hermes/local-image-providers.md` | Chosen contract, superseded design and operator guide |
 | `docs/hermes/h517-local-provider-review.md`, `docs/hermes/evidence/h517-local-providers-2026-09-27.json` | Review, failures/corrections and measured evidence |
 | `docs/hermes/h516-video-design-checkpoint.md` | Explicit next-step protocol/validation uncertainties; no completion credit |
-| `docs/hermes/assessment.json`, `HERMES_STATUS.md`, `docs/HERMES_SPRINT.md`, `BACKLOG.md`, `docs/handoff/h277/README.md` | Truthful scope, current evidence and continuation handoff |
+| `docs/hermes/assessment.json`, `HERMES_STATUS.md`, `docs/HERMES_SPRINT.md`, `BACKLOG.md`, `docs/archive/handoff/h277/README.md` | Truthful scope, current evidence and continuation handoff |
 | `mobile/PARITY.md`, `docs/design/HUD_V2_REMAINING.md` | HUD delivery and native gap |
 | `project-status.json` and generated status documents | Verified backend/frontend counts |
 

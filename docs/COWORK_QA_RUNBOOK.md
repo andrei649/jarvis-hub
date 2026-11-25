@@ -55,7 +55,7 @@ install. **Then run §15.1 and §15.2 in full**: the audit chain that can be rew
 
 ## Run 2 — what changed since the first pass (history)
 
-The first run (2026-07-24, [`docs/qa-runs/2026-07-24-cowork-run.md`](qa-runs/2026-07-24-cowork-run.md))
+The first run (2026-07-24, [`docs/archive/qa-runs/2026-07-24-cowork-run.md`](qa-runs/2026-07-24-cowork-run.md))
 was driven by Cowork on the owner's **RTX 5090 box** against `029da4c9`. It found 3 fabrication
 BLOCKERS and left most of the checklist untouched. Everything below is the **delta you are testing
 this time** — read the previous run report before you start; it is the baseline you are re-measuring
@@ -573,7 +573,7 @@ FIRST, read these and follow them as the authority (do not re-derive):
                                          (the full route sweep); chapter 15 is the adversarial-audit pass
                                          and has its own launch prompt in §8a.
   docs/COWORK_QA_RUNBOOK.md              §3b (the R1–R9 regression pass) and §4b (surfaces never driven).
-  docs/qa-runs/2026-07-24-cowork-run.md  RUN 1 — the baseline you are re-measuring. Read it fully.
+  docs/archive/qa-runs/2026-07-24-cowork-run.md  RUN 1 — the baseline you are re-measuring. Read it fully.
 
   Cite CASE IDs in every finding (CHT-014, GOV-071 — not "the Pepper thing"). They are stable.
   The manual was written from source and NO case has ever been executed against a running system. If a

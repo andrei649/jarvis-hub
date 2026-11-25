@@ -63,7 +63,7 @@ You are continuing Hermes-parity work on `andrei649/jarvis-hub`. The branch is `
      - A partial row gets zero credit.
      - A code verdict is not a live-service proof.
      - Never refresh a hash without re-reviewing the row.
-   - `docs/hermes/full-parity-2026-09-27.md`. Its "Evidence baseline" numbers are a dated snapshot. Its execution rules still apply:
+   - `docs/archive/hermes/full-parity-2026-09-27.md`. Its "Evidence baseline" numbers are a dated snapshot. Its execution rules still apply:
      - pin the Hermes behaviour;
      - reproduce the gap;
      - make a localized change;
