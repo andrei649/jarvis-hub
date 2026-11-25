@@ -1,0 +1,192 @@
+/* =====================================================================================
+   Nerva · theme tokens (contract v1)
+   -------------------------------------------------------------------------------------
+   The canonical design tokens every HUD surface is styled through. Names are prefixed
+   --n- so they never collide with the HUD v2 tokens (--void, --ink, --accent, ...) that
+   the existing stylesheet still uses; frontend/src/theme/bridge.css maps between the two.
+
+   This file holds two things:
+     1. theme-independent scales (type, space, shape, motion, layout);
+     2. fallback values for every colour role, equal to Ledger · Carbon, so a surface is
+        never unstyled while a theme file loads.
+   A theme (frontend/src/theme/themes/<id>.css) overrides roles under
+     :is(:root, .n-theme-scope)[data-look="<id>"]                      dark, the default
+     :is(:root, .n-theme-scope)[data-look="<id>"][data-scheme="light"] light
+   The full rules are in frontend/src/theme/CONTRACT.md. Do not add colour literals here
+   that a theme cannot override, and never set a role in a component file.
+
+   Every role a theme may set is declared on :is(:root, .n-theme-scope), so a live preview
+   (.n-theme-scope) starts from these defaults instead of inheriting the page theme's values;
+   spacing, motion and the outer page margin belong to the page and stay on :root.
+   ===================================================================================== */
+
+:is(:root, .n-theme-scope) {
+  /* ---- colour roles: fallbacks (Ledger · Carbon) ---------------------------------- */
+  --n-bg:          oklch(0.176 0.008 165);
+  --n-bg-2:        oklch(0.204 0.009 165);
+  --n-bg-3:        oklch(0.240 0.010 165);
+  --n-sheet:       oklch(0.212 0.010 165);
+  --n-sheet-2:     oklch(0.232 0.010 165);
+  --n-scrim:       oklch(0.120 0.010 165 / 0.62);
+
+  --n-text:        oklch(0.912 0.014 138);
+  --n-text-2:      oklch(0.775 0.014 145);
+  --n-text-3:      oklch(0.660 0.014 150);
+
+  --n-rule:        oklch(0.268 0.010 165);
+  --n-rule-2:      oklch(0.340 0.012 165);
+  --n-rule-field:  oklch(0.540 0.014 160);
+  --n-rule-heavy:  oklch(0.640 0.014 150);
+
+  --n-accent:      oklch(0.705 0.185 35);
+  --n-accent-text: oklch(0.705 0.185 35);
+  --n-accent-wash: oklch(0.255 0.042 35);
+  --n-on-accent:   oklch(0.160 0.012 165);
+
+  --n-stop:        oklch(0.705 0.185 35);
+  --n-on-stop:     oklch(0.160 0.012 165);
+
+  --n-ok:          oklch(0.780 0.060 150);
+  --n-warn:        oklch(0.810 0.090 80);
+  --n-bad:         oklch(0.740 0.085 12);
+  --n-info:        oklch(0.780 0.040 232);
+  --n-cloud:       oklch(0.770 0.070 295);
+  --n-ok-wash:     oklch(0.255 0.030 150);
+  --n-warn-wash:   oklch(0.265 0.035 80);
+  --n-bad-wash:    oklch(0.255 0.035 12);
+
+  --n-focus:       oklch(0.912 0.014 138);
+  --n-selection:   oklch(0.330 0.050 35);
+
+  /* ---- derived colour roles: a theme may point them elsewhere ------------------------
+     emph        emphasis ink: active marks, the current item, legacy accent-as-text (≥ 4.5:1)
+     emph-wash   the soft ground behind an active or highlighted row
+     primary     fill of a primary action that is not a signature; on-primary is its text
+     field-bg    the fill of an input, select or textarea
+     They hold a var() of another role (or a literal); the contract test resolves both.
+     Ledger points emph and primary at its ink, so its vermilion stays the owner's hand. */
+  --n-emph:       var(--n-accent-text);
+  --n-emph-wash:  var(--n-accent-wash);
+  --n-primary:    var(--n-accent);
+  --n-on-primary: var(--n-on-accent);
+  --n-field-bg:   var(--n-sheet);
+
+  /* ---- typefaces ------------------------------------------------------------------
+     ui      the instrument: controls, navigation, tables, the owner's own words
+     label   small structural labels (a theme may make them mono + uppercase)
+     text    reading prose: replies, entries, consequences
+     title   register and panel titles, 19-31px
+     display verdicts and the one large figure, 32px and up
+     mono    identifiers only: hashes, ids, addresses, model and capability names, code */
+  --n-font-ui:      "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-label:   var(--n-font-ui);
+  --n-font-text:    "Literata", "Sitka Text", Georgia, serif;
+  --n-font-title:   "Literata", "Sitka Subheading", Georgia, serif;
+  --n-font-display: "Literata", "Sitka Display", Georgia, serif;
+  --n-font-mono:    "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  /* ---- type scale. Nothing on screen is smaller than --n-fs-meta (12px). ------------ */
+  --n-fs-meta:    12px;   /* times, sources, fine print */
+  --n-fs-label:   13px;   /* table cells, labels, secondary lines */
+  --n-fs-ui:      14px;   /* controls, navigation, body of a panel */
+  --n-fs-own:     15px;   /* the owner's own words, consequence prose */
+  --n-fs-prose:   17px;   /* replies, reading text */
+  --n-fs-title:   22px;   /* register and panel titles */
+  --n-fs-verdict: 32px;   /* a verdict */
+  --n-fs-figure:  44px;   /* the one large figure on a page */
+
+  --n-lh-meta:    16px;
+  --n-lh-label:   18px;
+  --n-lh-ui:      20px;
+  --n-lh-own:     23px;
+  --n-lh-prose:   27px;
+  --n-lh-title:   27px;
+  --n-lh-verdict: 38px;
+  --n-lh-figure:  50px;
+
+  --n-w-reg:  400;
+  --n-w-med:  500;
+  --n-w-semi: 600;
+  --n-w-bold: 700;
+
+  /* small structural labels: a theme decides their voice */
+  --n-label-case:   none;   /* none | uppercase */
+  --n-label-track:  0;      /* letter-spacing, e.g. 0 or 0.08em */
+  --n-label-weight: 400;
+  /* a written-out consequence's term column (frame/kit/kit.css .n-consequence, where a page opts in: the
+     docket): 74px (82px from 2200px), drawn for a label voice in sentence case, grown to this where the
+     look's voice needs more. 0px: it does not grow (every Nerva look). max-content: as wide as its widest
+     term (Classic, whose mono capitals tracked .1em never fit 74px) */
+  --n-term-max:     0px;
+
+  /* titles at --n-fs-title and up: tracking, e.g. normal or -0.018em */
+  --n-title-track:  normal;
+  /* figures: lining everywhere; a theme that wants tabular figures everywhere says so.
+     Columns of numbers (tables, meters, totals) ask for tabular-nums themselves. */
+  --n-numerals:     lining-nums;
+
+  /* ---- shape --------------------------------------------------------------------------- */
+  --n-r-0: 0;          /* rules, cells */
+  --n-r-1: 2px;        /* boxes that hold content: fields, menus' items, chips */
+  --n-r-2: 4px;        /* cards, menus, transient layers */
+  --n-r-3: 4px;        /* large sheets and panels */
+  --n-r-pill: 999px;   /* pills, seals and state marks */
+  --n-r-control: var(--n-r-1);   /* buttons and segmented controls (Atlas: a pill) */
+  --n-hair: 1px;
+  --n-heavy: 2px;
+
+  /* ---- how a panel (a register, a card) is drawn ----------------------------------------
+     Ledger draws structure with rules, not boxes: no fill, no frame, a heavy rule on top.
+     Card-based themes set a fill, a frame, a radius and maybe a shadow instead.
+     register-pad: a register's inner margin (frame/kit/kit.css pads its sides and bottom with it).
+     0 here, for the looks that draw registers with rules; a look that frames them sets it (a Nerva
+     card look from its own --n-panel-pad, Classic --n-s-4). A length (0px, not 0): the kit takes
+     min() of it below 1100px. */
+  --n-panel-bg:     transparent;
+  --n-panel-border: 0 solid transparent;
+  --n-panel-top:    var(--n-heavy) solid var(--n-rule-heavy);
+  --n-panel-radius: 0;
+  --n-panel-shadow: none;
+  --n-panel-pad:    var(--n-s-4);
+  --n-register-pad: 0px;
+
+  /* ---- controls ------------------------------------------------------------------------ */
+  --n-control-h:    36px;
+  --n-control-h-sm: 28px;
+
+  /* ---- elevation ---------------------------------------------------------------------------
+     shadow-1 raised card · shadow-2 menus, popovers, the command sheet · sheet = signing sheet */
+  --n-shadow-1:     none;
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 18px 40px -16px oklch(0 0 0 / 0.6);
+  --n-shadow-sheet: 0 0 0 1px var(--n-rule-field), 0 22px 48px -18px oklch(0 0 0 / 0.7);
+
+  /* ---- page geometry a theme may set ------------------------------------------------------- */
+  --n-col-gap:  48px;   /* gutter between registers */
+  --n-measure:  68ch;   /* the longest line of prose anywhere */
+  --n-bar-h:    52px;   /* masthead height */
+}
+
+/* The page's own: spacing (the density axis, overrides.css), motion and the outer margin. */
+:root {
+  /* ---- space: 4px base, 8px rhythm --------------------------------------------------- */
+  --n-s-1: 4px;
+  --n-s-2: 8px;
+  --n-s-3: 12px;
+  --n-s-4: 16px;
+  --n-s-5: 20px;
+  --n-s-6: 24px;
+  --n-s-8: 32px;
+  --n-s-10: 40px;
+  --n-s-12: 48px;
+
+  /* ---- motion: stillness by default --------------------------------------------------------- */
+  --n-dur-1: 120ms;   /* hover, press */
+  --n-dur-2: 180ms;   /* a row opening, a state settling */
+  --n-ease:  cubic-bezier(0.2, 0, 0, 1);
+
+  --n-page-x:   32px;   /* outer margin */
+}
+
+@media (max-width: 1679px) { :root { --n-page-x: 24px; --n-col-gap: 40px; } }
+@media (max-width: 1339px) { :root { --n-page-x: 20px; --n-col-gap: 32px; } }
+@media (prefers-reduced-motion: reduce) { :root { --n-dur-1: 0ms; --n-dur-2: 0ms; } }

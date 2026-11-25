@@ -8,7 +8,11 @@ const hudDoc = readFileSync(join(root, '..', 'docs', 'design', 'HUD_V2_REMAINING
 const gap = readFileSync(join(root, 'src', 'gap.tsx'), 'utf8');
 const app = readFileSync(join(root, 'src', 'app.tsx'), 'utf8');
 const cockpit = readFileSync(join(root, 'src', 'cockpit.tsx'), 'utf8');
-const shell = readFileSync(join(root, 'src', 'shell.tsx'), 'utf8');
+// The trust readings the HUD v2 top bar drew as badges (shell.tsx, deleted with the classic shell)
+// are the running head's Egress and Microphone items now: read fail-closed into the hub snapshot,
+// worded by the trust signals.
+const hubTypes = readFileSync(join(root, 'src', 'frame', 'types.ts'), 'utf8');
+const trustSignals = readFileSync(join(root, 'src', 'signals', 'trust-signals.ts'), 'utf8');
 
 describe('O26-P3.2 HUD remaining-work reconciliation', () => {
   it('does not list shipped cockpit voice/cognition/trust controls as missing', () => {
@@ -31,9 +35,16 @@ describe('O26-P3.2 HUD remaining-work reconciliation', () => {
   it('pins the source wiring that makes those doc closures true', () => {
     expect(cockpit).toContain("playTts(text, lang || 'en')");
     expect(cockpit).toContain('voice settings');
-    expect(app).toContain("new EventSource(appUrl('/api/cognition/stream'))");
-    expect(shell).toContain('strict_local');
-    expect(shell).toContain("tr.mic === 'off'");
+    // Phase B retired the cockpit's cognition trace and its live scoring stream (PHASE_B_PLAN.md
+    // §2.4, honesty defects D11 and D15): the HUD neither subscribes to it nor asks the snapshot
+    // for a trace; the Observe › Cognition panel keeps its own reads.
+    expect(app).not.toContain('/api/cognition');
+    expect(app).not.toContain('EventSource');
+    expect(gap).toContain("useApi('/api/cognition/status')");
+    expect(hubTypes).toContain('strictLocal: t.strict_local === true');
+    expect(hubTypes).toContain("t.mic === 'off'");
+    expect(trustSignals).toContain('hub.trust.strictLocal');
+    expect(trustSignals).toContain("mic === 'on' ? s.micOn : s.micMuted");
 
     expect(gap).toContain("apiPut('/api/admin/settings/' + cat");
     expect(gap).toContain("apiPost(`${base}/rollback`");

@@ -1,0 +1,193 @@
+/* =====================================================================================
+   home/day — the day register and the day band (PHASE_B_PLAN.md §5.1, §5.2)
+   -------------------------------------------------------------------------------------
+   Drawn as docs/design/hud-next/ledger/ledger.css draws the day, through the --n-* roles only:
+   no colour literal, nothing below --n-fs-meta (12px), labels in the theme's label voice, no
+   Phase A primitive redefined (n-link, n-state and n-meter carry their own markup here, and the kit's n-mk, n-sec, n-total are
+   used as they are). The classes this file owns:
+
+     n-day, n-day__block, n-day__note, n-day__machine   the register's column, its blocks and their one-line states
+     n-verdict (__state, __asof, __line, __remedy, __missing)   one honest sentence and its state
+     n-causes (__key, __text, __consequence)      the probes' own words, one ruled line each
+     n-machine (__row, __num, __bar, __meter, __detail)    RAM, VRAM, GPU load, latency
+     n-schedule (__row, __mark, __time, __what, __where)
+     n-away (__row, __mark, __time, __who, __what, __meta, __tally, __unread, __open)
+     n-dayband (__cell, __button, __panel, __k, __headline, __rest)   the folded day
+
+   Widths are the shared breakpoints of frame/frame.css: the band shows below 1680 px, where the
+   register has no room; This machine shows from 2200 px (data-show-from="xl").
+   ===================================================================================== */
+
+.n-day__block { padding-bottom: var(--n-s-3); }
+.n-day__note { padding-bottom: var(--n-s-2); }
+.n-day__machine { display: block; }
+
+/* ---- verdict: one honest sentence, its state, and when it was checked ------------------- */
+.n-verdict { padding: calc(var(--n-s-3) + 1px) 0 calc(var(--n-s-3) + 3px); color: var(--n-text); }
+.n-verdict__state {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.75);
+  margin: 0;
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-verdict__state b { color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-verdict__asof { margin-left: auto; color: var(--n-text-3); font-size: var(--n-fs-meta); white-space: nowrap; }
+.n-verdict__line {
+  margin: var(--n-s-2) 0 0;
+  font-family: var(--n-font-display);
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-verdict);
+  line-height: var(--n-lh-verdict);
+  letter-spacing: var(--n-title-track);
+  color: var(--n-text);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.n-verdict__remedy, .n-verdict__missing {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--n-s-1) * 1.75);
+  margin: calc(var(--n-s-2) + 2px) 0 0;
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-verdict__remedy .n-mk { align-self: start; margin-top: 2px; }
+
+/* ---- causes: the key, the probe's own words, a consequence only where code supports one -- */
+.n-causes {
+  margin: var(--n-s-3) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--n-hair) solid var(--n-rule);
+}
+.n-causes > li {
+  display: grid;
+  grid-template-columns: 11px minmax(62px, max-content) minmax(0, 1fr);
+  column-gap: calc(var(--n-s-2) + 1px);
+  align-items: baseline;
+  padding: calc(var(--n-s-1) * 1.5) 0;
+  border-bottom: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-causes .n-mk { align-self: start; margin-top: 3px; color: var(--n-text); }
+.n-causes__key { font-family: var(--n-font-mono); color: var(--n-text); font-weight: var(--n-w-semi); overflow-wrap: anywhere; }
+.n-causes__text { min-width: 0; overflow-wrap: anywhere; }
+.n-causes__consequence { display: block; color: var(--n-text-3); }
+
+/* ---- this machine ------------------------------------------------------------------------ */
+.n-machine { margin: 0; }
+.n-machine__row {
+  display: grid;
+  grid-template-columns: 90px 44px 48px minmax(0, 1fr);
+  column-gap: var(--n-s-3);
+  align-items: baseline;
+  padding: calc(var(--n-s-1) * 1.5) 0;
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-machine__row:first-child { border-top: 0; }
+.n-machine dt { margin: 0; color: var(--n-text-2); }
+.n-machine dd { margin: 0; }
+.n-machine__num { color: var(--n-text); font-weight: var(--n-w-semi); font-variant-numeric: lining-nums tabular-nums; text-align: right; }
+.n-machine__bar { align-self: center; display: flex; align-items: center; }
+.n-machine .n-machine__bar .n-machine__meter { width: 48px; margin: 0; }
+.n-machine__detail { min-width: 0; color: var(--n-text-3); overflow-wrap: anywhere; }
+
+/* ---- today ------------------------------------------------------------------------------- */
+.n-schedule { margin: 0; padding: 0; list-style: none; }
+.n-schedule__row {
+  display: grid;
+  grid-template-columns: 12px 44px minmax(0, 1fr) auto;
+  column-gap: var(--n-s-2);
+  align-items: baseline;
+  padding: var(--n-s-1) 0;
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+}
+.n-schedule__row:first-child { border-top: 0; }
+.n-schedule__mark { align-self: center; display: inline-flex; }
+.n-schedule__time { color: var(--n-text-2); font-variant-numeric: lining-nums tabular-nums; }
+.n-schedule__what { min-width: 0; overflow-wrap: anywhere; }
+.n-schedule__where { font-size: var(--n-fs-meta); color: var(--n-text-3); text-align: right; }
+.n-schedule__where b { color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-schedule__row.is-past, .n-schedule__row.is-past .n-schedule__time { color: var(--n-text-3); }
+.n-schedule__row.is-next .n-schedule__what, .n-schedule__row.is-next .n-schedule__time { color: var(--n-text); font-weight: var(--n-w-semi); }
+
+/* ---- while you were away ------------------------------------------------------------------- */
+.n-away { margin: 0; padding: 0; list-style: none; }
+.n-away__row {
+  display: grid;
+  grid-template-columns: 12px 40px 58px minmax(0, 1fr);
+  column-gap: var(--n-s-2);
+  align-items: baseline;
+  padding: calc(var(--n-s-1) * 1.25) 0;
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-away__row:first-child { border-top: 0; }
+.n-away__mark { align-self: start; margin-top: 3px; display: inline-flex; color: var(--n-text-3); }
+.n-away__time { color: var(--n-text-3); font-size: var(--n-fs-meta); font-variant-numeric: lining-nums tabular-nums; }
+.n-away__who { color: var(--n-text); overflow-wrap: anywhere; }
+.n-away__what { min-width: 0; overflow-wrap: anywhere; }
+.n-away__meta { color: var(--n-text-3); }
+.n-away__row.is-exception, .n-away__row.is-exception .n-away__mark { color: var(--n-text); }
+.n-away__row.is-exception .n-away__who { font-weight: var(--n-w-semi); }
+/* a docket entry raised since is the owner's hand: its seal takes the accent, nothing else does */
+.n-away__row[data-away-kind="raised"] .n-away__mark { color: var(--n-accent); }
+.n-away__tally { display: inline-flex; align-items: center; gap: calc(var(--n-s-1) * 1.25); }
+.n-away__unread { margin: var(--n-s-2) 0; padding: 0; list-style: none; font-size: var(--n-fs-meta); color: var(--n-text-3); }
+.n-away__open { margin: var(--n-s-2) 0 0; font-size: var(--n-fs-label); }
+
+/* ---- the folded day: three disclosure cells below 1680 px ---------------------------------- */
+.n-dayband {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  padding: 0 var(--n-page-x);
+  border-bottom: var(--n-hair) solid var(--n-rule-2);
+}
+@media (min-width: 1680px) { .n-dayband { display: none; } }
+/* a fourth cell at the end (Home's "More in Home"), sized to its words */
+.n-dayband--aside { grid-template-columns: 1.2fr 1fr 1fr auto; }
+.n-dayband__aside { position: relative; align-items: center; }
+.n-dayband__cell {
+  display: flex;
+  min-width: 0;
+  height: 40px;
+  padding: 0 calc(var(--n-s-4) + 2px);
+  border-left: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: 1;
+  color: var(--n-text-2);
+  white-space: nowrap;
+}
+.n-dayband__cell:first-child { padding-left: 0; border-left: 0; }
+.n-dayband__cell:last-child { padding-right: 0; }
+.n-dayband__button { width: 100%; gap: calc(var(--n-s-2) + 1px); }
+.n-dayband__headline { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-dayband__rest { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--n-text-3); font-weight: var(--n-w-reg); }
+.n-dayband__k {
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  color: var(--n-text-3);
+}
+.n-dayband__panel { white-space: normal; max-width: min(520px, 94vw); width: max-content; min-width: 320px; max-height: 70vh; overflow-y: auto; }
+@media (max-width: 1339px) { .n-dayband__cell { height: 36px; padding: 0 var(--n-s-3) 0 var(--n-s-3); } }
+@media (max-width: 1099px) { .n-dayband, .n-dayband--aside { grid-template-columns: 1fr; } .n-dayband__cell { border-left: 0; padding: 0; } }

@@ -23,9 +23,11 @@ import React, { useEffect, useState } from 'react';
 import { OptionsEditor, ScheduleBuilder, JobOptions } from './job-builder';
 import { JobCreateDialog } from './job-create-dialog';
 import { apiDelete, apiGet, apiPatch, apiPut } from '../api/client';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, refusalReason, inpS } from '../panel-kit';
+// The panel keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, actA, refusalReason, inpS } from '../panel-kit';
 import { useSelectionGuard, type GuardFlags } from '../selection-guard';
 import { usePageHeader } from '../page-header';
+import { LABEL } from '../theme/type';
 
 /** H450 — a one-shot's time, in the viewer's clock: "once at 2026-10-01 09:00". */
 export function onceAt(job: any): string {
@@ -55,7 +57,7 @@ const receiptText = (r:RunReceipt) => r.status === 'completed' && r.run
 const EM = '—';
 
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
+  <div style={{ fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
 );
 
 const stateOf = (job: any): { label: string; color: string } => {
@@ -80,7 +82,11 @@ export function JobsPanel() {
   const scheduler: any = (d && (d as any).scheduler) || null;
   const blueprints: any[] = arr(bp.d, 'blueprints');
 
-  const [diagnostic,setDiagnostic] = useState('');
+  const [diagnostic,setDiagnosticText] = useState('');
+  // The diagnostic slot holds the hub's JSON (doctor, tick) or a sentence (a refusal, an
+  // acknowledgement); the JSON keeps the identifier face, a sentence the interface face.
+  const [diagnosticJson,setDiagnosticJson] = useState(false);
+  const setDiagnostic = (text: string, json = false) => { setDiagnosticText(text); setDiagnosticJson(json); };
   const [incidentRows, setIncidentRows] = useState<any[] | null>(null);
   const [recentRuns, setRecentRuns] = useState<any[] | null>(null);
   const [notes,setNotes] = useState<Record<string,string>>({});
@@ -227,18 +233,19 @@ export function JobsPanel() {
     <Card title="SCHEDULED JOBS" live={asLive(d)} sub={jobs.length} onReload={reload}>
       <State e={e} loading={loading} n={jobs.length} />
       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-        <button className="tool-btn" onClick={()=>apiGet('/api/jobs/doctor',{admin:true}).then(r=>{setIncidentRows(null);setDiagnostic(JSON.stringify(r,null,2));}).catch(e=>setDiagnostic(refusalReason(e)))}>doctor</button>
+        <button className="tool-btn" onClick={()=>apiGet('/api/jobs/doctor',{admin:true}).then(r=>{setIncidentRows(null);setDiagnostic(JSON.stringify(r,null,2),true);}).catch(e=>setDiagnostic(refusalReason(e)))}>doctor</button>
         <button className="tool-btn" onClick={()=>apiGet('/api/jobs/incidents',{admin:true}).then((r:any)=>{const rows=arr(r,'incidents');setIncidentRows(rows);setDiagnostic(rows.length?'':'no open or recorded incidents');}).catch(e=>setDiagnostic(refusalReason(e)))}>incidents</button>
         <button className="tool-btn" onClick={()=>recentRuns?setRecentRuns(null):apiGet('/api/jobs/runs?limit=20',{admin:true}).then((r:any)=>setRecentRuns(arr(r,'runs'))).catch(e=>setDiagnostic(refusalReason(e)))}>recent runs</button>
-        {alive===false && <button className="tool-btn" onClick={()=>actA('/api/jobs/tick',{},r=>{setDiagnostic(JSON.stringify(r,null,2));reload();},e=>setDiagnostic(refusalReason(e)))}>tick due jobs ({scheduler?.timezone || 'hub time'})</button>}
+        {alive===false && <button className="tool-btn" onClick={()=>actA('/api/jobs/tick',{},r=>{setDiagnostic(JSON.stringify(r,null,2),true);reload();},e=>setDiagnostic(refusalReason(e)))}>tick due jobs ({scheduler?.timezone || 'hub time'})</button>}
       </div>
-      {diagnostic && <pre style={{fontSize:10,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{diagnostic}</pre>}
+      {/* A <pre> defaults to the browser's monospace: JSON takes the theme's mono, a sentence inherits the interface face. */}
+      {diagnostic && <pre style={{...(diagnosticJson ? mono : { ...noteS, fontFamily: 'inherit' }),fontSize:'var(--n-fs-meta)',whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{diagnostic}</pre>}
       {incidentRows && incidentRows.length > 0 && (
         <div aria-label="job incidents" style={{ padding: '4px 0' }}>
           {incidentRows.map((inc: any) => (
             <Row key={String(inc.id)}>
               <span style={mono}>#{inc.id}</span>
-              <span style={{ fontSize: 10 }}>{inc.job_id} · {inc.state || 'detected'} · {String(inc.summary || inc.reason || inc.kind || '').slice(0, 120)}</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)' }}>{inc.job_id} · {inc.state || 'detected'} · {String(inc.summary || inc.reason || inc.kind || '').slice(0, 120)}</span>
               {inc.state !== 'closed' && (
                 <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => actA(`/api/jobs/incidents/${encodeURIComponent(String(inc.id))}/ack`, {}, (r: any) => { setIncidentRows((prev) => (prev || []).map((x) => (x.id === inc.id ? (r?.incident || { ...x, state: 'closed' }) : x))); setDiagnostic(`acknowledged incident #${inc.id}`); }, (err: any) => setDiagnostic(`refused · ${refusalReason(err)}`))}>ack incident #{inc.id}</button>
               )}
@@ -266,10 +273,10 @@ export function JobsPanel() {
         return (
           <div key={id}>
             <Row>
-              <span style={mono}>{job.name || EM}</span>
+              <span style={noteS}>{job.name || EM}</span>
               <Tag c={st.color}>{st.label}</Tag>
-              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{job.schedule_text || job.cron || ''}{job.one_shot ? ` · ${onceAt(job)}` : ''}</span>
-              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{job.action?.type || ''}</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{job.schedule_text || job.cron || ''}{job.one_shot ? ` · ${onceAt(job)}` : ''}</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{job.action?.type || ''}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
                 <button className="tool-btn" title="run now" onClick={() => drive(id, 'run')}>▶ now</button>
                 {job.paused_reason
@@ -302,7 +309,7 @@ export function JobsPanel() {
                     {kvEntries[id]!.map((kv) => (
                       <Row key={kv.key}>
                         <span style={mono}>{kv.key}</span>
-                        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{kv.value}</span>
+                        <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{kv.value}</span>
                         <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => apiDelete(`/api/jobs/${encodeURIComponent(id)}/notepad/keys?key=${encodeURIComponent(kv.key)}`, { admin: true }).then(() => { setKvEntries((m) => ({ ...m, [id]: (m[id] || []).filter((x) => x.key !== kv.key) })); setRunNote((m) => ({ ...m, [id]: `deleted key ${kv.key}` })); }).catch((err) => setRunNote((m) => ({ ...m, [id]: `refused · ${refusalReason(err)}` })))}>delete key {kv.key}</button>
                       </Row>
                     ))}
@@ -317,7 +324,7 @@ export function JobsPanel() {
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="tool-btn" onClick={() => saveEdit(id)}>save</button>
                   <button className="tool-btn" onClick={() => setEditing((m) => ({ ...m, [id]: null }))}>cancel</button>
-                  <span style={{ fontSize: 10, color: 'var(--ink-2)', alignSelf: 'center' }}>
+                  <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', alignSelf: 'center' }}>
                     editing a paused job leaves it paused
                   </span>
                 </div>
@@ -342,7 +349,7 @@ export function JobsPanel() {
       })}
 
       <div style={{ marginTop: 10, borderTop: '1px solid var(--panel-line)', paddingTop: 8 }}>
-        <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginBottom: 4 }}>ARM A JOB</div>
+        <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>ARM A JOB</div>
         <select aria-label="blueprint" value={blueprint} onChange={(ev) => {setBlueprint(ev.target.value);setTyped({});}} style={{ ...inpS, width: '100%' }}>
           <option value="">blueprint…</option>
           {blueprints.map((b: any) => <option key={b.id} value={b.id}>{b.title} — {b.description}</option>)}
@@ -361,7 +368,7 @@ export function JobsPanel() {
             <OptionsEditor toolsets={arr(toolCatalog.d, 'toolsets')} value={options} onChange={setOptions}/>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="tool-btn" onClick={arm}>arm</button>
-              <span style={{ fontSize: 10, color: 'var(--ink-2)', alignSelf: 'center' }}>a task-type job still crosses the approval queue; a reminder never touches the model</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', alignSelf: 'center' }}>a task-type job still crosses the approval queue; a reminder never touches the model</span>
             </div>
           </div>
         )}

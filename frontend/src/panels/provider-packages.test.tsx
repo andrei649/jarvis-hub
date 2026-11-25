@@ -3,7 +3,8 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ProviderPackagesPanel } from './provider-packages';
-import { ConsoleOverlay } from '../gap';
+import { PanelPage } from '../frame/PanelPage';
+import { pageForRoute } from '../nav/routes';
 
 const ARTIFACT_ID = 'a'.repeat(32);
 const ARTIFACT_ID_2 = 'b'.repeat(32);
@@ -391,7 +392,8 @@ describe('ProviderPackagesPanel owner surface', () => {
     expect(delCall[2]).toEqual({ expected_revision: 4 });
   });
 
-  it('mounts inside ConsoleOverlay under Admin route /v2/console/provider-packages with read-only initial load', async () => {
+  it('mounts as a page of Settings at /v2/console/provider-packages with a read-only initial load', async () => {
+    await import('../gap');   // PanelPage loads the gap chunk lazily: have it loaded, so the wait is for the panel
     global.fetch = vi.fn(async (url) => {
       if (String(url).endsWith('/api/llm/provider-packages/status')) {
         return { ok: true, status: 200, json: async () => ({ enabled: true, runtime_present: true, selects_model: false }) };
@@ -399,8 +401,10 @@ describe('ProviderPackagesPanel owner surface', () => {
       return { ok: true, status: 200, json: async () => ({ status: 'unselected' }) };
     });
 
-    render(<ConsoleOverlay panelId="provider-packages" onClose={() => {}} />);
-    expect(await screen.findByRole('heading', { name: 'Provider Packages' })).toBeTruthy();
+    render(<PanelPage panelId="provider-packages" page={pageForRoute({ mode: 'console', panel: 'provider-packages' })} lang="en"
+      attention={{}} navigate={() => {}} onFind={() => {}} />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Provider packages' })).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Pages in Settings' })).toBeTruthy();
     expect(await screen.findByText('SIGNED PROVIDER PACKAGES')).toBeTruthy();
     for (const [, init] of vi.mocked(global.fetch).mock.calls) {
       expect(init?.method || 'GET').toBe('GET');

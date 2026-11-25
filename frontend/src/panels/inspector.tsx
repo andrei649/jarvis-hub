@@ -8,7 +8,8 @@
    prompt names, the MCP servers with their liveness, and a fixed empty-turn prompt
    preview, secrets masked by the hub and capped at 64 KB. Read-only. */
 import React, { useMemo, useState } from 'react';
-import { Card, Row, State, Tag, inpS, mono, useApi } from '../panel-kit';
+import { Card, Row, State, Tag, inpS, mono, note, useApi } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export const INSPECTOR_VIEWS = ['owner', 'guest', 'inbound-owner', 'inbound', 'internal'];
 export const VIEW_LABELS: Record<string, string> = {
@@ -38,13 +39,13 @@ export function statusLine(s: any): string {
 function Section({ title, sub, children }: { title: string; sub?: string; children?: any }) {
   return (
     <details style={{ marginTop: 6 }}>
-      <summary style={{ cursor: 'pointer', ...mono }}>{title}{sub ? <span style={{ color: 'var(--ink-2)' }}> · {sub}</span> : null}</summary>
+      <summary style={{ cursor: 'pointer', ...LABEL, fontSize: 'var(--n-fs-meta)' }}>{title}{sub ? <span style={{ color: 'var(--ink-2)', textTransform: 'none' }}> · {sub}</span> : null}</summary>
       <div style={{ paddingLeft: 8 }}>{children}</div>
     </details>
   );
 }
 
-const pre = { ...mono, fontSize: 10, whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const, margin: '4px 0', maxHeight: 360, overflow: 'auto' };
+const pre = { ...mono, fontSize: 'var(--n-fs-meta)', whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const, margin: '4px 0', maxHeight: 360, overflow: 'auto' };
 
 function promptResolution(prompt: any): string {
   if (prompt.resolved === true) {
@@ -74,37 +75,37 @@ export function InspectorPanel() {
         <input aria-label="Agent" value={draft} onChange={(ev) => setDraft(ev.target.value)} style={{ ...inpS, width: 110 }} />
         <div role="group" aria-label="As" style={{ display: 'flex', gap: 2 }}>
           {INSPECTOR_VIEWS.map((v) => (
-            <button key={v} type="button" className="tool-btn" aria-pressed={v === view} onClick={() => setView(v)}
-              style={{ padding: '2px 6px', opacity: v === view ? 1 : 0.55 }}>{VIEW_LABELS[v]}</button>
+            <button key={v} type="button" className={'tool-btn' + (v === view ? ' on' : '')} aria-pressed={v === view} onClick={() => setView(v)}
+              style={{ padding: '2px 6px' }}>{VIEW_LABELS[v]}</button>
           ))}
         </div>
       </form>
-      {missing ? <div style={{ color: 'var(--amber)', fontSize: 12 }}>no agent named {agent}</div>
+      {missing ? <div style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-label)' }}>no agent named {agent}</div>
         : <State e={e} loading={loading && !p} n={p ? 1 : undefined} />}
-      {p?.status ? <div style={{ ...mono, fontSize: 10.5, margin: '6px 0' }}>{statusLine(p.status)}</div> : null}
+      {p?.status ? <div style={{ ...note, fontSize: 'var(--n-fs-meta)', margin: '6px 0' }}>{statusLine(p.status)}</div> : null}
       {tools ? (
         <Section title="Tools" sub={`${(tools.offered || []).length} offered of ${tools.registry || 0}`}>
-          {!tools.wired ? <div style={{ fontSize: 10, color: 'var(--amber)' }}>the tool runtime is not wired</div>
-            : tools.error ? <div style={{ fontSize: 10, color: 'var(--amber)' }}>the offer could not be resolved, so nothing is offered</div>
-            : !tools.loop_enabled ? <div style={{ fontSize: 10, color: 'var(--amber)' }}>the tool loop is off: none of these reach the model until llm.tool_loop_enabled is on</div>
+          {!tools.wired ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>the tool runtime is not wired</div>
+            : tools.error ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>the offer could not be resolved, so nothing is offered</div>
+            : !tools.loop_enabled ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>the tool loop is off: none of these reach the model until llm.tool_loop_enabled is on</div>
             : null}
           {(tools.offered || []).map((t: any) => (
             <Row key={t.name}>
               <span style={{ ...mono, minWidth: 130 }}>{t.name}</span>
               {t.gated ? <Tag c="var(--amber)">gated</Tag> : null}
               {t.untrusted_output ? <Tag c="var(--red)">untrusted output</Tag> : null}
-              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{t.description}</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{t.description}</span>
             </Row>
           ))}
           {(tools.withheld || []).length ? (
-            <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>withheld ({tools.withheld.length}): {tools.withheld.join(', ')}</div>
+            <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>withheld ({tools.withheld.length}): {tools.withheld.join(', ')}</div>
           ) : null}
         </Section>
       ) : null}
       {skills ? (
         <Section title="Skills" sub={skills.in_prompt ? `${skills.count} in the prompt` : 'none in the prompt (llm.skills_in_prompt is off)'}>
           {(skills.rows || []).map((r: any) => (
-            <Row key={`${r.skill}:${r.command}`}><span style={{ ...mono, minWidth: 130 }}>{r.command}</span><span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{r.description}</span></Row>
+            <Row key={`${r.skill}:${r.command}`}><span style={{ ...mono, minWidth: 130 }}>{r.command}</span><span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{r.description}</span></Row>
           ))}
         </Section>
       ) : null}
@@ -115,21 +116,21 @@ export function InspectorPanel() {
               <span style={{ ...mono, minWidth: 100 }}>{s.name}</span>
               <Tag>{s.transport}</Tag><Tag>{s.trust}</Tag>
               <Tag c={s.connected ? 'var(--green)' : 'var(--amber)'}>{s.connected ? 'connected' : 'down'}</Tag>
-              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{s.tools} tools{(s.tool_names || []).length ? `: ${s.tool_names.join(', ')}` : ''}</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{s.tools} tools{(s.tool_names || []).length ? `: ${s.tool_names.join(', ')}` : ''}</span>
             </Row>
           ))}
         </Section>
       ) : null}
       {prompt ? (
         <Section title="System prompt" sub={prompt.withheld ? 'withheld' : `about ${prompt.tokens} tokens before any history · ${prompt.bytes} bytes${prompt.truncated ? `, shown to ${prompt.cap}` : ''}`}>
-          {prompt.withheld ? <div style={{ fontSize: 10, color: 'var(--amber)' }}>withheld: the secret redactor could not be loaded</div> : (
+          {prompt.withheld ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>withheld: the secret redactor could not be loaded</div> : (
             <>
-              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>{promptResolution(prompt)}</div>
-              {prompt.resolved == null ? <div style={{ fontSize: 10, color: 'var(--amber)' }}>model-specific prompt additions unverified</div> : null}
-              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>Fixed empty-turn preview (an empty user message); active history, user input and tool schemas omitted; cached runtime facts may differ.</div>
-              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>system</div>
+              <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{promptResolution(prompt)}</div>
+              {prompt.resolved == null ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>model-specific prompt additions unverified</div> : null}
+              <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>Fixed empty-turn preview (an empty user message); active history, user input and tool schemas omitted; cached runtime facts may differ.</div>
+              <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>system</div>
               <pre aria-label="System part" style={pre}>{prompt.system}</pre>
-              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>turn (an empty user message)</div>
+              <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>turn (an empty user message)</div>
               <pre aria-label="Turn part" style={pre}>{prompt.turn}</pre>
             </>
           )}

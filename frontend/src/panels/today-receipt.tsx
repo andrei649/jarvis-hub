@@ -22,6 +22,7 @@
 import React, { useState } from 'react';
 import { apiGet } from '../api/client';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, inpS } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const TODAY_PATH = '/api/report/today';
 const EXPORT_PATH = '/api/report/today/export';
@@ -30,17 +31,17 @@ const RECEIPT_PREFIX = '/api/report/receipt/';
 const EM = '—';
 
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
+  <div style={{ fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
 );
 
 const Head = ({ k }: { k: any }) => (
-  <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginTop: 10, marginBottom: 2 }}>{k}</div>
+  <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10, marginBottom: 2 }}>{k}</div>
 );
 
 const Num = ({ n, k }: { n: any; k: any }) => (
   <div style={{ flex: 1, minWidth: 70 }}>
-    <div style={{ fontSize: 22, color: 'var(--accent-light)', lineHeight: 1.1 }}>{n == null ? EM : String(n)}</div>
-    <div style={{ ...mono, fontSize: 9, letterSpacing: '.08em', color: 'var(--ink-2)' }}>{k}</div>
+    <div style={{ fontSize: 'var(--n-fs-title)', color: 'var(--accent-light)', lineHeight: 1.1 }}>{n == null ? EM : String(n)}</div>
+    <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{k}</div>
   </div>
 );
 
@@ -107,7 +108,7 @@ export function TodayReceiptPanel() {
 
       {rep && ns && (
         <Row>
-          <span style={mono}>north-star</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>north-star</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             <Tag>{ns.local_pct == null ? 'local: not measured' : `local ${ns.local_pct}%`}</Tag>
             <Tag>{ns.reject_rate == null ? 'reject: no decisions' : `reject ${ns.reject_rate}`}</Tag>
@@ -117,7 +118,7 @@ export function TodayReceiptPanel() {
       )}
       {rep && (
         <Row>
-          <span style={mono}>model</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>model</span>
           <span style={{ marginLeft: 'auto' }}>
             <Tag>{rep.model && rep.model.name ? String(rep.model.name) : `${EM} not reported`}</Tag>
           </span>
@@ -168,11 +169,11 @@ export function TodayReceiptPanel() {
               : <Tag c="var(--amber)">{`UNVERIFIED${receipt.reason ? ' · ' + receipt.reason : ''}`}</Tag>}
           </Row>
           <Row>
-            <span style={mono}>why</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>why</span>
             <span style={{ marginLeft: 'auto', color: 'var(--ink-2)', textAlign: 'right' }}>{receipt.why || EM}</span>
           </Row>
           <Row>
-            <span style={mono}>decision</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>decision</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
               <Tag>{receipt.decision && receipt.decision.verdict ? String(receipt.decision.verdict) : `${EM} no verdict`}</Tag>
               {receipt.decision && receipt.decision.tier != null && <Tag>tier {String(receipt.decision.tier)}</Tag>}
@@ -180,7 +181,7 @@ export function TodayReceiptPanel() {
             </span>
           </Row>
           <Row>
-            <span style={mono}>chain</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>chain</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
               <Tag c={receipt.chain && receipt.chain.ok ? 'var(--green)' : 'var(--amber)'}>
                 {receipt.chain && receipt.chain.ok ? 'chain ok' : 'chain broken'}

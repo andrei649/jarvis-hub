@@ -32,9 +32,9 @@ function Modal({ title, role, children, onClose, busy }: { title: string; role: 
   useEffect(() => { ref.current?.querySelector<HTMLElement>('input, button')?.focus(); }, []);
   return <div role={role} aria-modal="true" aria-label={title} ref={ref}
     onKeyDown={event => { if (event.key === 'Escape' && !busy) { event.stopPropagation(); onClose(); } }}
-    style={{ position: 'absolute', inset: 0, zIndex: 30, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-    <div style={{ background: 'var(--void-2, var(--surface))', border: '1px solid var(--panel-line)', borderRadius: 'var(--radius)', padding: 14, width: 'min(420px, 100%)', maxHeight: '100%', overflowY: 'auto', fontSize: 12 }}>
-      <h4 style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--accent-light)', overflowWrap: 'anywhere' }}>{title}</h4>
+    style={{ position: 'absolute', inset: 0, zIndex: 30, background: 'var(--n-scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+    <div style={{ background: 'var(--void-2, var(--surface))', border: '1px solid var(--panel-line)', borderRadius: 'var(--radius)', padding: 14, width: 'min(420px, 100%)', maxHeight: '100%', overflowY: 'auto', fontSize: 'var(--n-fs-label)' }}>
+      <h4 style={{ margin: '0 0 8px', fontSize: 'var(--n-fs-ui)', color: 'var(--accent-light)', overflowWrap: 'anywhere' }}>{title}</h4>
       {children}
     </div>
   </div>;

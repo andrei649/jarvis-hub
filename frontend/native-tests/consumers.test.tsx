@@ -50,6 +50,20 @@ it.each(consumers)('%s updates mounted native styles after foreground appearance
   expect(styles(container)).toContain('Georgia');
 });
 
+it('paints the default Nerva theme and repaints mounted styles when the browser theme changes',async()=>{
+  preferences={accent:'cyan',look:'ledger',font:'theme'};
+  const {container}=render(<App/>);
+  await waitFor(()=>expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/preferences/appearance'),expect.anything()));
+  expect(styles(container)).toContain('#0e1210');   // Ledger · Carbon ground
+  // the seal's vermilion is the owner's hand: tabs, links and buttons take Ledger's ink, never #fd6c48
+  expect(styles(container)).toContain('#dde4db');
+  expect(styles(container)).not.toContain('#fd6c48');
+  preferences={accent:'cyan',look:'atlas',font:'theme'};
+  await act(async()=>{foreground('background');foreground('active');});
+  await waitFor(()=>expect(styles(container)).toContain('#070a09'));
+  expect(styles(container)).not.toContain('#0e1210');
+});
+
 it('keeps independent code monospace and mounted text-input state on font changes',async()=>{
   const {container,getByPlaceholderText}=render(<ServerProvider><AppearanceProvider><SettingsScreen/><Markdown text={'prose\n\n```\ncode\n```'}/></AppearanceProvider></ServerProvider>);
   await waitFor(()=>expect(fetch).toHaveBeenCalled());

@@ -3,7 +3,8 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { CONSOLE_PANELS } from '../console-routes';
-import { ConsoleOverlay } from '../gap';
+import { PanelPage } from '../frame/PanelPage';
+import { pageForRoute } from '../nav/routes';
 import { ExtensionInspectionPanel, EXTENSIONS_INSPECTION_PATH } from './extension-inspection';
 
 const active = {
@@ -48,10 +49,13 @@ describe('Extension inspection panel', () => {
     expect(extensions).toBe(acquisition + 1);
   });
 
-  it('mounts the panel through the Console component registry', async () => {
+  it('mounts the panel through the Console component registry, as a page of Build', async () => {
+    await import('../gap');   // PanelPage loads the gap chunk lazily: have it loaded, so the wait is for the panel
     hub(() => response(active));
-    render(<ConsoleOverlay panelId="extensions" onClose={() => {}} />);
-    expect(await screen.findByRole('heading', { name: 'Extensions' })).toBeTruthy();
+    render(<PanelPage panelId="extensions" page={pageForRoute({ mode: 'console', panel: 'extensions' })} lang="en"
+      attention={{}} navigate={() => {}} onFind={() => {}} />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'Extensions' })).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Pages in Build' })).toBeTruthy();
     expect(await screen.findByRole('region', { name: 'Extension boats' })).toBeTruthy();
   });
 

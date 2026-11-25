@@ -27,7 +27,8 @@
    tests/test_hud_v2_parity.py:_has_caller matches comment text as a caller. */
 import React, { useState } from 'react';
 import { apiPost } from '../api/client';
-import { useApi, arr, mono, Card, State, Row, Tag, inpS } from '../panel-kit';
+import { useApi, arr, mono, note, Card, State, Row, Tag, inpS } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const HELP_PATH = '/api/quickbar/help';
 const RESOLVE_PATH = '/api/quickbar/resolve';
@@ -66,7 +67,7 @@ const KIND_COLOR: Record<string, string> = {
 };
 
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
+  <div style={{ fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
 );
 
 /* What the plan would do, in one sentence, without doing it. */
@@ -148,7 +149,7 @@ export function QuickbarPanel() {
       {plan && (
         <>
           <Row>
-            <span style={{ ...mono, fontSize: 11 }}>{plan.input || EM}</span>
+            <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{plan.input || EM}</span>
             <span style={{ marginLeft: 'auto' }}>
               <Tag c={KIND_COLOR[String(plan.kind)] || 'var(--ink-2)'}>{plan.kind}</Tag>
             </span>
@@ -164,11 +165,11 @@ export function QuickbarPanel() {
         </>
       )}
 
-      {err && <div role="alert" style={{ ...mono, color: 'var(--red)', marginTop: 6 }}>{err}</div>}
+      {err && <div role="alert" style={{ ...note, color: 'var(--red)', marginTop: 6 }}>{err}</div>}
 
       {history.length > 0 && (
         <>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginTop: 10 }}>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10 }}>
             RECENT (this browser only)
           </div>
           {history.slice(0, 5).map((item: string) => (
@@ -185,19 +186,19 @@ export function QuickbarPanel() {
 
       {commands.length > 0 && (
         <>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginTop: 10 }}>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10 }}>
             SHORTCUTS
           </div>
           {commands.slice(0, 8).map((c: any) => (
             <Row key={c.command}>
-              <span style={{ ...mono, fontSize: 11 }}>{c.command}</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-2)' }}>{c.does}</span>
+              <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{c.command}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{c.does}</span>
             </Row>
           ))}
         </>
       )}
 
-      <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginTop: 10 }}>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10 }}>
         CHAT COMMANDS
       </div>
       {catalog.loading && <Note>Loading chat commands…</Note>}
@@ -214,7 +215,7 @@ export function QuickbarPanel() {
       {chatCommands.map((command: any) => (
         <div key={`command:${command.name}`} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <span style={{ ...mono, fontSize: 11, overflowWrap: 'anywhere' }}>
+            <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', overflowWrap: 'anywhere' }}>
               {command.command}{command.usage ? ` ${command.usage}` : ''}
             </span>
             {command.tier === 'admin' && <Tag c="var(--amber)">owner</Tag>}
@@ -225,7 +226,7 @@ export function QuickbarPanel() {
       {chatShortcuts.map((shortcut: any) => (
         <div key={`shortcut:${shortcut.kind}:${shortcut.name}`} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <span style={{ ...mono, fontSize: 11, overflowWrap: 'anywhere' }}>
+            <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', overflowWrap: 'anywhere' }}>
               {shortcut.command}{shortcut.usage ? ` ${shortcut.usage}` : ''}
             </span>
             <Tag c="var(--amber)">{shortcut.kind}</Tag>

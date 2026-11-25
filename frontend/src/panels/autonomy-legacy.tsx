@@ -44,7 +44,10 @@
      answers 200 {ok:true, queued:false} — a preview, nothing enqueued. The panel
      branches on `queued`, not on the status code. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, actA, inpS, taS, Json } from '../panel-kit';
+/* panel-kit's `note` (messages and readouts in the interface face, contract §5) arrives as
+   kitNote: this file's own `note` below is its smaller ink-2 hint paragraph. */
+import { useApi, arr, mono, note as kitNote, asLive, Card, State, Row, Tag, act, actA, inpS, taS, Json } from '../panel-kit';
+import { IDENT, LABEL } from '../theme/type';
 
 const STATUS_PATH = '/autonomy/status';
 const MEDIATION_PATH = '/autonomy/mediation';
@@ -69,9 +72,11 @@ const PROVIDERS = [
   { id: 'telnyx', credential: 'telnyx_api_key' },
 ];
 
-const amber = { color: 'var(--amber)', fontSize: 11 };
-const note = { color: 'var(--ink-2)', fontSize: 10.5, lineHeight: 1.5, margin: '4px 0 0' };
-const head = { ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', margin: '10px 0 4px' };
+const amber = { color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' };
+const note = { color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, margin: '4px 0 0' };
+const head = { ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '10px 0 4px' };
+/* A route inside a head is an IDENT span (theme/type): the mono face, with its own case and
+   spacing (contract §5). */
 
 /* The ONLY thing a failed apiGet carries is `GET <path> -> <status>`; the guard's own
    detail string is unreachable on a GET. So the hint names the handler branch that
@@ -210,10 +215,10 @@ export function AutonomyControlPanel() {
           <div style={amber}>Mediation status unavailable</div>
         ) : (
           <>
-            <Row><span style={mono}>Effective mode: {md.mode}</span></Row>
-            <Row><span style={mono}>Evidence: {md.valid ? 'verified' : 'unavailable or invalid'}</span></Row>
+            <Row><span style={kitNote}>Effective mode: {md.mode}</span></Row>
+            <Row><span style={kitNote}>Evidence: {md.valid ? 'verified' : 'unavailable or invalid'}</span></Row>
             {md.stats && MEDIATION_COUNTS.map(([key, label]) => (
-              <Row key={key}><span style={mono}>{label}: {md.stats?.[key]}</span></Row>
+              <Row key={key}><span style={kitNote}>{label}: {md.stats?.[key]}</span></Row>
             ))}
           </>
         )}
@@ -223,13 +228,13 @@ export function AutonomyControlPanel() {
       </section>
 
       {/* ── S1 · queue census + interrupt budget ─────────────────────────── */}
-      <div style={head}>QUEUE CENSUS · GET {STATUS_PATH}</div>
+      <div style={head}>QUEUE CENSUS · <span style={IDENT}>GET {STATUS_PATH}</span></div>
       <State e={status.e} loading={status.loading} n={sd ? 1 : 0} />
       {status.e && readHint(status.e, ORCH_503) && (
         <div style={amber}>{readHint(status.e, ORCH_503)}</div>
       )}
       {sd && ordered.length === 0 && (
-        <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>
+        <div style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>
           queue empty · stats {'{}'} — no rows in the tasks table. A true zero, not an outage.
         </div>
       )}
@@ -248,7 +253,7 @@ export function AutonomyControlPanel() {
       {sd && (
         <>
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>interrupt budget</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>interrupt budget</span>
             <span style={{ marginLeft: 'auto' }}>
               <Tag c={remaining === 0 ? 'var(--amber)' : 'var(--ink-2)'}>
                 {remaining == null ? '—' : String(remaining)} / {perDay == null ? '—' : String(perDay)} interrupts left today
@@ -263,11 +268,11 @@ export function AutonomyControlPanel() {
           </div>
           <div style={head}>AWAITING A DECISION · {pending.length} row(s)</div>
           {pending.length === 0 && (
-            <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>nothing blocked or proposed.</div>
+            <div style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>nothing blocked or proposed.</div>
           )}
           {pending.slice(0, 8).map((t: any, i: number) => (
             <Row key={t.id ?? i}>
-              <span style={{ ...mono, color: 'var(--ink-2)' }}>#{t.id} · {t.title || t.kind || 'task'}</span>
+              <span style={{ ...kitNote, color: 'var(--ink-2)' }}>#{t.id} · {t.title || t.kind || 'task'}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                 <Tag c={t.status === 'proposed' ? 'var(--amber)' : 'var(--ink-2)'}>{t.status}</Tag>
                 {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
@@ -288,7 +293,7 @@ export function AutonomyControlPanel() {
       )}
 
       {/* ── S2 · proactive OS observer ────────────────────────────────────── */}
-      <div style={head}>OS OBSERVER · POST {OBSERVER_RUN_PATH}</div>
+      <div style={head}>OS OBSERVER · <span style={IDENT}>POST {OBSERVER_RUN_PATH}</span></div>
       {obs.e && (
         <>
           <div style={amber}>observer state unavailable · {obs.e}</div>
@@ -321,24 +326,24 @@ export function AutonomyControlPanel() {
       {od && arr(od, 'unhealthy').map((u: any, i: number) => (
         <Row key={(u && u.key) || i}>
           <span style={{ ...mono, color: 'var(--amber)' }}>{u && u.key}</span>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{u && u.detail}</span>
+          <span style={{ ...kitNote, color: 'var(--ink-2)' }}>{u && u.detail}</span>
           {u && u.severity && <span style={{ marginLeft: 'auto' }}><Tag c="var(--amber)">{u.severity}</Tag></span>}
         </Row>
       ))}
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>sample the host now (admin)</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>sample the host now (admin)</span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={busy} onClick={sample}>
           {busy ? 'sampling…' : 'sample now'}
         </button>
       </Row>
       {busy && (
-        <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>
+        <div style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>
           sampling… every probe is a live TCP connect (Qdrant, Neo4j, n8n, LM Studio, Ollama) — this can take
           several seconds against a box where they are down.
         </div>
       )}
       {runErr && (
-        <div style={{ color: 'var(--red)', fontSize: 11 }}>
+        <div style={{ color: 'var(--red)', fontSize: 'var(--n-fs-meta)' }}>
           run refused · HTTP {String(runErr.status ?? '?')}
           {runErr.body && runErr.body.error != null
             ? <> · {String(runErr.body.error)}</>
@@ -375,7 +380,7 @@ export function AutonomyControlPanel() {
       </div>
 
       {/* ── S3 · autonomy-raise suggestions ──────────────────────────────── */}
-      <div style={head}>AUTONOMY-RAISE SUGGESTIONS · GET {SUGGESTIONS_PATH}</div>
+      <div style={head}>AUTONOMY-RAISE SUGGESTIONS · <span style={IDENT}>GET {SUGGESTIONS_PATH}</span></div>
       <State e={sug.e} loading={sug.loading} n={gd ? 1 : 0} />
       {sug.e && readHint(sug.e, ORCH_503) && <div style={amber}>{readHint(sug.e, ORCH_503)}</div>}
       {gd && suggestions.length === 0 && (
@@ -395,7 +400,7 @@ export function AutonomyControlPanel() {
               <Tag>approval_rate {String(s.approval_rate)} over {s.samples} sample(s)</Tag>
             </span>
           </Row>
-          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', padding: '0 0 4px' }}>{s.suggestion}</div>
+          <div style={{ ...kitNote, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', padding: '0 0 4px' }}>{s.suggestion}</div>
         </div>
       ))}
       {gd && (
@@ -409,7 +414,7 @@ export function AutonomyControlPanel() {
       )}
 
       {/* ── S4 · governed outbound-call request ──────────────────────────── */}
-      <div style={head}>REQUEST A GOVERNED CALL · POST {CALL_PATH}</div>
+      <div style={head}>REQUEST A GOVERNED CALL · <span style={IDENT}>POST {CALL_PATH}</span></div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', margin: '2px 0 6px' }}>
         <input style={{ ...inpS, flex: '1 1 150px' } as any} maxLength={40} placeholder="to (number, ≤ 40 chars)"
           value={to} onChange={(ev) => setTo(ev.target.value)} />
@@ -424,7 +429,7 @@ export function AutonomyControlPanel() {
       <textarea style={taS as any} maxLength={2000} placeholder="message to be spoken on the call (≤ 2000 chars)"
         value={message} onChange={(ev) => setMessage(ev.target.value)} />
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>
+        <span style={{ ...kitNote, color: 'var(--ink-2)' }}>
           {to.trim() === '' || message.trim() === '' ? 'to + message are required by the broker' : `provider ${provider} · credential ${cred}`}
         </span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!canCall} onClick={request}>
@@ -439,9 +444,9 @@ export function AutonomyControlPanel() {
         secret exists, so this states the condition rather than guessing which side of it this instance is on.
       </div>
       {res && res.queued === true && (
-        <div style={{ color: 'var(--green)', fontSize: 11, marginTop: 6 }}>
+        <div style={{ color: 'var(--green)', fontSize: 'var(--n-fs-meta)', marginTop: 6 }}>
           queued for approval · task #{String(res.task_id)} · kind {String(res.kind)}
-          <div style={{ ...mono, color: 'var(--ink-2)' }}>{String(res.title || '')}</div>
+          <div style={{ ...kitNote, color: 'var(--ink-2)' }}>{String(res.title || '')}</div>
           {res.preview && (
             <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
               <Tag c={tierColor(res.preview.risk_tier)}>tier {String(res.preview.risk_tier)}</Tag>
@@ -450,7 +455,7 @@ export function AutonomyControlPanel() {
             </div>
           )}
           {res.preview && res.preview.summary && (
-            <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10.5 }}>{String(res.preview.summary)}</div>
+            <div style={{ ...kitNote, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>{String(res.preview.summary)}</div>
           )}
         </div>
       )}
@@ -466,7 +471,7 @@ export function AutonomyControlPanel() {
       )}
       {callErr && (
         <div style={{ marginTop: 6 }}>
-          <div style={{ color: 'var(--red)', fontSize: 11 }}>
+          <div style={{ color: 'var(--red)', fontSize: 'var(--n-fs-meta)' }}>
             refused · HTTP {String(callErr.status ?? '?')}
             {callErr.body && callErr.body.reason != null
               ? <> · reason: {String(callErr.body.reason)}</>
@@ -476,10 +481,10 @@ export function AutonomyControlPanel() {
             {callErr.body && callErr.body.kind != null && <> · kind {String(callErr.body.kind)}</>}
           </div>
           {callErr.body && Array.isArray(callErr.body.supported) && (
-            <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>supported: {callErr.body.supported.join(' · ')}</div>
+            <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>supported: {callErr.body.supported.join(' · ')}</div>
           )}
           {callErr.body && Array.isArray(callErr.body.missing) && (
-            <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>missing: {callErr.body.missing.join(' · ')}</div>
+            <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>missing: {callErr.body.missing.join(' · ')}</div>
           )}
           {callErr.body && callErr.body.detail !== undefined && <Json v={callErr.body.detail} />}
           <div style={note}>
@@ -491,7 +496,7 @@ export function AutonomyControlPanel() {
       )}
 
       {/* ── S5 · governed Kanban board intake ────────────────────────────── */}
-      <div style={head}>GOVERNED KANBAN DISPATCH · POST {KANBAN_DISPATCH_PATH}</div>
+      <div style={head}>GOVERNED KANBAN DISPATCH · <span style={IDENT}>POST {KANBAN_DISPATCH_PATH}</span></div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', margin: '2px 0 6px' }}>
         <input
           aria-label="Kanban dispatch board"
@@ -515,7 +520,7 @@ export function AutonomyControlPanel() {
         />
       </div>
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>
+        <span style={{ ...kitNote, color: 'var(--ink-2)' }}>
           {!validKbBoard || !validKbLimit
             ? 'board slug (^[a-z0-9][a-z0-9_-]{0,63}$) and integer limit 1–16 required'
             : `board ${trimmedKbBoard} · max ${parsedKbLimit} proposal(s) (admin)`}
@@ -543,7 +548,7 @@ export function AutonomyControlPanel() {
       )}
       {kbRes && kbRes.ok === true && kbRes.status === 'queued' && Array.isArray(kbRes.queued) && kbRes.queued.length > 0 && (
         <div role="status" style={{ marginTop: 6 }}>
-          <div style={{ color: 'var(--green)', fontSize: 11 }}>
+          <div style={{ color: 'var(--green)', fontSize: 'var(--n-fs-meta)' }}>
             {kbRes.queued.length} queue item(s) returned — check each status; approved or running items may have advanced earlier:
           </div>
           {kbRes.queued.map((item: any, idx: number) => (
@@ -568,7 +573,7 @@ export function AutonomyControlPanel() {
       )}
       {kbErr && (
         <div role="alert" style={{ marginTop: 6 }}>
-          <div style={{ color: 'var(--red)', fontSize: 11 }}>
+          <div style={{ color: 'var(--red)', fontSize: 'var(--n-fs-meta)' }}>
             dispatch refused · HTTP {String(kbErr.status ?? '?')}
             {kbErr.body && kbErr.body.reason != null
               ? <> · reason: {String(kbErr.body.reason)}</>

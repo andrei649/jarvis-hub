@@ -1,0 +1,261 @@
+/* =====================================================================================
+   Theme · Workbench
+   -------------------------------------------------------------------------------------
+   Source: docs/design/hud-next/workbench/ (README.md identity sheet, tokens.css, workbench.css).
+   Idea: the converged 2026 agent workspace, drawn as a real instrument: work sorted by what
+   needs you, one conversation, a context rail. DIN lettering, quiet neutrals with a faint warm
+   cast, dense and exact. Elevation is lightness: the lightest ground is where you work.
+     Dark (default)  a dark desk with lighter sheets and cards
+     Light           paper-white sheets on a bench-grey desk, a 1-2px shadow where a sheet
+                     leaves the desk; designed for daylight, not inverted
+   The one accent is SAFETY YELLOW: "it is your move", something held for the owner's
+   decision. When nothing waits the screen has no yellow. Yellow is a fill (the hold tag,
+   the count, the enabled Approve) with ink on it, never a text colour in the design, so
+   --n-accent is the fill and --n-on-accent its ink. Red ("cannot be undone, failed,
+   stopped") and green ("sealed, intact, verified") are status, not accent; warnings are
+   never yellow.
+   Because yellow is rationed to the owner's move, a primary action that is not a decision
+   (Send, Save, Run) is not yellow: it is a solid ink fill with the sheet's paper on it, in
+   both themes. The current item is ink, as drawn (the area under an ink bar, the chosen
+   segment on the selected / pressed ground), and inputs sit in the well. Legacy accent
+   chrome (rail, tabs, names) therefore turns to ink, never to yellow.
+
+   Status. Legacy screens still tell status, locality and categories apart by hue alone
+   (legends, health rings, the locality bar, meters), so contract §3 (2026-11-23) keeps the
+   five status colours apart. ok and bad are the direction's green and red; warn is an ink
+   plus its triangle, never yellow, so it is a neutral ink of its own, between the first and
+   the second (it was the text ink; the second ink would make every legacy warning-or-neutral
+   choice read the same); info and cloud take quiet hues (slate, lavender) that do not
+   compete with the three signals.
+
+   Port notes:
+   - Card-based: a panel is a sheet (radius 10, a hairline edge, the light sheet shadow), and
+     its top edge is the same hairline as the rest of the frame (see the panel block).
+   - Grounds: desk = bg, sheet and card = sheet, the well (inputs, your turns) = bg-2, the
+     hover of quiet controls; selected / pressed = bg-3. A card inside a panel (sheet-2) is a
+     card, so it sits just off the sheet (dark 0.203, light 0.986) rather than on the well:
+     on the well, the kit's hover fill would vanish.
+   - Focus is "where your hand is": yellow on the dark desk, ink on paper (as designed).
+   - accent-text: the design never sets yellow as text. On the dark desk the fill itself reads
+     as text; on paper the darker tag edge (0.58 0.12 85, 3.6:1) is lowered in OKLCH lightness
+     only, the least that reaches 4.5:1 on every light ground: 0.580 -> 0.522.
+   - The label voice is the content width: Workbench sets buttons, tabs, areas and section heads
+     at normal width with no tracking. Its semi-condensed meta voice (who / when / where /
+     basis, table heads, chips) has no role of its own in the contract, so it is not ported.
+   - Workbench's 11px micro step is below the contract floor, so the scale starts at its 12px
+     meta step.
+   - stop / on-stop: the HUD draws the emergency stop in --n-stop as a ring, a glyph and a word
+     (the Trust kill button), outlines it in the Personalisation preview, and the kit fills it
+     under --n-on-stop. Dark: the mark red (0.70 0.19 27), the red of Workbench's stop glyph
+     and of its dark plate, with the desk as on-stop: 6.7:1 as a fill and 5.9:1 or more as a
+     mark.
+     The drawn fill (0.50 0.20 27 under white) is 2.6-2.9:1 on the dark grounds, below even
+     the 3:1 a mark needs, so the dark block does not use it. Light: the drawn fill with white,
+     6.4:1 as a fill and 5.5:1 or more as a mark. Other red text is --n-bad.
+   - ok-wash, bad-wash, accent-wash, selection and scrim are not in the palette: low-chroma
+     values in the signal's hue, opaque.
+   - status (2026-11-23): warn was the text ink and info and cloud one secondary ink, which the
+     contract test now refuses (each must stay 0.05 apart in OKLab, and from text). Dark: warn
+     0.945 0.006 90 -> 0.870 0.006 90, info and cloud 0.800 0.006 90 -> 0.780 0.055 232 and
+     0.780 0.070 295. Light: warn 0.200 0.006 80 -> 0.295 0.006 80, info and cloud
+     0.390 0.006 80 -> 0.430 0.055 235 and 0.450 0.090 295. warn stays a neutral ink, one of
+     its own between the first and second inks (dark 0.075 from text and 0.070 from text-2,
+     light 0.095 from both): legacy screens set --amber (warn) against --ink-2 (text-2), or
+     against --ink / --accent (text), as the two arms of a warning-or-neutral choice, so warn
+     may equal neither (a first pass took the second ink; review caught it). info keeps a
+     little more chroma in the dark (0.055) than the Phase A proposal (0.045): 0.063 from the
+     second ink rather than 0.051. Each reads 6.4:1 or more on the four grounds the test reads
+     (bg, bg-2, sheet, sheet-2) and 6.0:1 or more on bg-3.
+   - derived roles: emph is the text ink; emph-wash is the palette's selected / pressed ground
+     (bg-3, --ground-3), which the chosen segment uses. The direction leaves an open row and
+     the current panel link in the well, but the legacy Ctrl K palette and language menu are
+     painted on the well (--void-2) and mark the keyboard's row with this wash alone, so it
+     stays a step off the well (1.13:1 dark, 1.14:1 light). field-bg is the well (bg-2,
+     --ground-2); primary is the text ink with the sheet on it (paper-white by day, as on the
+     red fill).
+   - figures are tabular everywhere (README §2, the direction's body style). Workbench sets no
+     common title tracking (its count head tracks out, its figure in), so none is ported.
+   ===================================================================================== */
+
+:is(:root, .n-theme-scope)[data-look="workbench"] {
+  color-scheme: dark;
+
+  --n-bg:          oklch(0.158 0.004 85);
+  --n-bg-2:        oklch(0.226 0.005 85);
+  --n-bg-3:        oklch(0.268 0.005 85);
+  --n-sheet:       oklch(0.192 0.004 85);
+  --n-sheet-2:     oklch(0.203 0.004 85);
+  --n-scrim:       oklch(0.110 0.004 85 / 0.62);
+
+  --n-text:        oklch(0.945 0.006 90);
+  --n-text-2:      oklch(0.800 0.006 90);
+  --n-text-3:      oklch(0.680 0.006 90);
+
+  --n-rule:        oklch(0.262 0.005 85);
+  --n-rule-2:      oklch(0.335 0.006 85);
+  --n-rule-field:  oklch(0.530 0.006 85);
+  --n-rule-heavy:  oklch(0.530 0.006 85);
+
+  --n-accent:      oklch(0.865 0.170 92);
+  --n-accent-text: oklch(0.865 0.170 92);
+  --n-accent-wash: oklch(0.255 0.030 92);
+  --n-on-accent:   oklch(0.200 0.030 85);
+
+  --n-stop:        oklch(0.700 0.190 27);
+  --n-on-stop:     oklch(0.158 0.004 85);
+
+  --n-ok:          oklch(0.770 0.150 152);
+  --n-warn:        oklch(0.870 0.006 90);
+  --n-bad:         oklch(0.700 0.190 27);
+  --n-info:        oklch(0.780 0.055 232);
+  --n-cloud:       oklch(0.780 0.070 295);
+  --n-ok-wash:     oklch(0.255 0.030 152);
+  --n-warn-wash:   oklch(0.268 0.005 85);
+  --n-bad-wash:    oklch(0.255 0.040 27);
+
+  --n-focus:       oklch(0.865 0.170 92);
+  --n-selection:   oklch(0.360 0.008 85);
+
+  /* yellow is rationed to the owner's move: the current item is ink on the selected ground,
+     inputs sit in the well, and Send / Save / Run are a solid ink fill. These follow the scheme. */
+  --n-emph:       var(--n-text);
+  --n-emph-wash:  var(--n-bg-3);
+  --n-primary:    var(--n-text);
+  --n-on-primary: var(--n-sheet);
+  --n-field-bg:   var(--n-bg-2);
+
+  /* One DIN family, plus a mono only for what the machine named. Production: Barlow (SIL OFL,
+     self-hosted once vendored); installed stand-in: Bahnschrift. Labels, buttons, tabs and
+     section heads are the same DIN at normal width, as Workbench sets them. */
+  --n-font-ui:      "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-label:   var(--n-font-ui);
+  --n-font-text:    "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-title:   "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-display: "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-mono:    "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  /* sentence case, no tracked capitals, no tracking at normal width */
+  --n-label-case:   none;
+  --n-label-track:  0;
+  --n-label-weight: 500;
+  /* 400 reading, 500 labels and your own words, 600 headings and the figure that matters:
+     Barlow's static instances, self-hosted since 2026-11-23 (the Bahnschrift stand-in drew the
+     same grades as 350 / 400 / 600) */
+  --n-w-reg:  400;
+  --n-w-med:  500;
+  --n-w-semi: 600;
+  --n-w-bold: 600;
+  /* tabular figures everywhere */
+  --n-numerals: lining-nums tabular-nums;
+
+  /* the bench's scale: meta 12 · small 13 · ui 14 · reading 15 · the open decision 18 ·
+     the count and page titles 22 · the one figure 34 */
+  --n-fs-meta:    12px;   --n-lh-meta:    16px;
+  --n-fs-label:   13px;   --n-lh-label:   18px;
+  --n-fs-ui:      14px;   --n-lh-ui:      20px;
+  --n-fs-own:     15px;   --n-lh-own:     24px;
+  --n-fs-prose:   15px;   --n-lh-prose:   24px;
+  --n-fs-title:   18px;   --n-lh-title:   24px;
+  --n-fs-verdict: 22px;   --n-lh-verdict: 28px;
+  --n-fs-figure:  34px;   --n-lh-figure:  36px;
+
+  /* radii 3 / 6 / 10, concentric: controls, rows and wells 6; sheets and cards 10 */
+  --n-r-0: 0;
+  --n-r-1: 6px;
+  --n-r-2: 10px;
+  --n-r-3: 10px;
+
+  /* card-based: a panel is a sheet on the desk, framed by one hairline all round. No heavier
+     top rule: --n-panel-top repeats the frame because bridge.css applies `border-top` after
+     `border` on the same element (as its Classic block does); 0 would delete the card's top
+     edge. */
+  --n-panel-bg:     var(--n-sheet);
+  --n-panel-border: 1px solid var(--n-rule);
+  --n-panel-top:    1px solid var(--n-rule);
+  --n-panel-radius: 10px;
+  --n-panel-shadow: none;
+  /* a register is a sheet on the desk too: its words keep the panel's margin from its hairline */
+  --n-register-pad: var(--n-panel-pad);
+
+  /* hairlines do the work; floating layers get one deeper shadow and stay opaque */
+  --n-shadow-1:     none;
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 12px 32px oklch(0 0 0 / 0.28), 0 2px 6px oklch(0 0 0 / 0.18);
+  --n-shadow-sheet: 0 0 0 1px var(--n-rule-2), 0 12px 32px oklch(0 0 0 / 0.28), 0 2px 6px oklch(0 0 0 / 0.18);
+
+  --n-control-h:    28px;
+  --n-control-h-sm: 24px;
+  --n-bar-h:        48px;
+  --n-measure:      620px;
+  --n-col-gap:      16px;
+}
+
+:is(:root, .n-theme-scope)[data-look="workbench"][data-scheme="light"] {
+  color-scheme: light;
+
+  --n-bg:          oklch(0.938 0.005 88);
+  --n-bg-2:        oklch(0.962 0.004 90);
+  --n-bg-3:        oklch(0.918 0.005 90);
+  --n-sheet:       oklch(0.995 0.002 90);
+  --n-sheet-2:     oklch(0.986 0.003 90);
+  --n-scrim:       oklch(0.200 0.006 80 / 0.30);
+
+  --n-text:        oklch(0.200 0.006 80);
+  --n-text-2:      oklch(0.390 0.006 80);
+  --n-text-3:      oklch(0.470 0.006 80);
+
+  --n-rule:        oklch(0.892 0.004 90);
+  --n-rule-2:      oklch(0.835 0.005 90);
+  --n-rule-field:  oklch(0.600 0.006 90);
+  --n-rule-heavy:  oklch(0.600 0.006 90);
+
+  --n-accent:      oklch(0.865 0.170 92);
+  --n-accent-text: oklch(0.522 0.120 85);
+  --n-accent-wash: oklch(0.962 0.040 95);
+  --n-on-accent:   oklch(0.200 0.030 85);
+
+  --n-stop:        oklch(0.500 0.200 27);
+  --n-on-stop:     oklch(0.985 0.004 90);
+
+  --n-ok:          oklch(0.480 0.130 152);
+  --n-warn:        oklch(0.295 0.006 80);
+  --n-bad:         oklch(0.530 0.200 27);
+  --n-info:        oklch(0.430 0.055 235);
+  --n-cloud:       oklch(0.450 0.090 295);
+  --n-ok-wash:     oklch(0.950 0.030 152);
+  --n-warn-wash:   oklch(0.918 0.005 90);
+  --n-bad-wash:    oklch(0.950 0.025 27);
+
+  --n-focus:       oklch(0.200 0.006 80);
+  --n-selection:   oklch(0.870 0.008 90);
+
+  /* a 1-2px shadow only where a light sheet leaves the desk */
+  --n-panel-shadow: 0 1px 2px oklch(0.200 0.010 80 / 0.06);
+  --n-shadow-1:     0 1px 2px oklch(0.200 0.010 80 / 0.06);
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 12px 32px oklch(0 0 0 / 0.28), 0 2px 6px oklch(0 0 0 / 0.18);
+  --n-shadow-sheet: 0 0 0 1px var(--n-rule-2), 0 12px 32px oklch(0 0 0 / 0.28), 0 2px 6px oklch(0 0 0 / 0.18);
+}
+
+/* The desktop shell's default window: the panels tighten. */
+@media (max-width: 1399px) {
+  :root[data-look="workbench"] {
+    --n-col-gap: 12px;
+  }
+}
+
+/* The wide tier, the owner's own screen (2560 x 1353): every step moves up one, controls grow
+   by 2px; the reading measure grows, never stretches. Workbench drew this tier from 2240px;
+   it starts at 2200px here, the breakpoint every theme shares for the large screen. */
+@media (min-width: 2200px) {
+  :root[data-look="workbench"] {
+    --n-fs-meta: 13px;    --n-lh-meta: 17px;
+    --n-fs-label: 14px;   --n-lh-label: 19px;
+    --n-fs-ui: 15px;      --n-lh-ui: 21px;
+    --n-fs-own: 17px;     --n-lh-own: 27px;
+    --n-fs-prose: 17px;   --n-lh-prose: 27px;
+    --n-fs-title: 21px;   --n-lh-title: 27px;
+    --n-fs-verdict: 25px; --n-lh-verdict: 30px;
+    --n-control-h: 30px;  --n-control-h-sm: 26px;
+    --n-bar-h: 52px;
+    --n-measure: 680px;
+    --n-col-gap: 20px;
+  }
+}

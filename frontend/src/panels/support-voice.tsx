@@ -72,7 +72,8 @@
    Both routes are GETs; there is nothing to hand-type, so the degenerate-form test does
    not bite and no POST surface exists here. */
 import React, { useState } from 'react';
-import { useApi, mono, asLive, Card, State, Row, Tag, Json } from '../panel-kit';
+import { useApi, note, asLive, Card, State, Row, Tag, Json } from '../panel-kit';
+import { LABEL, MONO } from '../theme/type';
 
 /* The single error literal every bundle section degrades to. Returned verbatim so the
    panel renders the backend's own word and never a synonym of its own. */
@@ -90,7 +91,7 @@ function secState(v: any): SecState {
 }
 const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : '—');
 const RIGHT: React.CSSProperties = { marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' };
-const FOOT: React.CSSProperties = { ...mono, fontSize: 9.5, color: 'var(--ink-2)', lineHeight: 1.5, marginTop: 8 };
+const FOOT: React.CSSProperties = { ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', lineHeight: 1.5, marginTop: 8 };
 
 /* H164: the opt-in log tail. The route caps log_lines at 500 (support.py Query le=500),
    so the menu never offers more; 0 is the default bundle, which carries no log text. */
@@ -198,7 +199,7 @@ function SupportBundleCard() {
       onReload={reload}
     >
       <Row>
-        <span style={mono}>log tail (opt-in)</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>log tail (opt-in)</span>
         <span style={RIGHT}>
           <select
             aria-label="log lines to include"
@@ -217,7 +218,7 @@ function SupportBundleCard() {
       {d && (
         <>
           <Row>
-            <span style={mono}>build</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>build</span>
             <span style={RIGHT}>
               {meta && typeof meta.version === 'string' && meta.version
                 ? <Tag c="var(--ink-2)">v{meta.version}</Tag>
@@ -227,7 +228,7 @@ function SupportBundleCard() {
             </span>
           </Row>
           <Row>
-            <span style={mono}>generated</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>generated</span>
             <span style={RIGHT}>
               <Tag>{(meta && meta.generated_at) || '—'}</Tag>
               <Tag>{typeof d.routes === 'number' ? `${d.routes} routes` : 'routes —'}</Tag>
@@ -235,7 +236,7 @@ function SupportBundleCard() {
           </Row>
 
           <Row>
-            <span style={mono}>sections</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>sections</span>
             <span style={RIGHT}>
               {states.map(([name, s]) => (
                 <Tag key={name} c={s.kind === 'ok' ? 'var(--ink-2)' : 'var(--amber)'}>
@@ -246,7 +247,7 @@ function SupportBundleCard() {
           </Row>
 
           <Row>
-            <span style={mono}>capabilities</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>capabilities</span>
             <span style={RIGHT}>
               {capsErr !== null ? <Tag c="var(--amber)">error: {capsErr}</Tag> : (
                 <>
@@ -263,7 +264,7 @@ function SupportBundleCard() {
           </Row>
 
           <Row>
-            <span style={mono}>egress</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>egress</span>
             <span style={RIGHT}>
               {egErr !== null ? <Tag c="var(--amber)">error: {egErr}</Tag> : (
                 <>
@@ -285,7 +286,7 @@ function SupportBundleCard() {
           </Row>
 
           <Row>
-            <span style={mono}>audit</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>audit</span>
             <span style={RIGHT}>
               {auErr !== null ? <Tag c="var(--amber)">error: {auErr}</Tag> : (
                 <>
@@ -304,7 +305,7 @@ function SupportBundleCard() {
           </Row>
 
           <Row>
-            <span style={mono}>product posture (in bundle)</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>product posture (in bundle)</span>
             <span style={RIGHT}>
               {ppErr !== null ? <Tag c="var(--amber)">error: {ppErr}</Tag> : (
                 <>
@@ -317,7 +318,7 @@ function SupportBundleCard() {
           </Row>
 
           <Row>
-            <span style={mono}>component health</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>component health</span>
             <span style={RIGHT}>
               {hlErr !== null ? <Tag c="var(--amber)">error: {hlErr}</Tag> : !hl || typeof hl !== 'object' ? (
                 <Tag c="var(--amber)">health absent from bundle</Tag>
@@ -337,7 +338,7 @@ function SupportBundleCard() {
           </Row>
 
           <Row>
-            <span style={mono}>logs</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>logs</span>
             <span style={RIGHT}>
               {lgErr !== null ? <Tag c="var(--amber)">error: {lgErr}</Tag>
                 : !lg || lg.included !== true
@@ -353,19 +354,19 @@ function SupportBundleCard() {
           </Row>
 
           <Row>
-            <span style={mono}>attachable artifact</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>attachable artifact</span>
             <span style={RIGHT}>
               <button className="tool-btn" onClick={doCopy} disabled={loading} aria-label="copy the bundle JSON">copy bundle JSON</button>
               <button className="tool-btn" onClick={doDownload} disabled={loading} aria-label="download the bundle as a file">download .json</button>
             </span>
           </Row>
           {copy && (
-            <div style={{ ...mono, fontSize: 10, marginTop: 4, color: copy.ok ? 'var(--green)' : 'var(--red)' }}>
+            <div style={{ ...note, fontSize: 'var(--n-fs-meta)', marginTop: 4, color: copy.ok ? 'var(--green)' : 'var(--red)' }}>
               {copy.msg}
             </div>
           )}
           {dl && (
-            <div style={{ ...mono, fontSize: 10, marginTop: 4, color: dl.ok ? 'var(--green)' : 'var(--red)' }}>
+            <div style={{ ...note, fontSize: 'var(--n-fs-meta)', marginTop: 4, color: dl.ok ? 'var(--green)' : 'var(--red)' }}>
               {dl.msg}
             </div>
           )}
@@ -375,14 +376,14 @@ function SupportBundleCard() {
         </>
       )}
       <div style={FOOT}>
-        GET /api/support/bundle · admin-tier read (X-Admin-Token from <code>hud.admin_token</code>); a 401/403
+        GET /api/support/bundle · admin-tier read (X-Admin-Token from <code style={MONO}>hud.admin_token</code>); a 401/403
         here comes from the admin guard, and the client throws before reading the guard&apos;s body, so only the
         status is shown above. Allow-list bundle: aggregates only — never raw config, secrets, message content
         or audit previews. Each section is assembled defensively, so a failed source reports
-        <code> {'{"error":"unavailable"}'} </code> instead of crashing the bundle, and the seven fail independently. Logs are opt-in (the menu above sets
-        <code>log_lines</code>; 0 carries no log text) and the download saves exactly the JSON shown.
+        <code style={MONO}> {'{"error":"unavailable"}'} </code> instead of crashing the bundle, and the seven fail independently. Logs are opt-in (the menu above sets
+        <code style={MONO}>log_lines</code>; 0 carries no log text) and the download saves exactly the JSON shown.
         The product-posture section is computed from CODE DEFAULTS — support_bundle.py calls
-        product_posture.snapshot() with no runtime settings — so it can read <code>off</code> on a box whose
+        product_posture.snapshot() with no runtime settings — so it can read <code style={MONO}>off</code> on a box whose
         product.posture is set; the live one is GET /api/security/posture.
       </div>
     </Card>
@@ -405,21 +406,23 @@ function WyomingCard() {
       {d && (
         <>
           {/* Three separate truths. They are never merged: `enabled` is a setting,
-              `listening` is a measurement, `reachable` is both. */}
+              `listening` is a measurement, `reachable` is both. Their keys are phrases, one
+              naming a setting id the label voice would uppercase in Classic, so this card's
+              keys (protocol too) take the note voice. */}
           <Row>
-            <span style={mono}>enabled (setting voice.wyoming_enabled)</span>
+            <span style={note}>enabled (setting voice.wyoming_enabled)</span>
             <span style={RIGHT}>{flag(d.enabled, 'true', 'false', 'var(--ink-2)')}</span>
           </Row>
           <Row>
-            <span style={mono}>listening (measured · loopback connect)</span>
+            <span style={note}>listening (measured · loopback connect)</span>
             <span style={RIGHT}>{flag(d.listening, 'true', 'false', 'var(--amber)')}</span>
           </Row>
           <Row>
-            <span style={mono}>reachable (enabled AND listening)</span>
+            <span style={note}>reachable (enabled AND listening)</span>
             <span style={RIGHT}>{flag(d.reachable, 'true', 'false', 'var(--red)')}</span>
           </Row>
           <Row>
-            <span style={mono}>protocol</span>
+            <span style={note}>protocol</span>
             <span style={RIGHT}>
               <Tag>{d.protocol || '—'}</Tag>
               <Tag>v{d.version || '—'}</Tag>
@@ -430,14 +433,14 @@ function WyomingCard() {
           {/* The backend's own headline, verbatim. When listening is true it is "" and
               nothing is rendered here — no invented "all good". */}
           {typeof d.note === 'string' && d.note
-            ? <div style={{ ...mono, fontSize: 10.5, color: 'var(--amber)', marginTop: 6, lineHeight: 1.5 }}>{d.note}</div>
+            ? <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6, lineHeight: 1.5 }}>{d.note}</div>
             : null}
         </>
       )}
       <div style={FOOT}>
         GET /api/voice/wyoming · open read (the router is included with no guard). No enable/start control here
         on purpose: nothing in the product constructs or starts WyomingServer — the only construction is the
-        hermetic reality probe — and <code>voice.wyoming_enabled</code> is not a registered settings key, so no
+        hermetic reality probe — and <code style={MONO}>voice.wyoming_enabled</code> is not a registered settings key, so no
         shipped route can turn it on; a toggle would just re-create the enabled-true/nothing-listening
         conflation. The probe connects to 127.0.0.1:&lt;port&gt; with a 0.2s timeout, so a listener bound to
         another interface would also read listening:false.

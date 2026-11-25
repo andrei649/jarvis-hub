@@ -73,8 +73,8 @@ export function ContextRefHints({ items, onPick }: { items: ContextRef[]; onPick
   return (
     <div role="listbox" aria-label="file references"
       style={{ position: 'absolute', bottom: '100%', left: 0, marginBottom: 6, zIndex: 25, maxHeight: 180, overflowY: 'auto',
-        minWidth: 240, padding: '4px 0', borderRadius: 8, background: 'rgba(10,18,24,.98)', border: '1px solid var(--panel-line)',
-        fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+        minWidth: 240, padding: '4px 0', borderRadius: 8, background: 'var(--void-2)', border: '1px solid var(--panel-line)',
+        fontFamily: 'var(--font-mono)', fontSize: 'var(--n-fs-meta)' }}>
       {items.slice(0, 12).map((item, i) => (
         <div key={item.ref} role="option" aria-selected={i === 0} onMouseDown={(e) => { e.preventDefault(); onPick(item.ref); }}
           style={{ padding: '3px 10px', cursor: 'pointer', color: i === 0 ? 'var(--accent-light)' : 'var(--ink-2)' }}>

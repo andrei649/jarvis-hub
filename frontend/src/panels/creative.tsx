@@ -55,7 +55,8 @@
    line starting "not sent" is this panel's own local guard, never something the server
    said. */
 import React, { useState, useEffect, useRef } from 'react';
-import { useApi, arr, mono, asLive, Card, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
+import { useApi, arr, mono, note, asLive, Card, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
+import { IDENT, LABEL } from '../theme/type';
 
 /* The backend's export table keys (pipeline.py:26-35), in table order for the chips and
    alphabetical in the "supported:" sentence. Matching is EXACT and lowercase. */
@@ -78,17 +79,19 @@ const why = (err: any): string => {
 };
 
 const Amber = ({ children }: { children?: any }) => (
-  <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
+  <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
 );
 const Note = ({ children }: { children?: any }) => (
-  <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
+  <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
 );
 const Head = ({ children }: { children?: any }) => (
   <div style={{
-    ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)',
+    ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)',
     marginTop: 12, paddingTop: 7, borderTop: '1px solid var(--panel-line)',
   }}>{children}</div>
 );
+/* A route or field path inside a head is an IDENT span (theme/type.ts): the mono face, in its
+   own case and spacing (contract §5). */
 
 const trimmed = (v: any) => String(v ?? '').trim();
 const isBadNum = (v: any) => trimmed(v) !== '' && !Number.isFinite(Number(trimmed(v)));
@@ -294,7 +297,7 @@ export function CreativePanel() {
           route and no publish route behind this card, so there is no button for either.
         </Note>
 
-        <Head>BRIEF · POST /api/creative/plan</Head>
+        <Head>BRIEF · <span style={IDENT}>POST /api/creative/plan</span></Head>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
           <input
             style={{ ...inpS, flex: '1 1 180px', minWidth: 140 }}
@@ -312,16 +315,14 @@ export function CreativePanel() {
           />
         </div>
         <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', padding: '3px 0' }}>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>platforms</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>platforms</span>
           {TARGETS.map((t) => (
             <button
               key={t}
-              className="tool-btn"
+              className={'tool-btn' + (picked.includes(t) ? ' on' : '')}
               aria-label={`platform ${t}`}
+              aria-pressed={picked.includes(t)}
               onClick={() => togglePlatform(t)}
-              style={picked.includes(t)
-                ? { borderColor: 'var(--accent-light)', color: 'var(--accent-light)' }
-                : { opacity: 0.55 }}
             >{t}</button>
           ))}
           <input
@@ -340,14 +341,14 @@ export function CreativePanel() {
           </Note>
         )}
         <textarea
-          style={{ ...taS, minHeight: 52, fontSize: 11 }}
+          style={{ ...taS, minHeight: 52, fontSize: 'var(--n-fs-meta)' }}
           placeholder="source inputs — one per line (optional; free text, this is what stage 1 is told it may use)"
           value={inputsText}
           onChange={(e) => setInputsText(e.target.value)}
         />
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
           <button className="tool-btn" onClick={runPlan}>plan</button>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
+          <span style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             {picked.length ? `${picked.length} platform(s) picked` : 'no platform picked — the backend substitutes youtube + readme'}
           </span>
         </div>
@@ -381,7 +382,7 @@ export function CreativePanel() {
             {arr(plan, 'stages').map((s: any, i: number) => (
               <Row key={`stage-${s?.id ?? i}`}>
                 <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(s?.id ?? '—')}</span>
-                <span style={{ ...mono, color: 'var(--ink-2)' }}>{String(s?.title ?? '')}</span>
+                <span style={{ ...note, color: 'var(--ink-2)' }}>{String(s?.title ?? '')}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
                   <Tag>{String(s?.kind ?? '')}</Tag>
                   <Tag>{String(s?.generator ?? '')}</Tag>
@@ -404,14 +405,14 @@ export function CreativePanel() {
                 ))}
               </Note>
             )}
-            {planExports.length > 0 && <Head>PLANNED EXPORT SPECS · plan.exports</Head>}
+            {planExports.length > 0 && <Head>PLANNED EXPORT SPECS · <span style={IDENT}>plan.exports</span></Head>}
             {planExports.map((p: any, i: number) => <PackRow key={`px-${p?.target ?? i}`} p={p} />)}
             {showRaw && <Json v={plan} max={200} />}
           </>
         )}
 
         {/* ── export specs — own title, own targets, no substitution ── */}
-        <Head>EXPORT SPECS · POST /api/creative/export-packs</Head>
+        <Head>EXPORT SPECS · <span style={IDENT}>POST /api/creative/export-packs</span></Head>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
           <input
             style={{ ...inpS, flex: '1 1 160px', minWidth: 130 }}
@@ -423,12 +424,10 @@ export function CreativePanel() {
           {TARGETS.map((t) => (
             <button
               key={t}
-              className="tool-btn"
+              className={'tool-btn' + (packTargets.includes(t) ? ' on' : '')}
               aria-label={`target ${t}`}
+              aria-pressed={packTargets.includes(t)}
               onClick={() => toggleTarget(t)}
-              style={packTargets.includes(t)
-                ? { borderColor: 'var(--accent-light)', color: 'var(--accent-light)' }
-                : { opacity: 0.55 }}
             >{t}</button>
           ))}
           <input
@@ -455,7 +454,7 @@ export function CreativePanel() {
         </Note>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingTop: 6 }}>
-          <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
+          <label style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
             <input type="checkbox" checked={showRaw} onChange={(e) => setShowRaw(e.target.checked)} />
             raw response
           </label>
@@ -499,7 +498,7 @@ export function CreativePanel() {
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
           <button className="tool-btn"
             onClick={() => setRows([...rows, { symbol: '', low: '', high: '', quote: '', note: '' }])}>+ watch</button>
-          <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
+          <label style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
             <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} />
             fill missing quotes from the keyless stock-quotes feed (delayed Stooq closes)
           </label>
@@ -509,7 +508,7 @@ export function CreativePanel() {
           position — qty and price in the portfolio below are always your own numbers.
         </Note>
 
-        <Head>POSITIONS · qty × price (both must be numbers or the row is dropped)</Head>
+        <Head>POSITIONS · <span style={{ textTransform: 'none' }}>qty × price (both must be numbers or the row is dropped)</span></Head>
         {positions.map((p, i) => (
           <div key={`p-${i}`} style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', padding: '3px 0' }}>
             <input style={{ ...inpS, flex: '0 0 76px' }} placeholder="position symbol" maxLength={24}
@@ -528,14 +527,14 @@ export function CreativePanel() {
           <button className="tool-btn"
             onClick={() => setPositions([...positions, { symbol: '', qty: '', price: '', kind: 'other' }])}>+ position</button>
           <button className="tool-btn" onClick={runBrief}>brief</button>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>kind is free text — the backend does not enum it</span>
+          <span style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>kind is free text — the backend does not enum it</span>
         </div>
         {briefErr && <Amber>{briefErr}</Amber>}
 
         {brief && (
           <>
             <Row>
-              <span style={{ ...mono, color: 'var(--ink-2)' }}>{String(brief.headline ?? '')}</span>
+              <span style={{ ...note, color: 'var(--ink-2)' }}>{String(brief.headline ?? '')}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
                 {q ? <Tag c={q.live ? 'var(--green)' : 'var(--amber)'}>quotes · {q.live ? 'live' : 'provided'}</Tag> : null}
                 {q && q.source ? <Tag>source {String(q.source)}</Tag> : null}
@@ -563,7 +562,8 @@ export function CreativePanel() {
             {alerts.map((a: any, i: number) => (
               <Row key={`a-${a?.symbol ?? i}`}>
                 <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(a?.symbol ?? '—')}</span>
-                <span style={{ ...mono, color: a?.price == null ? 'var(--ink-2)' : 'var(--ink-2)' }}>
+                {/* A price is a figure (mono); "no quote" is words. */}
+                <span style={{ ...(a?.price == null ? note : mono), color: a?.price == null ? 'var(--ink-2)' : 'var(--ink-2)' }}>
                   {a?.price == null ? 'no quote' : String(a.price)}
                 </span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -586,7 +586,7 @@ export function CreativePanel() {
             {snap && snapCount > 0 && (
               <>
                 <Row>
-                  <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>net worth</span>
+                  <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>net worth</span>
                   <span style={{ ...mono, color: 'var(--ink-2)' }}>{String(snap.net_worth)}</span>
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                     {Object.keys(byKind).map((k) => <Tag key={k}>{k} {String(byKind[k])}</Tag>)}
@@ -612,7 +612,7 @@ export function CreativePanel() {
               </Amber>
             )}
             {brief.disclaimer
-              ? <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', padding: '7px 0 0', lineHeight: 1.5 }}>
+              ? <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', padding: '7px 0 0', lineHeight: 1.5 }}>
                   {String(brief.disclaimer)}
                 </div>
               : <Amber>the response carried no disclaimer field</Amber>}

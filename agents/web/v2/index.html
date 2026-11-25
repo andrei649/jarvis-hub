@@ -1,17 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-look="ledger" data-scheme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#04070e" />
+  <!-- The default theme (Ledger · Carbon) is on <html> before any script runs, so the first paint is
+       never the old look; src/theme/apply.ts then applies the owner's cached choice before React
+       renders and keeps <html> and this colour in step after that. -->
+  <meta name="theme-color" content="#0e1210" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>NERVA · HUD</title>
-  <script type="module" crossorigin src="./assets/index-CCzLGbBY.js"></script>
+  <script type="module" crossorigin src="./assets/index-PRAZa8uN.js"></script>
   <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-XKyaHtl9.js">
-  <link rel="stylesheet" crossorigin href="./assets/index-CRTiodyf.css">
+  <link rel="modulepreload" crossorigin href="./assets/client-BQGzTLgZ.js">
+  <link rel="modulepreload" crossorigin href="./assets/confirm-CNh3CXxh.js">
+  <link rel="modulepreload" crossorigin href="./assets/status-chrome-CnABGHR_.js">
+  <link rel="modulepreload" crossorigin href="./assets/marks-Dj3LQ6Dn.js">
+  <link rel="modulepreload" crossorigin href="./assets/types-BJ6T_QC5.js">
+  <link rel="modulepreload" crossorigin href="./assets/agents-policy-WF-EK6sM.js">
+  <link rel="modulepreload" crossorigin href="./assets/pages-Bs6qFGF-.js">
+  <link rel="stylesheet" crossorigin href="./assets/pages-HdAx9YSN.css">
+  <link rel="stylesheet" crossorigin href="./assets/index-Dq-NCigC.css">
 </head>
 <body>
   <div id="root"></div>

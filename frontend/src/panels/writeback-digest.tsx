@@ -58,7 +58,9 @@ import { internalLink } from '../base-path';
 
    Tier: both routes are Depends(user_guard). No actA, no useApi(…, true) in this file. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
+/* The kit's words style is imported as noteS: `note` is already Head's prop. */
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 /* Plain literals — this is what the HUD parity gate matches, and what the operator
    can grep back to the router. */
@@ -82,12 +84,12 @@ const PROSE_FIELDS = new Set(['content', 'body', 'description', 'text']);
 
 const Head = ({ k, note }: { k: any; note?: any }) => (
   <div style={{ marginTop: 12, marginBottom: 4 }}>
-    <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--accent-light)' }}>{k}</div>
-    {note && <div style={{ fontSize: 10, color: INK2, marginTop: 2, lineHeight: 1.45 }}>{note}</div>}
+    <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)' }}>{k}</div>
+    {note && <div style={{ fontSize: 'var(--n-fs-meta)', color: INK2, marginTop: 2, lineHeight: 1.45 }}>{note}</div>}
   </div>
 );
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ fontSize: 10.5, lineHeight: 1.5, color: c || INK2, marginTop: 6 }}>{children}</div>
+  <div style={{ fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, color: c || INK2, marginTop: 6 }}>{children}</div>
 );
 const Right = ({ children }: { children?: any }) => (
   <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>{children}</span>
@@ -203,7 +205,7 @@ export function WritebackDigestPanel() {
 
       {targets.map((t: any, i: number) => (
         <Row key={t.kind || i}>
-          <span style={{ ...mono, color: 'var(--accent-light)' }}>{t.label || `${t.target}.${t.action}`}</span>
+          <span style={{ ...noteS, color: 'var(--accent-light)' }}>{t.label || `${t.target}.${t.action}`}</span>
           <Right>
             <Tag>{t.kind || `${t.target}.${t.action}`}</Tag>
             {t.credential && <Tag>needs {t.credential}</Tag>}
@@ -247,7 +249,7 @@ export function WritebackDigestPanel() {
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
             <button className="tool-btn" disabled={!ready || sending} onClick={queue}>queue write-back</button>
-            <span style={{ fontSize: 10, color: INK2 }}>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: INK2 }}>
               {ready ? 'validates, then holds it for your approval — no external call happens here' : 'every required field must be filled'}
             </span>
           </div>
@@ -256,7 +258,7 @@ export function WritebackDigestPanel() {
 
       {wbOut && wbOut.queued === true && (
         <div role="alert">
-          <div style={{ ...mono, fontSize: 10.5, color: GREEN, marginTop: 8 }}>
+          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: GREEN, marginTop: 8 }}>
             queued for approval · task #{String(wbOut.task_id)} · {String(wbOut.kind || '')}
           </div>
           <Note>
@@ -265,7 +267,7 @@ export function WritebackDigestPanel() {
             host defers it instead (a result this route never reports back).
           </Note>
           {wbOut.preview && wbOut.preview.summary && (
-            <div style={{ ...mono, fontSize: 10, color: INK2, marginTop: 4 }}>{String(wbOut.preview.summary)}</div>
+            <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: INK2, marginTop: 4 }}>{String(wbOut.preview.summary)}</div>
           )}
           <Json v={wbOut.preview} />
         </div>
@@ -273,7 +275,7 @@ export function WritebackDigestPanel() {
 
       {wbOut && wbOut.queued === false && (
         <div role="alert">
-          <div style={{ ...mono, fontSize: 10.5, color: AMBER, marginTop: 8 }}>
+          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: AMBER, marginTop: 8 }}>
             validation-only preview — no approval queue is attached, nothing was queued
           </div>
           <Note c={AMBER}>
@@ -287,7 +289,7 @@ export function WritebackDigestPanel() {
 
       {wbOut && typeof wbOut.queued !== 'boolean' && (
         <div role="alert">
-          <div style={{ ...mono, fontSize: 10.5, color: AMBER, marginTop: 8 }}>
+          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: AMBER, marginTop: 8 }}>
             unrecognised 200 body — neither queued:true nor queued:false; shown as received
           </div>
           <Json v={wbOut} />
@@ -296,17 +298,17 @@ export function WritebackDigestPanel() {
 
       {wbErr && (
         <div role="alert">
-          <div style={{ ...mono, fontSize: 10.5, color: AMBER, marginTop: 8 }}>
+          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: AMBER, marginTop: 8 }}>
             refused ({String(wbErr.status || '?')}){wbErr.body && wbErr.body.reason ? ` · ${String(wbErr.body.reason)}` : ''}
           </div>
           {wbErr.body && Array.isArray(wbErr.body.missing) && (
-            <div style={{ ...mono, fontSize: 10, color: AMBER }}>missing: {wbErr.body.missing.join(', ')}</div>
+            <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: AMBER }}>missing: {wbErr.body.missing.join(', ')}</div>
           )}
           {wbErr.body && Array.isArray(wbErr.body.required) && (
-            <div style={{ ...mono, fontSize: 10, color: INK2 }}>required: {wbErr.body.required.join(', ')}</div>
+            <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: INK2 }}>required: {wbErr.body.required.join(', ')}</div>
           )}
           {wbErr.body && Array.isArray(wbErr.body.supported) && (
-            <div style={{ ...mono, fontSize: 10, color: INK2 }}>supported: {wbErr.body.supported.join(', ')}</div>
+            <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: INK2 }}>supported: {wbErr.body.supported.join(', ')}</div>
           )}
           {/* The backend's own body, untouched — covers the free-form Action-Kernel deny
               reason, FastAPI's {"detail":[…]} and the JARVIS-* error envelopes. */}
@@ -342,10 +344,9 @@ export function WritebackDigestPanel() {
           {sources.map((n) => (
             <button
               key={n}
-              className="tool-btn"
+              className={'tool-btn' + (sel.includes(n) ? ' on' : '')}
               aria-pressed={sel.includes(n)}
               onClick={() => toggle(n)}
-              style={{ opacity: sel.includes(n) ? 1 : 0.45 }}
             >
               {n}
             </button>
@@ -355,14 +356,14 @@ export function WritebackDigestPanel() {
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
         <button className="tool-btn" disabled={!canRun} onClick={runDigest}>{running ? 'running…' : 'run digest'}</button>
-        {!limitOk && <span style={{ fontSize: 10, color: AMBER }}>limit must be a whole number 1–50 (the route&rsquo;s own ge/le bounds)</span>}
-        {noneSelected && <span style={{ fontSize: 10, color: AMBER }}>select at least one source — an empty list would silently run all of them</span>}
-        {limitOk && !noneSelected && !res && !dErr && <span style={{ fontSize: 10, color: INK2 }}>not run yet</span>}
+        {!limitOk && <span style={{ fontSize: 'var(--n-fs-meta)', color: AMBER }}>limit must be a whole number 1–50 (the route&rsquo;s own ge/le bounds)</span>}
+        {noneSelected && <span style={{ fontSize: 'var(--n-fs-meta)', color: AMBER }}>select at least one source — an empty list would silently run all of them</span>}
+        {limitOk && !noneSelected && !res && !dErr && <span style={{ fontSize: 'var(--n-fs-meta)', color: INK2 }}>not run yet</span>}
       </div>
 
       {dErr && (
         <div role="alert">
-          <div style={{ ...mono, fontSize: 10.5, color: AMBER, marginTop: 8 }}>
+          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: AMBER, marginTop: 8 }}>
             request failed ({String(dErr.status || '?')}) — this is a refusal, not an empty digest
           </div>
           <Json v={dErr.body != null ? dErr.body : dErr.message} />
@@ -371,7 +372,7 @@ export function WritebackDigestPanel() {
 
       {res && (
         <div style={{ marginTop: 8 }}>
-          <div style={{ ...mono, fontSize: 10, color: INK2 }}>
+          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: INK2 }}>
             {String(res.count)} items · sources composed: {arr(res, 'sources').join(', ') || '—'}
             {res.topic ? ` · topic "${String(res.topic)}"` : ' · no topic'}
           </div>
@@ -387,8 +388,8 @@ export function WritebackDigestPanel() {
           {items.map((it: any, i: number) => (
             <Row key={(it && it.link) || (it && it.title) || i}>
               {it && it.link
-                ? <a href={internalLink(String(it.link))} target="_blank" rel="noreferrer noopener" style={{ ...mono, color: 'var(--accent-light)' }}>{String(it.title || it.link)}</a>
-                : <span style={{ ...mono, color: 'var(--accent-light)' }}>{String((it && it.title) || '—')}</span>}
+                ? <a href={internalLink(String(it.link))} target="_blank" rel="noreferrer noopener" style={{ ...noteS, color: 'var(--accent-light)' }}>{String(it.title || it.link)}</a>
+                : <span style={{ ...noteS, color: 'var(--accent-light)' }}>{String((it && it.title) || '—')}</span>}
               <Right>
                 {it && it.source && <Tag>{String(it.source)}</Tag>}
                 {it && it.reality != null && <Tag>reality {String(it.reality)}</Tag>}

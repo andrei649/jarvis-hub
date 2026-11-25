@@ -1,0 +1,391 @@
+/* =====================================================================================
+   Nerva · the legacy bridge (contract v1, ./CONTRACT.md §6)
+   -------------------------------------------------------------------------------------
+   styles.css (HUD v2) speaks in legacy tokens (--void, --ink, --accent, ...); new work and
+   the theme files speak in canonical roles (--n-*). This file joins the two:
+
+     1. Nerva themes   legacy tokens become canonical roles, so every legacy screen takes
+                       the theme's colour, type and shape
+     2. Classic        (obsidian, graphite) the other way round: canonical roles come from the
+                       legacy tokens, so new components render in Classic too
+     3. Nerva only     the page ground and body type, color-scheme, selection, scrollbars,
+                       focus colour and base form controls come from roles
+     4. Nerva only     the HUD v2 cockpit decoration is switched off
+     5. Nerva only     panels take the theme's panel treatment
+
+   The seven Nerva theme ids are listed explicitly in every rule (ledger, presence, briefing,
+   workbench, threshold, console, atlas): a look that is neither listed here nor Classic
+   gets no bridge at all rather than a wrong one. Keep the lists in step with registry.ts.
+
+   Specificity: :root[data-look] .hud-root (0,3,0) outranks the .hud-root[data-accent=...],
+   [data-density=...] and [data-font=...] blocks in styles.css (0,2,0), so the token values
+   those blocks set (--accent..., --pad, --gap, --font-ui) act on Classic only; a Nerva theme
+   takes its emphasis from the theme, and density and typeface through overrides.css.
+   Base element styles use :where() so that any component rule still wins.
+   ===================================================================================== */
+
+/* ---- 1. Nerva themes: legacy tokens -> canonical roles ------------------------------
+   On :root and on .hud-root, because styles.css declares the legacy tokens on both; on
+   .n-theme-scope too, so legacy markup inside a live theme preview follows the preview.
+   The legacy accent is emphasis, not the theme's accent (contract §6, 2026-11-23): styles.css
+   spends it on text, marks and soft grounds (the clock, the rail, tabs, agent names), so it
+   becomes the emphasis ink and its wash. In Ledger that is the ink, and the vermilion is left
+   to the owner's hand. The legacy rules that FILL a control with the accent read
+   --n-primary / --n-on-primary instead, which every look defines. */
+:root[data-look="ledger"],    :root[data-look="ledger"] .hud-root,    .n-theme-scope[data-look="ledger"],
+:root[data-look="presence"],  :root[data-look="presence"] .hud-root,  .n-theme-scope[data-look="presence"],
+:root[data-look="briefing"],  :root[data-look="briefing"] .hud-root,  .n-theme-scope[data-look="briefing"],
+:root[data-look="workbench"], :root[data-look="workbench"] .hud-root, .n-theme-scope[data-look="workbench"],
+:root[data-look="threshold"], :root[data-look="threshold"] .hud-root, .n-theme-scope[data-look="threshold"],
+:root[data-look="console"],   :root[data-look="console"] .hud-root,   .n-theme-scope[data-look="console"],
+:root[data-look="atlas"],     :root[data-look="atlas"] .hud-root,     .n-theme-scope[data-look="atlas"] {
+  --void:          var(--n-bg);
+  --void-2:        var(--n-bg-2);
+  --surface:       var(--n-sheet);
+  --surface-2:     var(--n-sheet-2);
+  --panel-line:    var(--n-rule);
+  --panel-line-2:  var(--n-rule);
+  /* a field's edge: the theme's control edge, 3:1 on every ground a field sits on (contract
+     §3); Classic keeps styles.css's --field-line, the panel hairline */
+  --field-line:    var(--n-rule-field);
+  --bracket:       transparent;
+
+  --accent:        var(--n-emph);
+  --accent-light:  var(--n-emph);
+  --accent-dim:    var(--n-rule-field);
+  --accent-faint:  var(--n-emph-wash);
+  --accent-glow:   transparent;
+
+  --green:         var(--n-ok);
+  --green-dim:     var(--n-ok-wash);
+  --amber:         var(--n-warn);
+  --red:           var(--n-bad);
+  --violet:        var(--n-cloud);
+  /* --danger is not a styles.css token: HUD v2 code read it as an error colour without
+     defining it (styles.css's desktop controls, with a fallback; gap.tsx's inline alerts,
+     bare). In this tree both read --red; the mapping stays so any reader left gets the
+     theme's bad colour instead of inheriting. */
+  --danger:        var(--n-bad);
+
+  --ink:           var(--n-text);
+  --ink-2:         var(--n-text-2);
+  --ink-3:         var(--n-text-3);
+  --ink-4:         var(--n-rule-2);
+
+  --radius:        var(--n-r-1);
+  --pad:           var(--n-panel-pad);
+  --gap:           var(--n-s-3);
+  --glow-text:     none;
+  --shadow:        var(--n-shadow-1);
+  --tex-opacity:   0;
+
+  --font-ui:       var(--n-font-ui);
+  --font-mono:     var(--n-font-mono);
+}
+
+/* ---- 2. Classic: canonical roles <- legacy tokens ------------------------------------
+   Colour roles follow the legacy tokens, so the accent axis, Graphite and density keep
+   working through them. Two deliberate choices: --n-text-3 is --ink-2, because the legacy
+   --ink-3 is decorative (below 4.5:1 on purpose) and the role must stay readable text; the
+   washes are a 12% tint of the status colour, as styles.css draws its status chips. */
+:root[data-look="obsidian"], :root[data-look="obsidian"] .hud-root, .n-theme-scope[data-look="obsidian"],
+:root[data-look="graphite"], :root[data-look="graphite"] .hud-root, .n-theme-scope[data-look="graphite"] {
+  color-scheme: dark;
+
+  --n-bg:          var(--void);
+  --n-bg-2:        var(--void-2);
+  --n-bg-3:        var(--surface-2);
+  --n-sheet:       var(--surface);
+  --n-sheet-2:     var(--surface-2);
+  --n-scrim:       color-mix(in srgb, var(--void) 72%, transparent);
+
+  --n-text:        var(--ink);
+  --n-text-2:      var(--ink-2);
+  --n-text-3:      var(--ink-2);
+
+  --n-rule:        var(--panel-line);
+  --n-rule-2:      var(--ink-4);
+  --n-rule-field:  var(--accent-dim);
+  --n-rule-heavy:  var(--bracket);
+
+  --n-accent:      var(--accent);
+  --n-accent-text: var(--accent-light);
+  --n-accent-wash: var(--accent-faint);
+  --n-on-accent:   var(--void);
+
+  /* The derived roles (contract §3), restated here rather than left to tokens.css: its
+     defaults resolve on <html>, where the legacy tokens are Obsidian with the cyan accent,
+     and .hud-root, which carries the accent axis and Graphite, would inherit those. The values
+     are what the defaults point at, so Classic renders as it did: emphasis is the light
+     accent, a filled primary is the accent with the ground as its text, fields sit on the
+     surface. */
+  --n-emph:        var(--accent-light);
+  --n-emph-wash:   var(--accent-faint);
+  --n-primary:     var(--accent);
+  --n-on-primary:  var(--void);
+  --n-field-bg:    var(--surface);
+
+  --n-stop:        var(--red);
+  --n-on-stop:     var(--void);
+
+  --n-ok:          var(--green);
+  --n-warn:        var(--amber);
+  --n-bad:         var(--red);
+  --n-info:        var(--accent-light);
+  --n-cloud:       var(--violet);
+  --n-ok-wash:     color-mix(in srgb, var(--green) 12%, transparent);
+  --n-warn-wash:   color-mix(in srgb, var(--amber) 12%, transparent);
+  --n-bad-wash:    color-mix(in srgb, var(--red) 12%, transparent);
+
+  --n-focus:       var(--accent);
+  --n-selection:   var(--accent-faint);
+
+  /* Classic's voice: its sans everywhere, mono uppercase tracked labels. Sizes stay on the
+     canonical type scale (tokens.css). */
+  --n-font-ui:      var(--font-ui);
+  --n-font-text:    var(--font-ui);
+  --n-font-title:   var(--font-ui);
+  --n-font-display: var(--font-ui);
+  --n-font-mono:    var(--font-mono);
+  --n-font-label:   var(--font-mono);
+  --n-label-case:   uppercase;
+  --n-label-track:  .1em;
+  /* its terms on one line: a consequence's term column grows to its widest term (tokens.css --n-term-max).
+     In 74px "IF YOU SIGN" (92px) and "CA SĂ ANULEZI" (109px) took two lines each, and the docket's open
+     entry stood 21px (English) to 44px (Romanian) taller than its words need, its sign line below what the
+     docket's body shows at 1280×800 (and in Romanian at 1340–1440×900) */
+  --n-term-max:     max-content;
+
+  /* Classic's shape and panel: a translucent framed card with Graphite's radius when chosen */
+  --n-r-1:          var(--radius);
+  --n-r-2:          var(--radius);
+  --n-r-3:          var(--radius);
+  --n-panel-bg:     var(--surface);
+  --n-panel-border: 1px solid var(--panel-line);
+  --n-panel-top:    1px solid var(--panel-line);
+  --n-panel-radius: var(--radius);
+  --n-panel-shadow: var(--shadow);
+  --n-panel-pad:    var(--pad);
+  /* a register is Classic's framed card too: its words keep a margin from the frame, one for both
+     looks, --n-s-4 (16px; Obsidian's --pad). Graphite's own --pad (20px) narrowed its columns 8px more
+     than Obsidian's: at 1280px the docket's foot then wrapped in Romanian, and the open entry's sign
+     line went 18px further below what the docket's body shows. */
+  --n-register-pad: var(--n-s-4);
+  --n-shadow-1:     var(--shadow);
+}
+
+/* A live preview of a Classic look inside a page of another theme (Personalisation's theme
+   cards). There the page's legacy tokens are already the page theme's roles, so the scope
+   restates Classic's own values from styles.css before the block above derives the roles
+   from them, in styles.css's own order: Obsidian with the cyan accent, then the owner's
+   accent, then Graphite. src/test/theme-apply.test.ts fails if these drift from styles.css.
+   Graphite's block also applies to <html>: styles.css declares Graphite's tokens on .hud-root
+   only, which would leave the page behind it, and the theme colour apply.ts reads before React
+   renders, on Obsidian's ground. */
+.n-theme-scope[data-look="obsidian"],
+.n-theme-scope[data-look="graphite"] {
+  --font-ui: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --void: #04070e; --void-2: #060b15;
+  --surface: rgba(10, 22, 38, .55); --surface-2: rgba(13, 27, 46, .72);
+  --panel-line: rgba(120, 190, 240, .12); --panel-line-2: rgba(120, 190, 240, .06);
+  --field-line: var(--panel-line);
+  --bracket: rgba(140, 205, 250, .42);
+  --accent: #2bb8f0; --accent-light: #8fe0ff; --accent-dim: rgba(43, 184, 240, .40);
+  --accent-faint: rgba(43, 184, 240, .10); --accent-glow: rgba(43, 184, 240, .45);
+  --green: #41f59b; --green-dim: rgba(65, 245, 155, .5); --amber: #ffc24d; --red: #ff5a52; --violet: #a78bfa;
+  --ink: #e9f4fd; --ink-2: rgba(233, 244, 253, .62); --ink-3: rgba(233, 244, 253, .34); --ink-4: rgba(233, 244, 253, .18);
+  --radius: 4px; --pad: 16px; --gap: 14px;
+  --glow-text: 0 0 16px var(--accent-glow); --shadow: 0 18px 50px -28px rgba(0, 0, 0, .9); --tex-opacity: 1;
+}
+/* The owner's Classic accent (Personalisation puts data-accent on its Classic cards): copies
+   of styles.css's .hud-root[data-accent=...] blocks, kept where styles.css keeps them in the
+   cascade, after the defaults and before Graphite at the same weight (:where() adds none). So
+   an accent replaces the cyan defaults, and Graphite's own --panel-line and --bracket still win
+   over the accent's, exactly as in the HUD. */
+.n-theme-scope:where([data-look="obsidian"], [data-look="graphite"])[data-accent="cyan"] {
+  --accent:#2bb8f0;--accent-light:#8fe0ff;--accent-dim:rgba(43,184,240,.4);--accent-faint:rgba(43,184,240,.10);--accent-glow:rgba(43,184,240,.45);--bracket:rgba(140,205,250,.42);--panel-line:rgba(120,190,240,.12);
+}
+.n-theme-scope:where([data-look="obsidian"], [data-look="graphite"])[data-accent="amber"] {
+  --accent:#ffb23f;--accent-light:#ffd787;--accent-dim:rgba(255,178,63,.4);--accent-faint:rgba(255,178,63,.10);--accent-glow:rgba(255,178,63,.42);--bracket:rgba(255,200,120,.42);--panel-line:rgba(255,200,120,.12);
+}
+.n-theme-scope:where([data-look="obsidian"], [data-look="graphite"])[data-accent="green"] {
+  --accent:#41f59b;--accent-light:#9cffd2;--accent-dim:rgba(65,245,155,.4);--accent-faint:rgba(65,245,155,.10);--accent-glow:rgba(65,245,155,.42);--bracket:rgba(120,250,190,.42);--panel-line:rgba(120,250,190,.12);
+}
+.n-theme-scope:where([data-look="obsidian"], [data-look="graphite"])[data-accent="violet"] {
+  --accent:#a78bfa;--accent-light:#d0b6ff;--accent-dim:rgba(167,139,250,.4);--accent-faint:rgba(167,139,250,.10);--accent-glow:rgba(167,139,250,.42);--bracket:rgba(200,180,255,.42);--panel-line:rgba(190,170,255,.12);
+}
+:root[data-look="graphite"],
+.n-theme-scope[data-look="graphite"] {
+  --void: #0b0d11; --void-2: #0f1217;
+  --surface: rgba(26, 30, 38, .66); --surface-2: rgba(32, 37, 46, .82);
+  --panel-line: rgba(150, 160, 175, .13); --panel-line-2: rgba(150, 160, 175, .06); --bracket: rgba(160, 172, 190, .22);
+  --ink: #eef1f5; --ink-2: rgba(238, 241, 245, .62); --ink-3: rgba(238, 241, 245, .36); --ink-4: rgba(238, 241, 245, .16);
+  --radius: 12px; --pad: 20px; --gap: 16px;
+  --glow-text: none; --shadow: 0 24px 60px -32px rgba(0, 0, 0, .75); --tex-opacity: .4;
+}
+
+/* ---- 3. Nerva themes: the page and the platform from roles --------------------------- */
+:root:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]) {
+  color-scheme: dark;
+  background: var(--n-bg);
+  color: var(--n-text);
+  /* thin scrollbars, thumb on the quiet rule; inherited, and it retires styles.css's
+     ::-webkit-scrollbar drawing wherever it applies */
+  scrollbar-color: var(--n-rule-2) transparent;
+}
+:root:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])[data-scheme="light"] {
+  color-scheme: light;
+}
+/* the theme's interface face at its body weight, with its figures (--n-numerals: lining, or
+   lining and tabular for a theme that wants tabular figures everywhere) */
+:root:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]) body {
+  background: var(--n-bg);
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  font-size: var(--n-fs-ui);
+  font-weight: var(--n-w-reg);
+  font-variant-numeric: var(--n-numerals);
+}
+/* A preview scope renders in its own look (contract §2), so it must not keep what the page
+   hands down by inheritance: the ink, the face, the body weight, the figures and the scrollbar
+   colour. It restates its own, at zero specificity so the preview's own class rules still
+   win. A Classic scope takes back what styles.css's body gives the HUD v2 looks. */
+:where(.n-theme-scope:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])) {
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  font-weight: var(--n-w-reg);
+  font-variant-numeric: var(--n-numerals);
+  scrollbar-color: var(--n-rule-2) transparent;
+}
+:where(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"])) {
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-weight: normal;
+  font-variant-numeric: normal;
+  scrollbar-color: auto;
+}
+/* From here to the end of the file the rules follow the theme an element is drawn in, not
+   only the page's: each one matches under a Nerva <html> or a Nerva .n-theme-scope preview,
+   and skips anything inside a Classic preview, which keeps styles.css's cockpit
+   (contract §2: a scope renders its children in the previewed theme). The pattern is
+     :is(:root, .n-theme-scope):is(<the seven ids>) <target>:where(:not(<Classic scope> *))
+   :is(:root, .n-theme-scope) weighs what :root did and :where() weighs nothing, so each rule
+   keeps the specificity it had when it named :root alone. The two rules that reach every
+   element (scrollbar width, selection) also skip the Classic scope element itself. */
+:where(:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  *:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]), .n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  scrollbar-width: thin;
+}
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  :where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]), .n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))::selection {
+  background: var(--n-selection);
+  color: var(--n-text);
+}
+
+/* The focus ring keeps styles.css's geometry (2px outline + 2px offset = 4px, pinned by the
+   nightly reachability spec) and takes the theme's focus colour: in Ledger the accent is the
+   owner's hand and is never spent on Nerva's own chrome. */
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  :where(button, input, a, [tabindex], .rail-btn, .agent-row, .pal-item):focus-visible:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  outline-color: var(--n-focus);
+}
+/* Base form controls inside the HUD: zero specificity, so any component rule wins; what is
+   left unstyled stops rendering as a white platform control on a dark theme. Fields sit on
+   the theme's field fill (--n-field-bg); the next rule, at the same weight and later, puts a
+   bare button back on the raised sheet and gives it the control shape, because the field fill
+   is the fill of inputs, selects and textareas and --n-r-control the shape of buttons
+   (contract §3). */
+:where(:is(:root:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]) .hud-root,
+           .n-theme-scope:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]))
+  :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="image"]), select, textarea, button):not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  background-color: var(--n-field-bg);
+  color: var(--n-text);
+  border: var(--n-hair) solid var(--n-rule-field);
+  border-radius: var(--n-r-1);
+}
+:where(:is(:root:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]) .hud-root,
+           .n-theme-scope:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]))
+  button:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  background-color: var(--n-sheet);
+  border-radius: var(--n-r-control);
+}
+:where(:is(:root:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]) .hud-root,
+           .n-theme-scope:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]))
+  :is(select, textarea):not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  font-family: inherit;
+}
+:where(:is(:root:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]) .hud-root,
+           .n-theme-scope:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]))
+  :is(option, optgroup):not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  background-color: var(--n-field-bg);
+  color: var(--n-text);
+}
+:where(:is(:root:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]) .hud-root,
+           .n-theme-scope:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]))
+  :not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))::placeholder {
+  color: var(--n-text-3);
+  opacity: 1;
+}
+
+/* ---- 4. Nerva themes: the cockpit decoration off ---------------------------------------
+   Texture layers, the scan bar and the corner brackets go; so does the second copy of the
+   ticker, which exists only for the Classic marquee (shell.tsx marks it data-ticker-echo). */
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  :is(.tex-layer, .tex-scanbar, .bk, .ticker-item[data-ticker-echo]):where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  display: none;
+}
+/* clip-path chamfers */
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  :is(.badge, .msg .bubble):where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  clip-path: none;
+}
+/* glows: the ones that do not already go through --glow-text / --accent-glow */
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  :is(.loc-pct, .ambient .amb-clock, .clock-time, .agent-row.active .nm, .wcard .temp, .fin-nw, .art-metric .art-mvalue):where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  text-shadow: none;
+}
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  :is(.sdot, .rail-gw-dot, .cin-dot, .wl-dot, .killbtn:hover):where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  box-shadow: none;
+}
+/* Nothing moves at rest: the reactor's spin, every infinite pulse, blink and flow, and the
+   ticker's marquee. !important because some of these animations are inline styles
+   (network.tsx, modes2.tsx); finite entrances are left to the motion axis (overrides.css). */
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  :is(.brand .reactor .spin1, .brand .reactor .spin2, .ambient-anim, .ticker-track, .ticker-head .dot,
+      .sdot, .center-tab .pip, .dots span, .inputbar .pre, .sb-pre, .mic.on, .flow-edge, .kb-arc):where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)),
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  .killbtn:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))::before {
+  animation: none !important;
+}
+/* The ticker is one still row (WCAG 2.2.2): it scrolls sideways only when the owner scrolls it. */
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  .ticker-marq:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* ---- 5. Nerva themes: panels take the theme's panel treatment --------------------------
+   Ledger draws a register with a heavy rule on top and no box; card themes set a fill, a
+   frame, a radius and a shadow through the same roles. The panel kit's Card is a .panel. */
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  .panel:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  background: var(--n-panel-bg);
+  border: var(--n-panel-border);
+  border-top: var(--n-panel-top);
+  border-radius: var(--n-panel-radius);
+  box-shadow: var(--n-panel-shadow);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+:is(:root, .n-theme-scope):is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"])
+  .panel-head:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  padding: var(--n-s-3) var(--n-panel-pad);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+}

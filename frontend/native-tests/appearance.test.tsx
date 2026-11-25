@@ -7,7 +7,7 @@ import { records, storage } from './support/storage';
 import { foreground } from './support/native';
 const KEY='jarvis.server.config.v1';
 const connection={baseUrl:'https://one.test/prefix',token:'fixture-one',adminToken:''};
-const defaults={accent:'cyan',look:'obsidian',font:'theme'};
+const defaults={accent:'cyan',look:'ledger',font:'theme'};
 const reply=(preferences:any)=>({ok:true,status:200,json:async()=>({configured:true,preferences})});
 let server:any;
 function Probe(){server=useServer();const appearance=useAppearance();return <span data-testid="appearance">{JSON.stringify(appearance)}</span>}
@@ -75,6 +75,13 @@ it('restores normalized same-connection appearance offline on restart',async()=>
   global.fetch=vi.fn().mockRejectedValue(new Error('offline'));
   mount();await waitFor(()=>expect(current().status).toBe('offline'));
   expect(current().preferences).toEqual({...defaults,accent:'amber'});
+});
+
+it('follows every browser theme as the look and ignores the browser-only scheme',async()=>{
+  global.fetch=vi.fn().mockResolvedValue(reply({accent:'violet',look:'atlas',scheme:'light',font:'theme'}));
+  mount();await waitFor(()=>expect(current().preferences.look).toBe('atlas'));
+  expect(current().preferences).toEqual({accent:'violet',look:'atlas',font:'theme'});
+  await waitFor(()=>expect(JSON.parse(records.get(KEY)!).appearance).toEqual({accent:'violet',look:'atlas',font:'theme'}));
 });
 
 it('does not restore delayed legacy hydration over a newly saved connection',async()=>{

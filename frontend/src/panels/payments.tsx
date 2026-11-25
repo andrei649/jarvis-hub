@@ -11,7 +11,7 @@
       money. Choosing a rail is an owner decision, so no settle control exists here
       and no wording on this panel implies a payment completed.
    2. It does not duplicate the payment lifecycle. approve / reject / settle already
-      ship in TrustMode (modes.tsx:225-238) over the already-called GET /api/payments;
+      ship in the Trust overview (pages/TrustOverview.tsx) over the already-called GET /api/payments;
       re-reading that list here would be a second panel over a byte-identical payload.
       A created request is rendered from the POST response instead.
    3. It does not add a second party. The same X-Admin-Token that creates a request
@@ -36,7 +36,9 @@
      create response does not carry it, so it is never computed here — after a create the
      list is reloaded and the number comes from the backend. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, inpS, Json } from '../panel-kit';
+// The panel has its own `note()` renderer, so the kit's note style is noteS here.
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, actA, inpS, Json } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const MANDATES_PATH = '/api/payments/mandates';
 const REQUEST_PATH = '/api/payments/request';
@@ -187,9 +189,9 @@ export function PaymentsPanel() {
   };
 
   const note = (n) => (n ? (
-    <div role="alert" style={{ ...mono, fontSize: 11, marginTop: 6, color: n.kind === 'err' ? 'var(--red)' : 'var(--green)' }}>
+    <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6, color: n.kind === 'err' ? 'var(--red)' : 'var(--green)' }}>
       <div>{n.text}</div>
-      {n.sub ? <div style={{ color: 'var(--ink-2)', fontSize: 10, marginTop: 2 }}>{n.sub}</div> : null}
+      {n.sub ? <div style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', marginTop: 2 }}>{n.sub}</div> : null}
       {n.detail !== undefined && n.detail !== null ? <Json v={n.detail} /> : null}
     </div>
   ) : null);
@@ -207,7 +209,7 @@ export function PaymentsPanel() {
       <State e={e} loading={loading} n={loaded ? mandates.length : null} />
 
       {loaded && mandates.length === 0 && (
-        <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', padding: '4px 0' }}>
+        <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', padding: '4px 0' }}>
           no mandate authorized — the broker holds an empty allowlist, so every payment request is
           denied with the contract's first predicate, <b>unknown_mandate</b> (payments.py:77).
           This is a real empty ledger, not an outage: this router has no component guard and cannot
@@ -233,7 +235,7 @@ export function PaymentsPanel() {
               )
               : <Tag>no expiry</Tag>}
           </span>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {(m && Array.isArray(m.payees) ? m.payees : []).join(' · ')}
           </span>
           <button
@@ -246,7 +248,7 @@ export function PaymentsPanel() {
       ))}
 
       {mandates.some((m) => isExpired(m)) && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
           "expired" is derived here from <b>expires_at</b> vs this browser's clock — the same
           comparison the backend's not_expired predicate makes with the server's clock. The backend
           remains the authority and answers <b>mandate_expired</b>.
@@ -256,7 +258,7 @@ export function PaymentsPanel() {
       {/* ── create mandate (admin) ─────────────────────────────────────────────
           A genuine owner input: an allowlist of payees, two caps, a currency and an
           expiry. Nothing here is agent-produced. */}
-      <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', margin: '10px 0 2px' }}>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '10px 0 2px' }}>
         AUTHORIZE A MANDATE (ADMIN)
       </div>
       <Row>
@@ -274,7 +276,7 @@ export function PaymentsPanel() {
           {cBusy ? 'creating…' : 'create mandate'}
         </button>
       </Row>
-      <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
         {payeeList.length > 0 ? `${payeeList.length} payee(s): ${payeeList.join(' · ')} — ` : 'at least one payee is required — '}
         a blank ttl omits the field, so expires_at is null and the mandate never expires.
         {ttlBad ? ' ttl must be a number greater than 0 (the backend declares gt=0).' : ''}
@@ -284,18 +286,18 @@ export function PaymentsPanel() {
       {note(cNote)}
 
       {/* ── request a payment (admin) ──────────────────────────────────────────── */}
-      <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', margin: '10px 0 2px' }}>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '10px 0 2px' }}>
         REQUEST A PAYMENT AGAINST A MANDATE (ADMIN)
       </div>
       {!sel ? (
-        <div style={{ fontSize: 12, color: 'var(--ink-2)', padding: '4px 0' }}>
+        <div style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)', padding: '4px 0' }}>
           select a mandate above — a request needs a mandate id, and this panel composes it from a
           row it actually fetched rather than from anything typed here.
         </div>
       ) : (
         <>
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>mandate {sel.id}</span>
+            <span style={{ ...noteS, color: 'var(--ink-2)' }}>mandate {sel.id}</span>
             <Tag>currency {sel.currency}</Tag>
             <Tag>per ≤ {num(sel.per_payment_cap)}</Tag>
             <Tag>remaining {Object.prototype.hasOwnProperty.call(sel, 'remaining') ? num(sel.remaining) : '—'}</Tag>
@@ -312,7 +314,7 @@ export function PaymentsPanel() {
               {selPayees.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
             <input value={amount} onChange={(ev) => setAmount(ev.target.value)} placeholder="amount" type="number" style={{ ...inpS, width: 100 }} />
-            <span style={{ ...mono, fontSize: 11, color: 'var(--ink-2)' }} title="not an input — taken from the selected mandate and sent as-is">
+            <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }} title="not an input — taken from the selected mandate and sent as-is">
               {sel.currency}
             </span>
             <input value={memo} onChange={(ev) => setMemo(ev.target.value)} placeholder="memo (optional, ≤280)" maxLength={280} style={{ ...inpS, flex: 1, minWidth: 120 }} />
@@ -320,7 +322,7 @@ export function PaymentsPanel() {
               {rBusy ? 'requesting…' : 'request (pending)'}
             </button>
           </Row>
-          <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             Currency is not an input: the selected mandate's <b>{sel.currency}</b> is sent, so the UI
             cannot manufacture a currency_mismatch — the backend still denies one verbatim if it
             ever disagrees. The payee list is this mandate's own allowlist for the same reason.
@@ -333,7 +335,7 @@ export function PaymentsPanel() {
       {note(rNote)}
 
       {/* ── footer: every claim below is from the handler or the broker ───────── */}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 8 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 8 }}>
         All three routes on this panel are admin-tier (X-Admin-Token): the mandate list read, the
         mandate create and the payment request (routers/payments.py:49/59/64).
         <br />

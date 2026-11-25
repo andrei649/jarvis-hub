@@ -14,7 +14,8 @@
    card's LIVE badge while the hub is writing its file. When file logging is off (the
    default) the panel says how to turn it on instead of showing an empty log. */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, State, arr, inpS, mono, useApi } from '../panel-kit';
+import { Card, State, arr, inpS, mono, note, useApi } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export const LOG_LEVELS = ['ALL', 'INFO', 'WARNING', 'ERROR'];
 export const LOG_LINES = [100, 200, 500];
@@ -41,11 +42,11 @@ export function levelColor(level: string): string {
 function Segmented({ label, options, value, onChange }: { label: string; options: any[]; value: any; onChange: (v: any) => void }) {
   return (
     <div role="group" aria-label={label} style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginRight: 4 }}>{label}</span>
+      <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginRight: 4 }}>{label}</span>
       {options.map((opt) => (
-        <button key={String(opt)} className="tool-btn" aria-pressed={opt === value}
+        <button key={String(opt)} className={'tool-btn' + (opt === value ? ' on' : '')} aria-pressed={opt === value}
           onClick={() => onChange(opt)}
-          style={{ padding: '2px 6px', opacity: opt === value ? 1 : 0.55 }}>{String(opt)}</button>
+          style={{ padding: '2px 6px' }}>{String(opt)}</button>
       ))}
     </div>
   );
@@ -92,7 +93,7 @@ export function LogsPanel() {
     <Card title="Hub log" sub={d?.file ? `${d.file} · newest first` : 'the hub’s own log'}
       live={showLive ? 'live' : undefined} onReload={reload}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
+        <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           File{' '}
           <select aria-label="File" value={file || d?.file || ''} style={inpS}
             onChange={(ev) => setFile(ev.target.value)} disabled={!files.length}>
@@ -100,7 +101,7 @@ export function LogsPanel() {
           </select>
         </label>
         <Segmented label="Level" options={LOG_LEVELS} value={level} onChange={setLevel} />
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
+        <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           Component{' '}
           <select aria-label="Component" value={component} style={inpS}
             onChange={(ev) => setComponent(ev.target.value)}>
@@ -109,19 +110,19 @@ export function LogsPanel() {
           </select>
         </label>
         <Segmented label="Lines" options={LOG_LINES} value={lines} onChange={setLines} />
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
+        <label style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
           <input type="checkbox" aria-label="Auto-refresh every 5 s" checked={live}
             onChange={(ev) => setLive(ev.target.checked)} />
           auto-refresh 5 s
         </label>
       </div>
-      {refused && <div style={{ color: 'var(--amber)', fontSize: 12 }}>The log needs the admin token (Settings → admin token).</div>}
-      {!refused && status === 400 && <div style={{ color: 'var(--amber)', fontSize: 12 }}>The hub refused the filter: {reason || e}</div>}
+      {refused && <div style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-label)' }}>The log needs the admin token (Settings → admin token).</div>}
+      {!refused && status === 400 && <div style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-label)' }}>The hub refused the filter: {reason || e}</div>}
       {!refused && status !== 400 && <State e={e} loading={loading && !d} n={entries.length} />}
-      {d?.note && <div role="note" style={{ fontSize: 12, color: d.enabled ? 'var(--ink-2)' : 'var(--amber)', margin: '6px 0' }}>{d.note}</div>}
-      {d && !status && !d.note && !entries.length && <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>No records match these filters.</div>}
+      {d?.note && <div role="note" style={{ fontSize: 'var(--n-fs-label)', color: d.enabled ? 'var(--ink-2)' : 'var(--amber)', margin: '6px 0' }}>{d.note}</div>}
+      {d && !status && !d.note && !entries.length && <div style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)' }}>No records match these filters.</div>}
       {!status && d?.truncated && (
-        <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', margin: '4px 0' }}>
+        <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '4px 0' }}>
           only the last {Math.round(Number(d.scanned_bytes || 0) / 1024)} KiB of the file were read
         </div>
       )}

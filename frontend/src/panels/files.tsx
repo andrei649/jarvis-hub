@@ -128,19 +128,19 @@ export function FilesPanel() {
   return (
     <Card title="FILES" live={roots.d ? 'live' : undefined} onReload={() => { roots.reload(); load(); }}
       sub={current ? `${current.label} · ${listing ? listing.entries.length : 0} shown${listing?.hidden ? ` · ${listing.hidden} hidden` : ''}` : null}>
-      {roots.e && <div role="status" style={{ color: 'var(--amber)', fontSize: 11 }}>not loaded · {String(roots.e)}</div>}
-      <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginBottom: 6 }}>
+      {roots.e && <div role="status" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>not loaded · {String(roots.e)}</div>}
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
         Only approved folders (<span style={mono}>{(roots.d as any)?.configured_by || 'NERVA_FILE_BROWSER_DIRS'}</span>). Credentials, keys, databases and hidden files are never shown. Rename and delete become a card in the decision inbox.
         {maxBytes ? ` Limit ${humanSize(maxBytes)} per file.` : null}
       </div>
-      {roots.d && !list.length && <div style={{ fontSize: 11 }}>No approved folder exists yet.</div>}
+      {roots.d && !list.length && <div style={{ fontSize: 'var(--n-fs-meta)' }}>No approved folder exists yet.</div>}
       {list.length > 0 && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
-          <label htmlFor="files-root" style={{ fontSize: 10.5 }}>Folder</label>
+          <label htmlFor="files-root" style={{ fontSize: 'var(--n-fs-meta)' }}>Folder</label>
           <select id="files-root" value={root} onChange={(ev) => setRoot(ev.target.value)} style={inpS}>
             {list.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
           </select>
-          <nav aria-label="path" style={{ ...mono, fontSize: 11 }}>
+          <nav aria-label="path" style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>
             <button className="tool-btn" onClick={() => load(root, '')}>{current?.label || '/'}</button>
             {crumbs.map((c, i) => (
               <span key={i}> / <button className="tool-btn" onClick={() => load(root, crumbs.slice(0, i + 1).join('/'))}>{c}</button></span>
@@ -148,13 +148,13 @@ export function FilesPanel() {
           </nav>
         </div>
       )}
-      {err && <div role="status" style={{ color: 'var(--amber)', fontSize: 11 }}>refused · {err}</div>}
-      {note && <div role="status" style={{ color: 'var(--ink-2)', fontSize: 11, marginBottom: 4 }}>{note}</div>}
+      {err && <div role="status" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>refused · {err}</div>}
+      {note && <div role="status" style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', marginBottom: 4 }}>{note}</div>}
       {root && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
-          <label htmlFor="files-upload" style={{ fontSize: 10.5 }}>Upload</label>
-          <input id="files-upload" type="file" ref={fileInput} onChange={(ev) => { void upload(ev.target.files); }} style={{ fontSize: 10.5 }} />
-          <label htmlFor="files-mkdir" style={{ fontSize: 10.5 }}>New folder</label>
+          <label htmlFor="files-upload" style={{ fontSize: 'var(--n-fs-meta)' }}>Upload</label>
+          <input id="files-upload" type="file" ref={fileInput} onChange={(ev) => { void upload(ev.target.files); }} style={{ fontSize: 'var(--n-fs-meta)' }} />
+          <label htmlFor="files-mkdir" style={{ fontSize: 'var(--n-fs-meta)' }}>New folder</label>
           <input id="files-mkdir" value={folder} onChange={(ev) => setFolder(ev.target.value)} style={{ ...inpS, width: 120 }} />
           <button className="tool-btn" onClick={mkdir} disabled={!folder.trim()}>make</button>
         </div>
@@ -176,12 +176,12 @@ export function FilesPanel() {
               <button className="tool-btn" onClick={() => open(e)} aria-label={`open ${e.name}`}>{e.kind === 'dir' ? '▸ ' : ''}{e.name}</button>
               {e.kind !== 'file' && <Tag>{e.kind}</Tag>}
               {e.hard_link && <Tag c="var(--amber)">hard link · not readable</Tag>}
-              <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{humanSize(e.size)}</span>
+              <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{humanSize(e.size)}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                 {e.kind === 'file' && <button className="tool-btn" onClick={() => download(e)}>download</button>}
                 {renaming === e.name ? (
                   <>
-                    <label htmlFor={`rename-${e.name}`} style={{ fontSize: 10.5 }}>to</label>
+                    <label htmlFor={`rename-${e.name}`} style={{ fontSize: 'var(--n-fs-meta)' }}>to</label>
                     <input id={`rename-${e.name}`} value={newName} onChange={(ev) => setNewName(ev.target.value)} style={{ ...inpS, width: 120 }} />
                     <button className="tool-btn" onClick={() => rename(e)} disabled={!newName.trim()}>ask</button>
                     <button className="tool-btn" onClick={() => { setRenaming(null); setNewName(''); }}>cancel</button>
@@ -193,16 +193,16 @@ export function FilesPanel() {
               </span>
             </li>
           ))}
-          {!listing.entries.length && <li style={{ fontSize: 11, color: 'var(--ink-2)' }}>empty</li>}
-          {listing.truncated && <li style={{ fontSize: 11, color: 'var(--amber)' }}>more entries than shown</li>}
+          {!listing.entries.length && <li style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>empty</li>}
+          {listing.truncated && <li style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>more entries than shown</li>}
         </ul>
         </div>
       )}
       {preview && (
         <div style={{ marginTop: 8 }} aria-label="preview">
-          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>{preview.path} · {humanSize(preview.size)}{preview.truncated ? ' · first 256 KiB' : ''}</div>
+          <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{preview.path} · {humanSize(preview.size)}{preview.truncated ? ' · first 256 KiB' : ''}</div>
           {preview.binary
-            ? <div style={{ fontSize: 11 }}>binary file · download it to open</div>
+            ? <div style={{ fontSize: 'var(--n-fs-meta)' }}>binary file · download it to open</div>
             : <pre style={{ ...mono, maxHeight: 320, overflow: 'auto', whiteSpace: 'pre-wrap', background: 'var(--surface)', padding: 6 }}>{preview.text}</pre>}
         </div>
       )}

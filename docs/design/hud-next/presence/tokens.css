@@ -1,0 +1,212 @@
+/* ==========================================================================
+   Nerva · Presence — design tokens
+   --------------------------------------------------------------------------
+   One token set, two themes. Every colour is declared once with light-dark();
+   the theme is chosen by `data-theme` on <html> (dark is the default), which
+   only flips `color-scheme`. No component ever branches on the theme.
+
+   Three tiers:
+     1. primitives  — raw steps (space, radius, type, the two hue families)
+     2. semantic    — roles a component may use (ground, ink, line, yours, danger…)
+     3. component   — a handful of sizes that more than one page shares
+
+   Colour rule of the direction (README §2):
+     - neutral ink on a neutral ground is the normal state of everything;
+     - TUNGSTEN (--yours*)   means "this is waiting for the owner";
+     - SIGNAL RED (--danger*) means "cannot be undone, or broken";
+     - nothing else is coloured. "OK" is quiet ink plus a glyph, never green.
+
+   Size rule: every length is in rem, so one line changes the whole scale.
+   The root is 16 px; on the owner's 2560-wide screen it steps to 18 px and a
+   third column appears (the room is used, not stretched into). Narrow windows
+   keep the 16 px root and step the display sizes down instead.
+
+   Convergence note: spacing is the same 4 / 8 px grid and the radii include
+   the 6 / 10 / 14 steps of the existing Workspace `--ws-*` tokens, so the two
+   systems can be merged by renaming, not by redrawing (README §7).
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+  font-size: 100%;                 /* 16 px; see the size steps at the end */
+
+  /* ---- 1. primitives --------------------------------------------------- */
+
+  /* space: 4 px base, 8 px rhythm */
+  --sp-1: 0.25rem;   /*  4 */
+  --sp-2: 0.5rem;    /*  8 */
+  --sp-3: 0.75rem;   /* 12 */
+  --sp-4: 1rem;      /* 16 */
+  --sp-5: 1.5rem;    /* 24 */
+  --sp-6: 2rem;      /* 32 */
+  --sp-7: 3rem;      /* 48 */
+  --sp-8: 4rem;      /* 64 */
+
+  /* radius: short concentric scale (xs is for tags and tier bars only) */
+  --radius-xs: 3px;
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+  --radius-full: 999px;
+
+  /* type families
+     UI: a DIN with a width axis. Bahnschrift is the installed stand-in;
+     production ships Barlow + Barlow Semi Condensed (SIL OFL), self-hosted. */
+  --font-ui: "Bahnschrift", "Barlow", "DIN Next", "Segoe UI Variable Text", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* type scale. Nothing below --fs-micro exists. (px at the 16 px root) */
+  --fs-micro: 0.75rem;       /* 12  labels above a value, table captions */
+  --fs-small: 0.8125rem;     /* 13  secondary text, notes, meta */
+  --fs-body: 0.9375rem;      /* 15  controls, list text */
+  --fs-talk: 1rem;           /* 16  what was said: the transcript */
+  --fs-lead: 1.0625rem;      /* 17  decision titles, column heads */
+  --fs-title: 1.3125rem;     /* 21  the title of the open decision */
+  --fs-stage: 1.625rem;      /* 26  the live turn: what is being said now */
+  --fs-status: 2rem;         /* 32  the one sentence saying what is happening now */
+  --fs-statement: 2.875rem;  /* 46  a sentence the presence says to you */
+  --fs-glance: 6.5rem;       /* 104 glance-mode values */
+  --fs-clock: 15rem;         /* 240 glance-mode time */
+
+  --lh-tight: 1.12;
+  --lh-snug: 1.3;
+  --lh-body: 1.5;
+
+  /* weights, as DIN names them. In the Bahnschrift stand-in 350 ("SemiLight") is the
+     text weight and 400 ("Regular") already reads as a medium; in production these map
+     to Barlow 400 / 500 / 600. Only these steps exist — no intermediate weights. */
+  --fw-light: 300;           /* glance numerals, decision numerals */
+  --fw-text: 350;            /* running text, statements, stage text */
+  --fw-medium: 400;          /* values in the foot */
+  --fw-strong: 600;          /* names, titles, the one emphasised word */
+
+  --track-body: 0.012em;     /* DIN is tight at text sizes */
+  --track-label: 0.03em;
+  --track-display: -0.005em;
+
+  /* width axis: the type condenses before anything is hidden */
+  --width-normal: 100%;
+  --width-narrow: 75%;
+
+  /* the two hue families, as OKLCH hue angles */
+  --hue-neutral: 78;         /* a trace of warmth so the neutrals sit with tungsten */
+  --hue-tungsten: 76;
+  --hue-red: 27;
+
+  /* motion: still by default; one short ease-out when a state changes */
+  --dur-state: 180ms;
+  --dur-enter: 220ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- 2. semantic ----------------------------------------------------- */
+
+  /* surfaces (all opaque) */
+  --ground:      light-dark(oklch(0.968 0.005 85), oklch(0.165 0.004 78));  /* the page */
+  --surface:     light-dark(oklch(0.995 0.002 85), oklch(0.208 0.005 78));  /* a plate: open decision, composer */
+  --surface-2:   light-dark(oklch(0.944 0.006 85), oklch(0.250 0.005 78));  /* a field, a selected segment */
+  --sunken:      light-dark(oklch(0.946 0.007 85), oklch(0.138 0.004 78));  /* the foot, the sub-navigation */
+
+  /* elevation: paper sits on the desk with a contact shadow; in the dark a plate is
+     simply a lighter surface. Only plates that hold a decision or the composer use it. */
+  --plate-shadow: light-dark(0 1px 0 oklch(0.86 0.008 85), 0 0 0 transparent);
+  --layer-shadow: light-dark(0 10px 30px -12px oklch(0.4 0.02 70 / 0.35), 0 14px 34px -14px oklch(0 0 0 / 0.7));
+
+  /* lines */
+  --line:        light-dark(oklch(0.892 0.007 85), oklch(0.262 0.005 78));  /* hairline between things */
+  --line-strong: light-dark(oklch(0.760 0.009 85), oklch(0.390 0.006 78));  /* control borders */
+
+  /* ink */
+  --ink-1:       light-dark(oklch(0.215 0.012 70), oklch(0.955 0.008 85));  /* what you read now */
+  --ink-2:       light-dark(oklch(0.395 0.012 70), oklch(0.800 0.010 82));  /* what supports it; resting values */
+  --ink-3:       light-dark(oklch(0.495 0.012 72), oklch(0.690 0.010 80));  /* labels, meta (still >= 4.5:1) */
+  --ink-faint:   light-dark(oklch(0.700 0.010 80), oklch(0.470 0.008 80));  /* non-text only: pending strokes, ticks */
+
+  /* TUNGSTEN — "yours": something is waiting for the owner.
+     In the dark it is a lamp: the word itself is lit. On paper a lamp means nothing, so it
+     becomes a highlighter: ink stays ink and the marker sits behind or under it. */
+  --yours:       light-dark(oklch(0.500 0.130 58), oklch(0.830 0.125 76));  /* text and glyphs */
+  --yours-fill:  light-dark(oklch(0.860 0.145 84), oklch(0.830 0.125 76));  /* fills: marker, primary action */
+  --yours-dot:   light-dark(oklch(0.640 0.150 64), oklch(0.830 0.125 76));  /* small indicators: bead, waiting node (>= 3:1) */
+  --on-yours:    light-dark(oklch(0.215 0.030 70), oklch(0.185 0.025 70));  /* text on a tungsten fill */
+  --yours-wash:  light-dark(oklch(0.925 0.070 85), oklch(0.275 0.035 76));  /* a marked surface (opaque) */
+  --yours-line:  light-dark(oklch(0.640 0.130 70), oklch(0.560 0.090 76));  /* border of a field that is yours */
+  /* how a "yours" word is marked: lit text in the dark, a highlighter on paper */
+  --yours-mark-ink:  light-dark(var(--ink-1), var(--yours));
+  --yours-mark-bg:   light-dark(var(--yours-fill), transparent);
+  /* a "yours" link: lit and finely underlined in the dark, a marker stroke under ink on paper */
+  --yours-ul-ink:    light-dark(var(--ink-1), var(--yours));
+  --yours-ul-line:   light-dark(var(--yours-fill), var(--yours));
+  --yours-ul-thick:  1px;      /* lengths cannot use light-dark(): see the light block below */
+  --yours-ul-offset: 3px;
+
+  /* SIGNAL RED — "cannot be undone, or broken" */
+  --danger:      light-dark(oklch(0.505 0.190 27), oklch(0.720 0.170 27));  /* text and glyphs */
+  --danger-fill: light-dark(oklch(0.520 0.200 27), oklch(0.560 0.200 27));  /* the emergency stop, when pressed */
+  --on-danger:   light-dark(oklch(0.990 0.005 85), oklch(0.990 0.005 85));
+  --danger-wash: light-dark(oklch(0.945 0.030 27), oklch(0.255 0.045 27));
+  --danger-line: light-dark(oklch(0.640 0.170 27), oklch(0.520 0.150 27));
+
+  /* focus: ink, not tungsten — tungsten is never spent on chrome */
+  --focus:       var(--ink-1);
+
+  /* the mark */
+  --mark-ink:    var(--ink-1);     /* the part of the path already travelled */
+  --mark-rest:   var(--ink-faint); /* the path at rest, or still ahead */
+  --mark-ring:   var(--ink-3);     /* the boundary of this machine */
+  --mark-bead:   var(--yours-dot); /* something is held at the boundary for you */
+
+  /* ---- 3. component sizes shared by pages ------------------------------ */
+  --bar-h: 3.5rem;           /* 56  top line: brand, the nine areas, search */
+  --foot-h: 4rem;            /* 64  the instrument foot: health and trust tell-tales */
+  --page-pad: 2.5rem;        /* 40 */
+  --control-h: 2.25rem;      /* 36 */
+  --control-h-s: 1.875rem;   /* 30 */
+  --mark-live: 5.75rem;      /* 92  the live mark beside the status sentence */
+  --measure: 40rem;          /* 640 the longest comfortable line of running text */
+}
+
+:root[data-theme="dark"]  { color-scheme: dark; }
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* the only non-colour tokens that differ by theme: the marker stroke is thick on paper */
+  --yours-ul-thick: 0.36em;
+  --yours-ul-offset: -0.2em;
+}
+
+/* ---- size steps ----------------------------------------------------------
+   large   >= 2200 px  the owner's 31-inch screen: root 18 px, three columns
+   regular             1920 × 1080: root 16 px, two columns with a margin
+   narrow  <= 1500 px  margin notes fold under the speech; type condenses
+   compact <= 1320 px  the desktop shell's default window (1280 × 820)      */
+@media (min-width: 2200px) {
+  :root {
+    font-size: 112.5%;
+    --fs-stage: 1.6875rem;      /* 30 at 18 px */
+    --fs-status: 2rem;          /* 36 */
+    --fs-statement: 3.25rem;    /* 58 */
+    --mark-live: 6.5rem;
+  }
+}
+@media (max-width: 1500px) {
+  :root {
+    --page-pad: 1.75rem;
+    --fs-statement: 2.25rem;    /* 36 */
+    --fs-status: 1.625rem;      /* 26 */
+    --fs-stage: 1.375rem;       /* 22 */
+    --fs-title: 1.1875rem;      /* 19 */
+    --foot-h: 3.75rem;
+    --mark-live: 4.5rem;
+  }
+}
+@media (max-width: 1320px) {
+  :root {
+    --page-pad: 1.375rem;
+    --fs-statement: 1.875rem;   /* 30 */
+    --fs-status: 1.4375rem;     /* 23 */
+    --fs-stage: 1.25rem;        /* 20 */
+    --fs-title: 1.125rem;       /* 18 */
+    --bar-h: 3.25rem;
+    --foot-h: 3.5rem;
+    --mark-live: 3.75rem;
+  }
+}

@@ -1,0 +1,123 @@
+/* The Ctrl K sheet (PHASE_B_PLAN.md §3.7). Roles only: no colour literal, type from the --n-fs-*
+   scale, no case or tracking of its own. The primitives it uses (n-field, n-tag, n-kbd) are
+   Phase A's and are not redefined here. */
+
+.n-cmd {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh var(--n-s-4) var(--n-s-4);
+  background: var(--n-scrim);
+}
+
+.n-cmd-sheet {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(680px, 100%);
+  max-height: min(70vh, 640px);
+  background: var(--n-sheet);
+  border: var(--n-hair) solid var(--n-rule-field);
+  border-radius: var(--n-r-2);
+  box-shadow: var(--n-shadow-sheet);
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+  overflow: hidden;
+}
+
+.n-cmd-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--n-s-2);
+  padding: var(--n-s-3);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+}
+.n-cmd-input { flex: 1 1 auto; min-width: 0; }
+.n-cmd-scope { flex: none; cursor: pointer; }
+.n-cmd-chord { flex: none; }
+.n-cmd-close { flex: none; }
+.n-cmd-sheet:focus { outline: none; }
+
+.n-cmd-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--n-s-1) 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--n-rule-2) transparent;
+}
+
+.n-cmd-group-head {
+  padding: var(--n-s-3) var(--n-s-4) var(--n-s-1);
+  font-family: var(--n-font-label);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  color: var(--n-text-3);
+}
+
+.n-cmd-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--n-s-3);
+  padding: var(--n-s-2) var(--n-s-4);
+  border-left: var(--n-heavy) solid transparent;
+  cursor: pointer;
+}
+.n-cmd-item[data-active="true"] {
+  background: var(--n-emph-wash);
+  border-left-color: var(--n-emph);
+}
+.n-cmd-label { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; color: var(--n-text); }
+.n-cmd-item[data-active="true"] .n-cmd-label { font-weight: var(--n-w-semi); }
+/* On the selected wash the quiet text-3 reads too faint: step up to text-2. */
+.n-cmd-item[data-active="true"] .n-cmd-hint,
+.n-cmd-item[data-active="true"] .n-cmd-kind { color: var(--n-text-2); }
+.n-cmd-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--n-fs-label);
+  color: var(--n-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.n-cmd-kind {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--n-fs-meta);
+  color: var(--n-text-3);
+}
+.n-cmd-hint + .n-cmd-kind { margin-left: 0; }
+
+.n-cmd-none {
+  margin: 0;
+  padding: var(--n-s-4);
+  color: var(--n-text-2);
+}
+
+.n-cmd-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--n-s-3);
+  padding: var(--n-s-2) var(--n-s-4);
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-meta);
+  color: var(--n-text-3);
+}
+.n-cmd-count { flex: 1 1 auto; }
+.n-cmd-keys { display: flex; flex-wrap: wrap; gap: var(--n-s-3); }
+
+@media (max-width: 759px) {
+  .n-cmd { padding-top: var(--n-s-4); }
+  .n-cmd-sheet { max-height: 100%; }
+  .n-cmd-keys { display: none; }
+  .n-cmd-item { flex-wrap: wrap; row-gap: 0; }
+  .n-cmd-hint { flex-basis: 100%; order: 3; }
+}

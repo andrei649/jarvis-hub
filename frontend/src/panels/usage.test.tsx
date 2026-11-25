@@ -2,7 +2,7 @@
 import React from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { ConsoleOverlay } from '../gap';
+import { ConsolePanel } from '../gap';
 import { CONSOLE_PANEL_MAP } from '../console-routes';
 
 beforeEach(() => {
@@ -16,7 +16,7 @@ it('makes Usage a reachable Command Center section', () => {
   expect(CONSOLE_PANEL_MAP.get('usage')?.group).toBe('Start');
 });
 
-it('shows the actual APM response totals and breakdowns in the console', async () => {
+it('shows the actual APM response totals and breakdowns on its page (Console panel apm)', async () => {
   global.fetch = vi.fn().mockImplementation((url) => Promise.resolve({
     ok: true, status: 200, json: async () => String(url).includes('/api/admin/apm') ? {
       totals: { runs: 3, input_tokens: 6000, output_tokens: 2000, cost_usd: 0.012,
@@ -32,7 +32,7 @@ it('shows the actual APM response totals and breakdowns in the console', async (
       },
     } : {},
   }));
-  render(<ConsoleOverlay panelId="apm" onClose={() => {}} />);
+  render(<ConsolePanel panelId="apm" />);
   await waitFor(() => expect(screen.getByText('all usage')).toBeTruthy());
   const total = screen.getByText('all usage').parentElement!.textContent!;
   expect(total).toContain('3 runs');
@@ -52,7 +52,7 @@ it('shows the actual APM response totals and breakdowns in the console', async (
 
 it('opens the read-only Billing tab in Settings', async () => {
   global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
-  render(<ConsoleOverlay panelId="settings" onClose={() => {}} />);
+  render(<ConsolePanel panelId="settings" />);
   fireEvent.click(screen.getByRole('tab', { name: 'Billing' }));
   expect(screen.getByRole('tab', { name: 'Billing' }).getAttribute('aria-selected')).toBe('true');
   await waitFor(() => expect(screen.getByText('USAGE')).toBeTruthy());

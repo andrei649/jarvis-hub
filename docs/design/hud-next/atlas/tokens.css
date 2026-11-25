@@ -1,0 +1,176 @@
+/* ==========================================================================
+   Nerva · Atlas — design tokens
+   One token set, two themes. Every colour is declared once with light-dark();
+   the theme is chosen by `color-scheme`, which follows data-theme on <html>.
+   Default theme: dark ("night chart"). Light is "the printed atlas":
+   warm paper ground, sage land, ink — not an inversion of the dark values.
+
+   Naming is role-first so the HUD stylesheet and the Workspace kit (--ws-*)
+   can converge on the same names: ground / land / sheet, ink, line, accent,
+   status, tier, radius, space, type, elevation, motion.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* light text on paper needs a touch more weight than light-on-dark */
+  --w-regular: 400;
+  --w-medium: 500;
+  --w-semi: 610;
+  --w-bold: 700;
+}
+
+:root {
+  /* ---- Surfaces (opaque, four steps) ------------------------------------
+     ground  the table everything sits on; the map is drawn straight onto it
+     land    the map's districts: flat, one step above ground, never shadowed
+     sheet   floating work surfaces (conversation, decisions, panel index)
+     sheet-2 controls and insets inside a sheet (composer, bubbles, open card)
+     sheet-3 pressed / selected fills                                        */
+  --ground:   light-dark(oklch(0.952 0.008 92),  oklch(0.140 0.006 170));
+  --land:     light-dark(oklch(0.918 0.024 145), oklch(0.184 0.011 168));
+  --land-2:   light-dark(oklch(0.890 0.030 145), oklch(0.222 0.013 168));
+  --sheet:    light-dark(oklch(0.994 0.003 95),  oklch(0.203 0.007 170));
+  --sheet-2:  light-dark(oklch(0.966 0.006 95),  oklch(0.240 0.008 170));
+  --sheet-3:  light-dark(oklch(0.927 0.010 100), oklch(0.290 0.009 170));
+
+  /* ---- Lines -------------------------------------------------------------
+     line    hairlines that group (felt, not seen)
+     line-2  boundaries of controls (>= 3:1 against the surface they sit on)
+     wall    the perimeter of the machine on the map                         */
+  --line:     light-dark(oklch(0.895 0.009 95),  oklch(0.283 0.008 170));
+  --line-2:   light-dark(oklch(0.620 0.014 125), oklch(0.505 0.010 170));
+  --wall:     light-dark(oklch(0.520 0.030 150), oklch(0.585 0.014 168));
+
+  /* ---- Ink (text and glyphs) ---------------------------------------------
+     ink     primary text
+     ink-2   secondary text
+     ink-3   tertiary text: the dimmest step still allowed to carry words
+     ink-4   glyph-only step (idle rings, empty pips): never used for text   */
+  --ink:      light-dark(oklch(0.205 0.020 165), oklch(0.955 0.006 170));
+  --ink-2:    light-dark(oklch(0.345 0.018 165), oklch(0.835 0.008 170));
+  --ink-3:    light-dark(oklch(0.450 0.016 165), oklch(0.720 0.010 170));
+  --ink-4:    light-dark(oklch(0.610 0.012 165), oklch(0.530 0.010 170));
+
+  /* ---- The accent: "home" emerald ----------------------------------------
+     One meaning: you / here / on this machine. The route of your words,
+     the primary action, the focus ring, locality facts, "you are here".
+     Never used to mean "ok" — ok is quiet ink and a check.                  */
+  --home:         light-dark(oklch(0.470 0.120 162), oklch(0.805 0.150 162));
+  --home-fill:    light-dark(oklch(0.465 0.120 162), oklch(0.790 0.150 162));
+  --on-home:      light-dark(oklch(0.990 0.010 160), oklch(0.165 0.035 165));
+  --home-wash:    light-dark(oklch(0.938 0.040 160), oklch(0.262 0.040 165));
+
+  /* ---- Status ladder (each always paired with a shape and a word) --------
+     ok        quiet: ink and a check, no colour
+     attn      needs you / attention            amber
+     danger    irreversible, stop, failed        red (rationed)
+     outside   beyond this machine: cloud, external   violet
+     unknown / stale use ink-3 with their own shapes (dashed ring, clock)   */
+  --attn:         light-dark(oklch(0.505 0.115 66),  oklch(0.845 0.135 82));
+  --attn-fill:    light-dark(oklch(0.825 0.150 84),  oklch(0.845 0.135 82));
+  --on-attn:      light-dark(oklch(0.235 0.050 75),  oklch(0.195 0.045 80));
+  --attn-wash:    light-dark(oklch(0.952 0.042 88),  oklch(0.268 0.036 80));
+
+  --danger:       light-dark(oklch(0.500 0.180 27),  oklch(0.750 0.150 24));
+  --danger-fill:  light-dark(oklch(0.515 0.190 27),  oklch(0.665 0.190 25));
+  --on-danger:    light-dark(oklch(0.990 0.010 30),  oklch(0.150 0.030 25));
+  --danger-wash:  light-dark(oklch(0.956 0.026 25),  oklch(0.262 0.042 22));
+
+  --outside:      light-dark(oklch(0.465 0.160 300), oklch(0.785 0.115 300));
+  --outside-wash: light-dark(oklch(0.953 0.026 300), oklch(0.262 0.036 300));
+
+  /* ---- Elevation ----------------------------------------------------------
+     Opaque layers; height is told by a lighter surface, a hairline and one
+     soft shadow. No blur anywhere (the GPU is running the model).           */
+  --shadow-ink:   light-dark(oklch(0.34 0.03 150 / 0.17), oklch(0 0 0 / 0.55));
+  --edge-light:   light-dark(oklch(1 0 0 / 0.9),          oklch(1 0 0 / 0.045));
+  --elev-sheet:   inset 0 1px 0 0 var(--edge-light), 0 1px 2px 0 light-dark(oklch(0.34 0.03 150 / 0.08), oklch(0 0 0 / 0.4)), 0 18px 40px -22px var(--shadow-ink);
+  --elev-pill:    inset 0 1px 0 0 var(--edge-light), 0 1px 2px 0 light-dark(oklch(0.34 0.03 150 / 0.10), oklch(0 0 0 / 0.45)), 0 8px 20px -14px var(--shadow-ink);
+  --elev-overlay: inset 0 1px 0 0 var(--edge-light), 0 24px 60px -20px light-dark(oklch(0.34 0.03 150 / 0.30), oklch(0 0 0 / 0.75));
+
+  /* ---- Focus -------------------------------------------------------------- */
+  --focus: var(--home);
+  --focus-ring: 0 0 0 2px var(--sheet), 0 0 0 4px var(--focus);
+
+  /* ---- Radius: short, concentric (child = parent - padding) -------------- */
+  --r-xs: 6px;      /* chips, key caps, tool runs */
+  --r-sm: 10px;     /* rows, small insets */
+  --r-md: 14px;     /* insets inside a sheet, callouts */
+  --r-lg: 20px;     /* composer, open decision, districts */
+  --r-xl: 28px;     /* sheets, the wall */
+  --r-pill: 999px;  /* capsules, buttons, places, pins */
+
+  /* ---- Space: 4 px base ---------------------------------------------------- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+
+  /* ---- Type ----------------------------------------------------------------
+     Sans: Space Grotesk — the face Nerva already self-hosts (SIL OFL,
+     latin-ext for ă â î ș ț). Used here in sentence case as a reading face,
+     not as the old uppercase tracked micro-label. No stand-in: this is the
+     production face.
+     Mono: JetBrains Mono, already vendored. Identifiers, hashes, addresses. */
+  --font-sans: "Space Grotesk", "Segoe UI Variable Text", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+
+  --t-meta: 12px;     /* tertiary: times, counts, basis */
+  --t-small: 13px;    /* secondary: row meta, chips, map labels */
+  --t-ui: 14px;       /* controls, list titles, body floor */
+  --t-body: 15px;     /* conversation */
+  --t-title: 17px;    /* sheet titles, open decision */
+  --t-head: 26px;     /* the verdict */
+  --t-display: 44px;  /* glance values */
+
+  --lh-tight: 1.2;
+  --lh-ui: 1.35;
+  --lh-body: 1.55;
+
+  /* Light text on a dark ground gains apparent weight, so the dark theme sets
+     every step a little lighter than the light theme (optical compensation).
+     Space Grotesk is variable (300–700), so these are used as given.        */
+  --w-regular: 370;
+  --w-medium: 480;
+  --w-semi: 590;
+  --w-bold: 680;
+
+  --track-small: 0.004em;   /* 12–13 px */
+  --track-head: -0.018em;   /* 22 px and up */
+
+  /* ---- The map ---------------------------------------------------------------
+     Places sit on a fixed line height so the route can be drawn with plain
+     CSS (no runtime layout code).                                            */
+  --pl-h: 30px;       /* one place line */
+  --pl-gap: 6px;      /* between places */
+  --pl-sym: 18px;     /* place symbol */
+  --route: 2px;       /* route stroke */
+  --dist-pad: 10px;   /* district inner padding */
+  --dist-gap: 20px;   /* street between districts */
+
+  /* ---- Motion: stillness by default --------------------------------------- */
+  --dur-1: 120ms;
+  --dur-2: 160ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* ---- Layers --------------------------------------------------------------- */
+  --z-map: 0;
+  --z-route: 2;
+  --z-sheet: 10;
+  --z-bar: 20;
+  --z-overlay: 40;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+  }
+}

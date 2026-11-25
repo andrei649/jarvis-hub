@@ -37,6 +37,7 @@
 import React, { useState } from 'react';
 import { apiGet } from '../api/client';
 import { useApi, mono, asLive, Card, State, Row, Tag } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const PROBE_PATH = '/api/host/probe';
 const BENCH_PATH = '/api/operator/benchmark';
@@ -45,11 +46,11 @@ const BENCH_PACK_PATH = '/api/operator/benchmark/pack';
 const EM = '—';
 
 const Head = ({ k }: { k: any }) => (
-  <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginTop: 10, marginBottom: 2 }}>{k}</div>
+  <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10, marginBottom: 2 }}>{k}</div>
 );
 
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
+  <div style={{ fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
 );
 
 /* A tri-state fact. `null`/`undefined` is "unknown", which is neither pass nor fail. */
@@ -92,7 +93,7 @@ function HostIdentity({ ident }: { ident: any }) {
       <>
         <Head k="HOST IDENTITY" />
         <Row>
-          <span style={mono}>identity</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>identity</span>
           <span style={{ marginLeft: 'auto' }}>
             <Tag c="var(--red)">{String(ident.reason || 'identity_failed')}</Tag>
           </span>
@@ -107,13 +108,13 @@ function HostIdentity({ ident }: { ident: any }) {
     <>
       <Head k="HOST IDENTITY" />
       <Row>
-        <span style={mono}>container</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>container</span>
         <span style={{ marginLeft: 'auto' }}>
           {ident.container ? <Tag>{String(ident.container)}</Tag> : <Tag c="var(--ink-2)">none detected</Tag>}
         </span>
       </Row>
       <Row>
-        <span style={mono}>WSL</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>WSL</span>
         <span style={{ marginLeft: 'auto' }}>
           {ident.wsl
             ? <Tag>{WSL_LABEL[ident.wsl] || String(ident.wsl)}{ident.wsl_distro ? ` · ${ident.wsl_distro}` : ''}</Tag>
@@ -121,13 +122,13 @@ function HostIdentity({ ident }: { ident: any }) {
         </span>
       </Row>
       <Row>
-        <span style={mono}>Termux</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>Termux</span>
         <span style={{ marginLeft: 'auto' }}>
           <Tag c={ident.termux ? undefined : 'var(--ink-2)'}>{ident.termux ? 'yes' : 'no'}</Tag>
         </span>
       </Row>
       <Row>
-        <span style={mono}>supervisor</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>supervisor</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
           <Tag c={supervisor === 'none' ? 'var(--ink-2)' : undefined}>{supervisor}</Tag>
           {ident.journal && <Tag c="var(--green)">journal</Tag>}
@@ -135,14 +136,14 @@ function HostIdentity({ ident }: { ident: any }) {
         </span>
       </Row>
       <Row>
-        <span style={mono}>terminal (hub process)</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>terminal (hub process)</span>
         <span style={{ marginLeft: 'auto' }}>
           <Tag c="var(--ink-2)">{terminal}</Tag>
         </span>
       </Row>
       <Row>
-        <span style={mono}>machine id</span>
-        <span style={{ ...mono, marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>machine id</span>
+        <span style={{ ...mono, marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           {ident.machine_id ? `${String(ident.machine_id).slice(0, 16)} · ${String(ident.machine_id_source || '')}` : EM}
         </span>
       </Row>
@@ -189,7 +190,7 @@ export function HostReadinessPanel() {
       {raw && !probed && (
         <>
           <Row>
-            <span style={mono}>probe</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>probe</span>
             <span style={{ marginLeft: 'auto' }}>
               <Tag c="var(--red)">{String(raw.reason || 'probe_failed')}</Tag>
             </span>
@@ -203,7 +204,7 @@ export function HostReadinessPanel() {
       {raw && probed && (
         <>
           <Row>
-            <span style={mono}>operator</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>operator</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={ready ? 'var(--green)' : 'var(--amber)'}>
                 {ready ? 'nothing blocking' : `${refusals.length} blocker(s)`}
@@ -274,7 +275,7 @@ export function HostReadinessPanel() {
           {Object.keys(flags).length > 0 && <Head k="HOST RAILS" />}
           {Object.keys(flags).map((k) => (
             <Row key={k}>
-              <span style={{ ...mono, fontSize: 10 }}>{k}</span>
+              <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{k}</span>
               <span style={{ marginLeft: 'auto' }}>
                 <Tag c={flags[k] ? 'var(--green)' : 'var(--ink-2)'}>{flags[k] ? 'on' : 'off'}</Tag>
               </span>
@@ -282,8 +283,8 @@ export function HostReadinessPanel() {
           ))}
 
           <Row>
-            <span style={mono}>fingerprint</span>
-            <span style={{ ...mono, marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>fingerprint</span>
+            <span style={{ ...mono, marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
               {String((raw && raw.fingerprint) || EM).slice(0, 16)}
             </span>
           </Row>
@@ -299,7 +300,7 @@ export function HostReadinessPanel() {
       {bench.d && !bench.d.recorded && (
         <>
           <Row>
-            <span style={mono}>never run</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>never run</span>
             <span style={{ marginLeft: 'auto' }}>
               <Tag c="var(--ink-2)">{bench.d.tasks ?? EM} task(s)</Tag>
             </span>
@@ -313,7 +314,7 @@ export function HostReadinessPanel() {
       {bench.d && bench.d.recorded && (
         <>
           <Row>
-            <span style={mono}>result</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>result</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={bench.d.governance_clean ? 'var(--green)' : 'var(--red)'}>
                 {bench.d.governance_clean ? 'governance clean' : 'governance breach'}
@@ -334,7 +335,7 @@ export function HostReadinessPanel() {
           )}
           {Object.keys(bench.d.by_surface || {}).sort().map((surface) => (
             <Row key={surface}>
-              <span style={{ ...mono, fontSize: 10 }}>{surface}</span>
+              <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{surface}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
                 <Tag c="var(--green)">{bench.d.by_surface[surface].passed} passed</Tag>
                 {bench.d.by_surface[surface].failed > 0 && (
@@ -359,8 +360,8 @@ export function HostReadinessPanel() {
       </Row>
       {pack && (pack.tasks || []).map((task: any) => (
         <Row key={task.id}>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{task.surface}</span>
-          <span style={{ fontSize: 11 }}>{task.describe}</span>
+          <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{task.surface}</span>
+          <span style={{ fontSize: 'var(--n-fs-meta)' }}>{task.describe}</span>
           {task.negative_control && (
             <span style={{ marginLeft: 'auto' }}>
               {/* Labelled so its expected failure never reads as a defect. */}

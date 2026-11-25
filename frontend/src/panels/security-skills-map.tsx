@@ -48,7 +48,8 @@
    `sources` are shown verbatim rather than paraphrased; this panel asserts nothing about the
    corpus on its own authority. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, inpS, taS } from '../panel-kit';
+import { useApi, arr, mono, note, asLive, Card, State, Row, Tag, act, inpS, taS } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const FRAMEWORKS_PATH = '/api/security-skills/frameworks';
 const MAP_PATH = '/api/security-skills/map';
@@ -76,16 +77,16 @@ function fmtErr(err: any): string {
 }
 
 const Refusal = ({ text }: { text: string }) => (
-  <div role="alert" style={{ ...mono, marginTop: 6, padding: 6, color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 4 }}>
+  <div role="alert" style={{ ...note, marginTop: 6, padding: 6, color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 4 }}>
     {text}
   </div>
 );
 
 const Head = ({ children }) => (
-  <div style={{ ...mono, fontSize: 10, letterSpacing: '.06em', color: 'var(--ink-2)', margin: '10px 0 4px' }}>{children}</div>
+  <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '10px 0 4px' }}>{children}</div>
 );
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ ...mono, fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-2)', marginTop: 4 }}>{children}</div>
+  <div style={{ ...note, fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, color: c || 'var(--ink-2)', marginTop: 4 }}>{children}</div>
 );
 
 export function SecuritySkillsMapPanel() {
@@ -154,8 +155,8 @@ export function SecuritySkillsMapPanel() {
       {d3.map((t: any, i: number) => (
         <Row key={t.id ?? i}>
           <span style={{ ...mono, color: 'var(--ink-2)', minWidth: 92 }}>{t.id}</span>
-          <span style={{ ...mono, color: 'var(--ink)' }}>{t.name}</span>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginLeft: 'auto', textAlign: 'right' }}>{t.summary}</span>
+          <span style={{ ...note, color: 'var(--ink)' }}>{t.name}</span>
+          <span style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginLeft: 'auto', textAlign: 'right' }}>{t.summary}</span>
         </Row>
       ))}
 
@@ -163,8 +164,8 @@ export function SecuritySkillsMapPanel() {
       {csf.map((f: any, i: number) => (
         <Row key={f.id ?? i}>
           <span style={{ ...mono, color: 'var(--ink-2)', minWidth: 92 }}>{f.id}</span>
-          <span style={{ ...mono, color: 'var(--ink)' }}>{f.name}</span>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginLeft: 'auto', textAlign: 'right' }}>{f.summary}</span>
+          <span style={{ ...note, color: 'var(--ink)' }}>{f.name}</span>
+          <span style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginLeft: 'auto', textAlign: 'right' }}>{f.summary}</span>
         </Row>
       ))}
 
@@ -192,10 +193,10 @@ export function SecuritySkillsMapPanel() {
         onChange={(ev) => setBehavior(ev.target.value)}
       />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-        <span style={{ ...mono, fontSize: 10, color: behavior.length >= BEHAVIOR_MAX ? 'var(--amber)' : 'var(--ink-2)' }}>
+        <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: behavior.length >= BEHAVIOR_MAX ? 'var(--amber)' : 'var(--ink-2)' }}>
           {behavior.length}/{BEHAVIOR_MAX}
         </span>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }} htmlFor="ssm-topk">top_k</label>
+        <label style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }} htmlFor="ssm-topk">top_k</label>
         <input
           id="ssm-topk"
           type="number"
@@ -221,7 +222,7 @@ export function SecuritySkillsMapPanel() {
 
       {mapRes && !mapErr && (
         <div style={{ marginTop: 6 }}>
-          <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
+          <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             {cands.length} candidate(s) shown · heuristic {String((mapRes as any).heuristic)} · top_k {mapSent} · count (post-slice) {String((mapRes as any).count)}
           </div>
           {cands.length === mapSent && (
@@ -239,13 +240,13 @@ export function SecuritySkillsMapPanel() {
                   aria-label={'select ' + c.id}
                   onChange={() => toggle(c.id)}
                 />
-                <span style={{ ...mono, color: 'var(--ink-2)' }}>{c.id} · {c.name}</span>
+                <span style={{ ...note, color: 'var(--ink-2)' }}>{c.id} · {c.name}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                   {arr(c.tactics).map((t: any) => <Tag key={String(t)}>{String(t)}</Tag>)}
                   <Tag>score {String(c.score)}</Tag>
                 </span>
               </div>
-              <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', paddingLeft: 22 }}>
+              <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', paddingLeft: 22 }}>
                 matched: {arr(c.evidence).join(', ')}
               </div>
             </div>
@@ -279,7 +280,7 @@ export function SecuritySkillsMapPanel() {
           {pbRows.map((r: any, i: number) => (
             <div key={r.id ?? i} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ ...mono, color: 'var(--ink-2)' }}>{r.id} · {r.name}</span>
+                <span style={{ ...note, color: 'var(--ink-2)' }}>{r.id} · {r.name}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                   {arr(r.tactics).map((t: any) => <Tag key={String(t)}>{String(t)}</Tag>)}
                   {arr(r.csf_functions).map((f: any) => <Tag key={'csf' + String(f)} c="var(--accent-light)">CSF {String(f)}</Tag>)}
@@ -289,7 +290,7 @@ export function SecuritySkillsMapPanel() {
                 </span>
               </div>
               {arr(r.countermeasures).map((cm: any, j: number) => (
-                <div key={cm.id ?? j} style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', paddingLeft: 14 }}>
+                <div key={cm.id ?? j} style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', paddingLeft: 14 }}>
                   {cm.id} · {cm.name} ({cm.d3fend_tactic})
                 </div>
               ))}
@@ -302,10 +303,10 @@ export function SecuritySkillsMapPanel() {
             </Note>
           )}
 
-          <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+          <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
             CSF reached by this curated mapping: {coverage.join(', ') || 'none'}
           </div>
-          <div style={{ ...mono, fontSize: 10, color: 'var(--amber)' }}>
+          <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
             CSF not reached: {gaps.join(', ') || 'none'}
           </div>
           <Note>

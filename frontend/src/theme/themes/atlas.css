@@ -1,0 +1,183 @@
+/* =====================================================================================
+   Theme · Atlas
+   -------------------------------------------------------------------------------------
+   Source: docs/design/hud-next/atlas/ (README.md, tokens.css, atlas.css).
+   Idea: an atlas of the one machine Nerva runs on: a fixed territory drawn flat on the
+   ground of the screen, with the things you act on floating over it as opaque, rounded
+   sheets. Everything it promises is about where: where your words went, what waits at
+   the gate, whether the door is shut.
+     Dark  "night chart" (default)  near-black with a faint green cast
+     Light "printed atlas"          warm paper ground, white sheets, deep emerald
+   One accent with one meaning: the home emerald is you / here / on this machine (the
+   route of your words, the primary action, focus, locality facts). It never means ok:
+   if it is green, it is about you, so ok is quiet ink (ink-2) and info, which the palette
+   has no hue for, the next quiet step (ink-3). Amber is attention (it waits for you), red
+   is rationed for irreversible, money, stop and failed, violet (cloud) is only "outside
+   this machine". Emphasis is ink, never the emerald: the current area and a pressed or
+   selected place sit on sheet-3 in ink; fields are insets (sheet-2).
+   No blur and no translucency on content: the GPU is running the model.
+   ===================================================================================== */
+
+:is(:root, .n-theme-scope)[data-look="atlas"] {
+  color-scheme: dark;
+
+  /* ground (the table) < sheet (floating work surfaces) < sheet-2 (insets, controls)
+     < sheet-3 (pressed, selected) */
+  --n-bg:          oklch(0.140 0.006 170);
+  --n-bg-2:        oklch(0.240 0.008 170);
+  --n-bg-3:        oklch(0.290 0.009 170);
+  --n-sheet:       oklch(0.203 0.007 170);
+  --n-sheet-2:     oklch(0.240 0.008 170);
+  --n-scrim:       oklch(0.090 0.006 170 / 0.60);
+
+  --n-text:        oklch(0.955 0.006 170);
+  --n-text-2:      oklch(0.835 0.008 170);
+  --n-text-3:      oklch(0.720 0.010 170);
+
+  /* hairline · quiet edge · control edge (3:1) · the wall of the machine */
+  --n-rule:        oklch(0.283 0.008 170);
+  --n-rule-2:      oklch(0.390 0.009 170);
+  --n-rule-field:  oklch(0.525 0.010 170);  /* 0.505 until 2026-11-23: 2.81:1 on bg-2 */
+  --n-rule-heavy:  oklch(0.585 0.014 168);
+
+  --n-accent:      oklch(0.790 0.150 162);
+  --n-accent-text: oklch(0.805 0.150 162);
+  --n-accent-wash: oklch(0.262 0.040 165);
+  --n-on-accent:   oklch(0.165 0.035 165);
+
+  --n-stop:        oklch(0.750 0.150 24);
+  --n-on-stop:     oklch(0.150 0.030 25);
+
+  --n-ok:          oklch(0.835 0.008 170);
+  --n-warn:        oklch(0.845 0.135 82);
+  --n-bad:         oklch(0.750 0.150 24);
+  --n-info:        oklch(0.720 0.010 170);
+  --n-cloud:       oklch(0.785 0.115 300);
+  --n-ok-wash:     oklch(0.262 0.010 170);
+  --n-warn-wash:   oklch(0.268 0.036 80);
+  --n-bad-wash:    oklch(0.262 0.042 22);
+
+  --n-focus:       oklch(0.805 0.150 162);
+  --n-selection:   oklch(0.340 0.060 165);
+
+  /* derived roles (contract §3): the current item is ink on sheet-3 (the emerald is not
+     spent on chrome); the primary action keeps the emerald fill, which is the accent's
+     default; fields are insets inside a sheet */
+  --n-emph:       var(--n-text);
+  --n-emph-wash:  var(--n-bg-3);
+  --n-field-bg:   var(--n-sheet-2);
+
+  /* tabular numerals everywhere; headlines tighten at title size and up */
+  --n-numerals:    lining-nums tabular-nums;
+  --n-title-track: -0.018em;
+
+  /* Space Grotesk for every word, in sentence case; it is the production face and is
+     already self-hosted (no stand-in). JetBrains Mono for identifiers only. */
+  --n-font-ui:      "Space Grotesk", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-label:   var(--n-font-ui);
+  --n-font-text:    "Space Grotesk", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-title:   "Space Grotesk", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --n-font-display: "Space Grotesk", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --n-font-mono:    "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --n-label-case:   none;
+  --n-label-track:  0.004em;
+  --n-label-weight: var(--n-w-med);
+  /* optically compensated: light text on a dark ground gains weight, so dark sets every
+     step a little lighter (Space Grotesk is variable, 300-700, so these render as given) */
+  --n-w-reg:  370;
+  --n-w-med:  480;
+  --n-w-semi: 590;
+  --n-w-bold: 680;
+
+  /* 15 conversation, 17 sheet titles, 26 the verdict */
+  --n-lh-ui:      19px;
+  --n-fs-own:     15px;  --n-lh-own:     22px;
+  --n-fs-prose:   15px;  --n-lh-prose:   23px;
+  --n-fs-title:   17px;  --n-lh-title:   22px;
+  --n-fs-verdict: 26px;  --n-lh-verdict: 30px;
+
+  /* circles and pills for places and states, large-radius sheets, always concentric.
+     Buttons and segmented controls are pills through --n-r-control; r-1 stays at 10px
+     because the legacy --radius maps to it and also rounds cards, dialogs and canvases,
+     which a pill radius would turn into stadiums. */
+  --n-r-0: 0;
+  --n-r-1: 10px;
+  --n-r-2: 14px;
+  --n-r-3: 28px;
+  --n-r-control: var(--n-r-pill);
+  /* a panel is a floating sheet: opaque, a hairline, one soft shadow, no blur */
+  --n-panel-bg:     var(--n-sheet);
+  --n-panel-border: 1px solid var(--n-rule);
+  --n-panel-top:    1px solid var(--n-rule);
+  --n-panel-radius: var(--n-r-3);
+  --n-panel-shadow: var(--n-shadow-1);
+  --n-panel-pad:    var(--n-s-5);
+  /* a register is a sheet too: its words keep the sheet's margin from its edge */
+  --n-register-pad: var(--n-panel-pad);
+
+  /* height is told by a lighter surface, a lit top edge, a hairline and one soft shadow */
+  --n-shadow-1:     inset 0 1px 0 0 oklch(1 0 0 / 0.045), 0 1px 2px 0 oklch(0 0 0 / 0.4), 0 18px 40px -22px oklch(0 0 0 / 0.55);
+  --n-shadow-2:     inset 0 1px 0 0 oklch(1 0 0 / 0.045), 0 0 0 1px var(--n-rule), 0 24px 60px -20px oklch(0 0 0 / 0.75);
+  --n-shadow-sheet: inset 0 1px 0 0 oklch(1 0 0 / 0.045), 0 0 0 1px var(--n-rule-field), 0 24px 60px -20px oklch(0 0 0 / 0.75);
+
+  --n-control-h:    32px;
+  --n-control-h-sm: 28px;
+  --n-bar-h:        48px;
+}
+
+:is(:root, .n-theme-scope)[data-look="atlas"][data-scheme="light"] {
+  color-scheme: light;
+
+  --n-bg:          oklch(0.952 0.008 92);
+  --n-bg-2:        oklch(0.966 0.006 95);
+  --n-bg-3:        oklch(0.927 0.010 100);
+  --n-sheet:       oklch(0.994 0.003 95);
+  --n-sheet-2:     oklch(0.966 0.006 95);
+  --n-scrim:       oklch(0.340 0.030 150 / 0.30);
+
+  --n-text:        oklch(0.205 0.020 165);
+  --n-text-2:      oklch(0.345 0.018 165);
+  --n-text-3:      oklch(0.450 0.016 165);
+
+  --n-rule:        oklch(0.895 0.009 95);
+  --n-rule-2:      oklch(0.760 0.012 110);
+  --n-rule-field:  oklch(0.620 0.014 125);
+  --n-rule-heavy:  oklch(0.520 0.030 150);
+
+  --n-accent:      oklch(0.465 0.120 162);
+  --n-accent-text: oklch(0.470 0.120 162);
+  --n-accent-wash: oklch(0.938 0.040 160);
+  --n-on-accent:   oklch(0.990 0.010 160);
+
+  --n-stop:        oklch(0.500 0.180 27);
+  --n-on-stop:     oklch(0.990 0.010 30);
+
+  --n-ok:          oklch(0.345 0.018 165);
+  --n-warn:        oklch(0.505 0.115 66);
+  --n-bad:         oklch(0.500 0.180 27);
+  --n-info:        oklch(0.450 0.016 165);
+  --n-cloud:       oklch(0.465 0.160 300);
+  --n-ok-wash:     oklch(0.940 0.008 100);
+  --n-warn-wash:   oklch(0.952 0.042 88);
+  --n-bad-wash:    oklch(0.956 0.026 25);
+
+  --n-focus:       oklch(0.470 0.120 162);
+  --n-selection:   oklch(0.890 0.060 162);
+
+  /* dark text on paper needs a touch more weight than light on dark */
+  --n-w-reg:  400;
+  --n-w-med:  500;
+  --n-w-semi: 610;
+  --n-w-bold: 700;
+
+  --n-shadow-1:     inset 0 1px 0 0 oklch(1 0 0 / 0.9), 0 1px 2px 0 oklch(0.34 0.03 150 / 0.08), 0 18px 40px -22px oklch(0.34 0.03 150 / 0.17);
+  --n-shadow-2:     inset 0 1px 0 0 oklch(1 0 0 / 0.9), 0 0 0 1px var(--n-rule), 0 24px 60px -20px oklch(0.34 0.03 150 / 0.30);
+  --n-shadow-sheet: inset 0 1px 0 0 oklch(1 0 0 / 0.9), 0 0 0 1px var(--n-rule-field), 0 24px 60px -20px oklch(0.34 0.03 150 / 0.30);
+}
+
+/* The owner's screen, 2560 x 1353: more said, not bigger boxes. Only the verdict grows. */
+@media (min-width: 2200px) {
+  :root[data-look="atlas"] {
+    --n-fs-verdict: 30px;  --n-lh-verdict: 35px;
+  }
+}

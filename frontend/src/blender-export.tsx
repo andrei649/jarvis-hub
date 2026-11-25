@@ -136,12 +136,12 @@ function MeshPreview({ mesh, ro }: { mesh: Mesh; ro: boolean }) {
     <svg viewBox="0 0 420 260" role="img" aria-label={ro
       ? `Previzualizare proiectată a geometriei: ${mesh.vertices.length} vârfuri, ${mesh.faces.length} fețe, ${mesh.sections.length} obiecte. Axele X și Y sunt oblice, Z este verticală.`
       : `Projected geometry preview: ${mesh.vertices.length} vertices, ${mesh.faces.length} faces, ${mesh.sections.length} objects. X and Y are diagonal, Z is vertical.`}>
-      <rect width="420" height="260" rx="8" fill="var(--panel-bg, #101a25)" />
-      {shown.map((face, i) => <polygon key={i} points={face.indices.map(point).join(' ')} fill="var(--accent, #77cbd2)" fillOpacity=".16" stroke="var(--accent-light, #a8e6ea)" strokeWidth=".8" strokeLinejoin="round" />)}
-      <g transform="translate(43 213)" strokeWidth="2" fontSize="12" fontFamily="sans-serif">
-        <path d="M0 0 L18 10" stroke="#ed8a81"/><text x="22" y="16" fill="#ed8a81">X</text>
-        <path d="M0 0 L-18 10" stroke="#81b8ed"/><text x="-28" y="17" fill="#81b8ed">Y</text>
-        <path d="M0 0 L0 -24" stroke="#a8d884"/><text x="-4" y="-30" fill="#a8d884">Z</text>
+      <rect width="420" height="260" rx="8" fill="var(--void-2)" />
+      {shown.map((face, i) => <polygon key={i} points={face.indices.map(point).join(' ')} fill="var(--accent)" fillOpacity=".16" stroke="var(--accent-light)" strokeWidth=".8" strokeLinejoin="round" />)}
+      <g transform="translate(43 213)" strokeWidth="2" style={{ fontSize: 'var(--n-fs-meta)' }}>
+        <path d="M0 0 L18 10" stroke="var(--red)"/><text x="22" y="16" fill="var(--red)">X</text>
+        <path d="M0 0 L-18 10" stroke="var(--violet)"/><text x="-28" y="17" fill="var(--violet)">Y</text>
+        <path d="M0 0 L0 -24" stroke="var(--green)"/><text x="-4" y="-30" fill="var(--green)">Z</text>
       </g>
     </svg>
     <figcaption>{ro ? 'Vedere oblică, scalată pentru încadrare' : 'Oblique view, scaled to fit'}{shown.length !== mesh.faces.length && (ro ? ` · ${shown.length} fețe afișate` : ` · ${shown.length} faces shown`)}</figcaption>

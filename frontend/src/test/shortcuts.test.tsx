@@ -1,6 +1,8 @@
 // @ts-nocheck
 /* H209 — one registry for every HUD shortcut; a panel (mod+/) lists, searches and rebinds
-   them; no chord can reach an approval or a decision. */
+   them; no chord can reach an approval or a decision. A page load picks its registry from the
+   frame; since the cutover that is the Ledger's (PHASE_B_PLAN.md §3.6): the nine areas on 1–9 in
+   masthead order, 0 the conversation, w World signals, the backtick the panels, a Glance. */
 import { describe, it, expect, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
@@ -19,8 +21,8 @@ describe('the registry — H209', () => {
   it('holds every HUD shortcut with its default chord', () => {
     const defaults = Object.fromEntries(ACTIONS.map((a) => [a.id, a.chord]));
     expect(defaults).toEqual({
-      'mode.cockpit': '1', 'mode.agents': '2', 'mode.trust': '3', 'mode.memory': '4', 'mode.autonomy': '5',
-      'mode.build': '6', 'mode.observe': '7', 'mode.interop': '8', 'mode.chat': '9', 'mode.comms': '0',
+      'mode.cockpit': '1', 'mode.work': '2', 'mode.agents': '3', 'mode.memory': '4', 'mode.trust': '5',
+      'mode.build': '6', 'mode.interop': '7', 'mode.observe': '8', 'mode.admin': '9', 'mode.chat': '0',
       'view.world': 'w', 'view.console': '`', 'view.ambient': 'a', 'view.cinema': 'm',
       'cinema.orb': 'o', 'cinema.mesh': 'n', 'cinema.brain': 'b',
       'composer.focus': '/', 'session.palette': 'mod+k', 'session.shortcuts': 'mod+/',
@@ -156,22 +158,23 @@ describe('overrides', () => {
     expect(resetBinding(o, 'view.ambient')).toEqual({ 'view.cinema': 'z' });
     const list = bindings(o);
     expect(list.find((b) => b.id === 'view.ambient')).toMatchObject({ current: 'mod+j', custom: true, chord: 'a' });
-    expect(list.find((b) => b.id === 'mode.chat')).toMatchObject({ current: '9', custom: false });
+    expect(list.find((b) => b.id === 'mode.chat')).toMatchObject({ current: '0', custom: false });
   });
 });
 
 describe('dispatch', () => {
   it('matches the first action on a chord, in its scope only', () => {
     const list = bindings({});
-    expect(matchAction(ev('2'), list, 'global').id).toBe('mode.agents');
+    expect(matchAction(ev('2'), list, 'global').id).toBe('mode.work');
+    expect(matchAction(ev('3'), list, 'global').id).toBe('mode.agents');
     expect(matchAction(ev('k', { metaKey: true }), list, 'global').id).toBe('session.palette');
     expect(matchAction(ev('/', { ctrlKey: true }), list, 'global').id).toBe('session.shortcuts');
     expect(matchAction(ev('o'), list, 'global')).toBeNull();
     expect(matchAction(ev('o'), list, 'cinema').id).toBe('cinema.orb');
-    expect(matchAction(ev('2'), list, 'cinema')).toBeNull();
+    expect(matchAction(ev('3'), list, 'cinema')).toBeNull();
     expect(matchAction(ev('Shift'), list, 'global')).toBeNull();
     const moved = bindings({ 'mode.agents': 'x' });
-    expect(matchAction(ev('2'), moved, 'global')).toBeNull();
+    expect(matchAction(ev('3'), moved, 'global')).toBeNull();
     expect(matchAction(ev('x'), moved, 'global').id).toBe('mode.agents');
     const clash = bindings({ 'view.cinema': 'a' });
     expect(matchAction(ev('a'), clash, 'global').id).toBe('view.ambient');
@@ -227,12 +230,12 @@ describe('the Keyboard Shortcuts panel', () => {
 
   it('records a new chord, ignoring lone modifiers, and Escape cancels', () => {
     const { changes, closed } = setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Rebind Ambient mode' }));
-    expect(screen.getByRole('button', { name: 'Rebind Ambient mode' }).textContent).toBe('Press a key…');
+    fireEvent.click(screen.getByRole('button', { name: 'Rebind Glance' }));
+    expect(screen.getByRole('button', { name: 'Rebind Glance' }).textContent).toBe('Press a key…');
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(changes).toEqual([]);
     expect(closed()).toBe(0);                                  // Escape cancelled the recording only
-    fireEvent.click(screen.getByRole('button', { name: 'Rebind Ambient mode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebind Glance' }));
     fireEvent.keyDown(window, { key: 'Control', ctrlKey: true });
     expect(changes).toEqual([]);
     fireEvent.keyDown(window, { key: 'j', ctrlKey: true });
@@ -241,10 +244,10 @@ describe('the Keyboard Shortcuts panel', () => {
 
   it('records Space and Ctrl+Space, and those keys then answer (F1)', () => {
     const first = setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Rebind Ambient mode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rebind Glance' }));
     fireEvent.keyDown(window, { key: ' ' });
     expect(first.changes).toEqual([{ 'view.ambient': 'space' }]);
-    expect(screen.getByRole('button', { name: 'Rebind Ambient mode' }).textContent).toBe('Space');
+    expect(screen.getByRole('button', { name: 'Rebind Glance' }).textContent).toBe('Space');
     expect(matchAction(ev(' '), bindings(first.changes[0]), 'global').id).toBe('view.ambient');
     cleanup();
     const second = setup();
@@ -268,9 +271,9 @@ describe('the Keyboard Shortcuts panel', () => {
   it('names a clash, resets one binding and resets all', () => {
     const { changes } = setup({ 'view.cinema': 'a', 'mode.chat': 'q' });
     const row = document.querySelector('[data-action="view.cinema"]');
-    expect(within(row).getByRole('note').textContent).toBe('Also bound to Ambient mode');
+    expect(within(row).getByRole('note').textContent).toBe('Also bound to Glance');
     expect(within(document.querySelector('[data-action="mode.cockpit"]')).queryByRole('note')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Reset Go to Cockpit' }).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Reset Go to Home' }).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Reset Cinema mode' }));
     expect(changes[0]).toEqual({ 'mode.chat': 'q' });
     fireEvent.click(screen.getByRole('button', { name: 'Reset all' }));

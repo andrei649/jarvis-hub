@@ -1,6 +1,6 @@
 import React from 'react';
 import { webcrypto } from 'node:crypto';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from '../app';
 import { Conversation } from '../cockpit';
@@ -15,10 +15,6 @@ vi.mock('../api/loaders', () => ({ loadJarvisData: async () => ({}), createLates
 vi.mock('../api/live', () => ({ PREVIEW_MODE_LIVE_KEYS: {}, useLiveModes: () => ({ live: {} }) }));
 vi.mock('../analytics', () => ({ initAnalytics: () => {}, trackPageview: () => {} }));
 vi.mock('../gap', () => ({ FirstRunGate: () => null }));
-vi.mock('../modes3', async () => {
-  const { Conversation, InputBar } = await import('../cockpit');
-  return { ChatMode: (props: any) => <><Conversation {...props} /><InputBar onSubmit={props.onSubmit} t={props.t} /></> };
-});
 vi.mock('../api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/client')>();
   return { ...actual, apiGet: (path: string) => path === '/api/cognition' ? cognition() : Promise.resolve({}), postStream: (_path: string, body: Stream['body'], event: Stream['event'], opts: { signal: AbortSignal }) => new Promise<void>(resolve => {
@@ -35,6 +31,13 @@ beforeEach(() => {
   cognition.mockResolvedValue({});
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+/* The Ledger conversation (PHASE_B_PLAN.md §5.3): turns carry data-turn, a finished reply's
+   footnote says where it was sent, and the working reply's one control stops the turn ("Stop the
+   replies" when more than one is in flight, because the stop ends them all). */
+const STOP = /^Stop (this reply|the replies)$/;
+const reply = (text: string) => screen.getByText(text).closest('[data-turn="reply"]') as HTMLElement;
+const footnote = (text: string) => reply(text).querySelector('[data-footnote]') as HTMLElement | null;
 
 async function send(text: string) {
   const input = await waitFor(() => {
@@ -62,8 +65,6 @@ it('sends a typed follow-up from the actual composer while the first stream is p
 });
 
 it('keeps both replies in their own bubbles when the older stream finishes later', async () => {
-  let releaseOld!: (value: any) => void;
-  cognition.mockImplementationOnce(() => new Promise(resolve => { releaseOld = resolve; }));
   render(<App />);
   await send('First task');
   await send('Second task');
@@ -77,12 +78,21 @@ it('keeps both replies in their own bubbles when the older stream finishes later
   });
   expect(screen.getByText('First final')).toBeTruthy();
   expect(screen.getByText('Second partial')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Stop generating' })).toBeTruthy();
+  // the second reply is still being written, in its own turn, with the one stop control
+  expect(reply('Second partial').hasAttribute('data-working')).toBe(true);
+  expect(reply('First final').hasAttribute('data-working')).toBe(false);
+  expect(screen.getByRole('button', { name: 'Stop this reply' })).toBeTruthy();
   act(() => streams[1].event({ type: 'end', text: 'Second final', agent: 'jarvis', model_calls: [{provider:'openai',model:'second-model'}] }));
-  await act(async () => releaseOld({ decision: { agents_selected: ['jarvis'], local: true }, plugins: ['old-plugin'] }));
-  expect(screen.getByText('First final').closest('.msg.agent')?.querySelector('.prov-chip')?.textContent).toContain('ollama / first-model');
-  expect(screen.getByText('Second final').closest('.msg.agent')?.querySelector('.prov-chip')?.textContent).toContain('openai / second-model');
-  expect(screen.getByText('First final').closest('.msg.agent')?.textContent).not.toContain('old-plugin');
+  // A finished turn asks no cognition snapshot: the cockpit trace it fed was retired (PHASE_B_PLAN.md
+  // §2.4), so a late snapshot from the older turn has nothing to land on.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(cognition).not.toHaveBeenCalled();
+  expect(reply('First final')).not.toBe(reply('Second final'));
+  expect(footnote('First final')?.textContent).toContain('Sent to Ollama on this computer · first-model');
+  expect(footnote('First final')?.textContent).not.toContain('second-model');
+  expect(footnote('Second final')?.textContent).toContain('Sent to OpenAI (cloud) · second-model');
+  expect(footnote('Second final')?.textContent).not.toContain('first-model');
+  expect(reply('First final').textContent).not.toContain('old-plugin');
 });
 
 it('shows only a validated receipt, even when usage is mixed or incomplete', async () => {
@@ -97,22 +107,36 @@ it('shows only a validated receipt, even when usage is mixed or incomplete', asy
       {provider:'openai',model:'remote-model',input_tokens:10}]} });
     streams[1].event({ type:'end', text:'No receipt final', usage:{api_calls:1,breakdown:[{provider:'openai',model:'unattributed'}]} });
   });
-  const mixed = screen.getByText('Mixed final').closest('.msg.agent')!;
-  expect(mixed.querySelector('.prov-chip')?.textContent).toContain('ollama / local-model · openai / remote-model');
-  expect(screen.getByText('No receipt final').closest('.msg.agent')?.querySelector('.prov-chip')).toBeNull();
-  fireEvent.click(mixed.querySelector('.prov-chip')!);
-  expect(screen.getByRole('dialog', { name: 'MODELS CALLED' })).toBeTruthy();
+  // the footnote names the least private pair and counts the rest; the rest open the provenance modal
+  const mixed = footnote('Mixed final')!;
+  expect(mixed.getAttribute('data-marker')).toBe('cloud');
+  expect(mixed.textContent).toContain('Sent to OpenAI (cloud) · remote-model');
+  const none = footnote('No receipt final')!;
+  expect(none.getAttribute('data-marker')).toBe('notReported');
+  expect(none.textContent).toContain('Where it ran: not reported');
+  expect(within(none).queryByRole('button')).toBeNull();
+  fireEvent.click(within(mixed).getByRole('button', { name: 'Show all 2 model calls' }));
+  const dialog = screen.getByRole('dialog', { name: 'MODELS CALLED' });
+  expect(within(dialog).getAllByRole('listitem').map(item => item.textContent)).toEqual(['ollama / local-model', 'openai / remote-model']);
   expect(screen.getByText(/Physical execution location was not reported/)).toBeTruthy();
-  fireEvent.keyDown(screen.getByRole('dialog', { name: 'MODELS CALLED' }), {key:'Escape'});
+  fireEvent.keyDown(dialog, {key:'Escape'});
   expect(screen.queryByRole('dialog', { name: 'MODELS CALLED' })).toBeNull();
 });
 
 it('does not render the legacy demo provenance as measured model calls', async () => {
-  render(<Conversation messages={[{role:'agent',who:'jarvis',text:'Sample reply',prov:{
+  const message = {role:'agent',who:'jarvis',text:'Sample reply',prov:{
     agents:['jarvis'],plugins:['gmail'],local:true,conf:0.9,
-  }}]} thinking={null} onProv={vi.fn()} />);
+  }};
+  const view = render(<Conversation messages={[message]} thinking={null} onProv={vi.fn()} />);
   expect(screen.getByText('Sample reply')).toBeTruthy();
   expect(document.querySelector('.prov-chip')).toBeNull();
+  view.unmount();
+  // the Ledger reply's footnote: no measured pair, so "not reported", never a model or a local claim
+  render(<Conversation messages={[message]} thinking={null} onProv={vi.fn()} variant="chat" turns={[]} />);
+  const note = footnote('Sample reply')!;
+  expect(note.getAttribute('data-marker')).toBe('notReported');
+  expect(note.textContent).toContain('Where it ran: not reported');
+  expect(within(note).queryByRole('button')).toBeNull();
 });
 
 it('Stop aborts every pending stream and settles the voice turn', async () => {
@@ -123,8 +147,11 @@ it('Stop aborts every pending stream and settles the voice turn', async () => {
   await send('Typed follow-up');
   await waitFor(() => expect(streams).toHaveLength(2));
   expect(await voiceTurn!('Unexpected voice overlap')).toBe('');
-  fireEvent.click(screen.getByRole('button', { name: 'Stop generating' }));
+  // two replies in flight: the one control says it stops them all
+  expect(screen.getAllByRole('button', { name: STOP })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Stop the replies' }));
   expect(streams.every(stream => stream.signal.aborted)).toBe(true);
+  expect(screen.queryByRole('button', { name: STOP })).toBeNull();
   await expect(voiceReply).resolves.toBe('');
   act(() => {
     streams[0].event({ type: 'end', text: 'Stale voice reply' });
@@ -170,8 +197,9 @@ it('releases a stream whose transport closes without an end event', async () => 
   render(<App />);
   await send('First request');
   act(() => streams[0].event({ type: 'token', text: 'Partial reply' }));
+  expect(screen.getByRole('button', { name: STOP })).toBeTruthy();
   await act(async () => streams[0].resolve());
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop generating' })).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('button', { name: STOP })).toBeNull());
   expect(screen.getByText('Partial reply')).toBeTruthy();
   await send('Next request');
   await waitFor(() => expect(streams).toHaveLength(2));
@@ -190,6 +218,7 @@ it.each([
     streams[0].event({ type: 'token', text: 'Draft answer' });
   });
   expect(screen.getByText('Draft answer')).toBeTruthy();
+  expect(screen.getByRole('button', { name: STOP })).toBeTruthy();
   act(() => streams[0].event({ type: 'end', agent: 'jarvis', ...(final === undefined ? {} : { text: final }) }));
   if (keepsDraft) {
     expect(screen.getByText('Draft answer')).toBeTruthy();
@@ -197,5 +226,5 @@ it.each([
     expect(screen.queryByText('Draft answer')).toBeNull();
   }
   if (expected) expect(screen.getByText(expected)).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Stop generating' })).toBeNull();
+  expect(screen.queryByRole('button', { name: STOP })).toBeNull();
 });

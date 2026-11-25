@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { apiGet, apiPost, getAdminToken, getToken } from './api/client';
 import { csrfToken, isNetworkedOrigin, onOwnerSession, ownerSession } from './api/owner-session';
+import { isLocalOnlyAgent } from './signals/agents-policy';
 import './chat-history-search.css';
 
 type Hit = { session_id: string; turn: number; role: 'user' | 'assistant'; timestamp: string | null;
@@ -102,7 +103,9 @@ export function ChatHistorySearch({ lang, opener, onClose, hasDraft, hasAttachme
   const [allowCloud, setAllowCloud] = useState(false);
   const passage = useRef<HTMLTextAreaElement>(null);
   const [chosen, setChosen] = useState('');
-  const localRecipient = recipient === 'frigga' || recipient === 'howard' || recipient === 'ultron';
+  // The hub's strictly local agents (signals/agents-policy.ts, LOCAL_ONLY_AGENTS, hestia included)
+  // never pass a passage to a cloud model, so they need no cloud consent.
+  const localRecipient = isLocalOnlyAgent(recipient);
 
   useEffect(() => {
     const node = dialog.current!;

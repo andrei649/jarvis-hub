@@ -23,8 +23,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost } from '../api/client';
 import { ConfirmAction, RISK_TIER } from '../confirm';
-import { inpS, mono, refusalReason, taS } from '../panel-kit';
+// `note` is also every component's own status-string state here, so the kit's style is noteS.
+import { codeS, inpS, mono, note as noteS, refusalReason } from '../panel-kit';
 import { refusedWhy } from './retention';
+import { IDENT, LABEL } from '../theme/type';
 
 export const EXPORT_PATH = '/api/admin/settings/export';
 export const IMPORT_PATH = '/api/admin/settings/import';
@@ -62,15 +64,19 @@ const retentionKept = (r: any): string =>
 /** What a reset would change, from the hub's dry run: one line per setting (the first
     few), and the secrets it keeps and the settings the posture still forces. */
 function ResetPreview({ plan }: { plan: any }) {
-  if (!plan) return <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}>asking the hub what would change…</span>;
-  if (plan.error) return <span role="alert" style={{ ...mono, fontSize: 9.5, color: 'var(--red)' }}>no preview · {plan.error}</span>;
+  if (!plan) return <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>asking the hub what would change…</span>;
+  if (plan.error) return <span role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)' }}>no preview · {plan.error}</span>;
   const changes = Array.isArray(plan.changes) ? plan.changes : [];
   const kept = Array.isArray(plan.kept) ? plan.kept.length : 0;
   const forced = Array.isArray(plan.overridden) ? plan.overridden : [];
-  return <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', margin: '4px 0' }}>
+  /* The sentences take the note size; each `setting: from → to` line is data (a key and its
+     JSON values, all case-sensitive), so it takes IDENT: the identifier face, immune to the
+     case and tracking of any label it sits in. ResetCategory renders inside the settings
+     card's category head, where Classic's label voice would uppercase and track it. */
+  return <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '4px 0' }}>
     <div>{changes.length ? `${plural(changes.length, 'setting')} would change` : 'nothing to change: already the defaults'}
       {kept ? ` · ${plural(kept, 'secret')} kept` : ''}</div>
-    {changes.slice(0, PREVIEW_LINES).map((c: any) => <div key={c.setting}>{`${c.setting}: ${shown(c.from)} → ${shown(c.to)}`}</div>)}
+    {changes.slice(0, PREVIEW_LINES).map((c: any) => <div key={c.setting} style={IDENT}>{`${c.setting}: ${shown(c.from)} → ${shown(c.to)}`}</div>)}
     {changes.length > PREVIEW_LINES && <div>…and {changes.length - PREVIEW_LINES} more</div>}
     {forced.length > 0 && <div>{forced.join(', ')} still set by the posture</div>}
     {Array.isArray(plan.retention_kept) && plan.retention_kept.length > 0
@@ -104,10 +110,10 @@ export function ResetCategory({ cat, count, onDone }: { cat: string; count?: num
     .catch((err) => { setNote(`not reset · ${refusalReason(err, 'refused')}`); return true; });
   const all = count ? `all ${count} ` : '';
   return <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-    <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="reset" ariaLabel={`reset ${cat}`} style={{ padding: '0 5px', fontSize: 9.5 }}
+    <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="reset" ariaLabel={`reset ${cat}`} style={{ padding: '0 5px', fontSize: 'var(--n-fs-meta)' }}
       onArm={() => { setNote(''); ask(); }} extra={<ResetPreview plan={plan} />} onConfirm={run}
       armedLabel={<>reset {all}{cat} settings to defaults? (secrets kept)</>} confirmAriaLabel={`confirm reset ${cat}`} />
-    {note && <span style={{ ...mono, fontSize: 9.5, color: note.startsWith('not') ? 'var(--red)' : 'var(--green)' }}>{note}</span>}
+    {note && <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: note.startsWith('not') ? 'var(--red)' : 'var(--green)' }}>{note}</span>}
   </span>;
 }
 
@@ -126,7 +132,7 @@ export function ResetAll({ onDone }: { onDone?: () => void }) {
   return <div style={{ marginTop: 6 }}>
     <ConfirmAction tier={RISK_TIER.REVERSIBLE} block label="reset every category…" onArm={() => { setNote(''); ask(); }}
       extra={<ResetPreview plan={plan} />} armedLabel="reset them to defaults" onConfirm={run} />
-    {note && <div role="status" style={{ ...mono, fontSize: 9.5, color: note.startsWith('not') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+    {note && <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: note.startsWith('not') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
   </div>;
 }
 
@@ -155,12 +161,12 @@ export function UndoReset({ refresh = 0, onDone }: { refresh?: number; onDone?: 
   if (!open && !note && !error) return null;
   const count = Array.isArray(last?.settings) ? last.settings.length : 0;
   const scope = last?.scope === 'all' ? 'every category' : last?.scope;
-  return <div style={{ ...mono, fontSize: 9.5, marginTop: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+  return <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
     {open && <>
       <span style={{ color: 'var(--ink-2)' }}>last reset: {scope} · {plural(count, 'setting')}
         {last.at ? ` · ${new Date(last.at * 1000).toLocaleString()}` : ''}</span>
       <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="undo…" armedLabel="undo the reset" onConfirm={run}
-        style={{ padding: '0 5px', fontSize: 9.5 }} />
+        style={{ padding: '0 5px', fontSize: 'var(--n-fs-meta)' }} />
     </>}
     {note && <span role="status" style={{ color: 'var(--green)' }}>{note}</span>}
     {error && <span role="alert" style={{ color: 'var(--red)' }}>{error}</span>}
@@ -235,7 +241,7 @@ export function SettingsTransfer({ onDone }: { onDone?: (categories: string[]) =
 
   const count = exported ? Object.values(exported.settings || {}).reduce((n: number, o: any) => n + Object.keys(o || {}).length, 0) : 0;
   return <div style={{ marginTop: 10, borderTop: '1px solid var(--panel-line)', paddingTop: 8 }}>
-    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-2)', marginBottom: 4 }}>MOVE A CONFIGURATION</div>
+    <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>MOVE A CONFIGURATION</div>
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
       <button className="tool-btn" onClick={doExport}>⬇ export JSON</button>
       <button className="tool-btn" onClick={() => fileInput.current && fileInput.current.click()}>⬆ import file</button>
@@ -243,27 +249,27 @@ export function SettingsTransfer({ onDone }: { onDone?: (categories: string[]) =
         tabIndex={-1} style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
         onChange={(e) => readFile(e.target.files && e.target.files[0])} />
     </div>
-    {exported && <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>
+    {exported && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
       exported {count} settings{(exported.excluded || []).length ? ' · left out: ' : ''}
       {(exported.excluded || []).map((x: any) => `${x.setting} (${x.reason})`).join(', ')}
     </div>}
     <textarea aria-label="settings document" value={text} placeholder='{"settings": {"system": {"log_level": "INFO"}}}'
-      disabled={busy} onChange={(e) => { setText(e.target.value); setPlan(null); }} style={{ ...taS, marginTop: 6 }} />
+      disabled={busy} onChange={(e) => { setText(e.target.value); setPlan(null); }} style={{ ...codeS, marginTop: 6 }} />
     <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
       <button className="tool-btn" onClick={preview} disabled={!text.trim() || busy}>preview import</button>
       {plan && plan.changes.length > 0 && !plan.gated.length && <button className="tool-btn" onClick={apply} disabled={busy}>apply {plan.changes.length} change{plan.changes.length === 1 ? '' : 's'}</button>}
-      {note && <span style={{ fontSize: 10, color: 'var(--green)' }}>{note}</span>}
+      {note && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)' }}>{note}</span>}
     </div>
-    {plan && plan.gated.length > 0 && <div data-testid="import-needs-approval" role="alert" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>
+    {plan && plan.gated.length > 0 && <div data-testid="import-needs-approval" role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>
       needs approval: {plan.gated.join(', ')} would make retention delete deeper than approved, so the hub refuses this
       import. Take them out, or change them in Settings → Retention, which sends them to Approvals.</div>}
-    {plan && plan.changes.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>nothing to change: every setting already has that value</div>}
+    {plan && plan.changes.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>nothing to change: every setting already has that value</div>}
     {plan && plan.changes.map((c: any) => (
-      <div key={c.setting} data-testid="import-change" style={{ ...mono, fontSize: 10.5, padding: '2px 0' }}>
+      <div key={c.setting} data-testid="import-change" style={{ ...mono, fontSize: 'var(--n-fs-meta)', padding: '2px 0' }}>
         {c.setting}: <span style={{ color: 'var(--ink-2)' }}>{shown(c.from)}</span> → <span style={{ color: 'var(--accent-light)' }}>{shown(c.to)}</span>
       </div>
     ))}
-    {errors.map((r, i) => <div key={`${i}:${r}`} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 3 }}>{r}</div>)}
+    {errors.map((r, i) => <div key={`${i}:${r}`} role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 3 }}>{r}</div>)}
   </div>;
 }
 
@@ -271,6 +277,6 @@ export function SettingsSearch({ value, onChange, matches }: { value: string; on
   return <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
     <input aria-label="search settings" value={value} placeholder="search every setting (key or label)"
       onChange={(e) => onChange(e.target.value)} style={{ ...inpS, flex: 1 }} />
-    {value.trim() && <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{matches} match{matches === 1 ? '' : 'es'}</span>}
+    {value.trim() && <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{matches} match{matches === 1 ? '' : 'es'}</span>}
   </div>;
 }

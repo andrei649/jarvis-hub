@@ -1,0 +1,193 @@
+/* =====================================================================================
+   Theme · Threshold
+   -------------------------------------------------------------------------------------
+   Source: docs/design/hud-next/wildcard/ (README.md, tokens.css, threshold.css).
+   Idea: one line separates what Nerva does on its own authority from what waits for the
+   owner. The line is the only coloured thing: yellow means "yours to decide" and nothing
+   else. Three inks do the talking: ink (what Nerva knows and does), line yellow (yours)
+   and red (something failed, and the one control that halts everything).
+     Night (dark, default)  warm near-black window, a slightly lighter machine sheet,
+                            raised cards; yellow is light: yellow words and marks
+     Day   (light)          a grey desk, paper machine, white cards; yellow is a
+                            highlighter and a sign on paper: what is yours is ink over a
+                            yellow swipe, yellow fills are keyed in ink
+   The line device lives in the accent: accent = the line yellow (nodes, armed verdicts,
+   the mode), accent-text = what is yours as text (yellow at night, ink by day, as drawn),
+   accent-wash = the quiet band behind a held notice. The rail itself (the dim ochre line
+   at rest) is structure that arrives with the shell in a later phase.
+   Grounds follow the design's three opaque steps: ground (page) < machine (sheet) <
+   raise (sheet-2); hover and fields are raise-2 (bg-2).
+   Emphasis and primary actions are ink, as drawn: the current area is ink over an ink
+   underline, the current sub-page sits on raise-2 with an ink bar, and Send fills with ink
+   on machine-coloured words. Yellow stays on verdicts, the mode and the line.
+   Status: there is no green and no colour for "fine"; normal is drawn in ink, so ok is
+   ink-2 (the design's status-ok) and info the quieter ink-3. A warning that is not waiting
+   for the owner must not take the yellow, so warn is a quiet orange between the yellow and
+   the red; cloud (a run that left the machine) is a quiet violet; bad is the designed red.
+   The five stay apart (contract §3) because legacy screens still encode status by hue.
+   ===================================================================================== */
+
+:is(:root, .n-theme-scope)[data-look="threshold"] {
+  color-scheme: dark;
+
+  --n-bg:          oklch(0.148 0.004 85);
+  --n-bg-2:        oklch(0.266 0.006 85);
+  --n-bg-3:        oklch(0.306 0.007 85);
+  --n-sheet:       oklch(0.187 0.005 85);
+  --n-sheet-2:     oklch(0.226 0.006 85);
+  --n-scrim:       oklch(0.100 0.004 85 / 0.62);
+
+  --n-text:        oklch(0.952 0.008 85);
+  --n-text-2:      oklch(0.805 0.008 85);
+  --n-text-3:      oklch(0.690 0.008 85);
+
+  /* rule-field is the design's field edge (rule-strong, 0.400) lifted to 0.515 so it
+     reaches 3:1 on the ground and the machine (2.0:1 as drawn) */
+  --n-rule:        oklch(0.283 0.005 85);
+  --n-rule-2:      oklch(0.400 0.006 85);
+  --n-rule-field:  oklch(0.545 0.006 85);   /* 0.515 until 2026-11-23: 2.71:1 on bg-2 */
+  --n-rule-heavy:  oklch(0.690 0.008 85);
+
+  --n-accent:      oklch(0.868 0.170 92);
+  --n-accent-text: oklch(0.868 0.170 92);
+  --n-accent-wash: oklch(0.250 0.034 90);
+  --n-on-accent:   oklch(0.205 0.030 85);
+
+  --n-stop:        oklch(0.725 0.160 28);
+  --n-on-stop:     oklch(0.148 0.004 85);
+
+  --n-ok:          oklch(0.805 0.008 85);
+  --n-warn:        oklch(0.790 0.095 60);
+  --n-bad:         oklch(0.725 0.160 28);
+  --n-info:        oklch(0.690 0.008 85);
+  --n-cloud:       oklch(0.775 0.085 300);
+  --n-ok-wash:     oklch(0.240 0.006 85);
+  --n-warn-wash:   oklch(0.276 0.007 85);
+  --n-bad-wash:    oklch(0.255 0.040 27);
+
+  /* focus is the yellow at night, as drawn; a text selection is not yours to decide, so it
+     is a neutral step above the raised fills, never the yellow */
+  --n-focus:       oklch(0.868 0.170 92);
+  --n-selection:   oklch(0.360 0.006 85);
+
+  /* derived roles (contract §3): emphasis is ink on raise-2, the primary action is an ink
+     fill with machine-coloured words, fields sit on raise-2 */
+  --n-emph:       var(--n-text);
+  --n-emph-wash:  var(--n-bg-3);
+  --n-primary:    var(--n-text);
+  --n-on-primary: var(--n-sheet);
+  --n-field-bg:   var(--n-bg-2);
+
+  /* tabular numerals everywhere, as drawn */
+  --n-numerals:   lining-nums tabular-nums;
+
+  /* One DIN face in two widths; width carries role. Normal width for what you read and
+     operate, semi-condensed for what you scan: labels, titles, numerals. Production face
+     Barlow + Barlow Semi Condensed; the installed stand-in is Bahnschrift, whose
+     "Bahnschrift SemiCondensed" family Chromium on Windows resolves to the 87.5% width. */
+  --n-font-ui:      "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-label:   "Barlow Semi Condensed", "Bahnschrift SemiCondensed", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-text:    "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-title:   "Barlow Semi Condensed", "Bahnschrift SemiCondensed", "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --n-font-display: "Barlow Semi Condensed", "Bahnschrift SemiCondensed", "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --n-font-mono:    "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  /* labels: sentence case, semi-condensed, semibold, a hair of tracking */
+  --n-label-case:   none;
+  --n-label-track:  0.02em;
+  --n-label-weight: 600;
+  /* optical grade: light type on dark spreads, so at night running text is 300 (it comes
+     back to 400 by day). The design keeps 12px text at 400; one --n-w-reg cannot split
+     that, and Bahnschrift Light stays legible at 12px on these grounds. Above regular the
+     design has one weight, strong 600 (controls, titles, the count): medium and bold
+     collapse onto it. */
+  --n-w-reg:  300;
+  --n-w-med:  600;
+  --n-w-semi: 600;
+  --n-w-bold: 600;
+
+  /* replies 15/23, a decision's title 17/22, the health verdict and page headlines 22/26,
+     the waiting count 38 */
+  --n-lh-ui:      19px;
+  --n-fs-own:     15px;  --n-lh-own:     22px;
+  --n-fs-prose:   15px;  --n-lh-prose:   23px;
+  --n-fs-title:   17px;  --n-lh-title:   22px;
+  --n-fs-verdict: 22px;  --n-lh-verdict: 26px;
+  --n-fs-figure:  38px;  --n-lh-figure:  42px;
+
+  /* a short concentric scale: 6 controls, tags, fields · 10 held cards · 14 the machine */
+  --n-r-0: 0;
+  --n-r-1: 6px;
+  --n-r-2: 10px;
+  --n-r-3: 14px;
+  /* a panel is a bounded sheet of the machine: opaque, closed 1px perimeter, no heavy top */
+  --n-panel-bg:     var(--n-sheet);
+  --n-panel-border: 1px solid var(--n-rule-2);
+  --n-panel-top:    1px solid var(--n-rule-2);
+  --n-panel-radius: var(--n-r-3);
+  --n-panel-shadow: none;
+  /* a register is a bounded sheet too: its words keep the panel's margin from its perimeter */
+  --n-register-pad: var(--n-panel-pad);
+
+  /* opaque surfaces; blurred shadows only on transient layers; the sheet you sign is keyed
+     to the line: an outline in what-is-yours and a 4px yellow edge */
+  --n-shadow-1:     none;
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 8px 24px oklch(0 0 0 / 0.5);
+  --n-shadow-sheet: 0 0 0 1px var(--n-accent-text), inset 4px 0 0 var(--n-accent), 0 8px 24px oklch(0 0 0 / 0.5);
+
+  --n-control-h:    30px;
+  --n-control-h-sm: 26px;
+  --n-bar-h:        60px;
+}
+
+:is(:root, .n-theme-scope)[data-look="threshold"][data-scheme="light"] {
+  color-scheme: light;
+
+  --n-bg:          oklch(0.926 0.008 85);
+  --n-bg-2:        oklch(0.952 0.006 85);
+  --n-bg-3:        oklch(0.900 0.009 85);
+  --n-sheet:       oklch(0.985 0.004 85);
+  --n-sheet-2:     oklch(1.000 0.000 0);
+  --n-scrim:       oklch(0.205 0.010 80 / 0.32);
+
+  --n-text:        oklch(0.205 0.010 80);
+  --n-text-2:      oklch(0.375 0.010 80);
+  --n-text-3:      oklch(0.480 0.010 80);
+
+  /* rule-field: the design's field edge (0.760, 1.7:1) darkened to 0.605 for 3:1 */
+  --n-rule:        oklch(0.890 0.006 85);
+  --n-rule-2:      oklch(0.760 0.008 85);
+  --n-rule-field:  oklch(0.605 0.008 85);
+  --n-rule-heavy:  oklch(0.480 0.010 80);
+
+  /* by day yellow is a fill keyed in ink; what is yours as text is ink */
+  --n-accent:      oklch(0.868 0.172 92);
+  --n-accent-text: oklch(0.205 0.010 80);
+  --n-accent-wash: oklch(0.958 0.050 95);
+  --n-on-accent:   oklch(0.205 0.030 85);
+
+  --n-stop:        oklch(0.505 0.190 27);
+  --n-on-stop:     oklch(1.000 0.000 0);
+
+  --n-ok:          oklch(0.375 0.010 80);
+  --n-warn:        oklch(0.490 0.105 55);
+  --n-bad:         oklch(0.505 0.190 27);
+  --n-info:        oklch(0.480 0.010 80);
+  --n-cloud:       oklch(0.460 0.095 300);
+  --n-ok-wash:     oklch(0.952 0.006 85);
+  --n-warn-wash:   oklch(0.910 0.010 85);
+  --n-bad-wash:    oklch(0.958 0.025 27);
+
+  /* focus is ink; the yellow highlighter belongs to what is yours, so a text selection
+     is a neutral step below the desk */
+  --n-focus:       oklch(0.205 0.010 80);
+  --n-selection:   oklch(0.860 0.008 85);
+
+  /* by day running text returns to 400 */
+  --n-w-reg: 400;
+
+  /* the machine is paper on a desk */
+  --n-panel-shadow: 0 1px 2px oklch(0.2 0.01 80 / 0.06);
+  --n-shadow-1:     0 1px 0 oklch(0.2 0.01 80 / 0.05);
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 8px 24px oklch(0.2 0.01 80 / 0.14);
+  --n-shadow-sheet: 0 0 0 1px var(--n-accent-text), inset 4px 0 0 var(--n-accent), 0 8px 24px oklch(0.2 0.01 80 / 0.14);
+}

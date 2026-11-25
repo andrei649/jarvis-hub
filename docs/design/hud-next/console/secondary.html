@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva Console — Trust</title>
+<script>
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'light' || t === 'dark' ? t : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="console.css">
+<style>
+/* ── Trust: panel list | overview ───────────────────────────────────────────── */
+.trust { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 0; }
+
+/* second-level navigation: every panel of the area, in one list */
+.subnav { display: flex; flex-direction: column; min-height: 0; background: var(--nv-bg); border-right: 1px solid var(--nv-border); }
+.subnav-h { padding: 14px 16px 10px; }
+.subnav-h h1 { font-size: 16px; line-height: 20px; font-weight: var(--nv-fw-strong); font-stretch: 100%; letter-spacing: 0.01em; }
+.subnav-h p { margin-top: 2px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); }
+.filter { margin: 0 12px 10px; display: flex; align-items: center; gap: 8px; height: var(--nv-control); padding: 0 8px; color: var(--nv-text-subtle); background: var(--nv-surface); border: 1px solid var(--nv-input-border); border-radius: var(--nv-r2); }
+.filter input { flex: 1; min-width: 0; border: 0; background: transparent; outline-offset: 2px; }
+.filter input::placeholder { color: var(--nv-text-subtle); opacity: 1; }
+.panels { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--nv-border-strong) transparent; }
+.panels a { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 14px 0 16px; color: var(--nv-text-muted); white-space: nowrap; }
+.panels a:hover { background: var(--nv-surface); color: var(--nv-text); }
+.panels a[aria-current="page"] { color: var(--nv-text); font-weight: var(--nv-fw-strong); background: var(--nv-surface); box-shadow: inset 3px 0 0 var(--nv-text); }
+.panels .cnt { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); font-weight: var(--nv-fw-regular); }
+.panels .cnt.you { color: var(--nv-signal-text); font-weight: var(--nv-fw-medium); }
+.panels .cnt .g { width: 7px; height: 7px; }
+.panels .grp { padding: 12px 16px 4px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); }
+.panels .more { color: var(--nv-text-subtle); }
+.subnav-f { flex: none; padding: 10px 16px 12px; border-top: 1px solid var(--nv-border); font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); line-height: 16px; }
+
+/* the overview */
+.tc { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; background: var(--nv-bg); scrollbar-width: thin; scrollbar-color: var(--nv-border-strong) transparent; }
+.tc-h { flex: none; display: flex; align-items: flex-end; gap: 16px; padding: 14px 20px 14px; border-bottom: 1px solid var(--nv-border); background: var(--nv-surface); }
+.crumb { font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); display: flex; align-items: center; gap: 6px; }
+.crumb .i { width: 12px; height: 12px; }
+.tc-h h2 { margin-top: 3px; font-size: 22px; line-height: 26px; font-weight: var(--nv-fw-strong); font-stretch: 100%; letter-spacing: 0; }
+.tc-h .sum { margin-left: 4px; padding-bottom: 3px; font-size: var(--nv-fs-body); color: var(--nv-text-muted); font-stretch: var(--nv-wdth-text); letter-spacing: 0; }
+.tc-h .sum b { color: var(--nv-text); }
+.tc-h .act { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+/* readings: the four things that make the product trustworthy, as one strip */
+.readings { flex: none; display: grid; grid-template-columns: 1fr 1fr 1fr 1.35fr; border-bottom: 1px solid var(--nv-border); background: var(--nv-surface); }
+.rd { min-width: 0; padding: 12px 20px 14px; border-left: 1px solid var(--nv-border); display: grid; grid-template-rows: auto auto auto; row-gap: 2px; align-content: start; }
+.rd:first-child { border-left: 0; }
+.rd .rl { font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); display: flex; align-items: center; gap: 8px; }
+.rd .rv { display: flex; align-items: center; gap: 10px; font-size: 26px; line-height: 32px; font-weight: var(--nv-fw-strong); font-stretch: 100%; letter-spacing: -0.005em; }
+.rd .rv .i { width: 20px; height: 20px; color: var(--nv-text-muted); stroke-width: 1.6; }
+.rd .r2 { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: var(--nv-fs-cell); color: var(--nv-text-muted); }
+.rd.estop { grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; align-items: center; }
+.rd.estop .rl, .rd.estop .rv, .rd.estop .r2 { grid-column: 1; }
+.rd.estop .stop { grid-column: 2; grid-row: 1 / 4; align-self: center; height: 40px; padding: 0 16px 0 14px; font-size: 14px; }
+.rd.estop .stop .sq { width: 12px; height: 12px; }
+
+.cols { flex: 1 0 auto; display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(0, 1fr); }
+.col { display: flex; flex-direction: column; min-width: 0; }
+.col + .col { border-left: 1px solid var(--nv-border); }
+.sec { background: var(--nv-surface); border-bottom: 1px solid var(--nv-border); }
+.sec:last-child { flex: 1 0 auto; }
+.sec .pane-h { border-bottom: 1px solid var(--nv-border); }
+
+/* audit chain: a strip of the day, then the entries with their seals */
+.chainday { position: relative; height: 60px; margin: 0 20px 0 16px; --t0: 345; --span: 306; }
+.chainday .ax { position: absolute; left: 0; right: 0; top: 6px; height: 14px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); }
+.chainday .ax span { position: absolute; left: calc((var(--t) - var(--t0)) / var(--span) * 100%); padding-left: 4px; line-height: 14px; }
+.chainday .tick { position: absolute; top: 4px; bottom: 6px; width: 1px; background: var(--nv-border); left: calc((var(--t) - var(--t0)) / var(--span) * 100%); }
+.chainday .base { position: absolute; left: 0; right: 0; top: 37px; height: 1px; background: var(--nv-border-strong); }
+.chainday .now { position: absolute; right: 0; top: 4px; bottom: 6px; width: 1px; background: var(--nv-text-muted); }
+.chainday .now span { position: absolute; right: 6px; top: 2px; font-size: var(--nv-fs-meta); color: var(--nv-text); font-weight: var(--nv-fw-strong); white-space: nowrap; }
+.chainday .e { position: absolute; top: 29px; left: calc((var(--t) - var(--t0)) / var(--span) * 100%); transform: translateX(-50%); display: grid; place-items: center; }
+.chainday .e .g { width: 10px; height: 10px; color: var(--nv-text-muted); }
+.chainday .e .pin { width: 16px; height: 16px; }
+.chainday .e.t3 { top: 29px; }
+
+.audit col.c-link { width: 34px; } .audit col.c-time { width: 58px; } .audit col.c-agent { width: 78px; }
+.audit col.c-tier { width: 176px; } .audit col.c-hash { width: 108px; } .audit col.c-seal { width: 92px; }
+.audit td { height: 38px; }
+.audit td.link { position: relative; padding: 0; }
+.audit td.link::before { content: ""; position: absolute; left: 20px; top: 0; bottom: 0; width: 1px; background: var(--nv-border-strong); }
+.audit tr:first-child td.link::before { top: 50%; }
+.audit tr:last-child td.link::before { bottom: 50%; }
+.audit td.link i { position: absolute; left: 16px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%; background: var(--nv-surface); box-shadow: inset 0 0 0 1.5px var(--nv-text-muted); }
+.audit td.link i.t3 { box-shadow: inset 0 0 0 1.5px var(--nv-text); background: var(--nv-text); }
+.audit .act { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.audit .act span { overflow: hidden; text-overflow: ellipsis; }
+.audit .act .wait { color: var(--nv-signal-text); font-weight: var(--nv-fw-medium); flex: none; }
+.audit .seal { display: inline-flex; align-items: center; gap: 6px; color: var(--nv-text-muted); }
+.audit .seal .g { color: var(--nv-text-muted); }
+.audit .agent { font-weight: var(--nv-fw-medium); }
+.audit .fail .g { color: var(--nv-fault-line); }
+
+.caps col.c-id { width: 190px; } .caps col.c-grant { width: 214px; }
+.caps td { height: 36px; }
+.grant { display: inline-flex; align-items: center; gap: 10px; }
+.grant .pp { display: inline-flex; gap: 2px; }
+.grant .pp i { width: 5px; height: 12px; box-shadow: inset 0 0 0 1px var(--nv-text-subtle); }
+.grant .pp i.on { background: var(--nv-text-muted); box-shadow: none; }
+.grant b { font-weight: var(--nv-fw-medium); }
+.capfoot { padding: 10px 20px 14px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); display: flex; gap: 18px; flex-wrap: wrap; }
+.capfoot span { display: inline-flex; align-items: center; gap: 8px; }
+
+/* locality: the figure, one cell per run, and how the figure is known */
+.loc { padding: 18px 20px 20px; display: grid; gap: 16px; }
+.loc-fig { display: flex; align-items: flex-end; gap: 16px; }
+.loc-fig .v { font-size: 44px; line-height: 44px; font-weight: var(--nv-fw-strong); font-stretch: 100%; letter-spacing: -0.01em; }
+.loc-fig .t { display: grid; gap: 2px; padding-bottom: 3px; }
+.loc-fig .t b { font-size: var(--nv-fs-body); font-weight: var(--nv-fw-strong); font-stretch: var(--nv-wdth-text); letter-spacing: 0; }
+.loc-fig .t span { display: flex; align-items: center; gap: 8px; color: var(--nv-text-muted); }
+.runs { display: grid; grid-template-columns: repeat(41, minmax(0, 1fr)); gap: 3px; height: 26px; }
+.runs i { background: var(--nv-mark); }
+.runs-k { display: flex; align-items: center; gap: 18px; margin-top: -6px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); }
+.runs-k span { display: inline-flex; align-items: center; gap: 6px; }
+.runs-k .sw { width: 8px; height: 12px; background: var(--nv-mark); }
+.runs-k .sw.o { background: none; box-shadow: inset 0 0 0 1px var(--nv-text-subtle); }
+.basis-l .lbl { font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); margin-bottom: 6px; }
+.egress { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--nv-border-strong); border-radius: var(--nv-r2); background: var(--nv-surface-2); }
+.egress .i { color: var(--nv-text-muted); }
+.egress b { font-weight: var(--nv-fw-strong); }
+.egress span { color: var(--nv-text-muted); }
+
+.policy col.c-pol { width: 150px; } .policy col.c-n { width: 60px; }
+.policy td { height: 34px; }
+.policy td.names { white-space: normal; line-height: 17px; padding-block: 7px; }
+.policy .names { color: var(--nv-text-muted); }
+.policy .names b { color: var(--nv-text); font-weight: var(--nv-fw-medium); }
+
+.pay col.c-agent { width: 96px; } .pay col.c-amt { width: 104px; } .pay col.c-state { width: 210px; }
+.pay td { height: 40px; }
+.pay .amt { font-weight: var(--nv-fw-strong); }
+.pay .amt.big { font-size: 16px; }
+.pay .st { display: inline-flex; align-items: center; gap: 8px; }
+
+@media (max-width: 1600px) {
+  .trust { grid-template-columns: 208px minmax(0, 1fr); }
+  .readings { grid-template-columns: 1fr 1fr 1fr; }
+  .rd.estop { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--nv-border); }
+  .cols { grid-template-columns: minmax(0, 1fr); }
+  .col + .col { border-left: 0; }
+  .tc-h .sum { display: none; }
+}
+</style>
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true">
+  <defs>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></symbol>
+    <symbol id="i-machine" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 16 16"><rect x="6" y="2" width="4" height="7" rx="2"/><path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5V14"/></symbol>
+    <symbol id="i-model" viewBox="0 0 16 16"><path d="M8 2l5 3v6l-5 3-5-3V5zM3 5l5 3 5-3M8 8v6"/></symbol>
+    <symbol id="i-data" viewBox="0 0 16 16"><path d="M2 8h3l1.5-4 3 8L11 8h3"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-glance" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8.5" rx="1"/><path d="M5 6.2v2.4M8 6.2v2.4M11 6.2v2.4M6 14h4"/></symbol>
+    <symbol id="i-right" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5"/></symbol>
+    <symbol id="i-down" viewBox="0 0 16 16"><path d="M3.5 6 8 10.5 12.5 6"/></symbol>
+    <symbol id="i-chain" viewBox="0 0 16 16"><path d="M6.8 9.2l2.4-2.4"/><path d="M5.3 7.6 3.9 9a2.4 2.4 0 0 0 3.4 3.4l1.4-1.4M10.7 8.4 12.1 7A2.4 2.4 0 0 0 8.7 3.6L7.3 5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.5 6.5 12 13 4.5"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 16 16"><path d="M2.5 4h11M4.5 8h7M6.5 12h3"/></symbol>
+    <symbol id="i-verify" viewBox="0 0 16 16"><path d="M8 1.8 13 4v4c0 3-2.2 5.2-5 6.2C5.2 13.2 3 11 3 8V4z"/><path d="M5.6 8.1 7.3 9.8 10.5 6.4"/></symbol>
+    <symbol id="g-tri" viewBox="0 0 10 10"><path d="M5 .8 9.6 9H.4z"/></symbol>
+    <symbol id="g-diamond" viewBox="0 0 10 10"><path d="M5 .3 9.7 5 5 9.7.3 5z"/></symbol>
+    <symbol id="g-sq" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7"/></symbol>
+    <symbol id="g-dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3"/></symbol>
+    <symbol id="g-sqo" viewBox="0 0 10 10"><rect x="1.75" y="1.75" width="6.5" height="6.5"/></symbol>
+    <symbol id="g-check" viewBox="0 0 10 10"><path d="M1.5 5.5 4 8l4.5-5.5"/></symbol>
+    <symbol id="g-x" viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+
+  <!-- ── Top bar (identical on every page) ──────────────────────────────────── -->
+  <header class="bar">
+    <a class="brand" href="cockpit.html" aria-label="Nerva Console, home. Something is waiting for you.">
+      <svg class="mark" viewBox="20 16 88 96" aria-hidden="true">
+        <path class="s" d="M40 92V36L88 92V36"/>
+        <circle class="n" cx="40" cy="36" r="10"/><circle class="n" cx="40" cy="92" r="10"/><circle class="n" cx="88" cy="92" r="10"/>
+        <circle class="n lit" cx="88" cy="36" r="12"/>
+      </svg>
+      <span>Nerva</span>
+    </a>
+    <nav class="areas" aria-label="Areas">
+      <a href="cockpit.html">Home</a>
+      <a href="#work" title="9 need you">Work <span class="n you"><svg class="g"><use href="#g-sq"/></svg>9</span><span class="sr">need you</span></a>
+      <a href="#agents">Agents</a>
+      <a href="#memory">Memory</a>
+      <a href="secondary.html" aria-current="page">Trust</a>
+      <a href="#build">Build</a>
+      <a href="#connect">Connect</a>
+      <a href="#observe" title="4 services down">Observe <span class="n fault"><svg class="g"><use href="#g-diamond"/></svg>4</span><span class="sr">services down</span></a>
+      <a href="#settings">Settings</a>
+    </nav>
+    <button class="search" type="button" aria-label="Search and command. Finds every area, panel, agent and action.">
+      <svg class="i"><use href="#i-search"/></svg>
+      <span>Search or run a command</span>
+      <span class="keys"><kbd>Ctrl</kbd><kbd>K</kbd></span>
+    </button>
+    <div class="bar-right">
+      <span class="lbl md">Mode</span>
+      <div class="seg" role="radiogroup" aria-label="Approval mode">
+        <button type="button" role="radio" aria-checked="false" title="Safe and reversible actions run on their own; risky ones wait.">Auto</button>
+        <button type="button" role="radio" aria-checked="true" title="Anything with a side effect waits for you.">Ask</button>
+        <button type="button" role="radio" aria-checked="false" title="Agents may read and think, nothing acts.">Off</button>
+      </div>
+      <div class="budget" title="Nerva may interrupt you four times a day. Three used.">
+        <span class="lbl lg">Interrupts</span>
+        <span class="pips" aria-hidden="true"><i></i><i></i><i></i><i class="left"></i></span>
+        <span>3 of 4</span>
+      </div>
+      <span class="bar-sep" aria-hidden="true"></span>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" aria-pressed="true">EN</button><button type="button" aria-pressed="false">RO</button>
+      </div>
+      <button class="icon-btn" type="button" id="theme" aria-label="Theme: dark. Switch to light." title="Theme dark / light"><svg class="i"><use href="#i-theme"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="Glance mode (idle or second screen)" title="Glance mode (idle or second screen)"><svg class="i"><use href="#i-glance"/></svg></button>
+      <span class="bar-sep" aria-hidden="true"></span>
+      <button class="stop" type="button" title="One click. Halts every agent and the job queue until you resume."><span class="sq" aria-hidden="true"></span>Stop all agents</button>
+    </div>
+  </header>
+
+  <!-- ── Status line (identical on every page) ──────────────────────────────── -->
+  <div class="statusline" role="status" aria-label="System status">
+    <a class="verdict attention" href="#observe" title="Not blocking. Last checked 10:50.">
+      <svg class="g" aria-hidden="true"><use href="#g-tri"/></svg>
+      <b>Degraded</b>
+      <span class="v-head"><span class="md">Working, with </span>4 local services down</span>
+      <span class="v-meta"><span class="lg">since 08:14 · </span>checked 10:50</span>
+    </a>
+    <a class="v-fix" href="cockpit.html#d1" title="Restart 4 local services — waits for your decision"><span class="pin t3">1</span><span class="md">Restart waits for you</span></a>
+    <div class="facts">
+      <span class="fact"><svg class="i"><use href="#i-lock"/></svg><i>Egress</i><b>Sealed</b><span class="more xl">— nothing can leave this machine</span></span>
+      <span class="fact"><svg class="i"><use href="#i-machine"/></svg><i><span class="md">Runs on this machine</span><span class="sm-only">On this machine</span></i><b>100%</b><span class="more lg">· 41 of 41 runs today</span><span class="basis" title="The hub counts which route each run used. It is not a network measurement.">by route</span></span>
+      <span class="fact"><svg class="i"><use href="#i-mic"/></svg><i class="md">Microphone</i><b>On</b></span>
+      <span class="fact"><svg class="i"><use href="#i-model"/></svg><i class="md">Model</i><b class="mono">gemma-4-31b</b><span class="more lg">· loaded on Ollama</span></span>
+      <span class="fact"><svg class="i"><use href="#i-data"/></svg><i><span class="md">Data on screen</span><span class="sm-only">Data</span></i><b>Live</b></span>
+    </div>
+  </div>
+
+  <main class="trust">
+
+    <!-- ── Second level: every Trust panel ────────────────────────────────── -->
+    <nav class="subnav" aria-label="Trust panels">
+      <div class="subnav-h">
+        <h1>Trust</h1>
+        <p>21 panels · audit chain, emergency stop, capabilities, permissions, payments, secrets</p>
+      </div>
+      <label class="filter"><svg class="i s" aria-hidden="true"><use href="#i-filter"/></svg><input type="text" placeholder="Filter 21 panels" aria-label="Filter Trust panels"></label>
+      <div class="panels">
+        <a href="#overview" aria-current="page">Overview</a>
+        <a href="#audit">Audit chain<span class="cnt">921</span></a>
+        <a href="#stop">Emergency stop<span class="cnt">Armed</span></a>
+        <a href="#capabilities">Capabilities<span class="cnt">6</span></a>
+        <a href="#permissions">Permissions</a>
+        <a href="#payments">Payments<span class="cnt you"><svg class="g"><use href="#g-sq"/></svg>1 waits</span></a>
+        <a href="#posture">Posture</a>
+        <a href="#secrets">Secrets</a>
+        <a href="#skill-switches">Skill switches</a>
+        <a href="#pairing">Pairing</a>
+        <a href="#anchors">Audit anchors</a>
+        <a href="#retention">Retention</a>
+        <a href="#data-handling">Data handling</a>
+        <a href="#credential-shares">Credential shares</a>
+        <a href="#desktop-allowlist">Desktop allowlist</a>
+        <a href="#security-skills">Security skills</a>
+        <a href="#signal-governance">Signal governance</a>
+        <a href="#trust-ops">Trust ops</a>
+        <a href="#more" class="more">and 3 more<span class="cnt"><svg class="i s"><use href="#i-down"/></svg></span></a>
+      </div>
+      <p class="subnav-f"><kbd>Ctrl</kbd> <kbd>K</kbd> finds any of these from anywhere, and every other area's panels too.</p>
+    </nav>
+
+    <!-- ── Overview ───────────────────────────────────────────────────────── -->
+    <div class="tc">
+      <header class="tc-h">
+        <div>
+          <div class="crumb"><span>Trust</span><svg class="i" aria-hidden="true"><use href="#i-right"/></svg><span>Overview</span></div>
+          <h2 id="overview">Overview</h2>
+        </div>
+        <p class="sum"><b>Chain intact</b> · 921 sealed entries · verified 10:50</p>
+        <div class="act">
+          <span class="src">Live</span>
+          <button class="btn" type="button"><svg class="i s"><use href="#i-verify"/></svg>Verify the chain now</button>
+        </div>
+      </header>
+
+      <div class="readings">
+        <div class="rd">
+          <span class="rl">Audit chain</span>
+          <span class="rv"><svg class="i"><use href="#i-check"/></svg>Intact</span>
+          <span class="r2">921 sealed entries · verified 10:50</span>
+        </div>
+        <div class="rd">
+          <span class="rl">Runs on this machine</span>
+          <span class="rv">100%</span>
+          <span class="r2">41 of 41 runs today <span class="basis">by route</span></span>
+        </div>
+        <div class="rd">
+          <span class="rl">Egress</span>
+          <span class="rv"><svg class="i"><use href="#i-lock"/></svg>Sealed</span>
+          <span class="r2">Nothing can leave this machine</span>
+        </div>
+        <div class="rd estop">
+          <span class="rl">Emergency stop</span>
+          <span class="rv">Armed</span>
+          <span class="r2">One click. Halts every agent and the job queue until you resume.</span>
+          <button class="stop" type="button"><span class="sq" aria-hidden="true"></span>Stop all agents</button>
+        </div>
+      </div>
+
+      <div class="cols">
+        <div class="col">
+
+          <!-- audit chain -->
+          <section class="sec" aria-labelledby="h-audit">
+            <header class="pane-h">
+              <h2 id="h-audit">Audit chain</h2>
+              <span class="sub">latest 8 of 921 · every entry sealed to the one before it</span>
+              <span class="right"><span class="src">Live</span><a class="btn sm quiet" href="#audit">Open the chain<svg class="i s"><use href="#i-right"/></svg></a></span>
+            </header>
+            <div class="chainday" aria-label="Today's entries on a time axis, 05:45 to now">
+              <div class="ax"><span style="--t:360">06:00</span><span style="--t:420">07:00</span><span style="--t:480">08:00</span><span style="--t:540">09:00</span><span style="--t:600">10:00</span></div>
+              <i class="tick" style="--t:360"></i><i class="tick" style="--t:420"></i><i class="tick" style="--t:480"></i><i class="tick" style="--t:540"></i><i class="tick" style="--t:600"></i>
+              <i class="base"></i>
+              <div class="now"><span>verified 10:50</span></div>
+              <span class="e" style="--t:434" title="07:14 Pepper · tier 1"><svg class="g"><use href="#g-sq"/></svg></span>
+              <span class="e" style="--t:468" title="07:48 Ultron · tier 2"><svg class="g o"><use href="#g-sqo"/></svg></span>
+              <span class="e" style="--t:481" title="08:01 Ultron · tier 2"><svg class="g o"><use href="#g-sqo"/></svg></span>
+              <span class="e" style="--t:485" title="08:05 Stark · tier 1"><svg class="g"><use href="#g-sq"/></svg></span>
+              <span class="e t3" style="--t:487" title="08:07 Gecko · tier 3, waits"><span class="pin t3">2</span></span>
+              <span class="e t3" style="--t:494" title="08:14 Steve · tier 3, waits"><span class="pin t3">1</span></span>
+              <span class="e" style="--t:580" title="09:40 Vision · tier 0"><svg class="g"><use href="#g-dot"/></svg></span>
+              <span class="e" style="--t:649" title="10:49 Jarvis · tier 0"><svg class="g"><use href="#g-dot"/></svg></span>
+            </div>
+            <table class="tbl audit">
+              <colgroup><col class="c-link"><col class="c-time"><col class="c-agent"><col><col class="c-tier"><col class="c-hash"><col class="c-seal"></colgroup>
+              <thead><tr><th scope="col"><span class="sr">Chain</span></th><th scope="col">Time</th><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Risk tier</th><th scope="col">Hash</th><th scope="col">Seal</th></tr></thead>
+              <tbody>
+                <tr><td class="link"><i></i></td><td>10:49</td><td class="agent">Jarvis</td><td><span class="act"><span>Routed your question to Pepper and Stark</span></span></td><td><span class="tier t0"><b>0</b>Read only</span></td><td class="mono dim">9f2c…a41b</td><td><span class="seal"><svg class="g o"><use href="#g-check"/></svg>sealed</span></td></tr>
+                <tr><td class="link"><i></i></td><td>09:40</td><td class="agent">Vision</td><td><span class="act"><span>Indexed 17 sources into memory</span></span></td><td><span class="tier t0"><b>0</b>Read only</span></td><td class="mono dim">5ad1…77e0</td><td><span class="seal"><svg class="g o"><use href="#g-check"/></svg>sealed</span></td></tr>
+                <tr><td class="link"><i class="t3"></i></td><td>08:14</td><td class="agent">Steve</td><td><span class="act"><span class="pin t3">1</span><span>Proposed restart of 4 services —</span><span class="wait">waiting for approval</span></span></td><td><span class="tier t3"><b>3</b>Irreversible or money</span></td><td class="mono dim">c03e…1d9f</td><td><span class="seal"><svg class="g o"><use href="#g-check"/></svg>sealed</span></td></tr>
+                <tr><td class="link"><i class="t3"></i></td><td>08:07</td><td class="agent">Gecko</td><td><span class="act"><span class="pin t3">2</span><span>Proposed transfer of €4,200 —</span><span class="wait">waiting for approval</span></span></td><td><span class="tier t3"><b>3</b>Irreversible or money</span></td><td class="mono dim">71bb…e2c4</td><td><span class="seal"><svg class="g o"><use href="#g-check"/></svg>sealed</span></td></tr>
+                <tr><td class="link"><i></i></td><td>08:05</td><td class="agent">Stark</td><td><span class="act fail"><svg class="g o" aria-hidden="true"><use href="#g-x"/></svg><span><span class="mono">file_write</span> failed — nothing was changed</span></span></td><td><span class="tier t1"><b>1</b>Reversible</span></td><td class="mono dim">2e90…0b6a</td><td><span class="seal"><svg class="g o"><use href="#g-check"/></svg>sealed</span></td></tr>
+                <tr><td class="link"><i></i></td><td>08:01</td><td class="agent">Ultron</td><td><span class="act"><svg class="g o" aria-hidden="true"><use href="#g-sqo"/></svg><span>Blocked an outbound request to <span class="mono">10.0.0.x</span> (SSRF rule)</span></span></td><td><span class="tier t2"><b>2</b>External</span></td><td class="mono dim">aa47…93f1</td><td><span class="seal"><svg class="g o"><use href="#g-check"/></svg>sealed</span></td></tr>
+                <tr><td class="link"><i></i></td><td>07:48</td><td class="agent">Ultron</td><td><span class="act"><svg class="g o" aria-hidden="true"><use href="#g-sqo"/></svg><span>Redacted 2 PII spans in an outbound draft and held it</span></span></td><td><span class="tier t2"><b>2</b>External</span></td><td class="mono dim">0d3f…5c82</td><td><span class="seal"><svg class="g o"><use href="#g-check"/></svg>sealed</span></td></tr>
+                <tr><td class="link"><i></i></td><td>07:14</td><td class="agent">Pepper</td><td><span class="act"><span>Resolved 1 calendar conflict</span></span></td><td><span class="tier t1"><b>1</b>Reversible</span></td><td class="mono dim">b6e2…4a10</td><td><span class="seal"><svg class="g o"><use href="#g-check"/></svg>sealed</span></td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <!-- capabilities -->
+          <section class="sec" aria-labelledby="h-caps">
+            <header class="pane-h">
+              <h2 id="h-caps">Capabilities</h2>
+              <span class="sub">what agents may do, and how much of it waits for you</span>
+              <span class="right"><span class="src">Live</span><a class="btn sm quiet" href="#capabilities">All 6<svg class="i s"><use href="#i-right"/></svg></a></span>
+            </header>
+            <table class="tbl caps">
+              <colgroup><col class="c-id"><col><col class="c-grant"></colgroup>
+              <thead><tr><th scope="col">Capability</th><th scope="col">What it allows</th><th scope="col">Grant</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">fs.read</td><td>Read workspace files</td><td><span class="grant"><span class="pp" aria-hidden="true"><i></i><i></i><i></i></span><b>Allow</b></span></td></tr>
+                <tr><td class="mono">fs.write</td><td>Modify files in <span class="mono">/work</span></td><td><span class="grant"><span class="pp" aria-hidden="true"><i class="on"></i><i></i><i></i></span><b>Scoped</b></span></td></tr>
+                <tr><td class="mono">net.outbound</td><td>External HTTP via plugins</td><td><span class="grant"><span class="pp" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i></span><b>Gated</b></span></td></tr>
+                <tr><td class="mono">payments.execute</td><td>Move money</td><td><span class="grant"><span class="pp" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span><b>Approval</b></span></td></tr>
+                <tr><td class="mono">shell.exec</td><td>Run shell commands</td><td><span class="grant"><span class="pp" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span><b>Approval</b></span></td></tr>
+                <tr><td class="mono">memory.write</td><td>Persist facts to the knowledge graph</td><td><span class="grant"><span class="pp" aria-hidden="true"><i></i><i></i><i></i></span><b>Allow</b></span></td></tr>
+              </tbody>
+            </table>
+            <p class="capfoot">
+              <span><span class="grant"><span class="pp" aria-hidden="true"><i></i><i></i><i></i></span></span>Allow — runs, recorded</span>
+              <span><span class="grant"><span class="pp" aria-hidden="true"><i class="on"></i><i></i><i></i></span></span>Scoped — only inside its scope</span>
+              <span><span class="grant"><span class="pp" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i></span></span>Gated — checked at the gate</span>
+              <span><span class="grant"><span class="pp" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span></span>Approval — waits for you every time</span>
+            </p>
+          </section>
+        </div>
+
+        <div class="col">
+
+          <!-- locality -->
+          <section class="sec" aria-labelledby="h-loc">
+            <header class="pane-h">
+              <h2 id="h-loc">Where it ran</h2>
+              <span class="sub">today, per run</span>
+              <span class="right"><span class="src">Live</span></span>
+            </header>
+            <div class="loc">
+              <div class="loc-fig">
+                <span class="v">100%</span>
+                <span class="t"><b>on this machine</b><span>41 of 41 runs today · 0 in the cloud <span class="basis">by route</span></span></span>
+              </div>
+              <div class="runs" role="img" aria-label="41 runs today, each one on this machine">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+              <div class="runs-k"><span><i class="sw"></i>on this machine · 41</span><span><i class="sw o"></i>cloud · 0</span><span>one cell per run</span></div>
+              <div class="basis-l">
+                <p class="lbl">How this figure is known</p>
+                <ol class="ladder" aria-label="Basis of the figure">
+                  <li><b>Unknown</b><span>no routing data</span></li>
+                  <li><b>Derived</b><span>from the local-only switch</span></li>
+                  <li class="now" aria-current="step"><b>By route</b><span>the hub counts each run's route</span></li>
+                  <li class="future"><b>Verified</b><span>measured — not available yet</span></li>
+                </ol>
+              </div>
+              <div class="egress"><svg class="i"><use href="#i-lock"/></svg><b>Egress sealed</b><span>— nothing can leave this machine.</span></div>
+            </div>
+          </section>
+
+          <!-- routing policy -->
+          <section class="sec" aria-labelledby="h-pol">
+            <header class="pane-h">
+              <h2 id="h-pol">Routing policy</h2>
+              <span class="sub">18 agents by where they are allowed to run</span>
+              <span class="right"><span class="src">Live</span></span>
+            </header>
+            <table class="tbl policy">
+              <colgroup><col class="c-pol"><col><col class="c-n"></colgroup>
+              <thead><tr><th scope="col">Runs</th><th scope="col">Agents</th><th scope="col" class="num">Count</th></tr></thead>
+              <tbody>
+                <tr><td><b>Local only</b> <span class="dim">· by code</span></td><td class="names"><b>Frigga · Ultron · Howard · Hestia</b></td><td class="num">4</td></tr>
+                <tr><td>Auto</td><td class="names">Jarvis · Friday · Pepper · Jerome · Stark · Veronica · Oracle · Gecko · Hercules · Hephaestus</td><td class="num">10</td></tr>
+                <tr><td>Cloud preferred</td><td class="names">Vision · Argus · Steve</td><td class="num">3</td></tr>
+                <tr><td>Cloud only</td><td class="names">Athena <span class="dim">— unavailable while egress is sealed</span></td><td class="num">1</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <!-- payments -->
+          <section class="sec" aria-labelledby="h-pay">
+            <header class="pane-h">
+              <h2 id="h-pay">Payments</h2>
+              <span class="sub">money moves only with your typed confirmation</span>
+              <span class="right"><span class="src">Live</span></span>
+            </header>
+            <table class="tbl pay">
+              <colgroup><col class="c-agent"><col><col class="c-amt"><col class="c-state"></colgroup>
+              <thead><tr><th scope="col">Agent</th><th scope="col">What</th><th scope="col" class="num">Amount</th><th scope="col">State</th></tr></thead>
+              <tbody>
+                <tr><td><b>Gecko</b></td><td>Savings ladder sweep</td><td class="num amt big">€4,200</td><td><a class="st c-you" href="cockpit.html#d2"><span class="pin t3">2</span>Waiting for approval</a></td></tr>
+                <tr><td>Pepper</td><td>Conf Room A booking</td><td class="num amt">€35</td><td><span class="st muted"><svg class="g o" aria-hidden="true"><use href="#g-check"/></svg>Settled 07:20</span></td></tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ── Key line ───────────────────────────────────────────────────────────── -->
+  <footer class="keyline">
+    <span class="k"><kbd>Ctrl</kbd><kbd>K</kbd>Search or run</span>
+    <span class="k"><kbd>1</kbd>–<kbd>9</kbd>Areas</span>
+    <span class="k"><kbd>J</kbd><kbd>K</kbd>Move</span>
+    <span class="k"><kbd>Enter</kbd>Open</span>
+    <span class="k lg"><kbd>Esc</kbd>Back</span>
+    <span class="k"><kbd>?</kbd>All keys</span>
+    <span class="rule">The stop is one click on purpose. Verdicts take a click or a typed confirmation, never a key.</span>
+    <span class="sys">
+      <span class="lg"><i>Channels</i><b>2 of 2</b> running<span class="xl"> · 1 session in the last 15 min</span></span>
+      <span><i>Latency p50</i><span class="unknown">unknown</span></span>
+      <span><i>RAM</i><b>19%</b><span class="meter" aria-hidden="true"><i style="width:19%"></i></span><span class="lg">36 of 192 GB</span></span>
+      <span><i>VRAM</i><b>96%</b><span class="meter" aria-hidden="true"><i style="width:96%"></i></span><span class="lg">23.0 of 24 GB</span></span>
+      <span><i>GPU</i><b>3%</b><span class="meter" aria-hidden="true"><i style="width:3%"></i></span></span>
+      <span class="xl">Nerva 1.0.0</span>
+    </span>
+  </footer>
+</div>
+
+<script>
+  /* Theme switch: the only behaviour on this page. */
+  document.getElementById('theme').addEventListener('click', function () {
+    var r = document.documentElement, next = r.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    r.setAttribute('data-theme', next);
+    this.setAttribute('aria-label', 'Theme: ' + next + '. Switch to ' + (next === 'light' ? 'dark' : 'light') + '.');
+  });
+</script>
+</body>
+</html>

@@ -14,9 +14,15 @@ it('writes public hrefs but keeps per-entry overlay origins logical', () => {
   (window as any).__NERVA_BASE_PATH__ = '/nerva';
   history.replaceState({ other: 1 }, '', '/nerva/v2/chat?demo=1#anchor');
   expect(routeHref('/v2/memory')).toBe('/nerva/v2/memory?demo=1#anchor');
+  // World is a page under the Ledger frame (PHASE_B_PLAN.md §3.4): a public href, the entry's own
+  // state kept, and no return record
   navigateHud('/v2/world');
   expect(location.pathname).toBe('/nerva/v2/world');
-  expect(history.state).toEqual({ other: 1, __nervaHudRoute: {path: '/v2/chat', parent: null} });
+  expect(history.state).toEqual({ other: 1 });
+  // Glance is the one overlay: its return record holds the logical path, never the public one
+  navigateHud('/v2/glance');
+  expect(location.pathname).toBe('/nerva/v2/glance');
+  expect(history.state).toEqual({ other: 1, __nervaHudRoute: {path: '/v2/world', parent: null} });
 });
 
 import { renderHook, act, cleanup } from '@testing-library/react';
@@ -29,18 +35,21 @@ it('initializes deep panel bookmarks and canonicalizes under the prefix', () => 
   history.replaceState(null, '', '/one/two/v2/console/decision-inbox?demo=1');
   const {result} = renderHook(() => useHudRoute());
   expect(result.current.route.panel).toBe('decision-inbox');
-  expect(document.title).toBe('Decision Inbox · Console · Nerva');
+  expect(document.title).toBe('Decisions · Work · Nerva');
   expect(location.pathname).toBe('/one/two/v2/console/decision-inbox');
 });
 it('preserves historical overlay close targets and popstate beneath a prefix', () => {
   window.__NERVA_BASE_PATH__ = '/one';
   history.replaceState({ unrelated: 'kept' }, '', '/one/v2/chat?demo=1#anchor');
   const {result} = renderHook(() => useHudRoute());
-  act(() => navigateHud('/v2/world'));
+  act(() => navigateHud('/v2/glance'));
   const saved = history.state;
-  act(() => {closeHudOverlay(); navigateHud('/v2/memory'); navigateHud('/v2/world');});
-  act(() => {history.replaceState(saved, '', '/one/v2/world?demo=1#anchor'); window.dispatchEvent(new PopStateEvent('popstate'));});
-  expect(result.current.route.mode).toBe('world');
+  // a later Glance, opened from another page, records that page instead
+  act(() => {closeHudOverlay(); navigateHud('/v2/memory'); navigateHud('/v2/glance');});
+  expect(history.state.__nervaHudRoute).toEqual({path: '/v2/memory', parent: null});
+  // the historical entry comes back with its own close target
+  act(() => {history.replaceState(saved, '', '/one/v2/glance?demo=1#anchor'); window.dispatchEvent(new PopStateEvent('popstate'));});
+  expect(result.current.route.mode).toBe('glance');
   act(() => closeHudOverlay());
   expect(location.pathname + location.search + location.hash).toBe('/one/v2/chat?demo=1#anchor');
   expect(history.state.unrelated).toBe('kept');

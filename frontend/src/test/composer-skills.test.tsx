@@ -2,8 +2,11 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { InputBar } from '../cockpit';
+import { openComposerMenu } from '../home/talk/test-support';
 
 const props = { t: { transmit: 'Transmit', placeholder: 'Message', channel: 'Chat' }, selectedTurn: true };
+// Skills is in the composer's Options menu since the re-lay (PHASE_B_PLAN.md §5.3)
+const openSkills = (name = 'Skills') => { openComposerMenu('options'); fireEvent.click(screen.getByRole('button', { name })); };
 const skill = { kind: 'skill', name: 'summarize', command: '/summarize', description: 'Summarize', tier: 'admin', usage: '[instruction]' };
 const refine = { name: 'refine', command: '/refine', description: 'Review', tier: 'admin', usage: '[focus]' };
 const catalog = (overrides: Record<string, unknown> = {}) => Response.json({
@@ -24,7 +27,7 @@ it('loads on demand with owner credentials and shows only canonical server-visib
   vi.stubGlobal('fetch', fetcher);
   render(<InputBar {...props} agent="howard" onSubmit={vi.fn()}/>);
   expect(fetcher).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   expect(await screen.findByRole('button', { name: 'Summarize — /summarize' })).toBeTruthy();
   expect(screen.queryByText('/bad;run')).toBeNull();
   expect(screen.queryByText('/other')).toBeNull();
@@ -43,12 +46,12 @@ it('inserts a typed skill before existing text, keeps conflicting slash drafts, 
   render(<InputBar {...props} onSubmit={submit}/>);
   const field = screen.getByPlaceholderText('Message') as HTMLInputElement;
   fireEvent.change(field, { target: { value: 'my exact words' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   fireEvent.click(await screen.findByRole('button', { name: 'Summarize — /summarize' }));
   expect(field.value).toBe('/summarize my exact words');
   expect(document.activeElement).toBe(field);
   expect(submit).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   fireEvent.click(await screen.findByRole('button', { name: 'Summarize — /summarize' }));
   expect(field.value).toBe('/summarize my exact words');
   expect(screen.getByText(/slash command is already drafted/)).toBeTruthy();
@@ -62,7 +65,7 @@ it('shows generated skills by readable title while retaining the exact slash com
   vi.stubGlobal('fetch', vi.fn(async () => catalog({ shortcuts: [generated] })));
   const submit = vi.fn();
   render(<InputBar {...props} onSubmit={submit}/>);
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   const choice = await screen.findByRole('button', {
     name: 'Copper Margin Generate Excelready — /copper-margin-generate-excelready-133619',
   });
@@ -81,7 +84,7 @@ it('keeps the edited task but drops the picked skill when its recipient changes'
   const view = render(<InputBar {...props} agent="frigga" sessionId="one" onSubmit={submit}/>);
   const field = screen.getByPlaceholderText('Message') as HTMLInputElement;
   fireEvent.change(field, { target: { value: 'first draft' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   fireEvent.click(await screen.findByRole('button', { name: 'Summarize — /summarize' }));
   fireEvent.change(field, { target: { value: '/summarize   edited draft' } });
   view.rerender(<InputBar {...props} agent="howard" sessionId="one" onSubmit={submit}/>);
@@ -97,7 +100,7 @@ it('keeps a full-length question intact when adding a skill would exceed the hub
   render(<InputBar {...props} agent="frigga" onSubmit={vi.fn()}/>);
   const field = screen.getByPlaceholderText('Message') as HTMLInputElement;
   fireEvent.change(field, { target: { value: '🟢'.repeat(4096) } });
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   fireEvent.click(await screen.findByRole('button', { name: 'Summarize — /summarize' }));
   expect(field.value).toBe('🟢'.repeat(4096));
   expect(screen.getByRole('status').textContent).toMatch(/4,096/);
@@ -109,7 +112,7 @@ it('finds learned skills by words in their name locally and keeps searches out o
   vi.stubGlobal('fetch', fetcher);
   const submit = vi.fn();
   render(<InputBar {...props} lang="ro" agent="frigga" onSubmit={submit}/>);
-  fireEvent.click(screen.getByRole('button', { name: 'Abilități' }));
+  openSkills('Abilități');
   const search = await screen.findByRole('searchbox', { name: 'Caută o abilitate' });
   fireEvent.change(search, { target: { value: 'COPPER margin' } });
   expect(screen.queryByText('/summarize')).toBeNull();
@@ -125,7 +128,7 @@ it('holds an edited skill over the instruction limit until the owner shortens it
   vi.stubGlobal('fetch', vi.fn(async () => catalog()));
   const submit = vi.fn();
   render(<InputBar {...props} onSubmit={submit}/>);
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   fireEvent.click(await screen.findByRole('button', { name: 'Summarize — /summarize' }));
   const field = screen.getByPlaceholderText('Message');
   fireEvent.change(field, { target: { value: '/summarize ' + '🟢'.repeat(2001) } });
@@ -144,7 +147,7 @@ it('offers owner review as a typed command only when advertised and preserves un
   render(<InputBar {...props} onSubmit={submit}/>);
   const field = screen.getByPlaceholderText('Message') as HTMLInputElement;
   fireEvent.change(field, { target: { value: 'unsent draft' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   fireEvent.click(await screen.findByRole('button', { name: 'Review this conversation' }));
   expect(screen.getByText(/After you approve a new procedure, any agent can use it/)).toBeTruthy();
   expect(field.value).toBe('unsent draft');
@@ -164,13 +167,13 @@ it('reports partial, empty, unavailable, and refused catalogs without inventing 
     .mockResolvedValueOnce(Response.json({ ok: false, commands: [], shortcuts: [] }, { status: 503 }));
   vi.stubGlobal('fetch', fetcher);
   render(<InputBar {...props} onSubmit={vi.fn()}/>);
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   expect(await screen.findByText(/No skills are available/)).toBeTruthy();
   expect(screen.getByText(/skill list is limited/)).toBeTruthy();
   expect(screen.getByText(/Some shortcuts are unavailable/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Review this conversation' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Close skills' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   expect(await screen.findByText(/Skills are unavailable/)).toBeTruthy();
   fireEvent.keyDown(screen.getByRole('button', { name: 'Close skills' }), { key: 'Escape' });
   expect(screen.queryByRole('region', { name: 'Available chat skills' })).toBeNull();
@@ -182,7 +185,7 @@ it('aborts pending discovery on session, agent, or live-scope change and hides i
   const fetcher = vi.fn((_url: string, _options: RequestInit) => new Promise<Response>(resolve => { finish = resolve; }));
   vi.stubGlobal('fetch', fetcher);
   const view = render(<InputBar {...props} agent="jarvis" sessionId="a" onSubmit={vi.fn()}/>);
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   const signal = fetcher.mock.calls[0][1].signal as AbortSignal;
   view.rerender(<InputBar {...props} agent="howard" sessionId="b" onSubmit={vi.fn()}/>);
   expect(signal.aborted).toBe(true);
@@ -198,6 +201,7 @@ it('hides the picker while an image draft is being prepared', () => {
   const fetcher = vi.fn();
   vi.stubGlobal('fetch', fetcher);
   render(<InputBar {...props} onSubmit={vi.fn()}/>);
+  openComposerMenu('options');
   expect(screen.getByRole('button', { name: 'Skills' })).toBeTruthy();
   const image = new File([new Uint8Array(8)], 'photo.png', { type: 'image/png' });
   fireEvent.change(screen.getByLabelText('Attach images'), { target: { files: [image] } });
@@ -218,7 +222,7 @@ it('edits only advertised procedures and links the exact reviewed proposal witho
   render(<InputBar {...props} agent="howard" onSubmit={vi.fn()}/>);
   const field = screen.getByPlaceholderText('Message') as HTMLInputElement;
   fireEvent.change(field, { target: { value: 'unsent words' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   await screen.findByRole('button', { name: `Weekly Shelf Count — /${command}` });
   expect(screen.getAllByRole('button', { name: 'Edit steps for Weekly Shelf Count' })).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: 'Edit steps for Weekly Shelf Count' }));
@@ -246,7 +250,7 @@ it('keeps edited steps after a stale refusal, but clears them when the agent cha
   });
   vi.stubGlobal('fetch', fetcher);
   const view = render(<InputBar {...props} agent="howard" onSubmit={vi.fn()}/>);
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   fireEvent.click(await screen.findByRole('button', { name: 'Edit steps for Summarize' }));
   const step = await screen.findByRole('textbox', { name: 'Step 1' }) as HTMLTextAreaElement;
   fireEvent.change(step, { target: { value: 'Keep my work' } });
@@ -265,7 +269,7 @@ it('rejects mismatched procedure data and clears a loaded draft when owner crede
     : Response.json({ skill: 'Other procedure', steps: ['Private step'], base_hash: 'c'.repeat(64) }));
   vi.stubGlobal('fetch', fetcher);
   render(<InputBar {...props} agent="howard" onSubmit={vi.fn()}/>);
-  fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+  openSkills();
   fireEvent.click(await screen.findByRole('button', { name: 'Edit steps for Summarize' }));
   expect((await screen.findByRole('alert')).textContent).toMatch(/could not be loaded/i);
   expect(screen.queryByText('Private step')).toBeNull();

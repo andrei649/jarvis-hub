@@ -45,7 +45,23 @@ describe('CinemaMesh — full-bleed mesh demo overlay', () => {
 
   it('omits %-local entirely when it is unknown (no fabricated split)', () => {
     const { container } = render(<CinemaMesh agents={AGENTS} localPct={null} onExit={() => {}} t={{}} />);
-    expect(container.textContent).not.toContain('on-device');
+    expect(container.querySelector('[data-cinema="locality"]')).toBeNull();
+    expect(container.textContent).not.toMatch(/local runners|on-device/);
+  });
+
+  // PHASE_B_PLAN.md §0.6, §1.4: a locality figure always carries what was counted and its basis
+  it('never shows a bare %: the figure says what it counts and on what basis', () => {
+    const basis = (localPctSource) => {
+      const view = render(<CinemaMesh agents={AGENTS} localPct={95} localPctSource={localPctSource} onExit={() => {}} t={{}} />);
+      const text = view.container.querySelector('[data-cinema="locality"]').textContent;
+      view.unmount();
+      return text;
+    };
+    expect(basis('measured')).toBe('95% sent to local runners · by route');
+    expect(basis('strict-local')).toBe('95% sent to local runners · strict-local setting, not measured');
+    expect(basis('seeded')).toBe('95% sent to local runners · demo sample');
+    expect(basis(null)).toBe('95% sent to local runners · basis unknown');
+    expect(basis('measured')).not.toMatch(/on-device/);
   });
 
   it('H209: the stage keys come from the shortcut registry and can be rebound', () => {

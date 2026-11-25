@@ -597,10 +597,8 @@ MACHINE_FACING: dict[str, str] = {
         "H652: training-data export read by `nerva sessions export ID --sharegpt` and by "
         "trainers/scripts; JSONL for a fine-tune, not a HUD view",
     "/sessions/resolve": "Owner CLI resolves -c/-r selectors and retrieves a free recap (agents/cli/nerva.py)",
-    "/api/status/slots": (
-        "H019: user-guarded slot-holder listing read by `nerva status` (agents/cli/nerva.py); "
-        "the public GET /status keeps counts only and the HUD does not render holders"
-    ),
+    # /api/status/slots left this list with HUD Phase B: the Work overview's "Running now" reads the
+    # slot holders (frontend/src/signals/hooks.ts useSlots), as `nerva status` does.
     "/api/skills/bundles/reload":
         "H026: `nerva skills bundles reload` (agents/cli/nerva.py) re-reads hand-edited bundle "
         "files and reports the changes; the HUD's GET /api/skills/bundles already re-scans a "
@@ -775,6 +773,16 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # render_snippet inlines colour/title/greeting INTO the emitted snippet, and the snippet's
     # only fetch (widget.py:118) posts to the /message route. Nothing fetches the config read.
     "/api/widget/{token}/config",
+    # ADDED 2026-11-24, HUD Phase B cleanup (docs/design/hud-next/PHASE_B_PLAN.md §2.4). Its only
+    # caller was the HUD v2 cockpit, which mapped the live cognition frames onto a four-stage
+    # "Classify / Route / Gather / Synthesize" trace with stage timings and routed agents the
+    # chat stream does not report (honesty defects D11, D15). The Ledger frame retired that
+    # trace and the subscription with the classic shell; the working reply now shows only what
+    # /chat/stream says, and the Observe › Cognition panel keeps its own six /api/cognition/*
+    # reads. Still served (tests/test_cognition_stream_nth1.py), so it is listed rather than
+    # deleted: a HUD that wants it again must draw only what a frame actually carries, or the
+    # route goes with an API decision. Not machine-facing: nothing else subscribes to it.
+    "/api/cognition/stream",
 ])
 
 

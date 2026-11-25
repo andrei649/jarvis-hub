@@ -1,0 +1,250 @@
+[
+  {
+    "page": "cockpit",
+    "width": 1920,
+    "height": 1080,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\briefing\\shots\\cockpit-1920-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 298,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Sitka Banner",
+      "Segoe UI Variable Text",
+      "Segoe UI Variable Small",
+      "JetBrains Mono",
+      "Sitka Subheading",
+      "Sitka Display",
+      "Sitka Text",
+      "Sitka Heading"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": [],
+    "axeContrastCount": 0,
+    "axeContrastSamples": []
+  },
+  {
+    "page": "cockpit",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\briefing\\shots\\cockpit-1440-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 282,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Sitka Banner",
+      "Segoe UI Variable Text",
+      "Segoe UI Variable Small",
+      "JetBrains Mono",
+      "Sitka Subheading",
+      "Sitka Display",
+      "Sitka Text",
+      "Sitka Heading"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": []
+  },
+  {
+    "page": "cockpit",
+    "width": 1280,
+    "height": 800,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\briefing\\shots\\cockpit-1280-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 278,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Sitka Banner",
+      "Segoe UI Variable Text",
+      "Segoe UI Variable Small",
+      "JetBrains Mono",
+      "Sitka Subheading",
+      "Sitka Display",
+      "Sitka Text",
+      "Sitka Heading"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": []
+  },
+  {
+    "page": "cockpit",
+    "width": 2560,
+    "height": 1353,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\briefing\\shots\\cockpit-2560-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 397,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Sitka Banner",
+      "Segoe UI Variable Text",
+      "Segoe UI Variable Small",
+      "JetBrains Mono",
+      "Sitka Subheading",
+      "Sitka Display",
+      "Sitka Text",
+      "Sitka Heading"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": []
+  },
+  {
+    "page": "cockpit",
+    "width": 2560,
+    "height": 1353,
+    "theme": "light",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\briefing\\shots\\cockpit-2560-light.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 397,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Sitka Banner",
+      "Segoe UI Variable Text",
+      "Segoe UI Variable Small",
+      "JetBrains Mono",
+      "Sitka Subheading",
+      "Sitka Display",
+      "Sitka Text",
+      "Sitka Heading"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": []
+  },
+  {
+    "page": "cockpit",
+    "width": 1920,
+    "height": 1080,
+    "theme": "light",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\briefing\\shots\\cockpit-1920-light.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 298,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Sitka Banner",
+      "Segoe UI Variable Text",
+      "Segoe UI Variable Small",
+      "JetBrains Mono",
+      "Sitka Subheading",
+      "Sitka Display",
+      "Sitka Text",
+      "Sitka Heading"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": [],
+    "axeContrastCount": 0,
+    "axeContrastSamples": []
+  },
+  {
+    "page": "secondary",
+    "width": 1920,
+    "height": 1080,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\briefing\\shots\\secondary-1920-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 238,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Sitka Banner",
+      "Segoe UI Variable Text",
+      "Segoe UI Variable Small",
+      "JetBrains Mono",
+      "Sitka Heading",
+      "Sitka Subheading",
+      "Sitka Display",
+      "Sitka Text"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": [],
+    "axeContrastCount": 0,
+    "axeContrastSamples": []
+  },
+  {
+    "page": "secondary",
+    "width": 1920,
+    "height": 1080,
+    "theme": "light",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\briefing\\shots\\secondary-1920-light.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 238,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Sitka Banner",
+      "Segoe UI Variable Text",
+      "Segoe UI Variable Small",
+      "JetBrains Mono",
+      "Sitka Heading",
+      "Sitka Subheading",
+      "Sitka Display",
+      "Sitka Text"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": [],
+    "axeContrastCount": 0,
+    "axeContrastSamples": []
+  }
+]

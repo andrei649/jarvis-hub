@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Nerva — the line, three ways</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<script>
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.dataset.theme = (t === 'light' || t === 'dark') ? t : 'dark';
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="threshold.css">
+<style>
+/* An extra frame: your side in its three states, at real size. Only the line and what sits on it change. */
+body { overflow: auto; }
+.board { min-height: 100dvh; padding: 26px 32px 28px; display: grid; grid-template-rows: auto auto auto; align-content: center; gap: 22px; }
+.states .slice { height: 600px; }
+.grammar { display: grid; grid-template-columns: auto repeat(4, minmax(0, 1fr)); align-items: center; gap: 14px 22px; padding: 16px 20px; border: 1px solid var(--nv-rule); border-radius: var(--nv-r-3); background: var(--nv-machine); }
+.grammar h2 { font-size: var(--nv-fs-title); font-weight: var(--nv-w-strong); font-stretch: var(--nv-width-scan); padding-right: 8px; }
+.gram { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 2px 12px; align-items: center; font-size: var(--nv-fs-meta); line-height: 18px; color: var(--nv-ink-2); }
+.gram b { color: var(--nv-ink); font-size: var(--nv-fs-ui); font-stretch: var(--nv-width-scan); }
+.gram .sw { grid-row: span 2; height: 34px; border-radius: 6px; border: 2px solid var(--nv-ink-2); }
+.gram .sw--dashed { border-style: dashed; }
+.gram .sw--dotted { border-style: dotted; border-color: var(--nv-ink-3); }
+.gram .sw--filled { background: var(--nv-ink); border-color: var(--nv-ink); }
+.board-h { display: flex; align-items: baseline; gap: 16px; }
+.board-h h1 { display: flex; align-items: center; gap: 10px; font-size: var(--nv-fs-verdict); font-weight: var(--nv-w-strong); font-stretch: var(--nv-width-scan); }
+.board-h h1 svg { width: 24px; height: 24px; }
+.board-h p { font-size: var(--nv-fs-ui); color: var(--nv-ink-2); }
+.states { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; min-height: 0; }
+.state { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; min-width: 0; }
+.state-h { display: flex; align-items: baseline; gap: 10px; font-size: var(--nv-fs-title); font-weight: var(--nv-w-strong); font-stretch: var(--nv-width-scan); }
+.state-h .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--nv-ink-3); font-size: var(--nv-fs-micro); color: var(--nv-ink-2); }
+.state-h span:last-child { font-size: var(--nv-fs-meta); font-weight: var(--nv-w-small); color: var(--nv-ink-3); }
+
+/* a slice of the real screen: a sliver of the machine, the line, your side */
+.slice { position: relative; display: grid; grid-template-columns: 112px calc(var(--nv-line-w) + 2px) minmax(0, 1fr); min-height: 0; border-radius: var(--nv-r-3); overflow: hidden; background: var(--nv-ground); border: 1px solid var(--nv-rule); }
+.sliver { margin: 12px 0 12px 12px; border: 1px solid var(--nv-rule-strong); border-right: 0; border-radius: var(--nv-r-3) 0 0 var(--nv-r-3); background: var(--nv-machine); padding: 12px 10px; display: grid; align-content: start; gap: 12px; font-stretch: var(--nv-width-scan); }
+.sliver .sig-k { display: block; font-size: var(--nv-fs-micro); color: var(--nv-ink-3); }
+.sliver b { font-size: var(--nv-fs-ui); }
+.sliver .t { display: block; font-size: var(--nv-fs-micro); color: var(--nv-ink-3); }
+.slice .line { grid-column: 2; grid-row: 1; }
+.side { padding: 14px 18px 16px calc(var(--nv-line-w) + 2px + 24px); margin-left: calc(-1 * (var(--nv-line-w) + 2px)); display: grid; align-content: start; gap: 12px; min-width: 0; }
+.side-top { display: flex; align-items: center; gap: 12px; min-height: 46px; }
+.side-top .waiting-t b { font-size: 15px; }
+.side .mode-row { flex-wrap: wrap; row-gap: 6px; }
+.side .mode-means { order: 3; flex: 1 0 100%; }
+
+.q-list { display: grid; gap: 6px; }
+.q { position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 0 10px; min-height: 44px; padding: 6px 10px 6px 12px; background: var(--nv-raise); border: 1px solid var(--nv-rule); border-radius: var(--nv-r-2); }
+.q::before { content: ""; position: absolute; top: 50%; left: -28px; width: 27px; height: 1px; background: var(--nv-line-mark); }
+.q::after { content: ""; position: absolute; top: 50%; margin-top: -5px; left: -33px; width: 11px; height: 11px; border-radius: 50%; background: var(--nv-line); border: 1px solid var(--nv-line-key); box-shadow: 0 0 0 2px var(--nv-ground); }
+.q-t { min-width: 0; display: grid; }
+.q-t b { font-size: var(--nv-fs-ui); line-height: 19px; font-weight: var(--nv-w-strong); font-stretch: var(--nv-width-scan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-t span { font-size: var(--nv-fs-micro); line-height: 16px; color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.said { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 2px 10px; padding: 14px 16px; border: 1px solid var(--nv-rule); border-radius: var(--nv-r-2); background: var(--nv-raise); }
+.said .mark { width: 20px; height: 20px; margin-top: 2px; }
+.said p:first-of-type { font-size: var(--nv-fs-title); line-height: 24px; font-weight: var(--nv-w-strong); font-stretch: var(--nv-width-scan); }
+.said p + p { grid-column: 2; font-size: var(--nv-fs-meta); line-height: 18px; color: var(--nv-ink-2); }
+.said .btn { grid-column: 2; justify-self: start; margin-top: 8px; }
+
+.own { display: grid; gap: 6px; font-size: var(--nv-fs-meta); line-height: 18px; }
+.own h3 { font-size: var(--nv-fs-micro); font-weight: var(--nv-w-strong); color: var(--nv-ink-3); letter-spacing: 0.02em; font-stretch: var(--nv-width-scan); }
+.own li { display: grid; grid-template-columns: 124px minmax(0, 1fr) auto; gap: 0 10px; align-items: baseline; color: var(--nv-ink-2); }
+.own .mono { color: var(--nv-ink); }
+.own .g { font-size: var(--nv-fs-micro); color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.foot { display: flex; align-items: center; gap: 8px; font-size: var(--nv-fs-meta); color: var(--nv-ink-3); }
+.foot b { color: var(--nv-ink-2); }
+.width-note { position: absolute; right: 16px; bottom: 14px; display: flex; align-items: center; gap: 8px; font-size: var(--nv-fs-micro); color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.width-note i { width: 46px; height: 1px; background: var(--nv-ink-3); position: relative; }
+.width-note i::before, .width-note i::after { content: ""; position: absolute; top: -3px; width: 1px; height: 7px; background: var(--nv-ink-3); }
+.width-note i::before { left: 0; } .width-note i::after { right: 0; }
+.stopwrap { display: flex; }
+.unknown-count { display: inline-grid; place-items: center; width: 34px; height: 42px; color: var(--nv-ink-3); }
+.unknown-count .mark { width: 26px; height: 26px; }
+.seg[aria-disabled="true"] { border-style: dotted; }
+.seg[aria-disabled="true"] > button { color: var(--nv-ink-3); cursor: not-allowed; }
+</style>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="nerva" viewBox="26 22 76 84">
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M40 92V36L88 92" stroke="currentColor" stroke-width="10"/>
+        <path d="M88 92V36" style="stroke:var(--nv-line-key)" stroke-width="14"/>
+        <path d="M88 92V36" style="stroke:var(--nv-line)" stroke-width="10"/>
+      </g>
+      <circle cx="40" cy="36" r="9" fill="currentColor"/><circle cx="40" cy="92" r="9" fill="currentColor"/>
+      <circle cx="88" cy="36" r="11" style="fill:var(--nv-line-key)"/><circle cx="88" cy="92" r="11" style="fill:var(--nv-line-key)"/>
+      <circle cx="88" cy="36" r="9" style="fill:var(--nv-line)"/><circle cx="88" cy="92" r="9" style="fill:var(--nv-line)"/>
+    </symbol>
+    <symbol id="m-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.4" fill="currentColor"/></symbol>
+    <symbol id="m-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="0.1 3.36" stroke-linecap="round"/></symbol>
+    <symbol id="t0" viewBox="0 0 24 12"><circle cx="3.5" cy="6" r="2.1" fill="currentColor"/><rect x="8.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/></symbol>
+    <symbol id="t1" viewBox="0 0 24 12"><rect x="1.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/><circle cx="9.5" cy="6" r="2.1" fill="currentColor"/></symbol>
+    <symbol id="t2" viewBox="0 0 24 12"><rect x="1.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/><circle cx="9.5" cy="6" r="2.1" fill="currentColor"/><circle cx="15.5" cy="6" r="2.1" fill="currentColor"/></symbol>
+    <symbol id="t3" viewBox="0 0 24 12"><rect x="1.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/><circle cx="9.5" cy="6" r="2.1" fill="currentColor"/><circle cx="15.5" cy="6" r="2.1" fill="currentColor"/><circle cx="21.5" cy="6" r="2.1" fill="currentColor"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/></symbol>
+    <symbol id="i-sealed" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 16 16"><path d="M2.5 8h10.5M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<main class="board">
+  <header class="board-h">
+    <h1><svg aria-hidden="true"><use href="#nerva"/></svg>The line is a reading</h1>
+    <p>Your side in its three states, at real size. Nothing else on the screen changes colour.</p>
+  </header>
+
+  <div class="states">
+
+    <!-- 1 · something waits -->
+    <section class="state" aria-labelledby="s1">
+      <h2 class="state-h" id="s1"><span class="n">1</span>Something waits <span>· Home at 10:51</span></h2>
+      <div class="slice">
+        <div class="sliver"><div><span class="sig-k">Egress</span><b>Sealed</b></div><div><span class="sig-k">Data on screen</span><b>Live</b><span class="t">checked 10:50</span></div></div>
+        <div class="line" data-state="waiting" role="separator" aria-label="The line: 9 actions are waiting"></div>
+        <div class="side">
+          <div class="side-top"><span class="waiting-n">9</span><span class="waiting-t"><b>actions wait for you</b><span>6 groups · from 18 requests · live</span></span></div>
+          <div class="mode-row">
+            <div class="seg seg--mode" role="radiogroup" aria-label="Approval mode"><button type="button" role="radio" aria-checked="false">Auto</button><button type="button" role="radio" aria-checked="true">Ask</button><button type="button" role="radio" aria-checked="false">Off</button></div>
+            <span class="budget"><span class="pips" aria-hidden="true"><i class="is-used"></i><i class="is-used"></i><i class="is-used"></i><i></i></span><b>3 of 4</b></span>
+            <p class="mode-means">Anything with a side effect waits for you.</p>
+          </div>
+          <ol class="q-list">
+            <li class="q"><svg class="tierglyph" aria-label="Irreversible or money"><use href="#t3"/></svg><span class="q-t"><b>Restart 4 local services that stopped responding</b><span>Steve · Irreversible · 08:14, repeated 3 times</span></span></li>
+            <li class="q"><svg class="tierglyph" aria-label="Irreversible or money"><use href="#t3"/></svg><span class="q-t"><b>Sweep €4,200 of idle cash to the savings ladder</b><span>Gecko · Money · 08:07, from your conversation</span></span></li>
+            <li class="q"><svg class="tierglyph" aria-label="Irreversible or money"><use href="#t3"/></svg><span class="q-t"><b>Delete logs older than 14 days</b><span>Jarvis · Irreversible · 07:30, repeated once</span></span></li>
+            <li class="q"><svg class="tierglyph" aria-label="External"><use href="#t2"/></svg><span class="q-t"><b>Veronica's LinkedIn draft names a client flagged as sensitive</b><span>Ultron · External · 07:48</span></span></li>
+            <li class="q"><svg class="tierglyph" aria-label="Reversible"><use href="#t1"/></svg><span class="q-t"><b>Draft a reply to Raiffeisen with the QBR agenda</b><span>Stark · Reversible · Undo: Delete the draft.</span></span></li>
+            <li class="q"><svg class="tierglyph" aria-label="Reversible"><use href="#t1"/></svg><span class="q-t"><b>Move the research sync from 16:30 to 17:15</b><span>Pepper · Reversible · Undo: Move it back.</span></span></li>
+          </ol>
+          <p class="foot">The rail is lit only where something waits: one yellow node per group.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 · nothing waits -->
+    <section class="state" aria-labelledby="s2">
+      <h2 class="state-h" id="s2"><span class="n">2</span>Nothing waits <span>· the line turns to ink</span></h2>
+      <div class="slice">
+        <div class="sliver"><div><span class="sig-k">Egress</span><b>Sealed</b></div><div><span class="sig-k">Data on screen</span><b>Live</b><span class="t">checked 10:50</span></div></div>
+        <div class="line" data-state="clear" role="separator" aria-label="The line: nothing is waiting"></div>
+        <div class="side">
+          <div class="side-top"><span class="waiting-t"><b>Nothing is waiting for you.</b><span>live</span></span></div>
+          <div class="mode-row">
+            <div class="seg seg--mode" role="radiogroup" aria-label="Approval mode"><button type="button" role="radio" aria-checked="false">Auto</button><button type="button" role="radio" aria-checked="true">Ask</button><button type="button" role="radio" aria-checked="false">Off</button></div>
+            <span class="budget"><span class="pips" aria-hidden="true"><i class="is-used"></i><i class="is-used"></i><i class="is-used"></i><i></i></span><b>3 of 4</b></span>
+            <p class="mode-means">Anything with a side effect waits for you.</p>
+          </div>
+          <div class="said"><svg class="mark mark--ok" aria-hidden="true"><use href="#m-ok"/></svg><p>Nothing is waiting for you.</p><p>Read-only work goes on and is recorded. Anything with a side effect will appear here.</p></div>
+          <div class="own" aria-label="What runs on its own">
+            <h3>Left of the line — runs on its own</h3>
+            <ul>
+              <li><span class="mono">fs.read</span><span>Read workspace files</span><span class="g">Allow</span></li>
+              <li><span class="mono">memory.write</span><span>Persist facts to the knowledge graph</span><span class="g">Allow</span></li>
+              <li><span class="mono">fs.write</span><span>Modify files in /work</span><span class="g">Scoped</span></li>
+              <li><span class="mono">net.outbound</span><span>External HTTP via plugins</span><span class="g">Gated</span></li>
+            </ul>
+          </div>
+          <p class="foot"><svg class="tierglyph" aria-hidden="true"><use href="#t0"/></svg><span><b>Read only</b> does not wait: it runs on its own and is recorded in the audit chain.</span></p>
+          <div class="stopwrap"><button class="btn btn--stop" type="button"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents</button></div>
+        </div>
+        <span class="width-note"><i aria-hidden="true"></i>On Home this side narrows and gives its width back to the machine</span>
+      </div>
+    </section>
+
+    <!-- 3 · the feed did not answer -->
+    <section class="state" aria-labelledby="s3">
+      <h2 class="state-h" id="s3"><span class="n">3</span>The feed did not answer <span>· drawn dotted, never "all clear"</span></h2>
+      <div class="slice">
+        <div class="sliver"><div><span class="sig-k">Egress</span><b>Sealed</b></div><div><span class="sig-k">Data on screen</span><b>Live</b><span class="t">checked 10:50</span></div></div>
+        <div class="line" data-state="unknown" role="separator" aria-label="The line: unknown, the decision feed did not answer"></div>
+        <div class="side">
+          <div class="side-top"><span class="unknown-count"><svg class="mark mark--unknown" aria-hidden="true"><use href="#m-unknown"/></svg></span><span class="waiting-t"><b>Unknown</b><span>the decision feed did not answer</span></span></div>
+          <div class="mode-row">
+            <div class="seg seg--mode" role="radiogroup" aria-label="Approval mode, unknown" aria-disabled="true"><button type="button" role="radio" aria-checked="false" disabled>Auto</button><button type="button" role="radio" aria-checked="false" disabled>Ask</button><button type="button" role="radio" aria-checked="false" disabled>Off</button></div>
+            <p class="mode-means">Mode unknown until the feed answers.</p>
+          </div>
+          <div class="said"><svg class="mark mark--unknown" aria-hidden="true"><use href="#m-unknown"/></svg><p>Unknown — sign in as the owner to see what is waiting.</p><p>Nothing here means "clear": the line stays dotted until the hub answers.</p><button class="btn" type="button">Sign in as the owner</button></div>
+          <p class="foot">The stop is still one click.</p>
+          <div class="stopwrap"><button class="btn btn--stop" type="button"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents</button></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- the same grammar draws every certainty in the product -->
+  <section class="grammar" aria-label="Stroke grammar">
+    <h2>One stroke grammar</h2>
+    <div class="gram"><span class="sw" aria-hidden="true"></span><b>Solid — known</b><span>Sealed outline · "by route" · the past on the day ruler</span></div>
+    <div class="gram"><span class="sw sw--dashed" aria-hidden="true"></span><b>Dashed — derived or not yet</b><span>"derived" · a proposal · a locked verdict · hybrid egress</span></div>
+    <div class="gram"><span class="sw sw--dotted" aria-hidden="true"></span><b>Dotted — unknown</b><span>latency p50 · an unanswered feed · unknown egress</span></div>
+    <div class="gram"><span class="sw sw--filled" aria-hidden="true"></span><b>Filled — verified</b><span>reserved: no figure is verified yet</span></div>
+  </section>
+</main>
+</body>
+</html>

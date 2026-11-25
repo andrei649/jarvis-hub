@@ -1,12 +1,14 @@
 // @ts-nocheck
-/* The seven inline HUD findings that all lived inside shared files — DRA-08's governed-
-   tools checkbox, DRA-23's network headline, DRA-52's refusal text, DRA-47's tile label,
-   the WORLD button sitting on top of the mode rail, the wall's "no live decision feed",
-   and the three registry agents the demo corpus never had.
+/* The inline HUD findings that all lived inside shared files — DRA-08's governed-tools
+   checkbox, DRA-23's network headline, DRA-52's refusal text, DRA-47's tile label, the
+   wall's "no live decision feed", and the three registry agents the demo corpus never had.
+   (A seventh, the fixed WORLD button sitting on top of the mode rail, went with both: the
+   button and the rail were deleted with the classic shell, and World is a page of Observe —
+   PHASE_B_PLAN.md §8.2 row 16.)
 
    Each one is a place the HUD said something it could not back. They are tested together
    because they were fixed together, and because the shape of the mistake is the same in
-   all seven: a surface that had a true thing available and rendered a convenient one. */
+   all of them: a surface that had a true thing available and rendered a convenient one. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -14,8 +16,6 @@ import { SandboxPanel, NetworkMonitorPanel } from '../gap';
 import { refusalReason } from '../panel-kit';
 import { decisionCard } from '../api/loaders';
 import { V2 } from '../data';
-import { RAIL_RESERVED_PX, WORLD_BUTTON_HEIGHT, WORLD_BUTTON_INSET } from '../world_app';
-import worldSource from '../world_app.tsx?raw';
 import modesSource from '../modes2.tsx?raw';
 import wallSource from '../wall.tsx?raw';
 
@@ -200,28 +200,6 @@ describe('the resilience tile label matches what is counted', () => {
     expect(modesSource).toMatch(/Redactions · secrets \+ PII/);
     // and the caveat the payload's own note carries is on the element, not just in prose
     expect(modesSource).toMatch(/resets on restart/);
-  });
-});
-
-/* ── the WORLD button vs the mode rail ────────────────────────────────────── */
-
-describe('the WORLD button does not sit on the mode rail', () => {
-  it('reserves at least its own footprint at the bottom of the rail', () => {
-    // jsdom performs no layout, so an overlap assertion between two fixed elements would
-    // compare zero-sized rectangles and pass whatever the CSS said. The arithmetic below
-    // is what actually frees the pixels: the reserved strip must cover the button's
-    // height plus the inset above and below it.
-    expect(RAIL_RESERVED_PX).toBeGreaterThanOrEqual(WORLD_BUTTON_HEIGHT + WORLD_BUTTON_INSET * 2);
-  });
-
-  it('applies that reservation to the rail itself, and pins the button to the same numbers', () => {
-    // the reservation is a real rule against `.rail`, not a comment
-    expect(worldSource).toMatch(/<style>\{`\.rail \{ padding-bottom: \$\{RAIL_RESERVED_PX\}px; \}`\}<\/style>/);
-    // and the button's own geometry comes from the same constants the reservation uses,
-    // so the two cannot drift apart in a later edit
-    expect(worldSource).toMatch(/left: WORLD_BUTTON_INSET, bottom: WORLD_BUTTON_INSET/);
-    expect(worldSource).toMatch(/height: WORLD_BUTTON_HEIGHT/);
-    expect(worldSource).not.toMatch(/left: 16, bottom: 16/);
   });
 });
 

@@ -7,7 +7,8 @@
    Shown inside the APM card; a conversation the ledger has no row for says so. */
 import React, { useState } from 'react';
 import { apiGet } from '../api/client';
-import { Row, inpS, mono, refusalReason } from '../panel-kit';
+import { Row, inpS, note, refusalReason } from '../panel-kit';
+import { LABEL, MONO } from '../theme/type';
 
 export const SESSION_USAGE_PATH = '/api/analytics/session-usage';
 const PURPOSE_LABELS: Record<string, string> = { turn: 'turns', background_review: 'background review' };
@@ -37,23 +38,24 @@ export function SessionUsage() {
   const purposes = (out && out.usage && out.usage.purposes) || {};
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em' }}>ONE CONVERSATION</div>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>ONE CONVERSATION</div>
       <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
         <input aria-label="conversation id" value={sid} onChange={(ev) => setSid(ev.target.value)}
           onKeyDown={(ev) => { if (ev.key === 'Enter') read(); }} style={{ ...inpS, flex: 1 }} />
         <button className="tool-btn" onClick={read}>usage</button>
       </div>
-      {err && <div role="status" style={{ fontSize: 10, color: 'var(--amber)' }}>not read · {err}</div>}
+      {err && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>not read · {err}</div>}
       {out && out.found === false && (
-        <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)' }}>no usage recorded for {String(out.session_id)}</div>
+        <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>no usage recorded for {String(out.session_id)}</div>
       )}
       {out && out.found === true && (
-        <div style={{ ...mono, fontSize: 11 }}>
-          <Row><span>all</span><span style={{ marginLeft: 'auto' }}>{usageLine(out.usage)}</span></Row>
+        /* Row names are words (the interface face); the figures keep the identifier face. */
+        <div style={{ ...note, fontSize: 'var(--n-fs-meta)' }}>
+          <Row><span>all</span><span style={{ ...MONO, marginLeft: 'auto' }}>{usageLine(out.usage)}</span></Row>
           {Object.keys(purposes).sort().map((name) => (
             <Row key={name}>
               <span>{PURPOSE_LABELS[name] || name}</span>
-              <span aria-label={`${PURPOSE_LABELS[name] || name} usage`} style={{ marginLeft: 'auto' }}>{usageLine(purposes[name])}</span>
+              <span aria-label={`${PURPOSE_LABELS[name] || name} usage`} style={{ ...MONO, marginLeft: 'auto' }}>{usageLine(purposes[name])}</span>
             </Row>
           ))}
         </div>

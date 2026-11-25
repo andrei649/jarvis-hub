@@ -20,7 +20,7 @@ except Exception:  # pragma: no cover - security module always present
 
 # payload keys that describe a concrete, observable effect
 _EFFECT_KEYS = ("target", "url", "to", "recipient", "amount", "command",
-                "path", "file", "channel", "query", "body")
+                "path", "file", "channel", "query", "body", "cmd", "service")
 
 
 def _irreversible_tokens() -> tuple[str, ...]:

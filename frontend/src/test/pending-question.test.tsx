@@ -75,7 +75,11 @@ it('cancels only the question and retains stream completion',async()=>{
   expect(JSON.parse(requests.find(r=>r.path.includes('/answer')).body)).toEqual({cancel:true});
 });
 it('Stop aborts the stream and removes the pending question without posting an answer',async()=>{
-  await ask();fireEvent.click(screen.getByRole('button',{name:'Stop generating'}));
+  await ask();
+  // the working reply waits on the owner while the question is open; its one control stops the turn
+  const working=document.querySelector('[data-turn="reply"][data-working]') as HTMLElement;
+  expect(working.querySelector('[data-working-status]')?.textContent).toBe('Waiting for your answer');
+  fireEvent.click(screen.getByRole('button',{name:'Stop this reply'}));
   await waitFor(()=>expect(screen.queryByRole('dialog',{name:question})).toBeNull());
   expect(requests.find(r=>r.path==='/chat/stream').signal.aborted).toBe(true);
   expect(requests.filter(r=>r.path.includes('/answer'))).toHaveLength(0);

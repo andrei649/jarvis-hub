@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-label="The Presence mark in eight states">
+  <title>The Presence mark in eight states</title>
+  <style>
+    .bg { fill: oklch(0.165 0.004 78); }
+    .cell { fill: oklch(0.208 0.005 78); }
+    .rule { stroke: oklch(0.262 0.005 78); stroke-width: 1; }
+    .t1 { fill: oklch(0.955 0.008 85); }
+    .t2 { fill: oklch(0.800 0.010 82); }
+    .t3 { fill: oklch(0.690 0.010 80); }
+    text { font-family: Bahnschrift, Barlow, "DIN Next", sans-serif; }
+    .h { font-size: 26px; font-weight: 350; }
+    .k { font-size: 15px; font-weight: 350; }
+    .name { font-size: 19px; font-weight: 600; }
+    .say { font-size: 14px; font-weight: 350; }
+    .why { font-size: 13px; font-weight: 350; }
+    .ring { fill: none; stroke: oklch(0.690 0.010 80); stroke-width: 1.5; }
+    .ring--lit { stroke: oklch(0.955 0.008 85); stroke-width: 2.5; }
+    .ring--dash { stroke-dasharray: 5 4.2; }
+    .ring--red { stroke: oklch(0.720 0.170 27); stroke-width: 2.5; }
+    .done { fill: none; stroke: oklch(0.955 0.008 85); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+    .rest { fill: none; stroke: oklch(0.470 0.008 80); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .red  { fill: none; stroke: oklch(0.720 0.170 27); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+    .nd { fill: oklch(0.955 0.008 85); }
+    .nr { fill: oklch(0.165 0.004 78); stroke: oklch(0.470 0.008 80); stroke-width: 2; }
+    .nred { fill: oklch(0.720 0.170 27); }
+    .halo { fill: none; stroke: oklch(0.955 0.008 85); stroke-width: 1.5; }
+    .bead { fill: oklch(0.830 0.125 76); stroke: oklch(0.208 0.005 78); stroke-width: 3; }
+    .level { fill: none; stroke: oklch(0.800 0.010 82); stroke-width: 3; stroke-linecap: round; }
+  </style>
+
+  <rect class="bg" width="1280" height="760"/>
+
+  <text class="h t1" x="48" y="64">The mark carries state — every part of it means something</text>
+  <text class="k t3" x="48" y="96">Ring: the boundary of this machine (closed = egress sealed).  N: the path of a request — in, route, gather, out; its four nodes are the four steps.</text>
+  <text class="k t3" x="48" y="120">Bead: something is held at the boundary for you. It composes with every state. Nothing moves unless the state changes or you are talking.</text>
+
+  <!-- row 1 -->
+  <!-- 1 idle -->
+  <g transform="translate(48 152)">
+    <rect class="cell" width="284" height="280" rx="10"/>
+    <g transform="translate(24 24) scale(1.25)">
+      <circle class="ring" cx="48" cy="48" r="44"/>
+      <path class="rest" d="M31 67V29L65 67V29"/>
+      <circle class="nr" cx="31" cy="67" r="4.5"/><circle class="nr" cx="31" cy="29" r="4.5"/><circle class="nr" cx="65" cy="67" r="4.5"/><circle class="nr" cx="65" cy="29" r="4.5"/>
+    </g>
+    <text class="name t1" x="24" y="186">Idle</text>
+    <text class="say t2" x="24" y="214">Ready. Nothing is running.</text>
+    <text class="why t3" x="24" y="246">The path at rest, every node open,</text>
+    <text class="why t3" x="24" y="264">the ring closed.</text>
+  </g>
+
+  <!-- 2 listening -->
+  <g transform="translate(348 152)">
+    <rect class="cell" width="284" height="280" rx="10"/>
+    <g transform="translate(24 24) scale(1.25)">
+      <circle class="ring ring--lit" cx="48" cy="48" r="44"/>
+      <path class="level" d="M48 9.5A38.5 38.5 0 0 1 84.6 36.1"/>
+      <path class="rest" d="M31 67V29L65 67V29"/>
+      <circle class="nr" cx="31" cy="67" r="4.5"/><circle class="nr" cx="31" cy="29" r="4.5"/><circle class="nr" cx="65" cy="67" r="4.5"/><circle class="nr" cx="65" cy="29" r="4.5"/>
+    </g>
+    <text class="name t1" x="24" y="186">Listening</text>
+    <text class="say t2" x="24" y="214">Listening…  then  Transcribing…</text>
+    <text class="why t3" x="24" y="246">The ring is lit and an inner arc follows</text>
+    <text class="why t3" x="24" y="264">your voice — only while you talk.</text>
+  </g>
+
+  <!-- 3 working -->
+  <g transform="translate(648 152)">
+    <rect class="cell" width="284" height="280" rx="10"/>
+    <g transform="translate(24 24) scale(1.25)">
+      <circle class="ring" cx="48" cy="48" r="44"/>
+      <path class="rest" d="M65 67V29"/>
+      <path class="done" d="M31 67V29L65 67"/>
+      <circle class="nd" cx="31" cy="67" r="5.5"/><circle class="nd" cx="31" cy="29" r="5.5"/>
+      <circle class="halo" cx="65" cy="67" r="10.5"/><circle class="nd" cx="65" cy="67" r="5.5"/>
+      <circle class="nr" cx="65" cy="29" r="4.5"/>
+    </g>
+    <text class="name t1" x="24" y="186">Working</text>
+    <text class="say t2" x="24" y="214">Gathering — asking Pepper and Stark</text>
+    <text class="why t3" x="24" y="246">The path fills node by node; the halo</text>
+    <text class="why t3" x="24" y="264">marks the step it is on (3 of 4).</text>
+  </g>
+
+  <!-- 4 speaking -->
+  <g transform="translate(948 152)">
+    <rect class="cell" width="284" height="280" rx="10"/>
+    <g transform="translate(24 24) scale(1.25)">
+      <circle class="ring ring--lit" cx="48" cy="48" r="44"/>
+      <path class="done" d="M31 67V29L65 67V29"/>
+      <circle class="nd" cx="31" cy="67" r="5.5"/><circle class="nd" cx="31" cy="29" r="5.5"/><circle class="nd" cx="65" cy="67" r="5.5"/>
+      <circle class="halo" cx="65" cy="29" r="10.5"/><circle class="nd" cx="65" cy="29" r="5.5"/>
+    </g>
+    <text class="name t1" x="24" y="186">Speaking</text>
+    <text class="say t2" x="24" y="214">Speaking…</text>
+    <text class="why t3" x="24" y="246">The whole path is drawn and the out</text>
+    <text class="why t3" x="24" y="264">node is lit. Read aloud uses this too.</text>
+  </g>
+
+  <!-- row 2 -->
+  <!-- 5 needs you -->
+  <g transform="translate(48 448)">
+    <rect class="cell" width="284" height="280" rx="10"/>
+    <g transform="translate(24 24) scale(1.25)">
+      <circle class="ring" cx="48" cy="48" r="44"/>
+      <path class="rest" d="M31 67V29L65 67V29"/>
+      <circle class="nr" cx="31" cy="67" r="4.5"/><circle class="nr" cx="31" cy="29" r="4.5"/><circle class="nr" cx="65" cy="67" r="4.5"/><circle class="nr" cx="65" cy="29" r="4.5"/>
+      <circle class="bead" cx="79.1" cy="16.9" r="7"/>
+    </g>
+    <text class="name t1" x="24" y="186">Needs you</text>
+    <text class="say t2" x="24" y="214">I need you on three things.</text>
+    <text class="why t3" x="24" y="246">The bead — the only colour in the mark —</text>
+    <text class="why t3" x="24" y="264">sits on the ring until you decide.</text>
+  </g>
+
+  <!-- 6 hybrid -->
+  <g transform="translate(348 448)">
+    <rect class="cell" width="284" height="280" rx="10"/>
+    <g transform="translate(24 24) scale(1.25)">
+      <path class="ring" d="M78.4 16.4A44 44 0 1 1 63.6 6.9"/>
+      <path class="rest" d="M31 67V29L65 67V29"/>
+      <circle class="nr" cx="31" cy="67" r="4.5"/><circle class="nr" cx="31" cy="29" r="4.5"/><circle class="nr" cx="65" cy="67" r="4.5"/><circle class="nr" cx="65" cy="29" r="4.5"/>
+    </g>
+    <text class="name t1" x="24" y="186">Hybrid</text>
+    <text class="say t2" x="24" y="214">Hybrid — a cloud route is reachable</text>
+    <text class="why t3" x="24" y="246">The ring opens where a route can leave</text>
+    <text class="why t3" x="24" y="264">this machine. Sealed closes it again.</text>
+  </g>
+
+  <!-- 7 unknown -->
+  <g transform="translate(648 448)">
+    <rect class="cell" width="284" height="280" rx="10"/>
+    <g transform="translate(24 24) scale(1.25)">
+      <circle class="ring ring--dash" cx="48" cy="48" r="44"/>
+      <path class="rest" d="M31 67V29L65 67V29" stroke-dasharray="4 4"/>
+      <circle class="nr" cx="31" cy="67" r="4.5"/><circle class="nr" cx="31" cy="29" r="4.5"/><circle class="nr" cx="65" cy="67" r="4.5"/><circle class="nr" cx="65" cy="29" r="4.5"/>
+    </g>
+    <text class="name t1" x="24" y="186">Unknown</text>
+    <text class="say t2" x="24" y="214">I can't reach the hub — last heard 10:50</text>
+    <text class="why t3" x="24" y="246">Dashed: nothing is assumed. It never</text>
+    <text class="why t3" x="24" y="264">falls back to looking idle or sealed.</text>
+  </g>
+
+  <!-- 8 stopped -->
+  <g transform="translate(948 448)">
+    <rect class="cell" width="284" height="280" rx="10"/>
+    <g transform="translate(24 24) scale(1.25)">
+      <circle class="ring ring--red" cx="48" cy="48" r="44"/>
+      <path class="rest" d="M31 67V29L65 67V29"/>
+      <rect class="nred" x="40" y="40" width="16" height="16" rx="2.5"/>
+    </g>
+    <text class="name t1" x="24" y="186">Stopped</text>
+    <text class="say t2" x="24" y="214">Stopped. Nothing runs until you resume.</text>
+    <text class="why t3" x="24" y="246">After Stop all agents: a red ring and</text>
+    <text class="why t3" x="24" y="264">the stop square. One click to resume.</text>
+  </g>
+</svg>

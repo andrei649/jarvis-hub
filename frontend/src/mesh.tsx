@@ -8,9 +8,25 @@
      headless/JSDOM and never throws if the canvas isn't drawable;
    - the mock `window.JarvisMock.streamSub` pulse hook is dropped (production has no mock) —
      live mode reacts only to current task/agent evidence. Demo mode keeps the cinematic
-     choreography because it is explicitly URL-owned and visibly badged. */
-import React, { useRef, useEffect, useMemo, useState } from 'react';
+     choreography because it is explicitly URL-owned and visibly badged.
+
+   Honesty contract: what is drawn is only what the hub reports. Agent nodes come from the
+   roster, model shells from the current residents and this load's trust evidence
+   (deriveMeshModels), task marks from the running-task list; activity (particles, rings) follows
+   agents the hub reports busy or active and tasks it reports running. Only the visibly badged
+   demo mode adds the cinematic cascades. A theme changes how a mark is drawn, never which marks
+   exist.
+
+   Themes (src/theme/CONTRACT.md): in a Nerva look the mesh draws flat marks in the theme's roles,
+   read from the element the canvas sits in (theme/canvas-colours.ts): no bloom, no halo, no
+   additive blending and no starfield (decoration, not data); labels take the theme's label voice
+   at 12px or more, model names the mono face. A mark is drawn in the role its legend swatch
+   (styles.css, .nm-dot) is keyed in, so a mark and its key agree. Classic (obsidian, graphite)
+   keeps every literal below exactly as HUD v2 drew it, and so does an environment that cannot
+   resolve the roles (no readable 2D context). */
+import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { runningTasks } from './task-state';
+import { isNervaLook, readRole, readRoleColours, rgb, themeOf, watchLook } from './theme/canvas-colours';
 
 // A fixed-size arc can only label so many tasks legibly regardless of focus —
 // this bounds the per-owner task fan (see the byOwner.forEach draw below).
@@ -75,6 +91,108 @@ function taskColor(t) {
   return s === 'running' ? '#41f59b' : '#8aa8be';
 }
 
+/* ---- Nerva looks: the mesh in the theme's roles ------------------------------------------ */
+
+// The roles a Nerva look draws the mesh with (contract §3). The legend's swatches (styles.css,
+// .nm-dot) key the same marks in the same roles: the core --n-text, a local model --n-ok, a cloud
+// lane --n-cloud, a running task --n-warn.
+const MESH_ROLES = [
+  'n-bg', 'n-panel-bg', 'n-sheet', 'n-text', 'n-text-2', 'n-text-3', 'n-rule', 'n-rule-2',
+  'n-emph', 'n-ok', 'n-warn', 'n-info', 'n-cloud',
+] as const;
+// --n-panel-bg is transparent in a theme that draws registers without a box; the rest must resolve.
+const MESH_ROLES_REQUIRED = MESH_ROLES.filter((role) => role !== 'n-panel-bg');
+
+type MeshPalette = {
+  ground: string;      // what the canvas paints each frame: the ground it sits on
+  sheet: string; text: string; text2: string; text3: string; rule: string; rule2: string;
+  emph: string; ok: string; warn: string; info: string; cloud: string;
+  size: number;        // label size, px: --n-fs-meta, never below 12
+  labelFont: string;   // ctx.font in the theme's label voice
+  identFont: string;   // ctx.font for identifiers (model names): mono, never re-cased
+  labelCase: string;   // --n-label-case
+  track: string;       // --n-label-track as a canvas letterSpacing, px
+};
+
+// --n-label-track (0, .02em, 1px) as px for ctx.letterSpacing.
+function trackPx(raw: string, size: number): string {
+  const value = String(raw || '').trim().toLowerCase();
+  const n = parseFloat(value);
+  if (!Number.isFinite(n) || n === 0) return '0px';
+  if (value.endsWith('rem')) return (n * 16).toFixed(2) + 'px';
+  if (value.endsWith('em')) return (n * size).toFixed(2) + 'px';
+  if (value.endsWith('px')) return n + 'px';
+  return '0px';
+}
+
+// A Nerva look's mesh palette, read from the element the canvas sits in. Null in Classic and
+// wherever the roles cannot be resolved (no readable 2D context): the legacy palette is drawn.
+function readMeshPalette(el: Element | null): MeshPalette | null {
+  if (!el || !isNervaLook(themeOf(el).look)) return null;
+  const c = readRoleColours(el, MESH_ROLES);
+  if (!c || MESH_ROLES_REQUIRED.some((role) => !c[role])) return null;
+  // The canvas sits on the page ground, or on its panel's when the theme fills panels (a card
+  // theme): it paints that ground, so it never cuts a page-coloured hole in a card.
+  const panel = typeof el.closest === 'function' ? el.closest('.panel') : null;
+  const ground = panel && c['n-panel-bg'] ? c['n-panel-bg'] : c['n-bg'];
+  const size = Math.max(12, parseFloat(readRole(el, 'n-fs-meta')) || 12);
+  const labelFace = readRole(el, 'n-font-label') || readRole(el, 'n-font-ui') || 'sans-serif';
+  const monoFace = readRole(el, 'n-font-mono') || 'monospace';
+  return {
+    ground: rgb(ground), sheet: rgb(c['n-sheet']),
+    text: rgb(c['n-text']), text2: rgb(c['n-text-2']), text3: rgb(c['n-text-3']),
+    rule: rgb(c['n-rule']), rule2: rgb(c['n-rule-2']),
+    emph: rgb(c['n-emph']), ok: rgb(c['n-ok']), warn: rgb(c['n-warn']), info: rgb(c['n-info']), cloud: rgb(c['n-cloud']),
+    size,
+    labelFont: `${readRole(el, 'n-label-weight') || '400'} ${size}px ${labelFace}`,
+    identFont: `${readRole(el, 'n-w-reg') || '400'} ${size}px ${monoFace}`,
+    labelCase: readRole(el, 'n-label-case') || 'none',
+    track: trackPx(readRole(el, 'n-label-track'), size),
+  };
+}
+
+// The label voice's case (--n-label-case), as text-transform would draw it.
+function voiceCase(text: string, labelCase: string): string {
+  if (labelCase === 'uppercase') return text.toUpperCase();
+  if (labelCase === 'lowercase') return text.toLowerCase();
+  if (labelCase === 'capitalize') return text.replace(/(^|\s)(\S)/g, (_m, space, ch) => space + ch.toUpperCase());
+  return text;
+}
+
+// Tracking for canvas text where the engine supports it; only written when it changes.
+function setTracking(ctx, value: string) {
+  if (ctx && 'letterSpacing' in ctx && ctx.letterSpacing !== value) ctx.letterSpacing = value;
+}
+
+// The tier hues of HUD v2 as roles: command info · business warn · tech cloud · foundation ok.
+const TIER_ROLE: Record<string, 'info' | 'warn' | 'cloud' | 'ok'> = {
+  CNS: 'info', command: 'info', BUS: 'warn', business: 'warn',
+  TEC: 'cloud', tech: 'cloud', FND: 'ok', foundation: 'ok',
+};
+function tierRole(tier): 'info' | 'warn' | 'cloud' | 'ok' | 'text3' {
+  const key = String(tier || '');
+  if (Object.prototype.hasOwnProperty.call(TIER_ROLE, key)) return TIER_ROLE[key];
+  const lower = key.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(TIER_ROLE, lower)) return TIER_ROLE[lower];
+  return 'text3';
+}
+// A node's mark in a Nerva look; mirrors colorFor() below, role for literal.
+function roleColorFor(n, pal: MeshPalette): string {
+  if (n.kind === 'core') return pal.text;
+  if (n.kind === 'model') return n.model.cloud ? pal.cloud : pal.ok;
+  const s = n.agent && n.agent.status;
+  if (s === 'active') return pal.emph;
+  if (s === 'busy') return pal.warn;
+  return pal[tierRole(n.agent && n.agent.tier)];
+}
+// A running task is ringed in --n-warn, the role its legend key (.nm-dot.task in styles.css) and
+// a busy agent are drawn in: work in progress reads as one colour on the canvas and in the key.
+// HUD v2 drew it green under an amber key; a theme keeps the mark and its key in step instead.
+function taskRoleColor(t, pal: MeshPalette): string {
+  const s = String((t && (t.state || t.status)) || '').trim().toLowerCase();
+  return s === 'running' ? pal.warn : pal.text3;
+}
+
 export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion, cinema = false, llm, trust, sources, demo = false, t }: any) {
   const wrapRef = useRef<any>(null), canvasRef = useRef<any>(null);
   const S = useRef<any>({
@@ -82,6 +200,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     demo: false, calm: false, cinema: false,
     w: 640, h: 460, cx: 320, cy: 230, dpr: 1, raf: 0, tick: 0, lastPulse: 0, lastCascade: 0, cascadeI: -1, focus: null,
     nodeMap: new Map(),
+    pal: null,   // MeshPalette in a Nerva look; null draws the legacy (Classic) palette
   });
   const [tip, setTip] = useState<any>(null);
   const taskList = useMemo(() => runningTasks(Array.isArray(tasks) ? tasks : []), [tasks]);
@@ -198,7 +317,20 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     st.dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
     cv.width = st.w * st.dpr; cv.height = st.h * st.dpr; cv.style.width = st.w + 'px'; cv.style.height = st.h + 'px';
     build();
+    // A theme's type scale can step at a breakpoint (Ledger reads larger at >= 2200px).
+    if (st.pal) refreshPalette();
   }
+
+  // The theme's roles for the canvas: read before the first frame, again whenever <html>'s look,
+  // scheme or typeface changes (watchLook also drops the colour cache), and on resize.
+  function refreshPalette() {
+    S.current.pal = readMeshPalette(wrapRef.current);
+  }
+  useLayoutEffect(() => {
+    refreshPalette();
+    return watchLook(refreshPalette);
+    // eslint-disable-next-line
+  }, []);
 
   useEffect(() => {
     resize();
@@ -239,26 +371,35 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     const calm = st.calm;
     const cinema = st.cinema;
     const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
+    // A Nerva look's role palette; null draws the legacy (Classic) palette below, literal for literal.
+    const pal: MeshPalette | null = st.pal;
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = 'rgba(4,7,13,' + (calm ? 0.4 : 0.26) + ')'; ctx.fillRect(0, 0, W, H);
-    ctx.globalCompositeOperation = 'lighter';
-    // Bolt Optimization: Replace .forEach() array closures with indexed for loops across stars, nodes, and edges
-    // in the 60 FPS animation loop to avoid allocating function closures on every frame.
-    const stars = st.stars;
-    const numStars = stars.length;
-    for (let i = 0; i < numStars; i++) {
-      const s = stars[i];
-      const tw = 0.6 + 0.4 * Math.sin(st.tick * 0.03 + s.x);
-      ctx.globalAlpha = s.a * tw;
-      ctx.fillStyle = '#6fb8e0';
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, 7);
-      ctx.fill();
+    if (pal) {
+      // Flat marks on the ground the canvas sits on, painted opaque each frame (no trails); no
+      // additive blending, no starfield, no bloom.
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = pal.ground; ctx.fillRect(0, 0, W, H);
+    } else {
+      ctx.fillStyle = 'rgba(4,7,13,' + (calm ? 0.4 : 0.26) + ')'; ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'lighter';
+      // Bolt Optimization: Replace .forEach() array closures with indexed for loops across stars, nodes, and edges
+      // in the 60 FPS animation loop to avoid allocating function closures on every frame.
+      const stars = st.stars;
+      const numStars = stars.length;
+      for (let i = 0; i < numStars; i++) {
+        const s = stars[i];
+        const tw = 0.6 + 0.4 * Math.sin(st.tick * 0.03 + s.x);
+        ctx.globalAlpha = s.a * tw;
+        ctx.fillStyle = '#6fb8e0';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, 7);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      const bloom = ctx.createRadialGradient(cx, cy, 4, cx, cy, Math.min(W, H) * 0.5);
+      bloom.addColorStop(0, 'rgba(43,140,210,0.10)'); bloom.addColorStop(1, 'rgba(43,140,210,0)');
+      ctx.fillStyle = bloom; ctx.fillRect(0, 0, W, H);
     }
-    ctx.globalAlpha = 1;
-    const bloom = ctx.createRadialGradient(cx, cy, 4, cx, cy, Math.min(W, H) * 0.5);
-    bloom.addColorStop(0, 'rgba(43,140,210,0.10)'); bloom.addColorStop(1, 'rgba(43,140,210,0)');
-    ctx.fillStyle = bloom; ctx.fillRect(0, 0, W, H);
     const rot = calm ? 0 : st.tick * (cinema ? 0.0011 : 0.0016);
     const nodes = st.nodes;
     const numNodes = nodes.length;
@@ -280,7 +421,9 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       const a = node(e.a), b = node(e.b); if (!a || !b) continue;
       const act = isExecutingAgent(a.agent) || isExecutingAgent(b.agent) || foc === e.a;
       const dim = (hov && hov !== e.a && hov !== e.b) || (foc && foc !== e.a && foc !== e.b && e.a !== 'jarvis');
-      const stroke = dim ? 'rgba(90,120,150,0.05)' : act ? 'rgba(80,190,255,0.22)' : 'rgba(110,140,170,0.09)';
+      const stroke = pal
+        ? (dim ? pal.rule : act ? pal.text3 : pal.rule2)
+        : (dim ? 'rgba(90,120,150,0.05)' : act ? 'rgba(80,190,255,0.22)' : 'rgba(110,140,170,0.09)');
       const lw = e.kind === 'mc' ? 1.2 : 0.7;
       if (curStroke !== stroke) {
         ctx.strokeStyle = stroke;
@@ -293,7 +436,7 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
     drawTaskFan(ctx, st, foc);
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = pal ? 'source-over' : 'lighter';
     if (!calm && st.demo) {
       if (st.tick % 46 === 0) { const ags = st.agentNodes || []; const n = ags[Math.floor(Math.random() * ags.length)]; if (n) fire(n.id); }
       if (st.tick - st.lastPulse > (cinema ? 150 : 185)) { st.lastPulse = st.tick; corePulse(); }
@@ -349,8 +492,13 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       if (p.life < 0) continue;
       const a = node(p.e.a), b = node(p.e.b); if (!a || !b) continue;
       const x = a.x + (b.x - a.x) * p.life, y = a.y + (b.y - a.y) * p.life; const sz = p.big ? 2.4 : 1.7;
-      ctx.globalAlpha = (1 - p.life) * 0.22; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(x, y, sz * 3, 0, 7); ctx.fill();
-      ctx.globalAlpha = 1 - p.life * 0.35; ctx.beginPath(); ctx.arc(x, y, sz, 0, 7); ctx.fillStyle = '#eaf6ff'; ctx.fill();
+      if (pal) {
+        // a flat dot in the secondary ink, fading as it travels: no halo
+        ctx.globalAlpha = 1 - p.life * 0.35; ctx.fillStyle = pal.text2; ctx.beginPath(); ctx.arc(x, y, sz, 0, 7); ctx.fill();
+      } else {
+        ctx.globalAlpha = (1 - p.life) * 0.22; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(x, y, sz * 3, 0, 7); ctx.fill();
+        ctx.globalAlpha = 1 - p.life * 0.35; ctx.beginPath(); ctx.arc(x, y, sz, 0, 7); ctx.fillStyle = '#eaf6ff'; ctx.fill();
+      }
     }
     particles.length = particleWriteIdx;
 
@@ -366,29 +514,47 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       r.life += r.big ? 0.028 : 0.04;
       if (r.life >= 1) continue;
       rings[ringWriteIdx++] = r;
-      ctx.globalAlpha = (1 - r.life) * 0.55; ctx.strokeStyle = r.c; ctx.lineWidth = r.big ? 2 : 1.2; ctx.beginPath(); ctx.arc(r.x, r.y, 4 + r.life * (r.big ? 40 : 22), 0, 7); ctx.stroke();
+      ctx.globalAlpha = (1 - r.life) * 0.55; ctx.strokeStyle = pal ? pal.text2 : r.c; ctx.lineWidth = r.big ? 2 : 1.2; ctx.beginPath(); ctx.arc(r.x, r.y, 4 + r.life * (r.big ? 40 : 22), 0, 7); ctx.stroke();
     }
     rings.length = ringWriteIdx;
 
     ctx.globalAlpha = 1;
-    for (let i = 0; i < numNodes; i++) {
-      const n = nodes[i];
-      const active = isExecutingAgent(n.agent); const isHov = hov === n.id || foc === n.id;
-      if (n.kind === 'core' || active || isHov || n.kind === 'model') {
-        const c = colorFor(n); const g = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, n._r + (n.kind === 'core' ? 16 : 9));
-        g.addColorStop(0, c + '88'); g.addColorStop(1, c + '00'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.x, n.y, n._r + (n.kind === 'core' ? 16 : 9), 0, 7); ctx.fill();
+    // Node halos are HUD v2 glow: Classic only.
+    if (!pal) {
+      for (let i = 0; i < numNodes; i++) {
+        const n = nodes[i];
+        const active = isExecutingAgent(n.agent); const isHov = hov === n.id || foc === n.id;
+        if (n.kind === 'core' || active || isHov || n.kind === 'model') {
+          const c = colorFor(n); const g = ctx.createRadialGradient(n.x, n.y, 1, n.x, n.y, n._r + (n.kind === 'core' ? 16 : 9));
+          g.addColorStop(0, c + '88'); g.addColorStop(1, c + '00'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.x, n.y, n._r + (n.kind === 'core' ? 16 : 9), 0, 7); ctx.fill();
+        }
       }
     }
     ctx.globalCompositeOperation = 'source-over';
     // Bolt Optimization: Set font and textAlign once before the node label loop
     // to avoid ~900 redundant Canvas 2D font property assignments per second during 60 FPS animation.
-    ctx.font = '800 8px "JetBrains Mono",monospace';
+    // A Nerva look switches between its label voice and the mono face (model names) only on change.
+    let voice = '';
+    if (!pal) {
+      ctx.font = '800 8px "JetBrains Mono",monospace';
+      setTracking(ctx, '0px');
+    }
     ctx.textAlign = 'center';
     for (let i = 0; i < numNodes; i++) {
       const n = nodes[i];
-      const c = colorFor(n); const isHov = hov === n.id; const dim = (hov && !isHov && n.kind !== 'core') || (foc && foc !== n.id && n.kind === 'agent');
+      const c = pal ? roleColorFor(n, pal) : colorFor(n); const isHov = hov === n.id; const dim = (hov && !isHov && n.kind !== 'core') || (foc && foc !== n.id && n.kind === 'agent');
       const active = isExecutingAgent(n.agent); ctx.globalAlpha = dim ? 0.3 : 1;
-      if (n.kind === 'core') {
+      if (n.kind === 'core' && pal) {
+        // the core in ink: its ring, two arcs (still under calm motion) and a solid centre
+        ctx.strokeStyle = pal.text; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(n.x, n.y, n._r, 0, 7); ctx.stroke();
+        const a1 = calm ? 0 : st.tick * 0.03, a2 = calm ? 0 : -st.tick * 0.045;
+        ctx.lineWidth = 1.4; ctx.strokeStyle = pal.text2;
+        ctx.beginPath(); ctx.arc(n.x, n.y, n._r - 4, a1, a1 + 2.1); ctx.stroke();
+        ctx.beginPath(); ctx.arc(n.x, n.y, n._r - 4, a1 + Math.PI, a1 + Math.PI + 2.1); ctx.stroke();
+        ctx.beginPath(); ctx.arc(n.x, n.y, n._r - 8, a2, a2 + 1.7); ctx.stroke();
+        const pr = n._r * 0.34 + (calm ? 0 : Math.sin(st.tick * 0.09) * 2);
+        ctx.fillStyle = pal.text; ctx.beginPath(); ctx.arc(n.x, n.y, Math.max(2, pr), 0, 7); ctx.fill();
+      } else if (n.kind === 'core') {
         ctx.strokeStyle = '#bfeaff'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(n.x, n.y, n._r, 0, 7); ctx.stroke();
         const a1 = st.tick * 0.03, a2 = -st.tick * 0.045;
         ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(143,224,255,0.8)';
@@ -399,11 +565,23 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
         const pr = n._r * 0.34 + (calm ? 0 : Math.sin(st.tick * 0.09) * 2);
         ctx.fillStyle = '#dff4ff'; ctx.beginPath(); ctx.arc(n.x, n.y, Math.max(2, pr), 0, 7); ctx.fill();
       } else {
-        ctx.beginPath(); ctx.arc(n.x, n.y, n._r, 0, 7); ctx.fillStyle = (n.kind === 'model' || active) ? c : '#0a1219'; ctx.fill();
+        // an idle agent is a ring on the ground (it hides the edges beneath it); models and busy/active agents are solid
+        ctx.beginPath(); ctx.arc(n.x, n.y, n._r, 0, 7); ctx.fillStyle = (n.kind === 'model' || active) ? c : (pal ? pal.ground : '#0a1219'); ctx.fill();
         ctx.lineWidth = n.kind === 'model' ? 1.5 : 1.2; ctx.strokeStyle = c; ctx.stroke();
       }
       ctx.globalAlpha = 1;
-      if (n.kind !== 'agent' || active || isHov || foc === n.id) { ctx.fillStyle = isHov ? '#eaf6ff' : 'rgba(165,190,210,0.75)'; ctx.fillText(String(n.label).toUpperCase(), n.x, n.y + n._r + 10); }
+      if (n.kind !== 'agent' || active || isHov || foc === n.id) {
+        if (pal) {
+          // names in the label voice and its case; a model name is an identifier: mono, as written
+          const ident = n.kind === 'model';
+          if (voice !== (ident ? 'ident' : 'label')) {
+            ctx.font = ident ? pal.identFont : pal.labelFont; setTracking(ctx, ident ? '0px' : pal.track);
+            voice = ident ? 'ident' : 'label';
+          }
+          ctx.fillStyle = (isHov || n.kind === 'core') ? pal.text : pal.text2;
+          ctx.fillText(ident ? String(n.label) : voiceCase(String(n.label), pal.labelCase), n.x, n.y + n._r + pal.size + 1);
+        } else { ctx.fillStyle = isHov ? '#eaf6ff' : 'rgba(165,190,210,0.75)'; ctx.fillText(String(n.label).toUpperCase(), n.x, n.y + n._r + 10); }
+      }
     }
   }
 
@@ -412,10 +590,19 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
     if (!tasksByOwnerList || !tasksByOwnerList.length) return;
     const W = st.w, H = st.h, cx = st.cx, cy = st.cy;
     const outer = Math.min(W, H) * (st.cinema ? 0.48 : 0.46);
+    // Nerva: a task is a mark on the sheet ringed by its state, joined to its owner by a quiet
+    // rule, its title in the label voice; Classic keeps the HUD v2 literals.
+    const pal: MeshPalette | null = st.pal;
     ctx.globalCompositeOperation = 'source-over';
     // Bolt Optimization: Set font and textAlign once before the task fan loop
     // to avoid redundant Canvas 2D font property assignments per task at 60 FPS.
-    ctx.font = '800 8px "JetBrains Mono",monospace';
+    if (pal) {
+      ctx.font = pal.labelFont;
+      setTracking(ctx, pal.track);
+    } else {
+      ctx.font = '800 8px "JetBrains Mono",monospace';
+      setTracking(ctx, '0px');
+    }
     ctx.textAlign = 'center';
     // Bounded fan (real-world finding, 2026-07-08): an owner can accumulate far
     // more tasks than a fixed-size arc can label legibly — cap what's drawn so
@@ -440,19 +627,21 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
         const y = focused ? origin.y + Math.sin(ang) * r : cy + Math.sin(ang) * r;
         const dim = foc && !focused && owner !== 'jarvis';
         ctx.globalAlpha = dim ? 0.25 : 0.92;
-        ctx.strokeStyle = 'rgba(130,170,200,0.18)';
+        ctx.strokeStyle = pal ? pal.rule2 : 'rgba(130,170,200,0.18)';
         ctx.lineWidth = focused ? 0.9 : 0.6;
         ctx.beginPath(); ctx.moveTo(origin.x, origin.y); ctx.lineTo(x, y); ctx.stroke();
-        ctx.fillStyle = 'rgba(4,7,13,0.92)';
-        ctx.strokeStyle = taskColor(tk);
+        ctx.fillStyle = pal ? pal.sheet : 'rgba(4,7,13,0.92)';
+        ctx.strokeStyle = pal ? taskRoleColor(tk, pal) : taskColor(tk);
         ctx.lineWidth = focused ? 1.7 : 1.2;
         ctx.beginPath(); ctx.arc(x, y, focused ? 4.6 : 3.1, 0, 7); ctx.fill(); ctx.stroke();
         if (focused) {
-          ctx.fillStyle = 'rgba(225,240,255,0.82)';
+          ctx.fillStyle = pal ? pal.text : 'rgba(225,240,255,0.82)';
           if (i < MAX_FAN_LABELS) {
-            ctx.fillText(taskTitle(tk).slice(0, 18).toUpperCase(), x, y - 8);
+            if (pal) ctx.fillText(voiceCase(taskTitle(tk).slice(0, 18), pal.labelCase), x, y - 9);
+            else ctx.fillText(taskTitle(tk).slice(0, 18).toUpperCase(), x, y - 8);
           } else if (i === MAX_FAN_LABELS && fullList.length > MAX_FAN_LABELS) {
-            ctx.fillText(`+${fullList.length - MAX_FAN_LABELS} MORE`, x, y - 8);
+            if (pal) ctx.fillText(voiceCase(`+${fullList.length - MAX_FAN_LABELS} more`, pal.labelCase), x, y - 9);
+            else ctx.fillText(`+${fullList.length - MAX_FAN_LABELS} MORE`, x, y - 8);
           }
         }
       }

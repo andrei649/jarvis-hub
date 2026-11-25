@@ -1,7 +1,8 @@
 /* Owner receipt history. The server records metadata, never message bodies. */
 import React, { useState } from 'react';
 import { apiPost } from '../api/client';
-import { mono, refusalReason, useApi } from '../panel-kit';
+import { mono, note, refusalReason, useApi } from '../panel-kit';
+import { LABEL_STRONG } from '../theme/type';
 
 export const CHANNEL_DELIVERIES_PATH = '/api/channels/deliveries?limit=50';
 
@@ -94,7 +95,7 @@ export function ChannelDeliveriesPanel() {
   return (
     <section aria-label="Delivery receipts" style={{ marginTop: 12, borderTop: '1px solid var(--panel-line)', paddingTop: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <strong style={{ ...mono, fontSize: 11 }}>DELIVERY RECEIPTS</strong>
+        <strong style={{ ...LABEL_STRONG, fontSize: 'var(--n-fs-meta)' }}>DELIVERY RECEIPTS</strong>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={reload}>refresh receipts</button>
       </div>
       {loading && <div role="status">Checking delivery receipts…</div>}
@@ -103,7 +104,7 @@ export function ChannelDeliveriesPanel() {
         <div role="status" style={{ color: 'var(--amber)' }}>Delivery receipts could not be checked from this response.</div>
       )}
       {view && <>
-        <p style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>
+        <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           Recent 50 receipt rows only; counts describe retained rows, not all sends. Duplicate-protection records:
           {' '}{view.retention.protected_count} of {view.retention.protected_limit} occupied; when full, new sends
           requiring this protection are withheld. The ordinary row budget is {view.retention.ordinary_row_limit};
@@ -112,20 +113,22 @@ export function ChannelDeliveriesPanel() {
           {' '}{duration(view.retention.window_seconds)}. Records can expire or be refused at capacity.
           No message bodies are stored here.
         </p>
+        {/* A state reads the same here as in the receipts below: a word in the interface face,
+            at the note size so it leads its line (the label voice would uppercase it in Classic). */}
         <ul aria-label="retained delivery states" style={{ listStyle: 'none', padding: 0, margin: '7px 0' }}>
-          {STATES.map((state) => <li key={state} style={{ fontSize: 10.5, padding: '2px 0' }}>
-            <span style={mono}>{state}</span> {view.stats.by_state[state]} · {DESCRIPTION[state]}
+          {STATES.map((state) => <li key={state} style={{ fontSize: 'var(--n-fs-meta)', padding: '2px 0' }}>
+            <span style={note}>{state}</span> {view.stats.by_state[state]} · {DESCRIPTION[state]}
           </li>)}
         </ul>
-        <div style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           {view.stats.dead_targets} dead targets{view.dead_targets_truncated ? ' (server list truncated)' : ''}.
           Receipts never trigger automatic redelivery.
         </div>
-        {clearNote && <div role="status" style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 4 }}>{clearNote}</div>}
+        {clearNote && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{clearNote}</div>}
         {view.dead_targets && view.dead_targets.length > 0 && (
           <ul aria-label="dead delivery targets" style={{ listStyle: 'none', padding: 0, margin: '6px 0' }}>
             {view.dead_targets.map((dt) => (
-              <li key={`${dt.channel}:${dt.target}`} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 10.5, padding: '2px 0' }}>
+              <li key={`${dt.channel}:${dt.target}`} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--n-fs-meta)', padding: '2px 0' }}>
                 <span style={mono}>{dt.channel} → {dt.target}</span> · {dt.reason} · {new Date(dt.marked * 1000).toLocaleString()}
                 <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => liftDead(dt.channel, dt.target)}>lift gone flag</button>
               </li>
@@ -135,7 +138,7 @@ export function ChannelDeliveriesPanel() {
         {view.deliveries.length === 0
           ? <p>No receipt rows returned for this read.</p>
           : <ol aria-label="recent delivery receipts" style={{ paddingLeft: 20, margin: '8px 0' }}>
-              {view.deliveries.map((row) => <li key={row.id} style={{ fontSize: 10.5, padding: '3px 0' }}>
+              {view.deliveries.map((row) => <li key={row.id} style={{ fontSize: 'var(--n-fs-meta)', padding: '3px 0' }}>
                 <span style={mono}>{row.id}</span> · {row.channel} → {row.target} · {row.state}
                 {' · '}attempt {row.attempt} · {row.chars} characters · {new Date(row.updated * 1000).toLocaleString()}
                 {row.error ? ` · ${row.error}` : ''}

@@ -37,7 +37,8 @@
      * The LIVE chip only appears once a POST has actually returned a payload that is
        still on screen. Locally computed deck state is not backend data. */
 import React, { useState, useEffect } from 'react';
-import { arr, mono, asLive, Card, Row, Tag, act, inpS, Json } from '../panel-kit';
+import { arr, mono, note, asLive, Card, Row, Tag, act, inpS, Json } from '../panel-kit';
+import { IDENT, LABEL } from '../theme/type';
 
 type CoachCard = {
   id: string;
@@ -89,17 +90,25 @@ const why = (err: any): string => {
 };
 
 const Amber = ({ children }: { children?: any }) => (
-  <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
+  <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
 );
 const Note = ({ children }: { children?: any }) => (
-  <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
+  <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', padding: '3px 0', lineHeight: 1.5 }}>{children}</div>
 );
 const Head = ({ children }: { children?: any }) => (
   <div style={{
-    ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)',
+    ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)',
     marginTop: 12, paddingTop: 7, borderTop: '1px solid var(--panel-line)',
   }}>{children}</div>
 );
+/* A route inside a head is an IDENT span (theme/type.ts): the mono face, in its own case and
+   spacing (contract §5). */
+
+/* A number field sized to its largest value: that many digits in the field's own face and
+   size (ch follows the theme, the 15px wide-screen step and the typeface override), its
+   padding on both sides (which follows density), and 24px for the border and the browser's
+   spin buttons (15–17px). */
+const numW = (digits: number) => `calc(${digits}ch + 2 * var(--n-s-2) + 24px)`;
 const num = (v: any) => (typeof v === 'number' ? String(v) : v == null ? '—' : String(v));
 
 /* SM-2 recall grades. These labels describe what the OPERATOR means by the grade he is
@@ -330,7 +339,7 @@ export function CoachPanel() {
       {!deck.length && <Note>deck is empty — add a card above.</Note>}
       {deck.map((c) => (
         <Row key={c.id}>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{c.label || c.id}</span>
+          <span style={{ ...note, color: 'var(--ink-2)' }}>{c.label || c.id}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
             {typeof c.repetitions === 'number' ? <Tag>reps {c.repetitions}</Tag> : null}
             {typeof c.interval === 'number' ? <Tag>interval {c.interval}d</Tag> : null}
@@ -343,18 +352,18 @@ export function CoachPanel() {
       ))}
 
       {/* ── 2 · SESSION ──────────────────────────────────────────── */}
-      <Head>TODAY&apos;S SESSION · POST /api/coach/session</Head>
+      <Head>TODAY&apos;S SESSION · <span style={IDENT}>POST /api/coach/session</span></Head>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>new_limit</label>
-        <input type="number" min={0} max={1000} style={{ ...inpS, width: 66 }}
+        <label style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>new_limit</label>
+        <input type="number" min={0} max={1000} style={{ ...inpS, width: numW(4) }}
           value={newLimit} onChange={(e) => setNewLimit(e.target.value)} />
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>max_reviews</label>
-        <input type="number" min={1} max={5000} style={{ ...inpS, width: 72 }}
+        <label style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>max_reviews</label>
+        <input type="number" min={1} max={5000} style={{ ...inpS, width: numW(4) }}
           value={maxReviews} onChange={(e) => setMaxReviews(e.target.value)} />
         <button className="tool-btn" onClick={buildSession} disabled={!deck.length || busy === 'session'}>
           build session
         </button>
-        <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>now_day {today}</span>
+        <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>now_day {today}</span>
       </div>
       {!deck.length && <Note>deck is empty — add a card. (An empty deck would answer a
         true 0/0/0, which is not the same statement as &ldquo;nothing due today&rdquo;.)</Note>}
@@ -362,7 +371,7 @@ export function CoachPanel() {
       {counts && (
         <>
           <Row>
-            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>counts</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>counts</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               <Tag>due_total {num(counts.due_total)}</Tag>
               <Tag>due_selected {num(counts.due_selected)}</Tag>
@@ -378,7 +387,7 @@ export function CoachPanel() {
           {arr(sessionRes, 'due').map((c: any, i: number) => (
             <Row key={`due-${c?.id ?? i}`}>
               <Tag>due</Tag>
-              <span style={{ ...mono, color: 'var(--ink-2)' }}>{label(c)}</span>
+              <span style={{ ...note, color: 'var(--ink-2)' }}>{label(c)}</span>
               {typeof c?.due_day === 'number' && (
                 <span style={{ marginLeft: 'auto' }}><Tag>due_day {c.due_day}</Tag></span>
               )}
@@ -387,7 +396,7 @@ export function CoachPanel() {
           {arr(sessionRes, 'new').map((c: any, i: number) => (
             <Row key={`new-${c?.id ?? i}`}>
               <Tag>new</Tag>
-              <span style={{ ...mono, color: 'var(--ink-2)' }}>{label(c)}</span>
+              <span style={{ ...note, color: 'var(--ink-2)' }}>{label(c)}</span>
             </Row>
           ))}
           {showRaw && <Json v={sessionRes} max={180} />}
@@ -395,7 +404,7 @@ export function CoachPanel() {
       )}
 
       {/* ── 3 · REVIEW ───────────────────────────────────────────── */}
-      <Head>GRADE A CARD · POST /api/coach/review</Head>
+      <Head>GRADE A CARD · <span style={IDENT}>POST /api/coach/review</span></Head>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
         <select
           aria-label="card to grade"
@@ -429,7 +438,7 @@ export function CoachPanel() {
       {reviewRes && (
         <>
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>{label(reviewRes)}</span>
+            <span style={{ ...note, color: 'var(--ink-2)' }}>{label(reviewRes)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               <Tag>last_quality {num(reviewRes.last_quality)}</Tag>
               <Tag>repetitions {num(reviewRes.repetitions)}</Tag>
@@ -451,7 +460,7 @@ export function CoachPanel() {
       )}
 
       {/* ── 4 · CURRICULUM ───────────────────────────────────────── */}
-      <Head>CURRICULUM · POST /api/coach/curriculum</Head>
+      <Head>CURRICULUM · <span style={IDENT}>POST /api/coach/curriculum</span></Head>
       {topics.map((t, i) => (
         <div key={i} style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', padding: '3px 0' }}>
           <input style={{ ...inpS, flex: '0 1 110px' }} placeholder="topic id"
@@ -466,8 +475,8 @@ export function CoachPanel() {
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '5px 0' }}>
         <button className="tool-btn" onClick={addTopic}>add topic</button>
         <button className="tool-btn" onClick={topicsFromDeck} disabled={!deck.length}>use deck as topics</button>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>per_session</label>
-        <input type="number" min={1} max={100} style={{ ...inpS, width: 60 }}
+        <label style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>per_session</label>
+        <input type="number" min={1} max={100} style={{ ...inpS, width: numW(3) }}
           value={perSession} onChange={(e) => setPerSession(e.target.value)} />
         <button className="tool-btn" onClick={planCurriculum} disabled={!topics.length || busy === 'plan'}>
           plan curriculum
@@ -477,19 +486,19 @@ export function CoachPanel() {
       {planRes && (
         <>
           <Row>
-            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>order</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>order</span>
             <span style={{ marginLeft: 'auto' }}><Tag>session_count {num(planRes.session_count)}</Tag></span>
           </Row>
           {arr(planRes, 'order').map((t: any, i: number) => (
             <Row key={`ord-${t?.id ?? i}`}>
               <Tag>{i + 1}</Tag>
-              <span style={{ ...mono, color: 'var(--ink-2)' }}>{label(t)}</span>
+              <span style={{ ...note, color: 'var(--ink-2)' }}>{label(t)}</span>
             </Row>
           ))}
           {arr(planRes, 'sessions').map((s: any, i: number) => (
             <Row key={`sess-${i}`}>
-              <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>session {i + 1}</span>
-              <span style={{ ...mono, color: 'var(--ink-2)', marginLeft: 'auto', textAlign: 'right' }}>
+              <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>session {i + 1}</span>
+              <span style={{ ...note, color: 'var(--ink-2)', marginLeft: 'auto', textAlign: 'right' }}>
                 {(Array.isArray(s) ? s : []).map(label).join(' · ')}
               </span>
             </Row>
@@ -509,7 +518,7 @@ export function CoachPanel() {
 
       {/* ── footer ───────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', paddingTop: 6 }}>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
+        <label style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', display: 'flex', gap: 4, alignItems: 'center' }}>
           <input type="checkbox" checked={showRaw} onChange={(e) => setShowRaw(e.target.checked)} />
           raw response
         </label>

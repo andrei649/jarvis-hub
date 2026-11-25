@@ -28,8 +28,9 @@ def client(tmp_path, monkeypatch):
 def test_new_instance_defaults_are_not_an_explicit_motion_override(client):
     response = client.get(PATH)
     assert response.status_code == 200
+    # Theme contract v1: a new instance lands on Ledger, dark.
     assert response.json() == {'revision': '0', 'configured': False, 'preferences': {
-        'accent': 'cyan', 'look': 'obsidian', 'density': 'normal',
+        'accent': 'cyan', 'look': 'ledger', 'scheme': 'dark', 'density': 'normal',
         'motion': 'system', 'scanline': 'on', 'dotgrid': 'off', 'font': 'theme', 'lang': 'en'}}
     assert 'no-store' in response.headers['cache-control']
 
@@ -133,6 +134,53 @@ def test_stale_font_coerces_and_cas_protects_new_choice(client):
     assert client.put(PATH, json={'font': 'system-mono', '_revision': first['revision']}).status_code == 409
     assert client.get(PATH).json()['preferences']['font'] == 'system-serif'
     assert client.put(PATH, json={'font': 'url(https://example.com/font)', '_revision': saved['revision']}).json()['preferences']['font'] == 'theme'
+
+
+@pytest.mark.parametrize('look', ['ledger', 'presence', 'briefing', 'workbench', 'threshold', 'console', 'atlas', 'obsidian', 'graphite'])
+def test_every_theme_round_trips_for_a_fresh_client(client, look):
+    assert client.put(PATH, json={'look': look}).status_code == 200
+    fresh = TestClient(web.app, headers={'X-User-Token': TOKEN}).get(PATH).json()
+    assert fresh['preferences']['look'] == look
+    assert fresh['configured'] is True
+
+
+def test_a_retired_or_unknown_look_coerces_to_the_default_theme(client):
+    assert client.put(PATH, json={'look': 'paper-ii'}).json()['preferences']['look'] == 'ledger'
+    settings_db.put_category('appearance', {'preferences': {'look': 'cobalt', 'accent': 'amber'}})
+    body = client.get(PATH).json()['preferences']
+    assert body['look'] == 'ledger' and body['accent'] == 'amber'
+
+
+def test_an_explicit_classic_choice_is_kept_and_not_migrated(client):
+    # Only the browser cache migrates an old default; a stored server choice of obsidian is the owner's.
+    settings_db.put_category('appearance', {'preferences': {'look': 'obsidian'}})
+    assert client.get(PATH).json()['preferences']['look'] == 'obsidian'
+
+
+@pytest.mark.parametrize('scheme', ['dark', 'light', 'system'])
+def test_scheme_is_accepted_and_persists_without_changing_other_axes(client, scheme):
+    client.put(PATH, json={'look': 'atlas', 'accent': 'violet'})
+    saved = client.put(PATH, json={'scheme': scheme})
+    assert saved.status_code == 200
+    prefs = TestClient(web.app, headers={'X-User-Token': TOKEN}).get(PATH).json()['preferences']
+    assert prefs['scheme'] == scheme and prefs['look'] == 'atlas' and prefs['accent'] == 'violet'
+
+
+def test_unknown_scheme_coerces_to_dark_and_a_missing_one_reads_as_dark(client):
+    client.put(PATH, json={'look': 'briefing'})
+    assert client.get(PATH).json()['preferences']['scheme'] == 'dark'   # stored document without a scheme
+    assert client.put(PATH, json={'scheme': 'sepia'}).json()['preferences']['scheme'] == 'dark'
+    assert client.get(PATH).json()['preferences']['scheme'] == 'dark'
+    assert client.put(PATH, json={'scheme': 'x' * 33}).status_code == 422
+    assert client.put(PATH, json={'scheme': {'css': 'body{}'}}).status_code == 422
+
+
+def test_scheme_is_protected_by_the_revision_like_every_other_field(client):
+    first = client.get(PATH).json()
+    saved = client.put(PATH, json={'scheme': 'light', '_revision': first['revision']})
+    assert saved.status_code == 200
+    assert client.put(PATH, json={'scheme': 'system', '_revision': first['revision']}).status_code == 409
+    assert client.get(PATH).json()['preferences']['scheme'] == 'light'
 
 
 def test_language_is_an_appearance_preference_limited_to_translated_codes(client):

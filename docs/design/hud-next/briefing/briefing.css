@@ -1,0 +1,230 @@
+/* ==========================================================================
+   Nerva · "Briefing" direction · shared components
+   Everything here is built from tokens.css. Page-specific layout lives in each page.
+   Rules of the system:
+     · structure is drawn with rules (3px opens a section, 1px separates items), never boxes
+     · serif = the voice (what Nerva says), sans = the instrument (what you press), mono = machine ids
+     · the marker fill means "this is yours to decide"; red means a real problem or Stop
+     · every status = a shape + a word; ok is ink and a check
+   ========================================================================== */
+
+*, *::before, *::after { box-sizing: border-box; }
+/* Figures are facts here: always lining and tabular, in every face. (!important because the
+   `font` shorthand resets font-variant-numeric and the serif's default figures are old-style.) */
+*, *::before, *::after { font-variant-numeric: lining-nums tabular-nums !important; }
+html { height: 100%; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0; height: 100%;
+  background: var(--nv-paper); color: var(--nv-ink);
+  font-family: var(--nv-font-ui); font-size: var(--nv-t-ui); line-height: 1.4;
+  font-variant-numeric: lining-nums tabular-nums;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+h1, h2, h3, h4, p, ul, ol, dl, dd, figure, table { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
+button { cursor: pointer; }
+a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+table { border-collapse: collapse; border-spacing: 0; }
+th { text-align: left; font-weight: inherit; }
+:focus-visible { outline: 2px solid var(--nv-focus); outline-offset: 2px; border-radius: var(--nv-r-1); }
+::selection { background: var(--nv-mark); color: var(--nv-on-mark); }
+
+.vh { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.mono { font-family: var(--nv-font-mono); font-size: var(--nv-t-mono); font-variant-ligatures: none; }
+.nowrap { white-space: nowrap; }
+
+/* ---- icons: 16px line work in the text colour ------------------------------------------- */
+.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.i-14 { width: 14px; height: 14px; }
+.i-12 { width: 12px; height: 12px; }
+
+/* ---- status marks: a shape and a word, colour last --------------------------------------- */
+.st { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.st-attention .i { fill: var(--nv-mark); stroke: var(--nv-ink); }
+.st-problem   .i { color: var(--nv-problem); }
+.st-unknown       { color: var(--nv-ink-3); font-style: italic; }
+.st-stale         { color: var(--nv-ink-3); }
+.st-stale s       { text-decoration-color: var(--nv-rule-3); }
+
+/* the marker: one highlighter, used on a phrase or a number */
+mark, .hl { background: var(--nv-hl-bg); color: var(--nv-hl-ink); box-shadow: inset 0 -1.5px 0 var(--nv-hl-line); padding: 0.05em 0.22em; margin: 0 -0.08em; border-radius: var(--nv-r-1); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+:root[data-theme="dark"] mark, :root[data-theme="dark"] .hl { padding-left: 0; padding-right: 0; margin: 0; border-radius: 0; font-weight: 700; }
+
+/* ---- data-source label: every section says where its data comes from --------------------- */
+.src { display: inline-flex; align-items: center; gap: 5px; font: 500 var(--nv-t-floor)/1 var(--nv-font-ui-sm); color: var(--nv-ink-3); white-space: nowrap; }
+.src::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--nv-ink-2); }
+.src-demo::before  { background: transparent; border: 1.5px solid var(--nv-ink-3); }
+.src-demo          { text-decoration: underline dashed; text-underline-offset: 3px; }
+.src-empty::before { background: transparent; border: 1px dashed var(--nv-ink-3); }
+.src-stale::before { background: transparent; border: 1.5px solid var(--nv-ink-3); border-right-color: transparent; }
+
+/* ---- risk tiers: weight follows risk ---------------------------------------------------- */
+.tier { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 7px 0 6px; border-radius: var(--nv-r-1); font: 650 var(--nv-t-floor)/1 var(--nv-font-ui-sm); white-space: nowrap; }
+.pips { display: inline-flex; gap: 2px; }
+.pips i { width: 4px; height: 10px; border: 1px solid currentColor; border-radius: 1px; }
+.pips i.on { background: currentColor; }
+.tier-3 { background: var(--nv-fill); color: var(--nv-on-ink); }
+.tier-2 { box-shadow: inset 0 0 0 1px var(--nv-ink); color: var(--nv-ink); }
+.tier-1 { color: var(--nv-ink-2); padding: 0; }
+.tier-0 { color: var(--nv-ink-3); padding: 0; font-weight: 500; }
+
+/* ---- buttons ----------------------------------------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--nv-control-h); padding: 0 11px;
+  border: 1px solid var(--nv-rule-3); border-radius: var(--nv-r-2);
+  background: transparent; color: var(--nv-ink);
+  font: 600 13px/1 var(--nv-font-ui); white-space: nowrap; text-decoration: none;
+  transition: background-color var(--nv-dur) var(--nv-ease), border-color var(--nv-dur) var(--nv-ease);
+}
+.btn:hover { background: var(--nv-paper-3); border-color: var(--nv-ink); }
+.btn-lg { height: var(--nv-control-h-lg); padding: 0 14px; }
+.btn-primary { background: var(--nv-fill); border-color: var(--nv-fill); color: var(--nv-on-ink); }
+.btn-primary:hover { background: var(--nv-ink-2); border-color: var(--nv-ink-2); }
+.btn-primary:disabled, .btn-primary[aria-disabled="true"] { background: var(--nv-paper-2); border: 1px dashed var(--nv-rule-3); color: var(--nv-ink-2); cursor: not-allowed; }
+/* the verdict button of a row: weight, not fill. The page keeps solid ink for the one
+   action that matters (the lead's typed confirmation once it unlocks). */
+.btn-go { border: 1.5px solid var(--nv-ink); font-weight: 650; }
+.btn-go:hover { background: var(--nv-fill); border-color: var(--nv-fill); color: var(--nv-on-ink); }
+.btn-quiet { border-color: transparent; color: var(--nv-ink-2); padding: 0 8px; font-weight: 500; }
+.btn-quiet:hover { border-color: transparent; color: var(--nv-ink); }
+.btn-icon { width: var(--nv-control-h); padding: 0; }
+.btn-stop { border: 1.5px solid var(--nv-problem); color: var(--nv-problem); font-weight: 650; }
+.btn-stop:hover { background: var(--nv-problem); border-color: var(--nv-problem); color: var(--nv-on-problem); }
+.link { background: none; border: 0; padding: 0; color: var(--nv-ink); font: inherit; text-decoration: underline; text-decoration-color: var(--nv-rule-3); text-underline-offset: 3px; }
+.link:hover { text-decoration-color: var(--nv-ink); }
+
+.kbd { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border: 1px solid var(--nv-rule-2); border-bottom-width: 2px; border-radius: 3px; background: var(--nv-paper); color: var(--nv-ink-2); font: 500 var(--nv-t-floor)/1 var(--nv-font-ui-sm); }
+
+/* segmented control (approval mode, language) */
+.seg { display: inline-flex; height: 26px; border: 1px solid var(--nv-rule-3); border-radius: var(--nv-r-2); overflow: hidden; background: var(--nv-paper); }
+.seg button { padding: 0 9px; border: 0; background: transparent; color: var(--nv-ink-2); font: 500 var(--nv-t-meta)/1 var(--nv-font-ui-sm); }
+.seg button + button { border-left: 1px solid var(--nv-rule-2); }
+.seg button[aria-pressed="true"] { background: var(--nv-fill); color: var(--nv-on-ink); font-weight: 650; }
+/* the quiet variant: a preference, not a mode with consequences */
+.seg-quiet { border-color: var(--nv-rule-2); }
+.seg-quiet button[aria-pressed="true"] { background: var(--nv-paper-3); color: var(--nv-ink); box-shadow: inset 0 -2px 0 var(--nv-ink); }
+
+/* ---- section head: a 3px rule, a sentence-case serif title -------------------------------- */
+.sec-head { display: flex; align-items: baseline; gap: 10px; padding-top: 7px; margin-bottom: 6px; border-top: var(--nv-rule-bold) solid var(--nv-rule-heavy); min-height: 34px; }
+.sec-head h2 { font: 600 var(--nv-t-section)/1.2 var(--nv-font-heading); letter-spacing: -0.005em; white-space: nowrap; }
+.sec-meta { font: 400 var(--nv-t-meta)/1.3 var(--nv-font-ui-sm); color: var(--nv-ink-3); display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px 10px; min-width: 0; }
+.sec-meta .st { gap: 4px; }
+.sec-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; align-self: center; font: 400 var(--nv-t-meta)/1 var(--nv-font-ui-sm); color: var(--nv-ink-3); white-space: nowrap; }
+
+/* ==========================================================================
+   Masthead: nameplate · the nine areas · search · stop
+   ========================================================================== */
+.shell { height: 100vh; min-height: 560px; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; }
+
+.masthead { display: flex; align-items: center; gap: 14px; height: 52px; padding: 0 40px; border-bottom: 1px solid var(--nv-rule-heavy); min-width: 0; }
+.nameplate { display: inline-flex; align-items: center; gap: 9px; margin-right: 14px; text-decoration: none; font: 700 26px/1 var(--nv-font-display); letter-spacing: -0.015em; }
+.nameplate .nmark { width: 28px; height: 28px; }
+
+/* the neural N, redrawn as line work; its four nodes are the four steps of a reply */
+.nmark { flex: none; overflow: visible; }
+.nmark line { stroke: var(--nv-ink); stroke-width: 9; stroke-linecap: round; }
+.nmark circle { fill: var(--nv-ink); }
+.nmark .todo { stroke: var(--nv-rule-3); stroke-dasharray: 1 16; }
+.nmark circle.todo { fill: var(--nmark-bg, var(--nv-paper)); stroke: var(--nv-rule-3); stroke-width: 6; stroke-dasharray: none; }
+.nmark .now-ring { fill: none; stroke: var(--nv-ink); stroke-width: 5; }
+
+.sections { display: flex; align-items: stretch; gap: 2px; height: 100%; min-width: 0; }
+.sections a { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; color: var(--nv-ink-2); font: 500 var(--nv-t-ui)/1 var(--nv-font-ui); text-decoration: none; white-space: nowrap; }
+.sections a:hover { color: var(--nv-ink); }
+.sections a[aria-current="page"] { color: var(--nv-ink); font-weight: 650; }
+.sections a[aria-current="page"]::after { content: ""; position: absolute; left: 9px; right: 9px; bottom: -1px; height: 4px; background: var(--nv-rule-heavy); }
+.nb { display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 6px; border-radius: var(--nv-r-1); font: 650 var(--nv-t-floor)/1 var(--nv-font-ui-sm); }
+.nb-you { background: var(--nv-flag-bg); color: var(--nv-flag-ink); box-shadow: inset 0 0 0 1px var(--nv-flag-edge); }
+.nb-problem { box-shadow: inset 0 0 0 1px var(--nv-rule-3); color: var(--nv-ink); }
+.nb-problem .i { color: var(--nv-problem); }
+.nb .short { display: none; }
+
+.tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.search { display: inline-flex; align-items: center; gap: 8px; width: 268px; height: 32px; padding: 0 6px 0 10px; border: 1px solid var(--nv-rule-3); border-radius: var(--nv-r-2); background: var(--nv-paper); color: var(--nv-ink-3); font: 400 var(--nv-t-ui)/1 var(--nv-font-ui); text-align: left; }
+.search:hover { border-color: var(--nv-ink); }
+.search .q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tools .sep { width: 1px; height: 22px; background: var(--nv-rule-2); margin: 0 4px; }
+/* the edition switch shows the edition it offers */
+.ed-sun { display: none; }
+:root[data-theme="dark"] .ed-sun { display: block; }
+:root[data-theme="dark"] .ed-moon { display: none; }
+.tools .btn { height: 32px; }
+
+/* ---- Folio: the verdict, then the trust signals that never hide ---------------------------- */
+.folio { display: flex; align-items: center; height: 32px; padding: 0 40px; border-bottom: 1px solid var(--nv-rule-2); font: 400 var(--nv-t-meta)/1 var(--nv-font-ui-sm); color: var(--nv-ink-2); white-space: nowrap; min-width: 0; overflow: hidden; }
+.verdict { display: inline-flex; align-items: center; gap: 9px; margin-right: auto; padding-right: 16px; flex: none; color: var(--nv-ink-2); }
+.verdict-word { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px 0 6px; background: var(--nv-flag-bg); color: var(--nv-flag-ink); box-shadow: inset 0 0 0 1px var(--nv-flag-edge); border-radius: var(--nv-r-1); font: 700 var(--nv-t-meta)/1 var(--nv-font-ui-sm); }
+.verdict-word .i { fill: none; stroke: currentColor; }
+.verdict strong { color: var(--nv-ink); font-weight: 600; }
+.sig { display: inline-flex; align-items: center; gap: 6px; height: 16px; padding: 0 12px; border-left: 1px solid var(--nv-rule-2); flex: none; }
+.sig:last-child { padding-right: 0; }
+.sig b { color: var(--nv-ink); font-weight: 600; }
+.sig .i { color: var(--nv-ink-2); }
+.sig .basis-tag { color: var(--nv-ink-3); }
+.meter { display: inline-flex; align-items: center; gap: 6px; }
+.meter + .meter { margin-left: 10px; }
+.meter .bar { position: relative; width: 26px; height: 5px; background: var(--nv-rule); border-radius: 1px; overflow: hidden; }
+.meter .bar i { position: absolute; inset: 0 auto 0 0; background: var(--nv-ink-2); }
+
+/* ---- cross-reference to a numbered decision: the same marker square as the decision ---- */
+.ref { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; background: var(--nv-flag-bg); color: var(--nv-flag-ink); box-shadow: inset 0 0 0 1px var(--nv-flag-edge); border-radius: var(--nv-r-1); font: 700 13px/1 var(--nv-font-display); text-decoration: none; }
+.ref-later { background: transparent; box-shadow: inset 0 0 0 1.5px var(--nv-ink-2); color: var(--nv-ink); }
+
+/* ---- a small group head inside a section ("Working 3", "Waiting on you 3") -------------- */
+.grp-h { display: flex; align-items: center; gap: 7px; margin: 10px 0 1px; padding-bottom: 3px; border-bottom: 1px solid var(--nv-rule-2); font: 650 var(--nv-t-meta)/1.3 var(--nv-font-ui-sm); color: var(--nv-ink); }
+.grp-h .n { margin-left: auto; font-weight: 500; color: var(--nv-ink-3); }
+.grp-h .i { color: var(--nv-ink-2); }
+
+/* ---- facts: a definition list that reads as labelled sentences ---------------------------- */
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 1px 14px; }
+.facts dt { font: 600 var(--nv-t-meta)/1.62 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+.facts dd { font: 400 14px/1.42 var(--nv-font-text); color: var(--nv-ink); max-width: 72ch; }
+.facts dd .mono { color: var(--nv-ink-2); }
+
+/* ---- meters: drawn only from a value the hub returned ------------------------------------- */
+.mtr { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; padding: 4px 0; }
+.mtr .k { font: 600 var(--nv-t-meta)/1.3 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+.mtr .v { font: 400 var(--nv-t-meta)/1.3 var(--nv-font-ui-sm); color: var(--nv-ink-2); white-space: nowrap; }
+.mtr .v b { color: var(--nv-ink); font-weight: 650; }
+.mbar { position: relative; height: 6px; background: var(--nv-rule); border-radius: 1px; overflow: hidden; }
+.mbar i { position: absolute; inset: 0 auto 0 0; background: var(--nv-ink-2); border-radius: 1px; }
+.mtr-note { grid-column: 2 / -1; margin-top: 2px; font: 400 var(--nv-t-meta)/1.35 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+.mbar-unknown { background: transparent; box-shadow: inset 0 0 0 1px var(--nv-rule-2); background-image: repeating-linear-gradient(90deg, var(--nv-rule-2) 0 3px, transparent 3px 6px); background-size: 100% 1px; background-position: 0 50%; background-repeat: no-repeat; }
+.mtr.st-unknown .v { font-style: italic; color: var(--nv-ink-3); }
+
+/* ---- the basis ladder: how sure the "on this machine" figure is --------------------------- */
+.basis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.basis li { position: relative; padding: 7px 0 0; border-top: 3px solid var(--nv-rule); font: 500 var(--nv-t-meta)/1.3 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+.basis li.reached { border-top-color: var(--nv-ink-2); color: var(--nv-ink-2); }
+.basis li.is-now { border-top-color: var(--nv-ink); color: var(--nv-ink); font-weight: 700; }
+.basis li.later { border-top-style: dashed; border-top-width: 2px; padding-top: 8px; }
+.basis small { display: block; font-size: inherit; font-weight: 400; color: var(--nv-ink-3); }
+
+/* ---- widths ---------------------------------------------------------------------------------- */
+@media (max-width: 1700px) {
+  .f-xl { display: none !important; }
+  .nb .long { display: none; }
+  .nb .short { display: inline; }
+  .tools .lbl { display: none; }
+  .tools .btn-tool { width: 32px; padding: 0; }
+  .search { width: 220px; }
+}
+@media (max-width: 1340px) {
+  .masthead, .folio { padding-left: 24px; padding-right: 24px; }
+  .masthead { gap: 8px; }
+  .nameplate { margin-right: 6px; font-size: 24px; }
+  .sections a { padding: 0 7px; }
+  .sections a[aria-current="page"]::after { left: 7px; right: 7px; }
+  .search { width: 168px; }
+  .search .long { display: none; }
+  .f-lg { display: none !important; }
+  .sig { padding: 0 9px; }
+}
+@media (min-width: 1341px) { .f-sm { display: none !important; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; animation: none !important; }
+}

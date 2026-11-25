@@ -1,0 +1,157 @@
+/* =====================================================================================
+   Home — Today's spread, and the conversation page (PHASE_B_PLAN.md §5.1)
+   -------------------------------------------------------------------------------------
+   The grid per width, from docs/design/hud-next/ledger/ledger.css:
+
+     ≥ 2200     day 432 · conversation 1fr · docket 712 · agents and the record 404
+     1680–2199  day 396 · conversation 1fr · docket 664
+     1340–1679  the day folds into a band above; conversation 1fr · docket minmax(500px, 44.5%)
+     1100–1339  the same, tighter: docket minmax(480px, 43.5%)
+     ≤ 1099     one column: the band, the docket, the conversation; the page scrolls
+
+   The page itself never scrolls above 1099px; each register scrolls inside. A hairline sits in
+   the middle of each gutter between two registers. Roles only, nothing under --n-fs-meta.
+   Classes owned here: n-home (__bandrow __more --popover __more-toggle __more-list), n-spread
+   (--home, __cell --day --talk --docket --record), n-chatpage (--floating, __talk).
+   The day band draws its own padding and rule (home/day/day.css); its row only holds it.
+   ===================================================================================== */
+
+.n-home { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+.n-home__bandrow { flex: none; }
+
+/* "More in Home · 10 pages" at the foot of the day register; the list opens in place */
+.n-spread__cell > .n-home__more { flex: none; }
+.n-home__more {
+  padding: var(--n-s-2) 0 var(--n-s-3);
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+}
+.n-home__more .n-home__more-toggle { color: var(--n-text-2); }
+.n-home__more-list { max-height: 40vh; overflow-y: auto; }
+.n-home__more-list[hidden] { display: none; }
+/* at the end of the day band (below 1680px): the link sits in the band; its list opens over the page */
+.n-home__more--popover { padding: 0; border-top: 0; }
+.n-home__more--popover .n-home__more-list {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% + var(--n-s-1));
+  right: 0;
+  box-sizing: border-box;
+  min-width: 240px;
+  padding: var(--n-s-2) var(--n-s-3);
+  border-radius: var(--n-r-2);
+  background: var(--n-sheet);
+  box-shadow: var(--n-shadow-2);
+  white-space: normal;
+}
+
+.n-spread {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  column-gap: var(--n-col-gap);
+  padding: var(--n-s-5) var(--n-page-x) 0;
+}
+.n-spread--home { grid-template-columns: 396px minmax(0, 1fr) 664px; grid-template-rows: minmax(0, 1fr); }
+.n-spread__cell { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.n-spread__cell > * { flex: 1 1 auto; min-height: 0; }
+.n-spread__cell:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+/* the rule in the middle of the gutter, left of every register that has one to its left */
+.n-spread__cell--talk::before,
+.n-spread__cell--docket::before,
+.n-spread__cell--record::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--n-col-gap) / -2);
+  width: 1px;
+  background: var(--n-rule);
+}
+
+@media (min-width: 2200px) {
+  .n-spread { padding-top: var(--n-s-6); }
+  .n-spread--home { grid-template-columns: 432px minmax(0, 1fr) 712px 404px; }
+}
+/* two registers: the day folds into the band above */
+@media (max-width: 1679px) {
+  .n-spread--home { grid-template-columns: minmax(0, 1fr) minmax(500px, 44.5%); }
+  .n-spread__cell--talk::before { display: none; }
+}
+@media (max-width: 1339px) {
+  .n-spread { padding-top: var(--n-s-3); }
+  .n-spread--home { grid-template-columns: minmax(0, 1fr) minmax(480px, 43.5%); }
+}
+/* one column: the docket before the conversation; the page scrolls as a whole */
+@media (max-width: 1099px) {
+  .n-home { flex: none; }
+  .n-spread { flex: none; }
+  .n-spread--home { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; row-gap: var(--n-s-6); padding-bottom: var(--n-s-6); }
+  .n-spread__cell::before { display: none; }
+  .n-spread__cell--docket { order: 1; max-height: 80vh; }
+  .n-spread__cell--talk { order: 2; min-height: 70vh; }
+}
+
+/* ---- a register head never cuts its title -------------------------------------------------------
+   The kit draws a register head as one row where the title and the meta (a source label, "with
+   Jarvis · …", a link) fit side by side, and puts the meta on the line under the title where they do
+   not: the title keeps its words and the whole row (frame/kit/kit.css). On Home and the conversation
+   page a meta under its title stays at the right, where the metas of the registers beside it are (the
+   conversation's head in the narrower register at 1100 or 1680px, say, with "Politica de rutare
+   necunoscută"), and its parts wrap there as they need. Where they fit, nothing moves: one line, and
+   the bottom padding stays inside the head's own minimum height. */
+:is(.n-spread__cell, .n-chatpage__talk) > .n-register > .n-register__head > .n-register__meta {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+/* ---- phone widths (≤ 759px): a register head is two lines ------------------------------------
+   Below 760px the row never fits (the title was cut to "De sem…" while the meta ran off the
+   edge): the title has its own line, the meta always takes the line under it from the left, and
+   every run of its words may wrap. */
+@media (max-width: 759px) {
+  :is(.n-spread__cell, .n-chatpage__talk) > .n-register > .n-register__head { padding-bottom: var(--n-s-2); }
+  :is(.n-spread__cell, .n-chatpage__talk) > .n-register > .n-register__head > .n-register__meta {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+    white-space: normal;
+  }
+  :is(.n-spread__cell, .n-chatpage__talk) > .n-register > .n-register__head > .n-register__meta .n-src {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+}
+
+/* ---- the heads of the registers side by side share one height ----------------------------------
+   From 1100px the registers stand side by side, and the rules under their heads lie on one line
+   whatever wraps (the conversation's meta under its title, at some widths and in some languages and
+   looks). The mechanism is a shared row, not a measurement: the spread has a row for the heads, one
+   for what follows them, and one for what follows the day register ("More in Home"); every cell, and
+   the register in it, takes those rows as a subgrid, with the register's head (its first box) in the
+   first and its body and foot (.n-register__main) in the rest. So each head is as tall as the tallest
+   head beside it, decided by the layout itself in the same pass: nothing is measured, nothing waits a
+   frame, a streamed reply's words cost nothing, and a look, a language or a font arriving changes it
+   at once. When nothing wraps the row is exactly as tall as each head is on its own, so no space is
+   added in the usual case. Below 1100px the registers are one column and each head keeps its own
+   height; a browser without subgrid keeps the flex layout above (each head its own height). */
+@supports (grid-template-rows: subgrid) {
+  @media (min-width: 1100px) {
+    .n-spread--home { grid-template-rows: auto minmax(0, 1fr) auto; }
+    .n-spread--home > .n-spread__cell { display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; }
+    .n-spread--home > .n-spread__cell > .n-register { display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; }
+    .n-spread--home > .n-spread__cell--day > .n-register { grid-row: 1 / 3; }
+    .n-spread--home > .n-spread__cell > .n-home__more { grid-row: 3; }
+    .n-spread--home > .n-spread__cell > .n-register > .n-register__head { grid-row: 1; }
+    .n-spread--home > .n-spread__cell > .n-register > .n-register__main { grid-row: 2 / -1; }
+  }
+}
+
+/* ---- the conversation page and the floating window ---------------------------------------- */
+.n-chatpage { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.n-chatpage__talk { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.n-chatpage__talk > * { flex: 1 1 auto; min-height: 0; }
+.n-chatpage--floating { flex: 1 1 auto; }
+.n-chatpage--floating .n-chatpage__talk { padding: 0 var(--n-s-3); }

@@ -18,7 +18,9 @@
    card has no edit: an edit could swap the program, so the hub refuses it — ask again. */
 import React, { useEffect, useState } from 'react';
 import { apiPost, apiPut } from '../api/client';
-import { mono, useApi } from '../panel-kit';
+// The rows keep their answer in a `note` state, so the kit's note style is noteS here.
+import { mono, note as noteS, useApi } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export const VOICE_COMMANDS_PATH = '/api/admin/voice/commands';
 export const VOICE_COMMAND_KIND = 'settings.voice_command';
@@ -74,7 +76,7 @@ function SideRow({ side, state, onDone, providerId }: { side: string; state: any
   const s = state || {};
   const status = s.ready ? 'ready' : s.configured ? `not running: ${s.reason}` : 'not set';
   return <div data-testid={`voice-command-${side}${providerId ? '-' + providerId : ''}`} style={{ margin: '4px 0 8px' }}>
-    <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>
+    <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
       {side.toUpperCase()} command · {status}
       {providerId && <span> · {providerId} · revision {s.provider_revision}</span>}
       {s.exe && <span style={{ color: 'var(--ink-2)' }}> · {s.exe}</span>}
@@ -82,12 +84,12 @@ function SideRow({ side, state, onDone, providerId }: { side: string; state: any
     </div>
     <textarea aria-label={`${side}${providerId ? ' ' + providerId : ''} command argv`} value={text} placeholder={EXAMPLE[side]} rows={2}
       onChange={(e) => setText(e.target.value)}
-      style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 10.5 }} />
+      style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 'var(--n-fs-meta)' }} />
     <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
       <button className="tool-btn" onClick={request}>Request</button>
       {(s.configured || (providerId && s.pending_task != null)) && <button className="tool-btn" onClick={clear}>Clear</button>}
     </div>
-    {note && <div role={note.ok ? 'status' : 'alert'} style={{ ...mono, fontSize: 10, marginTop: 3, color: note.ok ? 'var(--amber)' : 'var(--red)' }}>{note.text}</div>}
+    {note && <div role={note.ok ? 'status' : 'alert'} style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 3, color: note.ok ? 'var(--amber)' : 'var(--red)' }}>{note.text}</div>}
   </div>;
 }
 
@@ -121,7 +123,7 @@ function NamedProviders({ data, reload }: { data: any; reload: () => void }) {
     } catch (error) { setSelectionNote({ ok: false, text: commandRefusal(error) }); }
   };
   return <div style={{ borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
-    <div style={mono}>Named providers</div>
+    <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>Named providers</div>
     {data?.error && <div role="alert">Named providers unavailable: {String(data.error)}</div>}
     {SIDES.flatMap(s => (Array.isArray(providers[s]) ? providers[s] : []).map((p: any) =>
       <SideRow key={`${s}-${p.provider_id}`} side={s} providerId={p.provider_id} state={p} onDone={reload} />))}
@@ -144,7 +146,7 @@ function NamedProviders({ data, reload }: { data: any; reload: () => void }) {
       <button className="tool-btn" onClick={saveSelection}>Save STT selection</button>
       {selectionNote && <div role={selectionNote.ok ? 'status' : 'alert'}>{selectionNote.text}</div>}
     </div>
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
       Choose provider:name in TTS voice after approval. STT selection applies when the transcription mode uses a command.
       An unavailable selection stays unavailable; clearing a provider does not select another one.
     </div>
@@ -156,8 +158,8 @@ export function VoiceCommands() {
   const sides = (d && (d as any).sides) || {};
   const armed = SIDES.some((side) => sides[side]?.armed);
   return <div data-testid="voice-commands" style={{ border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, margin: '2px 0 6px' }}>
-    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.12em', color: 'var(--ink-2)' }}>COMMAND PROVIDERS</div>
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', margin: '2px 0 4px' }}>
+    <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>COMMAND PROVIDERS</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '2px 0 4px' }}>
       A program the hub runs to speak or to transcribe. Setting one asks you in the Decision Inbox first;
       it runs only with JARVIS_VOICE_COMMANDS=1{d && !armed ? ' (not set on this hub)' : ''}, never in safe mode,
       and needs approving again if any file it runs changes.
@@ -180,7 +182,7 @@ export function VoiceCommandCard({ task }: { task: any }) {
   const argv: string[] = Array.isArray(preview.argv) ? preview.argv.map(String) : [];
   const providerId = preview.provider_id ?? task?.payload?.provider_id;
   const revision = preview.provider_revision ?? task?.payload?.provider_revision;
-  return <div data-testid="voice-command-card" style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
+  return <div data-testid="voice-command-card" style={{ margin: '3px 0 7px 12px', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
     <div>kind: <span style={mono}>{side.toUpperCase()}</span> voice command provider</div>
     {providerId && <div>provider: <span style={mono}>{String(providerId)}</span> · revision {String(revision ?? '?')}</div>}
     <div style={{ marginTop: 2 }}>runs {files.length === 1 ? 'this file' : 'these files'}:</div>

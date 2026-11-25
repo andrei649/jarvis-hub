@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva Console — Glance</title>
+<script>
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'light' || t === 'dark' ? t : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="console.css">
+<style>
+/* Glance: the Console from across the room. Five readings, the day's lanes, the
+   trust signals. Ink is one step dimmer than on Home (an idle screen should not
+   hold bright static shapes on an OLED panel); amber still means "waits for you". */
+body { background: var(--nv-bg); }
+.glance { --pad: 56px; height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; padding: 28px var(--pad) 26px; color: var(--nv-text-muted); }
+
+.g-top { display: flex; align-items: center; gap: 14px; font-size: 16px; color: var(--nv-text-subtle); }
+.g-top .brand { font-size: 18px; color: var(--nv-text-muted); }
+.g-top .brand .mark { width: 22px; height: 22px; }
+.g-top .brand .mark .s { stroke: var(--nv-text-muted); }
+.g-top .brand .mark .n { fill: var(--nv-text-muted); }
+.g-top .brand .mark .n.lit { fill: var(--nv-signal-line); }
+.g-top .sep { width: 1px; height: 18px; background: var(--nv-border-strong); }
+.g-top .r { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+
+/* five readings */
+.vals { display: grid; grid-template-columns: 0.8fr 1fr 1.15fr 1fr 1.35fr; margin-top: 34px; border-top: 1px solid var(--nv-border); border-bottom: 1px solid var(--nv-border); }
+.val { min-width: 0; padding: 22px 28px 24px; border-left: 1px solid var(--nv-border); }
+.val:first-child { border-left: 0; padding-left: 0; }
+.val .v { display: flex; align-items: center; gap: 14px; font-size: 64px; line-height: 68px; font-weight: var(--nv-fw-strong); font-stretch: 100%; letter-spacing: -0.015em; color: var(--nv-text-muted); white-space: nowrap; }
+.val .l { margin-top: 8px; display: flex; align-items: center; gap: 10px; font-size: 18px; line-height: 24px; color: var(--nv-text-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.val .l b { color: var(--nv-text-muted); font-weight: var(--nv-fw-medium); }
+.val.you .v { color: var(--nv-signal-text); }
+.val.you .l b { color: var(--nv-signal-text); }
+.val .v .tri { width: 30px; height: 30px; color: var(--nv-signal-line); }
+.val .basis { height: 22px; font-size: 14px; }
+.val .pins { display: inline-flex; gap: 4px; }
+.val .pin { width: 20px; height: 20px; font-size: 13px; }
+.tag.inv { display: inline-flex; align-items: center; height: 22px; padding: 0 7px; font-size: 14px; font-weight: var(--nv-fw-strong); border-radius: var(--nv-r1); background: var(--nv-text-muted); color: var(--nv-bg); }
+
+/* the day, large */
+.day { min-height: 0; margin-top: 30px; display: flex; flex-direction: column; justify-content: center; padding-bottom: 24px; }
+.day-h { display: flex; align-items: baseline; gap: 16px; font-size: 16px; color: var(--nv-text-subtle); }
+.day-h b { font-size: 18px; color: var(--nv-text-muted); font-weight: var(--nv-fw-strong); }
+.lanes { --t0: 345; --span: 300; --lens: 150px; --c-agent: 190px; --c-state: 470px; position: relative; margin-top: 12px; }
+.lane, .lane-head { display: grid; grid-template-columns: var(--c-agent) minmax(0, 1fr) var(--c-state); align-items: center; }
+.lane-head { height: 28px; font-size: 15px; color: var(--nv-text-subtle); }
+.axis { position: relative; align-self: stretch; }
+.axis::before, .track::before { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: var(--lens); background: var(--nv-lens); }
+.axis span { position: absolute; top: 4px; padding-left: 7px; }
+.axis .lz { left: calc(100% - var(--lens)); }
+.lane-head .nowh { padding-left: 22px; color: var(--nv-text-muted); font-weight: var(--nv-fw-strong); }
+.at { position: absolute; left: calc((100% - var(--lens)) * (var(--t) - var(--t0)) / var(--span)); }
+.at.z { left: calc(100% - var(--lens) + var(--lens) * var(--m) / 6); }
+.grid { position: absolute; top: 0; bottom: 0; left: var(--c-agent); right: var(--c-state); pointer-events: none; }
+.grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--nv-border); }
+.grid .lens0 { left: calc(100% - var(--lens)); background: var(--nv-border-strong); }
+.grid .now { left: auto; right: -1px; background: var(--nv-text-subtle); }
+.lane { height: 76px; border-top: 1px solid var(--nv-border); }
+.lane .who { font-size: 22px; font-weight: var(--nv-fw-strong); color: var(--nv-text-muted); }
+.track { position: relative; align-self: stretch; }
+.mk { top: 16px; margin-left: -6px; }
+.mk .g { width: 12px; height: 12px; color: var(--nv-text-subtle); }
+.mk .g.fault { color: var(--nv-fault-line); }
+.hold { top: 38px; height: 22px; right: 0; margin-left: -11px; display: flex; align-items: center; }
+.hold .pin { width: 22px; height: 22px; font-size: 14px; }
+.hold::after { content: ""; flex: 1; height: 6px; background: var(--nv-signal-line); }
+.hold.t2::after { height: 3px; }
+.hold.t1::after { height: 2px; }
+.run { top: 29px; height: 7px; right: -4px; background: var(--nv-text-muted); }
+.lane .st { padding-left: 22px; display: grid; gap: 2px; min-width: 0; }
+.lane .st b { display: flex; align-items: center; gap: 10px; font-size: 20px; line-height: 24px; font-weight: var(--nv-fw-medium); color: var(--nv-text-muted); }
+.lane .st b .g { width: 13px; height: 13px; }
+.lane .st b.you { color: var(--nv-signal-text); }
+.lane .st span { font-size: 15px; line-height: 20px; color: var(--nv-text-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rest { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--nv-border); display: flex; align-items: center; gap: 22px; font-size: 16px; color: var(--nv-text-subtle); white-space: nowrap; }
+.rest span { display: inline-flex; align-items: center; gap: 8px; }
+
+/* trust signals never hide, not even here */
+.g-foot { display: flex; align-items: center; gap: 0; font-size: 16px; color: var(--nv-text-subtle); border-top: 1px solid var(--nv-border); padding-top: 14px; white-space: nowrap; }
+.g-foot .f { display: inline-flex; align-items: center; gap: 8px; padding: 0 20px; border-left: 1px solid var(--nv-border); }
+.g-foot .f:first-child { padding-left: 0; border-left: 0; }
+.g-foot .f b { color: var(--nv-text-muted); font-weight: var(--nv-fw-strong); }
+.g-foot .f .i { width: 16px; height: 16px; }
+.g-foot .ret { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.g-foot kbd { font-size: 12px; height: 20px; }
+
+@media (max-width: 1600px) {
+  .glance { --pad: 36px; }
+  .val .v { font-size: 52px; line-height: 56px; }
+  .val { padding: 18px 20px 20px; }
+  .lanes { --c-state: 380px; --lens: 120px; }
+}
+</style>
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true">
+  <defs>
+    <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></symbol>
+    <symbol id="i-machine" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 16 16"><rect x="6" y="2" width="4" height="7" rx="2"/><path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5V14"/></symbol>
+    <symbol id="i-model" viewBox="0 0 16 16"><path d="M8 2l5 3v6l-5 3-5-3V5zM3 5l5 3 5-3M8 8v6"/></symbol>
+    <symbol id="i-data" viewBox="0 0 16 16"><path d="M2 8h3l1.5-4 3 8L11 8h3"/></symbol>
+    <symbol id="g-tri" viewBox="0 0 10 10"><path d="M5 .8 9.6 9H.4z"/></symbol>
+    <symbol id="g-diamond" viewBox="0 0 10 10"><path d="M5 .3 9.7 5 5 9.7.3 5z"/></symbol>
+    <symbol id="g-sq" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7"/></symbol>
+    <symbol id="g-dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3"/></symbol>
+    <symbol id="g-bar" viewBox="0 0 10 10"><rect x="0" y="3" width="10" height="4"/></symbol>
+    <symbol id="g-sqo" viewBox="0 0 10 10"><rect x="1.75" y="1.75" width="6.5" height="6.5"/></symbol>
+    <symbol id="g-check" viewBox="0 0 10 10"><path d="M1.5 5.5 4 8l4.5-5.5"/></symbol>
+    <symbol id="g-x" viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8"/></symbol>
+    <symbol id="g-slash" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.75"/><path d="M2.4 7.6 7.6 2.4"/></symbol>
+    <symbol id="g-talk" viewBox="0 0 10 10"><path d="M1.2 1.8h7.6v5H4.6L2.6 8.8v-2H1.2z"/></symbol>
+  </defs>
+</svg>
+
+<main class="glance" aria-label="Nerva Console, glance mode">
+
+  <header class="g-top">
+    <span class="brand">
+      <svg class="mark" viewBox="20 16 88 96" aria-hidden="true">
+        <path class="s" d="M40 92V36L88 92V36"/>
+        <circle class="n" cx="40" cy="36" r="10"/><circle class="n" cx="40" cy="92" r="10"/><circle class="n" cx="88" cy="92" r="10"/>
+        <circle class="n lit" cx="88" cy="36" r="12"/>
+      </svg>
+      <span>Nerva</span>
+    </span>
+    <span class="sep" aria-hidden="true"></span>
+    <span>Glance</span>
+    <span class="r"><span>Monday, 23 November 2026</span><span class="sep" aria-hidden="true"></span><span>București 9° · Mist</span></span>
+  </header>
+
+  <section class="vals" aria-label="Five readings">
+    <div class="val"><div class="v">10:51</div><div class="l">Now</div></div>
+    <div class="val you"><div class="v">9</div><div class="l"><b>need you</b><span class="pins" aria-label="the oldest three: 1, 2 and 3, all tier 3"><span class="pin t3">1</span><span class="pin t3">2</span><span class="pin t3">3</span></span>3 are tier 3</div></div>
+    <div class="val"><div class="v"><svg class="g tri" aria-hidden="true"><use href="#g-tri"/></svg>Degraded</div><div class="l"><b>4 services down</b> · checked 10:50</div></div>
+    <div class="val"><div class="v">100%</div><div class="l"><b>on this machine</b><span class="basis">by route</span></div></div>
+    <div class="val"><div class="v">11:00</div><div class="l"><b>1:1 with Cosmina</b><span class="tag inv">in 9 min</span></div></div>
+  </section>
+
+  <section class="day" aria-label="Today, agents that are waiting on you or working">
+    <div class="day-h"><b>Today</b><span>what each agent did, what it holds for you, what it is running</span></div>
+    <div class="lanes">
+      <div class="grid" aria-hidden="true">
+        <i class="at" style="--t:360"></i><i class="at" style="--t:420"></i><i class="at" style="--t:480"></i><i class="at" style="--t:540"></i><i class="at" style="--t:600"></i><i class="lens0"></i><i class="now"></i>
+      </div>
+      <div class="lane-head">
+        <span></span>
+        <div class="axis"><span class="at" style="--t:360">06:00</span><span class="at" style="--t:420">07:00</span><span class="at" style="--t:480">08:00</span><span class="at" style="--t:540">09:00</span><span class="at" style="--t:600">10:00</span><span class="lz">10:45</span></div>
+        <span class="nowh">Now</span>
+      </div>
+
+      <div class="lane">
+        <span class="who">Steve</span>
+        <div class="track"><span class="mk at" style="--t:494"><svg class="g fault"><use href="#g-diamond"/></svg></span><span class="hold at t3" style="--t:494"><span class="pin t3">1</span></span></div>
+        <div class="st"><b class="you"><svg class="g"><use href="#g-sq"/></svg>Waiting on you</b><span>4 restarts wait for your decision</span></div>
+      </div>
+      <div class="lane">
+        <span class="who">Gecko</span>
+        <div class="track"><span class="mk at" style="--t:487"><svg class="g o"><use href="#g-talk"/></svg></span><span class="hold at t3" style="--t:487"><span class="pin t3">2</span></span></div>
+        <div class="st"><b class="you"><svg class="g"><use href="#g-sq"/></svg>Waiting on you</b><span>Sweep of €4,200 waits for your decision</span></div>
+      </div>
+      <div class="lane">
+        <span class="who">Ultron</span>
+        <div class="track"><span class="mk at" style="--t:468"><svg class="g o"><use href="#g-sqo"/></svg></span><span class="mk at" style="--t:481"><svg class="g o"><use href="#g-sqo"/></svg></span><span class="hold at t2" style="--t:468"><span class="pin t2">4</span></span></div>
+        <div class="st"><b class="you"><svg class="g"><use href="#g-sq"/></svg>Waiting on you</b><span>Holding an outbound draft for your review</span></div>
+      </div>
+      <div class="lane">
+        <span class="who">Jarvis</span>
+        <div class="track"><span class="mk at z" style="--m:4"><svg class="g"><use href="#g-dot"/></svg></span><span class="hold at t3" style="--t:450"><span class="pin t3">3</span></span><span class="run at z" style="--m:3"></span></div>
+        <div class="st"><b><svg class="g"><use href="#g-bar"/></svg>Working</b><span>Answering you — gathering from Pepper and Stark</span></div>
+      </div>
+      <div class="lane">
+        <span class="who">Stark</span>
+        <div class="track"><span class="mk at" style="--t:480"><svg class="g"><use href="#g-dot"/></svg></span><span class="mk at" style="--t:485"><svg class="g o fault"><use href="#g-x"/></svg></span><span class="hold at t1" style="--t:485"><span class="pin t1">5</span></span><span class="run at z" style="--m:4"></span></div>
+        <div class="st"><b><svg class="g"><use href="#g-bar"/></svg>Working</b><span>Pulling project status for Digitaholic</span></div>
+      </div>
+      <div class="lane">
+        <span class="who">Pepper</span>
+        <div class="track"><span class="mk at" style="--t:434"><svg class="g"><use href="#g-dot"/></svg></span><span class="hold at t1" style="--t:434"><span class="pin t1">6</span></span><span class="run at z" style="--m:4"></span></div>
+        <div class="st"><b><svg class="g"><use href="#g-bar"/></svg>Working</b><span>Checking this week's deadlines</span></div>
+      </div>
+    </div>
+    <p class="rest">
+      <span><svg class="g o"><use href="#g-check"/></svg>Friday finished 06:00 · Vision finished 09:40</span>
+      <span><svg class="g o"><use href="#g-slash"/></svg>Athena unavailable while egress is sealed</span>
+      <span>9 idle</span>
+    </p>
+  </section>
+
+  <footer class="g-foot" aria-label="Trust signals">
+    <span class="f"><svg class="i"><use href="#i-lock"/></svg>Egress <b>Sealed</b></span>
+    <span class="f"><svg class="i"><use href="#i-machine"/></svg>On this machine <b>100%</b> · 41 of 41 runs today</span>
+    <span class="f"><svg class="i"><use href="#i-mic"/></svg>Microphone <b>On</b></span>
+    <span class="f"><svg class="i"><use href="#i-model"/></svg><b class="mono">gemma-4-31b</b> · Ollama</span>
+    <span class="f"><svg class="i"><use href="#i-data"/></svg>Data <b>Live</b></span>
+    <span class="ret">Any key or a click returns to Home <kbd>Esc</kbd></span>
+  </footer>
+</main>
+
+</body>
+</html>

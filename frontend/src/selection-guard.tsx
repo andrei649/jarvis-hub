@@ -10,7 +10,7 @@
    keeps the edit unsaved. Nothing here decides: only the hub stores a choice. */
 import React, { useState } from 'react';
 import { ConfirmAction, RISK_TIER } from './confirm';
-import { mono } from './panel-kit';
+import { note } from './panel-kit';
 
 export type GuardFinding = { guard: string; needs: string; setting: string; provider: string; model: string; message: string; detail?: any };
 export type GuardRefusal = { needs: string[]; guards: GuardFinding[] };
@@ -43,11 +43,11 @@ export function SelectionGuardConfirm({ refusal, onConfirm, onCancel }: {
   const phrase = refusal.guards.find((g) => g.model)?.model || 'allow';
   return (
     <div role="alertdialog" aria-label="confirm the model choice" style={{ marginTop: 8, padding: 8, border: '1px solid var(--amber)', borderRadius: 4, background: 'var(--surface)' }}>
-      <div style={{ ...mono, fontSize: 10.5, color: 'var(--amber)', marginBottom: 4 }}>this model choice needs your say-so</div>
-      <ul style={{ margin: '0 0 6px 16px', padding: 0, fontSize: 11 }}>
+      <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 4 }}>this model choice needs your say-so</div>
+      <ul style={{ margin: '0 0 6px 16px', padding: 0, fontSize: 'var(--n-fs-meta)' }}>
         {refusal.guards.map((g, i) => <li key={i}>{g.guard === 'cost' ? 'cost' : 'data policy'} · {g.message}</li>)}
       </ul>
-      {training && <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginBottom: 6 }}>Your acknowledgement is written to the audit log.</div>}
+      {training && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>Your acknowledgement is written to the audit log.</div>}
       <ConfirmAction tier={cost ? RISK_TIER.IRREVERSIBLE_OR_MONEY : RISK_TIER.EXTERNAL} armed onCancel={onCancel} phrase={phrase}
         label="choose it anyway" armedLabel="choose it anyway" block
         onConfirm={() => onConfirm(guardFlags(refusal))} />

@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Nerva — Home</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<script>
+  /* theme before first paint: ?theme=dark|light, default dark */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.dataset.theme = (t === 'light' || t === 'dark') ? t : 'dark';
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="threshold.css">
+<style>
+/* ==========================================================================
+   Home — this machine: report | conversation (| the day, on wide screens)
+   ========================================================================== */
+.machine-body { display: grid; grid-template-columns: var(--nv-report-w) minmax(0, 1fr); min-height: 0; }
+.xw, .dayline, .rep-more { display: none; }
+
+/* ---- report: what Nerva knows, set in scan width --------------------------- */
+.report { min-height: 0; overflow-y: auto; border-right: 1px solid var(--nv-rule); font-stretch: var(--nv-width-scan); }
+.rep { padding: 14px 22px 16px; }
+.rep + .rep { border-top: 1px solid var(--nv-rule); }
+.rep-h { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; min-height: 16px; }
+.rep-h .src { margin-left: auto; }
+.brief { display: none; }
+
+.verdict { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 9px; font-size: var(--nv-fs-verdict); line-height: 26px; font-weight: var(--nv-w-strong); text-wrap: balance; }
+.verdict .mark { width: 18px; height: 18px; margin-top: 4px; }
+.verdict-sub { margin: 3px 0 0 29px; font-size: var(--nv-fs-meta); line-height: 18px; color: var(--nv-ink-2); }
+.verdict-sub .w { display: none; }
+
+.causes { margin-top: 13px; display: grid; gap: 9px; }
+.causes li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 9px; font-size: var(--nv-fs-meta); line-height: 18px; }
+.causes .mark { margin-top: 2px; }
+.cause-h { display: flex; align-items: baseline; gap: 8px; }
+.cause-h b { font-size: var(--nv-fs-ui); }
+.cause-state { color: var(--nv-ink-2); }
+.cause-h .mono { margin-left: auto; color: var(--nv-ink-3); }
+.cause-impact { color: var(--nv-ink-2); }
+.remedy { margin: 11px 0 0 29px; font-size: var(--nv-fs-meta); }
+
+.meters { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--nv-rule); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.meter { display: grid; gap: 5px; font-size: var(--nv-fs-meta); line-height: 16px; }
+.meter-h { display: flex; justify-content: space-between; align-items: baseline; }
+.meter-h span { color: var(--nv-ink-3); }
+.meter-bar { height: 3px; background: var(--nv-rule-strong); border-radius: 2px; overflow: hidden; }
+.meter-bar i { display: block; height: 100%; background: var(--nv-ink-2); }
+.meter-d { font-size: var(--nv-fs-micro); font-weight: var(--nv-w-small); color: var(--nv-ink-3); }
+.kv { margin-top: 11px; display: grid; gap: 3px; font-size: var(--nv-fs-meta); line-height: 18px; }
+.kv > div { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 0 8px; }
+.kv dt { color: var(--nv-ink-3); }
+.kv dd { color: var(--nv-ink-2); display: flex; align-items: baseline; gap: 6px; }
+.kv .mark { align-self: center; }
+
+.rows { display: grid; gap: 6px; }
+.row { display: grid; grid-template-columns: 20px 50px minmax(0, 1fr); gap: 0 9px; font-size: var(--nv-fs-meta); line-height: 18px; }
+.row .mark { margin-top: 2px; }
+.row b { color: var(--nv-ink); }
+.row .t { color: var(--nv-ink-2); }
+.row--sum { grid-template-columns: 20px minmax(0, 1fr) auto; }
+.row--sum .t { color: var(--nv-ink); }
+.row--foot { grid-template-columns: 20px minmax(0, 1fr) auto; color: var(--nv-ink-3); }
+.row--foot a { color: var(--nv-ink-2); display: inline-flex; align-items: center; gap: 4px; }
+.row--foot a:hover { color: var(--nv-ink); }
+.row--foot a .ico { width: 12px; height: 12px; }
+.row--away { grid-template-columns: 20px 36px 50px minmax(0, 1fr); }
+.row--away time { color: var(--nv-ink-3); }
+.away-sum { margin: -3px 0 10px; font-size: var(--nv-fs-meta); color: var(--nv-ink-2); }
+
+/* ---- conversation ----------------------------------------------------------- */
+.talk { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
+
+.day { display: flex; align-items: stretch; min-height: 52px; padding: 0 18px 0 22px; border-bottom: 1px solid var(--nv-rule); font-stretch: var(--nv-width-scan); font-size: var(--nv-fs-meta); line-height: 17px; }
+.day-h { flex: none; display: grid; align-content: center; padding-right: 14px; }
+.day-h b { color: var(--nv-ink); white-space: nowrap; }
+.day-h span { color: var(--nv-ink-3); white-space: nowrap; }
+.day-list { flex: 1; display: flex; justify-content: space-between; min-width: 0; }
+.ev { flex: 0 1 auto; min-width: 0; display: grid; align-content: center; padding: 0 0 0 11px; border-left: 1px solid var(--nv-rule); }
+.ev-t { display: flex; gap: 6px; align-items: center; color: var(--nv-ink-3); white-space: nowrap; font-size: var(--nv-fs-micro); font-weight: var(--nv-w-small); }
+.ev-t time { color: var(--nv-ink-2); font-size: var(--nv-fs-meta); font-weight: var(--nv-w-strong); }
+.ev-t .mark { width: 12px; height: 12px; }
+.ev-n { color: var(--nv-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev.is-past .ev-n, .ev.is-past time { color: var(--nv-ink-3); font-weight: var(--nv-w-small); }
+.ev.is-next { border-left: 2px solid var(--nv-ink); padding-left: 10px; }
+.ev.is-next time, .ev.is-next .ev-n, .ev.is-key .ev-n, .ev.is-key time { color: var(--nv-ink); }
+.ev.is-next .ev-n, .ev.is-key .ev-n { font-weight: var(--nv-w-strong); }
+.soon { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: 3px; background: var(--nv-ink); color: var(--nv-machine); font-weight: var(--nv-w-strong); }
+
+/* the thread is pinned to its end; what scrolled away fades instead of being cut */
+.thread { min-height: 0; overflow-y: auto; padding: 16px 32px 14px; display: flex; flex-direction: column; gap: 14px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 44px); mask-image: linear-gradient(to bottom, transparent 0, #000 44px); }
+.thread > :first-child { margin-top: auto; }
+.thread-start { align-self: center; display: inline-flex; align-items: center; gap: 10px; font-size: var(--nv-fs-micro); font-weight: var(--nv-w-small); color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.thread-start::before, .thread-start::after { content: ""; width: 40px; height: 1px; background: var(--nv-rule-strong); }
+.msg { min-width: 0; }
+.msg--you { align-self: flex-end; max-width: 560px; display: flex; align-items: baseline; gap: 10px; }
+.msg--you > time { font-size: var(--nv-fs-micro); font-weight: var(--nv-w-small); color: var(--nv-ink-3); }
+.bubble { background: var(--nv-raise-2); border-radius: var(--nv-r-2); padding: 7px 13px 8px; font-size: var(--nv-fs-read); line-height: 22px; }
+.attach { display: inline-flex; align-items: center; gap: 5px; margin-left: 10px; height: 22px; padding: 0 7px 0 5px; border: 1px solid var(--nv-rule-strong); border-radius: 5px; font-family: var(--nv-font-mono); font-size: var(--nv-fs-micro); font-weight: 400; color: var(--nv-ink-2); vertical-align: 1px; }
+.attach .ico { width: 13px; height: 13px; }
+.msg--nerva, .msg--working { width: 100%; max-width: 680px; }
+.msg-h { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; font-size: var(--nv-fs-meta); line-height: 18px; color: var(--nv-ink-3); }
+.msg-h b { font-size: var(--nv-fs-ui); color: var(--nv-ink); }
+/* where it ran, and on what basis — said before you read the reply */
+.ran { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: var(--nv-fs-micro); font-weight: var(--nv-w-small); color: var(--nv-ink-3); white-space: nowrap; font-stretch: var(--nv-width-scan); }
+.ran .ico { width: 14px; height: 14px; }
+.msg-body { font-size: var(--nv-fs-read); line-height: 23px; text-wrap: pretty; }
+.msg-f { display: flex; align-items: center; gap: 2px; margin: 5px 0 0 -8px; }
+.msg-f .btn { color: var(--nv-ink-3); }
+.msg-f .btn:hover { color: var(--nv-ink); }
+
+.activity { margin-top: 5px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: var(--nv-fs-meta); line-height: 20px; color: var(--nv-ink-2); }
+.activity-h { display: inline-flex; align-items: center; gap: 4px; color: var(--nv-ink-2); }
+.activity-h .ico { width: 12px; height: 12px; }
+.tool { display: inline-flex; align-items: center; gap: 5px; }
+.tool .mark { width: 12px; height: 12px; }
+.tool.is-failed { color: var(--nv-bad); }
+
+.waits { margin-top: 9px; display: flex; align-items: center; gap: 9px; padding: 7px 11px; border-radius: var(--nv-r-1); background: var(--nv-line-wash); border-left: 3px solid var(--nv-line); font-size: var(--nv-fs-meta); line-height: 18px; }
+.waits .toline { margin-left: auto; }
+
+/* "Working" is looked at for 4 to 60 seconds, so it is a designed object, not a spinner.
+   It never spins: progress is the step line advancing, the asks resolving, the text arriving. */
+.msg--working { border: 1px solid var(--nv-rule-strong); border-radius: var(--nv-r-2); padding: 10px 14px 11px; background: var(--nv-machine); }
+.work { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 0; }
+.work-status { display: inline-flex; align-items: center; gap: 8px; font-weight: var(--nv-w-strong); }
+.stepline { margin-left: auto; display: flex; align-items: center; font-size: var(--nv-fs-micro); font-weight: var(--nv-w-small); color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.stepline li { display: inline-flex; align-items: center; gap: 6px; }
+.stepline li + li::before { content: ""; width: 20px; height: 2px; margin: 0 2px 0 6px; background: var(--nv-ink-3); }
+.stepline li i { width: 9px; height: 9px; border-radius: 50%; background: var(--nv-ink-3); }
+.stepline li.is-now { color: var(--nv-ink); font-weight: var(--nv-w-strong); }
+.stepline li.is-now i { background: var(--nv-ink); box-shadow: 0 0 0 2px var(--nv-machine), 0 0 0 3.5px var(--nv-ink); margin: 0 2px; }
+.stepline li.is-next i { background: transparent; border: 1.5px solid var(--nv-ink-4); }
+.stepline li.is-next::before { background: repeating-linear-gradient(90deg, var(--nv-ink-4) 0 4px, transparent 4px 7px); }
+.asks { margin: 8px 0 9px; padding: 7px 0 8px 2px; border-block: 1px solid var(--nv-rule); display: grid; gap: 3px; font-size: var(--nv-fs-meta); line-height: 18px; color: var(--nv-ink-2); }
+.asks li { display: grid; grid-template-columns: 18px 52px minmax(0, 1fr); align-items: center; gap: 0 6px; }
+.asks b { color: var(--nv-ink); }
+.caret { display: inline-block; width: 7px; height: 16px; margin-left: 4px; background: var(--nv-ink); vertical-align: -2px; }
+.work-f { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: var(--nv-fs-micro); font-weight: var(--nv-w-small); color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.work-f .asked { margin-left: auto; }
+
+.composer { margin: 0 24px 16px; border: 1px solid var(--nv-rule-strong); border-radius: var(--nv-r-2); background: var(--nv-raise); display: grid; }
+.composer:focus-within { border-color: var(--nv-ink-3); }
+.composer-h { display: flex; align-items: center; gap: 8px; padding: 9px 12px 0 14px; font-size: var(--nv-fs-meta); color: var(--nv-ink-3); min-width: 0; }
+.to { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px 0 8px; border: 1px solid var(--nv-rule-strong); border-radius: 5px; color: var(--nv-ink); white-space: nowrap; }
+.to .ico { width: 12px; height: 12px; color: var(--nv-ink-3); }
+.to span { color: var(--nv-ink-2); }
+.modechip { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--nv-ink-2); white-space: nowrap; min-width: 0; overflow: hidden; }
+.modechip b { color: var(--nv-line-ink); background: linear-gradient(transparent 18%, var(--nv-line-hl) 18%, var(--nv-line-hl) 88%, transparent 88%); padding-inline: 2px; border-radius: 2px; }
+.modechip .ico { width: 14px; height: 14px; color: var(--nv-line-ink); flex: none; }
+.composer textarea { display: block; width: 100%; height: 48px; resize: none; border: 0; outline: none; background: transparent; padding: 6px 14px 0; font-size: var(--nv-fs-read); line-height: 22px; }
+.composer textarea::placeholder { color: var(--nv-ink-3); opacity: 1; }
+.composer-f { display: flex; align-items: center; gap: 2px; padding: 2px 8px 8px 6px; min-width: 0; }
+.composer-f .hint { flex: 0 1 auto; margin: 0 12px 0 8px; font-family: var(--nv-font-mono); font-size: var(--nv-fs-micro); font-weight: 400; color: var(--nv-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.voice { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 2px; padding-right: 6px; font-size: var(--nv-fs-meta); color: var(--nv-ink-3); white-space: nowrap; }
+.voice .icon-btn { color: var(--nv-ink-2); }
+/* an empty composer has nothing to send: the button waits in outline and fills when there is text */
+.btn--send { border-color: var(--nv-ink-3); }
+.composer:has(textarea:not(:placeholder-shown)) .btn--send { background: var(--nv-ink); border-color: var(--nv-ink); color: var(--nv-machine); }
+
+/* ==========================================================================
+   The owner's screen (2560×1353 at 1.5×) and anything wider than 2200:
+   the room becomes a third column — the day, read top to bottom — and every
+   decision on your side opens fully, so nothing needs a click to be read.
+   ========================================================================== */
+@media (min-width: 2200px) {
+  .machine-body { grid-template-columns: var(--nv-report-w) minmax(0, 1fr) var(--nv-context-w); }
+  .day, .nw { display: none; }
+  .talk { grid-template-rows: minmax(0, 1fr) auto; }
+  .thread { padding-inline: max(36px, calc((100% - 820px) / 2)); }
+  .composer { width: min(860px, calc(100% - 48px)); justify-self: center; margin-inline: 0; }
+  .rep { padding: 18px 26px 20px; }
+  .facts.xw { display: grid; }
+  .confirm.xw, .btn.xw { display: inline-flex; }
+
+  /* Today, to scale: one hour is one fixed share of the column, so the shape of
+     the day is readable at a glance. Events have no stated length, so they are
+     drawn as points. Solid axis = what has happened; dashed axis = not yet.      */
+  .dayline { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--nv-rule); padding: 18px 24px 22px 18px; font-stretch: var(--nv-width-scan); --now: calc(1.85 / 11 * 100%); }
+  .dl-date { margin: -3px 0 0; font-size: var(--nv-fs-meta); color: var(--nv-ink-3); }
+  .dl-date b { color: var(--nv-ink); font-size: var(--nv-fs-ui); }
+  .ruler { position: relative; flex: 1; min-height: 420px; margin: 26px 0 8px; }
+  .ruler::before { content: ""; position: absolute; left: 40px; top: 0; height: var(--now); width: 2px; margin-left: -1px; background: var(--nv-ink-3); }
+  .ruler::after { content: ""; position: absolute; left: 40px; top: var(--now); bottom: 0; width: 2px; margin-left: -1px; background: repeating-linear-gradient(var(--nv-ink-4) 0 5px, transparent 5px 10px); }
+  .hr { position: absolute; left: 0; top: calc(var(--t) / 11 * 100%); width: 26px; transform: translateY(-50%); text-align: right; font-size: var(--nv-fs-micro); line-height: 14px; font-weight: var(--nv-w-small); color: var(--nv-ink-3); }
+  .hr::after { content: ""; position: absolute; left: 31px; top: 50%; width: 9px; height: 1px; background: var(--nv-rule-strong); }
+  .hr.is-near { visibility: hidden; }   /* an hour label within 15 minutes of now gives way to the now marker */
+  .hr.is-near::after { visibility: visible; }
+  .ev2 { position: absolute; left: 33px; right: 0; top: calc(var(--t) / 11 * 100%); transform: translateY(-9px); display: grid; grid-template-columns: 16px 44px minmax(0, 1fr); gap: 0 8px; font-size: var(--nv-fs-ui); line-height: 18px; color: var(--nv-ink); }
+  .ev2 > .mark, .ev2 > i { justify-self: center; align-self: start; margin-top: 2px; }
+  .ev2 > i { width: 11px; height: 11px; margin-top: 3.5px; border-radius: 50%; background: var(--nv-machine); border: 2px solid var(--nv-ink); }
+  .ev2 > .mark { width: 14px; height: 14px; background: var(--nv-machine); border-radius: 50%; }
+  .ev2 time { font-size: var(--nv-fs-meta); color: var(--nv-ink-2); font-weight: var(--nv-w-strong); }
+  .ev2 .w { display: block; font-size: var(--nv-fs-micro); line-height: 16px; color: var(--nv-ink-3); font-weight: var(--nv-w-small); }
+  .ev2.is-past, .ev2.is-past time { color: var(--nv-ink-3); }
+  .ev2.is-past > i { border-color: var(--nv-ink-3); background: var(--nv-ink-3); }
+  .ev2.is-next > i { background: var(--nv-ink); }
+  .ev2.is-next b, .ev2.is-key b { font-weight: var(--nv-w-strong); }
+  .ev2.is-next time, .ev2.is-key time { color: var(--nv-ink); }
+  .ev2 .soon { margin-left: 6px; vertical-align: 1px; font-size: var(--nv-fs-micro); }
+  /* a proposal is not the calendar yet: dashed, and yellow because it waits for you */
+  .ev2--prop > i { border: 2px dashed var(--nv-line-ink); background: var(--nv-machine); }
+  .ev2--prop .toline { font-size: var(--nv-fs-meta); }
+  .prop-link { position: absolute; left: 39px; width: 2px; top: calc(7.5 / 11 * 100% + 9px); height: calc(0.75 / 11 * 100% - 15px); background: repeating-linear-gradient(var(--nv-line-mark) 0 4px, transparent 4px 7px); }
+  .now { position: absolute; left: 0; right: 0; top: var(--now); height: 0; }
+  .now::before { content: ""; position: absolute; left: 30px; right: 0; top: -1px; height: 2px; background: var(--nv-ink); border-radius: 1px; }
+  .now time { position: absolute; left: -6px; top: -11px; display: inline-flex; align-items: center; height: 22px; padding: 0 6px; border-radius: 4px; background: var(--nv-ink); color: var(--nv-machine); font-size: var(--nv-fs-meta); font-weight: var(--nv-w-strong); }
+}
+
+/* ==========================================================================
+   Narrower windows
+   below 1600: the report folds into a three-cell band above the conversation;
+               each cell opens the full report as a drawer
+   below 1360: the bar shortens; the desktop shell opens here (1280×820)
+   ========================================================================== */
+@media (max-width: 1599px) {
+  .machine-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .report { display: grid; grid-template-columns: 1.3fr 1fr 1.05fr; overflow: visible; border-right: 0; border-bottom: 1px solid var(--nv-rule); }
+  .rep { padding: 9px 14px 10px 18px; min-width: 0; }
+  .rep + .rep { border-top: 0; border-left: 1px solid var(--nv-rule); }
+  .rep-h { margin-bottom: 3px; }
+  .rep-h .src, .rep .detail { display: none; }
+  .rep-more { display: inline-grid; place-items: center; margin-left: auto; width: 20px; height: 18px; color: var(--nv-ink-3); }
+  .rep-more .ico { width: 12px; height: 12px; }
+  .brief { display: block; font-size: var(--nv-fs-meta); line-height: 18px; color: var(--nv-ink-2); }
+  .brief b { color: var(--nv-ink); font-size: var(--nv-fs-ui); }
+  .verdict { font-size: 16px; line-height: 20px; grid-template-columns: 16px minmax(0, 1fr); gap: 0 7px; }
+  .verdict .mark { width: 14px; height: 14px; margin-top: 3px; }
+  .verdict-sub { margin: 1px 0 0 23px; }
+  .verdict-sub .w { display: inline; }
+  .thread { padding-inline: 28px; }
+  .msg-f .btn .ico { display: none; }
+}
+@media (max-width: 1359px) {
+  .day-h, .composer-f .hint, .ran .model, .modechip .w, .brief .w, .verdict-sub { display: none; }
+  .day { padding: 0 12px 0 4px; min-height: 46px; }
+  .ev:first-child { border-left: 0; }
+  .ev.is-past { display: none; }
+  .thread { padding-inline: 22px; gap: 12px; }
+  .composer { margin: 0 14px 14px; }
+  .composer textarea { height: 42px; }
+  .rep { padding: 8px 10px 9px 16px; }
+  .report { grid-template-columns: 1.3fr 1fr 1fr; }
+  .verdict { font-size: 15px; }
+  .brief, .verdict span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+</style>
+</head>
+<body>
+
+<!-- ======================================================================
+     Marks and icons. Hand-drawn, 16px grid, 1.5px strokes.
+     Status is always a shape plus a word; colour is the third cue.
+     ====================================================================== -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <!-- the neural N: unchanged geometry. Right stroke = the line. -->
+    <symbol id="nerva" viewBox="26 22 76 84">
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M40 92V36L88 92" stroke="currentColor" stroke-width="10"/>
+        <path d="M88 92V36" style="stroke:var(--nv-line-key)" stroke-width="14"/>
+        <path d="M88 92V36" style="stroke:var(--nv-line)" stroke-width="10"/>
+      </g>
+      <circle cx="40" cy="36" r="9" fill="currentColor"/><circle cx="40" cy="92" r="9" fill="currentColor"/>
+      <circle cx="88" cy="36" r="11" style="fill:var(--nv-line-key)"/><circle cx="88" cy="92" r="11" style="fill:var(--nv-line-key)"/>
+      <circle cx="88" cy="36" r="9" style="fill:var(--nv-line)"/><circle cx="88" cy="92" r="9" style="fill:var(--nv-line)"/>
+    </symbol>
+
+    <!-- status marks -->
+    <symbol id="m-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.4" fill="currentColor"/></symbol>
+    <symbol id="m-attention" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" style="fill:var(--nv-mark-fill)" stroke="currentColor" stroke-width="1.6"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></symbol>
+    <symbol id="m-problem" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="m-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="0.1 3.36" stroke-linecap="round"/></symbol>
+    <symbol id="m-stale" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3.3l2.1 1.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="m-done" viewBox="0 0 16 16"><path d="M3.5 8.6l3 3 6-7.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="m-held" viewBox="0 0 16 16"><rect x="1.25" y="1.25" width="13.5" height="13.5" rx="3.5" style="fill:var(--nv-mark-fill)"/><path d="M5.9 4.4v7.2M10.1 4.4v7.2" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></symbol>
+    <symbol id="m-blocked" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.3 11.7l7.4-7.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="m-working" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".38"/><path d="M8 2.5a5.5 5.5 0 0 1 5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="m-idle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="m-key" viewBox="0 0 16 16"><path d="M8 2.6l5.4 5.4L8 13.4 2.6 8z" fill="currentColor"/></symbol>
+
+    <!-- risk tiers: the bar is the line; dots count how far past it an action reaches -->
+    <symbol id="t0" viewBox="0 0 24 12"><circle cx="3.5" cy="6" r="2.1" fill="currentColor"/><rect x="8.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/></symbol>
+    <symbol id="t1" viewBox="0 0 24 12"><rect x="1.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/><circle cx="9.5" cy="6" r="2.1" fill="currentColor"/></symbol>
+    <symbol id="t2" viewBox="0 0 24 12"><rect x="1.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/><circle cx="9.5" cy="6" r="2.1" fill="currentColor"/><circle cx="15.5" cy="6" r="2.1" fill="currentColor"/></symbol>
+    <symbol id="t3" viewBox="0 0 24 12"><rect x="1.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/><circle cx="9.5" cy="6" r="2.1" fill="currentColor"/><circle cx="15.5" cy="6" r="2.1" fill="currentColor"/><circle cx="21.5" cy="6" r="2.1" fill="currentColor"/></symbol>
+
+    <!-- icons -->
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.2 10.2l3.3 3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-sealed" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+    <symbol id="i-here" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2" fill="currentColor"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 16 16"><rect x="5.75" y="1.75" width="4.5" height="8" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/></symbol>
+    <symbol id="i-send" viewBox="0 0 16 16"><path d="M8 13V3.2M3.9 7.2L8 3l4.1 4.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 16 16"><path d="M2.5 8h10.5M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-down" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-save" viewBox="0 0 16 16"><path d="M4.25 2.5h7.5v11L8 10.9l-3.75 2.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-speak" viewBox="0 0 16 16"><path d="M2.5 6.25h2.3L8 3.5v9L4.8 9.75H2.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M10.6 6.1a2.8 2.8 0 0 1 0 3.8M12.4 4.3a5.3 5.3 0 0 1 0 7.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-task" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.4 8.2l1.9 1.9 3.4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></symbol>
+    <symbol id="i-glance" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 13.75h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 2.25h5l3 3v8.5H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9 2.25v3h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-options" viewBox="0 0 16 16"><path d="M2.5 5h6M11.5 5h2M2.5 11h2M7.5 11h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="6" cy="11" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.25" y="7" width="9.5" height="6.75" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 7V5.25a2.5 2.5 0 0 1 5 0V7" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 16 16"><rect x="2.5" y="3.25" width="11" height="10.25" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 6.5h11M5.5 2v2.5M10.5 2v2.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="page">
+
+  <!-- ================= bar · Nerva's side ================= -->
+  <header class="bar bar-nerva">
+    <a class="brand" href="cockpit.html" aria-label="Nerva — home">
+      <svg class="brand-mark" aria-hidden="true"><use href="#nerva"/></svg>
+      <span class="brand-name">Nerva</span>
+    </a>
+    <nav class="areas" aria-label="Areas">
+      <a class="area is-here" href="cockpit.html" aria-current="page">Home</a>
+      <a class="area" href="#work" title="Work — decisions, missions, projects board, scheduled jobs, sessions, activity">Work
+        <span class="area-flag area-flag--yours"><svg class="mark" aria-hidden="true"><use href="#m-held"/></svg>9<span class="w">&nbsp;need you</span></span></a>
+      <a class="area" href="#agents" title="Agents — the 18 agents, their homes, personas">Agents</a>
+      <a class="area" href="#memory" title="Memory — saved facts, knowledge graph, vault, recall, hygiene">Memory</a>
+      <a class="area" href="secondary.html" title="Trust — audit chain, emergency stop, capabilities, permissions, payments, secrets">Trust</a>
+      <a class="area" href="#build" title="Build — skills, workflows, sandbox, images, creative tools">Build</a>
+      <a class="area" href="#connect" title="Connect — channels, integrations, MCP servers, webhooks, rooms">Connect</a>
+      <a class="area" href="#observe" title="Observe — health, logs, metrics, traces, world signals">Observe
+        <span class="area-flag"><svg class="mark mark--problem" aria-hidden="true"><use href="#m-problem"/></svg>4<span class="w">&nbsp;services down</span></span></a>
+      <a class="area" href="#settings" title="Settings — models and backends, appearance, backup, updates">Settings</a>
+    </nav>
+    <button class="search" type="button" aria-keyshortcuts="Control+K" title="Search and command — finds every area, panel, agent and action">
+      <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+      <span class="search-t">Search and command</span>
+      <kbd class="kbd">Ctrl K</kbd>
+    </button>
+  </header>
+
+  <!-- ================= the line ================= -->
+  <div class="line" data-state="waiting" role="separator" aria-orientation="vertical"
+       aria-label="The line. Mode Ask: anything with a side effect waits for you. 9 actions are waiting."></div>
+
+  <!-- ================= bar · your side ================= -->
+  <header class="bar bar-you">
+    <span class="owner">Andrei</span>
+    <a class="waiting" href="#line">
+      <span class="waiting-n">9</span>
+      <span class="waiting-t"><b><span class="w">actions </span>wait for you</b><span>6 groups · from 18 requests · live</span></span>
+    </a>
+    <div class="prefs">
+      <div class="seg" role="group" aria-label="Language">
+        <button type="button" aria-pressed="true">EN</button><button type="button" aria-pressed="false">RO</button>
+      </div>
+      <button class="icon-btn lang" type="button" aria-label="Language: English. Switch to Romanian">EN</button>
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="Theme: switch between dark and light"><svg class="ico" aria-hidden="true"><use href="#i-theme"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="Glance mode (idle or second screen)"><svg class="ico" aria-hidden="true"><use href="#i-glance"/></svg></button>
+      <button class="icon-btn more-prefs" type="button" aria-label="Language, theme and glance mode"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg></button>
+    </div>
+    <button class="btn btn--stop" type="button" title="One click. Halts every agent and the job queue until you resume.">
+      <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents
+    </button>
+  </header>
+
+  <!-- ================= this machine · Nerva's side ================= -->
+  <main class="machine" data-egress="sealed" aria-label="This machine — Nerva's side">
+    <h1 class="vh">Home — Monday 23 November 2026, 10:51</h1>
+
+    <!-- the plate: trust signals never hide -->
+    <div class="lintel" role="group" aria-label="This machine — trust signals">
+      <div class="sig"><span class="sig-k">Egress</span>
+        <span class="sig-v"><svg class="ico" aria-hidden="true"><use href="#i-sealed"/></svg><b>Sealed</b><span class="sig-x">— nothing can leave this machine</span></span></div>
+      <div class="sig"><span class="sig-k">Runs on this machine</span>
+        <span class="sig-v"><b>100%</b><span class="sig-x">· 41 of 41 runs today</span><span class="tag" title="The hub counts which route each run used. It is not a verified network measurement.">by route</span></span></div>
+      <div class="sig"><span class="sig-k">Microphone</span>
+        <span class="sig-v"><svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg><b>On</b></span></div>
+      <div class="sig"><span class="sig-k">Model</span>
+        <span class="sig-v"><b class="mono">gemma-4-31b</b><span class="sig-x">· loaded on Ollama</span></span></div>
+      <div class="sig"><span class="sig-k">Data on screen</span>
+        <span class="sig-v"><b>Live</b><span>· checked <time>10:50</time></span></span></div>
+    </div>
+
+    <div class="machine-body">
+
+      <!-- ---------- report: check ---------- -->
+      <section class="report" aria-label="Report">
+
+        <section class="rep rep-health" aria-labelledby="h-health">
+          <header class="rep-h"><h2 class="label" id="h-health">Health</h2><span class="src">Live · checked 10:50</span>
+            <a class="rep-more" href="#observe" aria-label="Open the full health report"><svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></header>
+          <p class="verdict"><svg class="mark mark--attention" aria-hidden="true"><use href="#m-attention"/></svg><span>Working, with 4 local services down</span></p>
+          <p class="verdict-sub">Degraded since <time>08:14</time><span class="w"> · lmstudio, qdrant, neo4j, n8n not responding</span></p>
+          <ul class="causes detail">
+            <li><svg class="mark mark--problem" aria-hidden="true"><use href="#m-problem"/></svg>
+              <div><div class="cause-h"><b>lmstudio</b><span class="cause-state">not responding</span><span class="mono">127.0.0.1:1234</span></div>
+              <p class="cause-impact">Not blocking: the model is being served by Ollama instead.</p></div></li>
+            <li><svg class="mark mark--problem" aria-hidden="true"><use href="#m-problem"/></svg>
+              <div><div class="cause-h"><b>qdrant</b><span class="cause-state">not responding</span><span class="mono">127.0.0.1:6333</span></div>
+              <p class="cause-impact">Long-term recall is using the built-in vector store.</p></div></li>
+            <li><svg class="mark mark--problem" aria-hidden="true"><use href="#m-problem"/></svg>
+              <div><div class="cause-h"><b>neo4j</b><span class="cause-state">not responding</span><span class="mono">127.0.0.1:7474</span></div>
+              <p class="cause-impact">The knowledge graph is running in memory only.</p></div></li>
+            <li><svg class="mark mark--problem" aria-hidden="true"><use href="#m-problem"/></svg>
+              <div><div class="cause-h"><b>n8n</b><span class="cause-state">not responding</span><span class="mono">127.0.0.1:5678</span></div>
+              <p class="cause-impact">Oracle's workflows cannot run.</p></div></li>
+          </ul>
+          <p class="remedy detail"><a class="toline" href="#g1">Restart waits for your approval<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></p>
+
+          <div class="meters detail" role="group" aria-label="Load">
+            <div class="meter"><div class="meter-h"><span>RAM</span><b>19%</b></div><div class="meter-bar"><i style="width:19%"></i></div><div class="meter-d">36 of 192 GB</div></div>
+            <div class="meter"><div class="meter-h"><span>VRAM</span><b>96%</b></div><div class="meter-bar"><i style="width:96%"></i></div><div class="meter-d">23.0 of 24 GB</div></div>
+            <div class="meter"><div class="meter-h"><span>GPU load</span><b>3%</b></div><div class="meter-bar"><i style="width:3%"></i></div></div>
+          </div>
+          <dl class="kv detail">
+            <div><dt>Latency p50</dt><dd><svg class="mark mark--unknown" aria-hidden="true"><use href="#m-unknown"/></svg>Unknown — not measured by the hub yet</dd></div>
+            <div><dt>Channels</dt><dd>2 of 2 running · 1 session in the last 15 min</dd></div>
+          </dl>
+        </section>
+
+        <section class="rep rep-agents" aria-labelledby="h-agents">
+          <header class="rep-h"><h2 class="label" id="h-agents">Agents, by exception</h2><span class="src">Live</span>
+            <a class="rep-more" href="#agents" aria-label="Open all 18 agents"><svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></header>
+          <p class="brief"><b>3 working</b> · <span class="w">Jarvis, Pepper, Stark<br></span>3 wait on you · <span class="w">2 finished · </span>9 idle<span class="w"> · 1 unavailable</span></p>
+          <ul class="rows detail">
+            <li class="row"><svg class="mark mark--ink" aria-label="working"><use href="#m-working"/></svg><b>Jarvis</b><span class="t">Answering you — gathering from Pepper and Stark</span></li>
+            <li class="row"><svg class="mark mark--ink" aria-label="working"><use href="#m-working"/></svg><b>Pepper</b><span class="t">Checking this week's deadlines</span></li>
+            <li class="row"><svg class="mark mark--ink" aria-label="working"><use href="#m-working"/></svg><b>Stark</b><span class="t">Pulling project status for Digitaholic</span></li>
+            <li class="row row--sum"><svg class="mark mark--held" aria-hidden="true"><use href="#m-held"/></svg><span class="t"><b>3 wait on you</b> · Steve, Ultron, Gecko</span><a class="toline" href="#line" aria-label="See what waits at the line"><svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></li>
+            <li class="row"><svg class="mark mark--quiet" aria-label="finished"><use href="#m-done"/></svg><b>Friday</b><span class="t">Morning brief ready · 6 items · 06:00</span></li>
+            <li class="row"><svg class="mark mark--quiet" aria-label="finished"><use href="#m-done"/></svg><b>Vision</b><span class="t">Indexed 17 sources on competitor pricing · 09:40</span></li>
+            <li class="row"><svg class="mark mark--quiet" aria-label="unavailable"><use href="#m-blocked"/></svg><b>Athena</b><span class="t">Cloud only — unavailable while egress is sealed</span></li>
+            <li class="row row--foot"><svg class="mark mark--quiet" aria-hidden="true"><use href="#m-idle"/></svg><span>9 idle</span><a href="#agents">All 18 agents<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></li>
+          </ul>
+        </section>
+
+        <section class="rep rep-away" aria-labelledby="h-away">
+          <header class="rep-h"><h2 class="label" id="h-away">While you were away</h2><span class="src">Live</span>
+            <a class="rep-more" href="#work" aria-label="Open the activity log"><svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></header>
+          <p class="brief"><b>4 done</b> · 2 held or blocked · 1 problem<span class="w"><br>Latest <time>09:40</time> Vision — Indexed 17 sources on competitor pricing</span></p>
+          <p class="away-sum detail">4 done · 2 held or blocked · 1 problem</p>
+          <ol class="rows detail">
+            <li class="row row--away"><svg class="mark mark--quiet" aria-label="done"><use href="#m-done"/></svg><time>06:00</time><b>Friday</b><span class="t">Morning brief generated — 6 items ranked</span></li>
+            <li class="row row--away"><svg class="mark mark--quiet" aria-label="done"><use href="#m-done"/></svg><time>07:14</time><b>Pepper</b><span class="t">Calendar synced · 1 conflict auto-resolved</span></li>
+            <li class="row row--away"><svg class="mark mark--held" aria-label="held"><use href="#m-held"/></svg><time>07:48</time><b>Ultron</b><span class="t">2 PII findings redacted, outbound held</span></li>
+            <li class="row row--away"><svg class="mark mark--quiet" aria-label="done"><use href="#m-done"/></svg><time>08:00</time><b>Stark</b><span class="t">KPI snapshot cached for the Raiffeisen review</span></li>
+            <li class="row row--away"><svg class="mark mark--ink" aria-label="blocked"><use href="#m-blocked"/></svg><time>08:01</time><b>Ultron</b><span class="t">SSRF attempt blocked · 1 request denied</span></li>
+            <li class="row row--away"><svg class="mark mark--problem" aria-label="problem"><use href="#m-problem"/></svg><time>08:14</time><b>Steve</b><span class="t">lmstudio, qdrant, neo4j and n8n stopped responding</span></li>
+            <li class="row row--away"><svg class="mark mark--quiet" aria-label="done"><use href="#m-done"/></svg><time>09:40</time><b>Vision</b><span class="t">Indexed 17 sources on competitor pricing</span></li>
+          </ol>
+        </section>
+      </section>
+
+      <!-- ---------- conversation: talk ---------- -->
+      <section class="talk" aria-label="Conversation with Jarvis">
+
+        <div class="day" role="group" aria-label="Today, Monday 23 November 2026">
+          <div class="day-h"><b>Mon 23 Nov</b><span title="București">9° · Mist</span></div>
+          <ol class="day-list">
+            <li class="ev is-past"><span class="ev-t"><time>09:30</time><svg class="mark mark--quiet" aria-label="done"><use href="#m-done"/></svg>Google Meet</span><span class="ev-n">Standup — Digitaholic</span></li>
+            <li class="ev is-next"><span class="ev-t"><time>11:00</time><span class="soon">in 9 min</span>Office</span><span class="ev-n">1:1 with Cosmina</span></li>
+            <li class="ev is-key"><span class="ev-t"><time>14:00</time><svg class="mark mark--ink" aria-label="important"><use href="#m-key"/></svg>Conf Room A · prep 13:15</span><span class="ev-n">Raiffeisen quarterly review</span></li>
+            <li class="ev"><span class="ev-t"><time>16:30</time>Async</span><span class="ev-n">Vision research sync</span></li>
+            <li class="ev"><span class="ev-t"><time>19:00</time>Personal</span><span class="ev-n">Gym — Hercules plan</span></li>
+          </ol>
+        </div>
+
+        <div class="thread" tabindex="0" role="log" aria-label="Thread">
+
+          <p class="thread-start">Today · from <time>08:02</time></p>
+
+          <article class="msg msg--you">
+            <time>08:02</time>
+            <div class="bubble">Morning Jarvis — what does my day look like?</div>
+          </article>
+
+          <article class="msg msg--nerva">
+            <header class="msg-h"><b>Jarvis</b><span>Prime Orchestrator</span><time>08:02</time>
+              <span class="ran"><svg class="ico" aria-hidden="true"><use href="#i-here"/></svg>on this machine<span class="model"> · <span class="mono">gemma-4-31b</span></span><span class="tag">by route</span></span></header>
+            <div class="msg-body"><p>Good morning, Andrei. Three meetings today; the Raiffeisen review at 14:00 is the one that matters. Pepper holds your calendar, Stark prepped the KPI deltas. Weather is clear — good day to cycle in.</p></div>
+          </article>
+
+          <article class="msg msg--you">
+            <time>08:05</time>
+            <div class="bubble">draft the churn slide<span class="attach"><svg class="ico" aria-hidden="true"><use href="#i-file"/></svg>QBR-deck.docx</span></div>
+          </article>
+
+          <article class="msg msg--nerva">
+            <header class="msg-h"><b>Stark</b><span>Biz Intel</span><time>08:05</time>
+              <span class="ran"><svg class="ico" aria-hidden="true"><use href="#i-here"/></svg>on this machine<span class="model"> · <span class="mono">gemma-4-31b</span></span><span class="tag">by route</span></span></header>
+            <div class="msg-body"><p>Stark pulled the numbers — <strong>Digitaholic MRR is +6.2% WoW</strong>; I flagged the missing churn-cohort slide for the review.</p></div>
+            <div class="activity">
+              <button class="activity-h" type="button" aria-expanded="true"><svg class="ico" aria-hidden="true"><use href="#i-down"/></svg>2 tool calls</button>
+              <span class="tool"><svg class="mark mark--quiet" aria-hidden="true"><use href="#m-done"/></svg><span class="mono">web_search</span> done</span>
+              <span class="tool is-failed"><svg class="mark" aria-hidden="true"><use href="#m-problem"/></svg><span class="mono">file_write</span> failed</span>
+            </div>
+          </article>
+
+          <article class="msg msg--you">
+            <time>08:07</time>
+            <div class="bubble">sweep idle cash</div>
+          </article>
+
+          <article class="msg msg--nerva">
+            <header class="msg-h"><b>Gecko</b><span>Markets &amp; Capital</span><time>08:07</time>
+              <span class="ran"><svg class="ico" aria-hidden="true"><use href="#i-here"/></svg>on this machine<span class="model"> · <span class="mono">gemma-4-31b</span></span><span class="tag">by route</span></span></header>
+            <div class="msg-body"><p>Gecko's watching the markets — EUR/RON steady at 4.97; idle cash is <strong>€4.2k over buffer</strong>, sweep available.</p></div>
+            <div class="waits">
+              <svg class="tierglyph" aria-hidden="true"><use href="#t3"/></svg>
+              <span>1 action waits for your decision — <b>Sweep €4,200 to the savings ladder</b></span>
+              <a class="toline" href="#g2">at the line<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+            </div>
+            <footer class="msg-f" aria-label="Reply actions">
+              <button class="btn btn--quiet btn--sm" type="button"><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg>Copy</button>
+              <button class="btn btn--quiet btn--sm" type="button"><svg class="ico" aria-hidden="true"><use href="#i-save"/></svg>Save</button>
+              <button class="btn btn--quiet btn--sm" type="button"><svg class="ico" aria-hidden="true"><use href="#i-speak"/></svg>Read aloud</button>
+              <button class="btn btn--quiet btn--sm" type="button"><svg class="ico" aria-hidden="true"><use href="#i-task"/></svg>Create task</button>
+              <button class="btn btn--quiet btn--sm" type="button"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg>More</button>
+            </footer>
+          </article>
+
+          <article class="msg msg--you">
+            <time>10:48</time>
+            <div class="bubble" lang="ro">Ce proiecte sunt de terminat acum?</div>
+          </article>
+
+          <article class="msg msg--working" aria-live="polite" aria-busy="true">
+            <header class="msg-h"><b>Jarvis</b><span>Prime Orchestrator</span><time>10:51</time>
+              <span class="ran"><svg class="ico" aria-hidden="true"><use href="#i-here"/></svg>on this machine so far<span class="model"> · <span class="mono">gemma-4-31b</span></span><span class="tag">by route</span></span></header>
+            <div class="work">
+              <span class="work-status"><svg class="mark mark--ink" aria-hidden="true"><use href="#m-working"/></svg>Gathering — asking Pepper and Stark</span>
+              <ol class="stepline" aria-label="Step 3 of 4">
+                <li class="is-done"><i></i>Classify</li>
+                <li class="is-done"><i></i>Route</li>
+                <li class="is-now" aria-current="step"><i></i>Gather</li>
+                <li class="is-next"><i></i>Synthesize</li>
+              </ol>
+            </div>
+            <ul class="asks" aria-label="Asked">
+              <li><svg class="mark mark--ink" aria-label="working"><use href="#m-working"/></svg><b>Pepper</b><span>Checking this week's deadlines</span></li>
+              <li><svg class="mark mark--ink" aria-label="working"><use href="#m-working"/></svg><b>Stark</b><span>Pulling project status for Digitaholic</span></li>
+            </ul>
+            <div class="msg-body"><p lang="ro">Trei proiecte au termene săptămâna aceasta: prezentarea pentru Raiffeisen (azi, 14:00), raportul lunar Digitaholic și<span class="caret" aria-hidden="true"></span></p></div>
+            <div class="work-f">
+              <button class="btn btn--sm" type="button"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop this reply</button>
+              <span>Still writing. You can keep typing below.</span>
+              <span class="asked">You asked at <time>10:48</time></span>
+            </div>
+          </article>
+        </div>
+
+        <form class="composer" action="#" onsubmit="return false">
+          <div class="composer-h">
+            <span>To</span>
+            <button class="to" type="button" aria-haspopup="listbox"><b>Jarvis</b><span>· orchestrated</span><svg class="ico" aria-hidden="true"><use href="#i-down"/></svg></button>
+            <a class="modechip" href="#line" title="Ask — Anything with a side effect waits for you.">Mode <b>Ask</b><span class="w">&nbsp;· side effects wait at the line</span><svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+          </div>
+          <textarea aria-label="Message Jarvis" placeholder="Message Jarvis…"></textarea>
+          <div class="composer-f">
+            <button class="btn btn--quiet btn--sm" type="button" title="Images, Files, Vault note, Board result, Skill"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Attach</button>
+            <button class="btn btn--quiet btn--sm" type="button" title="Direct reply (skip extended thinking) · Search chat history · Compare agents · Use previous image"><svg class="ico" aria-hidden="true"><use href="#i-options"/></svg>Options</button>
+            <span class="hint">/new &nbsp;/undo &nbsp;/refine &nbsp;/&lt;skill&gt; &nbsp;@file:path</span>
+            <span class="voice">Voice ready · runs locally<button class="icon-btn" type="button" aria-label="Start voice input"><svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg></button></span>
+            <button class="btn btn--send" type="submit" title="Send — fills in once there is something to send">Send<svg class="ico" aria-hidden="true"><use href="#i-send"/></svg></button>
+          </div>
+        </form>
+      </section>
+
+      <!-- ---------- today, to scale (wide screens only) ---------- -->
+      <section class="dayline" aria-labelledby="h-day">
+        <header class="rep-h"><h2 class="label" id="h-day">Today</h2><span class="src">Live</span></header>
+        <p class="dl-date"><b>Monday 23 November</b> · București 9° · Mist</p>
+        <div class="ruler">
+          <span class="hr" style="--t:0" aria-hidden="true">09</span><span class="hr" style="--t:1" aria-hidden="true">10</span><span class="hr is-near" style="--t:2" aria-hidden="true">11</span>
+          <span class="hr" style="--t:3" aria-hidden="true">12</span><span class="hr" style="--t:4" aria-hidden="true">13</span><span class="hr" style="--t:5" aria-hidden="true">14</span>
+          <span class="hr" style="--t:6" aria-hidden="true">15</span><span class="hr" style="--t:7" aria-hidden="true">16</span><span class="hr" style="--t:8" aria-hidden="true">17</span>
+          <span class="hr" style="--t:9" aria-hidden="true">18</span><span class="hr" style="--t:10" aria-hidden="true">19</span><span class="hr" style="--t:11" aria-hidden="true">20</span>
+          <span class="prop-link" aria-hidden="true"></span>
+          <ol aria-label="Today's schedule">
+            <li class="ev2 is-past" style="--t:0.5"><i aria-hidden="true"></i><time>09:30</time><span>Standup — Digitaholic<span class="w">Google Meet</span></span></li>
+            <li class="ev2 is-next" style="--t:2"><i aria-hidden="true"></i><time>11:00</time><span><b>1:1 with Cosmina</b><span class="soon">in 9 min</span><span class="w">Office</span></span></li>
+            <li class="ev2 is-key" style="--t:5"><svg class="mark mark--ink" aria-label="important"><use href="#m-key"/></svg><time>14:00</time><span><b>Raiffeisen quarterly review</b><span class="w">Conf Room A · prep 13:15</span></span></li>
+            <li class="ev2" style="--t:7.5"><i aria-hidden="true"></i><time>16:30</time><span>Vision research sync<span class="w">Async</span></span></li>
+            <li class="ev2 ev2--prop" style="--t:8.25"><i aria-hidden="true"></i><time>17:15</time><span><a class="toline" href="#g6">Pepper proposes moving it here<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a><span class="w">Waits for you · reversible</span></span></li>
+            <li class="ev2" style="--t:10"><i aria-hidden="true"></i><time>19:00</time><span>Gym — Hercules plan<span class="w">Personal</span></span></li>
+          </ol>
+          <p class="now"><time>10:51</time><span class="vh">now</span></p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ================= your side · what waits at the line ================= -->
+  <aside class="yours" id="line" aria-label="Your side — what waits for you">
+
+    <section class="mode" aria-label="Where the line is set">
+      <div class="mode-row">
+        <div class="seg seg--mode" role="radiogroup" aria-label="Approval mode">
+          <button type="button" role="radio" aria-checked="false" title="Auto — Safe and reversible actions run on their own; risky ones wait.">Auto</button>
+          <button type="button" role="radio" aria-checked="true" title="Ask — Anything with a side effect waits for you.">Ask</button>
+          <button type="button" role="radio" aria-checked="false" title="Off — Agents may read and think, nothing acts.">Off</button>
+        </div>
+        <p class="mode-means">Anything with a side effect waits for you.</p>
+        <span class="budget" title="The product budgets how often it may interrupt you: 4 a day."><span>Interrupts today</span><span class="pips" aria-hidden="true"><i class="is-used"></i><i class="is-used"></i><i class="is-used"></i><i></i></span><b>3 of 4</b></span>
+      </div>
+    </section>
+
+    <!-- ---------- tier 3 ---------- -->
+    <section class="tier" aria-labelledby="tier-3">
+      <h2 class="tier-h" id="tier-3"><svg class="tierglyph" aria-hidden="true"><use href="#t3"/></svg><b>Irreversible or money</b><span class="tier-n">3</span><span class="tier-rule">Typed confirmation · cannot be bulk-approved</span></h2>
+      <div class="tier-list">
+
+        <article class="held held--focus" id="g1" aria-labelledby="g1-t">
+          <header class="held-h"><span class="held-who"><b>Steve</b> · CTO / Builds</span><span class="tag">Irreversible</span><span class="held-when">Raised 08:14, repeated 3 times</span></header>
+          <h3 class="held-t" id="g1-t">Restart 4 local services that stopped responding</h3>
+          <p class="held-why">Held because the approval mode is Ask. 4 actions, grouped from 12 requests.</p>
+          <p class="members-sum"><button class="disclose" type="button" aria-expanded="false"><svg class="ico" aria-hidden="true"><use href="#i-down"/></svg>4 requests</button><span class="mono">402</span> lmstudio · <span class="mono">409</span> qdrant · <span class="mono">410</span> neo4j · <span class="mono">411</span> n8n</p>
+          <ul class="members">
+            <li><span class="mono id">402</span><span>lmstudio not responding on <span class="mono">127.0.0.1:1234</span>. Restart lmstudio?</span></li>
+            <li><span class="mono id">409</span><span>qdrant not responding on <span class="mono">127.0.0.1:6333</span>. Restart qdrant?</span></li>
+            <li><span class="mono id">410</span><span>neo4j not responding on <span class="mono">127.0.0.1:7474</span>. Restart neo4j?</span></li>
+            <li><span class="mono id">411</span><span>n8n not responding on <span class="mono">127.0.0.1:5678</span>. Restart n8n?</span></li>
+          </ul>
+          <dl class="facts">
+            <div><dt>What runs</dt><dd>Would run the configured restart command for each service on this machine.</dd></div>
+            <div><dt>Undo</dt><dd>None — a restart interrupts anything the service is doing.</dd></div>
+            <div><dt>Deadline</dt><dd>tomorrow 08:14 — then it is blocked, never auto-approved</dd></div>
+          </dl>
+          <div class="verdict-row">
+            <label class="confirm"><span class="confirm-l">Type</span><input type="text" data-word="restart 4" placeholder="restart 4" aria-label="Type restart 4 to unlock Approve" autocomplete="off" spellcheck="false"></label>
+            <button class="btn btn--verdict" type="button" disabled><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>Approve once for all 4</button>
+            <button class="btn" type="button">Reject group</button>
+            <span class="push">
+              <button class="btn btn--quiet" type="button" title="Edit then approve">Edit</button>
+              <button class="btn btn--quiet" type="button">Defer</button>
+              <button class="btn btn--quiet" type="button" title="A dry run of what would execute">Preview</button>
+            </span>
+          </div>
+        </article>
+
+        <article class="held" id="g2" aria-labelledby="g2-t">
+          <header class="held-h"><span class="held-who"><b>Gecko</b> · Markets &amp; Capital</span><span class="tag">Money</span><span class="held-when">Raised 08:07, from your conversation</span></header>
+          <h3 class="held-t" id="g2-t">Sweep €4,200 of idle cash to the savings ladder</h3>
+          <p class="held-why">Money always waits for you. Idle cash in the current account is €4.2k over your target buffer.</p>
+          <dl class="facts xw">
+            <div><dt>What runs</dt><dd>Would move €4,200 from the current account to the savings ladder.</dd></div>
+            <div><dt>Undo</dt><dd>A transfer back takes 1–2 working days.</dd></div>
+          </dl>
+          <div class="verdict-row">
+            <button class="btn nw" type="button" aria-expanded="false">Review to approve<svg class="ico" aria-hidden="true"><use href="#i-down"/></svg></button>
+            <label class="confirm xw"><span class="confirm-l">Type</span><input type="text" data-word="sweep 4200" placeholder="sweep 4200" aria-label="Type sweep 4200 to unlock Approve" autocomplete="off" spellcheck="false"></label>
+            <button class="btn btn--verdict xw" type="button" disabled><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>Approve the sweep</button>
+            <button class="btn" type="button">Reject</button>
+            <span class="push">
+              <button class="btn btn--quiet xw" type="button" title="Edit then approve">Edit</button>
+              <button class="btn btn--quiet" type="button">Defer</button>
+              <button class="btn btn--quiet xw" type="button" title="A dry run of what would execute">Preview</button>
+              <button class="icon-btn nw" type="button" aria-label="More: Edit then approve, Preview"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg></button>
+            </span>
+          </div>
+        </article>
+
+        <article class="held" id="g3" aria-labelledby="g3-t">
+          <header class="held-h"><span class="held-who"><b>Jarvis</b> · Prime Orchestrator</span><span class="tag">Irreversible</span><span class="held-when">Raised 07:30, repeated once</span></header>
+          <h3 class="held-t" id="g3-t">Delete logs older than 14 days</h3>
+          <p class="held-why">Held because the approval mode is Ask.<span class="nw"> Would delete 312 files, 2.1 GB. Undo: None.</span></p>
+          <dl class="facts xw">
+            <div><dt>What runs</dt><dd>Would delete 312 files, 2.1 GB.</dd></div>
+            <div><dt>Undo</dt><dd>None.</dd></div>
+          </dl>
+          <div class="verdict-row">
+            <button class="btn nw" type="button" aria-expanded="false">Review to approve<svg class="ico" aria-hidden="true"><use href="#i-down"/></svg></button>
+            <label class="confirm xw"><span class="confirm-l">Type</span><input type="text" data-word="delete 312" placeholder="delete 312" aria-label="Type delete 312 to unlock Approve" autocomplete="off" spellcheck="false"></label>
+            <button class="btn btn--verdict xw" type="button" disabled><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>Approve the deletion</button>
+            <button class="btn" type="button">Reject</button>
+            <span class="push">
+              <button class="btn btn--quiet xw" type="button" title="Edit then approve">Edit</button>
+              <button class="btn btn--quiet" type="button">Defer</button>
+              <button class="btn btn--quiet xw" type="button" title="A dry run of what would execute">Preview</button>
+              <button class="icon-btn nw" type="button" aria-label="More: Edit then approve, Preview"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg></button>
+            </span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ---------- tier 2 ---------- -->
+    <section class="tier" aria-labelledby="tier-2">
+      <h2 class="tier-h" id="tier-2"><svg class="tierglyph" aria-hidden="true"><use href="#t2"/></svg><b>External</b><span class="tier-n">1</span><span class="tier-rule">Two steps: review what will be sent, then confirm</span></h2>
+      <div class="tier-list">
+        <article class="held" id="g4" aria-labelledby="g4-t">
+          <header class="held-h"><span class="held-who"><b>Ultron</b> · Security &amp; Automation</span><span class="held-when">Raised 07:48</span></header>
+          <h3 class="held-t" id="g4-t">Veronica's LinkedIn draft names a client flagged as sensitive</h3>
+          <p class="held-why">Outbound is held until you clear it.</p>
+          <div class="verdict-row">
+            <span class="steps2">
+              <button class="btn" type="button"><span class="stepno">1</span>Review the draft</button>
+              <svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg>
+              <button class="btn btn--verdict" type="button" disabled title="Unlocks after you have reviewed what will be sent"><span class="stepno">2</span>Redact and send</button>
+            </span>
+            <button class="btn" type="button">Reject</button>
+            <span class="push">
+              <button class="btn btn--quiet" type="button">Defer</button>
+              <button class="icon-btn" type="button" aria-label="More: Edit then approve, Preview"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg></button>
+            </span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ---------- tier 1 ---------- -->
+    <section class="tier" aria-labelledby="tier-1">
+      <h2 class="tier-h" id="tier-1"><svg class="tierglyph" aria-hidden="true"><use href="#t1"/></svg><b>Reversible</b><span class="tier-n">2</span><span class="tier-rule">One click, undo available</span></h2>
+      <div class="tier-list">
+        <article class="held held--row" id="g5" aria-labelledby="g5-t">
+          <div>
+            <header class="held-h"><span class="held-who"><b>Stark</b> · Biz Intel</span><span class="held-when">Raised 08:05 · Undo: Delete the draft.</span></header>
+            <h3 class="held-t" id="g5-t">Draft a reply to Raiffeisen with the QBR agenda</h3>
+            <p class="held-why">Would save a draft in your mailbox. Nothing is sent.</p>
+          </div>
+          <div class="verdict-row">
+            <button class="btn btn--soft" type="button">Approve</button>
+            <button class="btn" type="button">Reject</button>
+            <button class="icon-btn" type="button" aria-label="More: Edit then approve, Defer, Preview"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg></button>
+          </div>
+        </article>
+        <article class="held held--row" id="g6" aria-labelledby="g6-t">
+          <div>
+            <header class="held-h"><span class="held-who"><b>Pepper</b> · Chief of Staff</span><span class="held-when">Raised 07:14 · Undo: Move it back.</span></header>
+            <h3 class="held-t" id="g6-t">Move the research sync from 16:30 to 17:15</h3>
+            <p class="held-why">Your 14:00 and 16:30 leave no lunch gap; Vision is async anyway.</p>
+          </div>
+          <div class="verdict-row">
+            <button class="btn btn--soft" type="button">Approve</button>
+            <button class="btn" type="button">Reject</button>
+            <button class="icon-btn" type="button" aria-label="More: Edit then approve, Defer, Preview"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg></button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- tier 0 is on Nerva's side of the line: say so, so that silence is legible -->
+    <p class="tier-foot"><svg class="tierglyph" aria-hidden="true"><use href="#t0"/></svg><span><b>Read only</b> does not wait: it runs on its own and is recorded in the audit chain.</span><a href="secondary.html">Audit chain<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></p>
+  </aside>
+</div>
+
+<script>
+  /* small behaviours only: theme switch, pin the thread to its end, typed confirmation */
+  document.querySelectorAll('[data-theme-toggle]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var r = document.documentElement;
+      r.dataset.theme = r.dataset.theme === 'light' ? 'dark' : 'light';
+    });
+  });
+  var thread = document.querySelector('.thread');
+  if (thread) thread.scrollTop = thread.scrollHeight;
+  document.querySelectorAll('.confirm input').forEach(function (input) {
+    var approve = input.closest('.verdict-row').querySelector('.btn--verdict');
+    var lock = approve.querySelector('.ico');
+    input.addEventListener('input', function () {
+      var ok = input.value.trim().toLowerCase() === input.dataset.word;
+      approve.disabled = !ok;
+      if (lock) lock.style.display = ok ? 'none' : '';
+    });
+    /* no key approves: Enter in the field does nothing, the button must be clicked */
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+  });
+</script>
+</body>
+</html>

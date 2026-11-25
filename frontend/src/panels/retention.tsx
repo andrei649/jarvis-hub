@@ -19,7 +19,7 @@
    - saveOrder sends the ungated one of `retention` / `memory` first in a Settings save. */
 import React, { useEffect, useState } from 'react';
 import { apiPut } from '../api/client';
-import { mono, refusalReason, useApi } from '../panel-kit';
+import { note, refusalReason, useApi } from '../panel-kit';
 
 export const RETENTION_STATE_PATH = '/api/admin/retention';
 export const RETENTION_SETTINGS_PATH = '/api/admin/settings/retention';
@@ -91,18 +91,18 @@ export function RetentionBanner({ refresh = 0 }: { refresh?: number }) {
       .catch((err) => setError(`not sent · ${refusedWhy(err)}`))
       .finally(() => setBusy(false));
   };
-  return <div data-testid="retention-unconfirmed" style={{ fontSize: 11, color: 'var(--ink-2)', margin: '2px 0 6px',
+  return <div data-testid="retention-unconfirmed" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '2px 0 6px',
     padding: '5px 7px', border: '1px solid var(--amber)', borderRadius: 4 }}>
     <div><span style={{ color: 'var(--amber)' }}>Retention is on but not confirmed</span>: it deletes nothing until a
       person approves these settings once. Confirming sends them to Approvals.</div>
     {!sent && waiting != null
-      ? <div data-testid="retention-confirm-waiting" role="status" style={{ ...mono, fontSize: 10, marginTop: 4 }}>
+      ? <div data-testid="retention-confirm-waiting" role="status" style={{ ...note, fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>
           waiting in Approvals · task {String(waiting)} — a person accepts it in the Decision Inbox</div>
       : sent
-      ? <div data-testid="retention-confirm-sent" role="status" style={{ ...mono, fontSize: 10, marginTop: 4 }}>{sent}</div>
+      ? <div data-testid="retention-confirm-sent" role="status" style={{ ...note, fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>{sent}</div>
       : <button className="tool-btn" style={{ marginTop: 4 }} disabled={busy} aria-label="confirm retention settings"
           onClick={confirm}>{busy ? 'sending…' : 'confirm'}</button>}
-    {error && <div data-testid="retention-confirm-refused" role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>{error}</div>}
+    {error && <div data-testid="retention-confirm-refused" role="alert" style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 4 }}>{error}</div>}
   </div>;
 }
 
@@ -126,9 +126,10 @@ export function RetentionCard({ task }: { task: any }) {
   const approved = preview.approved && typeof preview.approved === 'object' ? preview.approved : null;
   const widened: string[] = Array.isArray(preview.widened) ? preview.widened.map(String) : [];
   const gone = preview.would_delete || {};
-  return <div data-testid="retention-card" style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
+  return <div data-testid="retention-card" style={{ margin: '3px 0 7px 12px', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
     {!approved && <div style={{ color: 'var(--amber)' }}>nothing approved yet: retention deletes nothing until this is accepted</div>}
-    {Object.keys(after).map((name) => <div key={name} style={mono}>
+    {/* "audit: kept forever → 30 days": a data class and its horizons in words, not identifiers. */}
+    {Object.keys(after).map((name) => <div key={name} style={note}>
       {name}: {days(approved ? approved[name] : null)} → {days(after[name])}
       {widened.includes(name) && <span style={{ color: 'var(--red)' }}> · deeper</span>}
     </div>)}

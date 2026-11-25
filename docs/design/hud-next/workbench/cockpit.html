@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<meta name="color-scheme" content="dark light">
+<title>Nerva — Home · 9 need you</title>
+<script>
+  /* Theme before first paint. ?theme=dark|light; the default of this direction is dark. */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.dataset.theme = (t === 'light' || t === 'dark') ? t : 'dark';
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="workbench.css">
+</head>
+<body>
+
+<!-- Glyph sheet. Simple strokes on a 16px grid; drawn for this direction. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="mark" viewBox="0 0 24 24">
+      <path d="M6 18V6l12 12V6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="6" cy="18" r="2.6" fill="currentColor"/><circle cx="6" cy="6" r="2.6" fill="currentColor"/>
+      <circle cx="18" cy="18" r="2.6" fill="currentColor"/><circle cx="18" cy="6" r="2.6" fill="currentColor"/>
+    </symbol>
+
+    <symbol id="gates-0" viewBox="0 0 18 12"><g fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"><rect x=".6" y=".6" width="2.8" height="10.8" rx=".6"/><rect x="7.6" y=".6" width="2.8" height="10.8" rx=".6"/><rect x="14.6" y=".6" width="2.8" height="10.8" rx=".6"/></g></symbol>
+    <symbol id="gates-1" viewBox="0 0 18 12"><rect width="4" height="12" rx="1" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"><rect x="7.6" y=".6" width="2.8" height="10.8" rx=".6"/><rect x="14.6" y=".6" width="2.8" height="10.8" rx=".6"/></g></symbol>
+    <symbol id="gates-2" viewBox="0 0 18 12"><rect width="4" height="12" rx="1" fill="currentColor"/><rect x="7" width="4" height="12" rx="1" fill="currentColor"/><rect x="14.6" y=".6" width="2.8" height="10.8" rx=".6" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/></symbol>
+    <symbol id="gates-3" viewBox="0 0 18 12"><rect width="4" height="12" rx="1" fill="currentColor"/><rect x="7" width="4" height="12" rx="1" fill="currentColor"/><rect x="14" width="4" height="12" rx="1" fill="currentColor"/></symbol>
+
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.2 10.2 13.6 13.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1.75" fill="currentColor"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev-l" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8 10 12.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev-d" viewBox="0 0 16 16"><path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-prompt" viewBox="0 0 16 16"><path d="M4 3.5 8.5 8 4 12.5M10 12.5h3" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.25v9.5M3.25 8h9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 16 16"><rect x="5.75" y="1.75" width="4.5" height="8" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-send" viewBox="0 0 16 16"><path d="M8 13V3.5M4 7.5l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 2.25h5l3 3v8.5H4z M9 2.25v3h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="12.5" cy="8" r="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></symbol>
+    <symbol id="i-glance" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 14h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-view" viewBox="0 0 16 16"><path d="M2.5 5h7M12.5 5h1M2.5 11h1M6.5 11h7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="11" cy="5" r="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="11" r="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+
+    <symbol id="g-ok" viewBox="0 0 16 16"><path d="M3.25 8.5 6.5 11.75 12.75 4.75" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="g-attention" viewBox="0 0 16 16"><path d="M8 2.6 14 13H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.4" r=".9" fill="currentColor"/></symbol>
+    <symbol id="g-problem" viewBox="0 0 16 16"><path d="M8 2 14 8 8 14 2 8z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></symbol>
+    <symbol id="g-working" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.25" fill="none" stroke="currentColor" stroke-width="1.75" opacity=".3"/><path d="M8 2.75a5.25 5.25 0 1 1-5.25 5.25" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></symbol>
+    <symbol id="g-held" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="3" fill="var(--signal-yours)" stroke="var(--signal-yours-edge)" stroke-width="1"/><circle cx="5" cy="8" r="1.6" fill="var(--under)"/><path d="M8.5 5.5v5M11 5.5v5" fill="none" stroke="var(--on-signal-yours)" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="g-blocked" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 8h6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></symbol>
+    <symbol id="g-unavailable" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4.2 11.8 11.8 4.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="g-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.3 2.02"/></symbol>
+    <!-- This machine, in the evidence stroke: outline = by route or derived; solid = verified; dashed = unknown. -->
+    <symbol id="g-here" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2.5" fill="currentColor"/></symbol>
+    <symbol id="g-lock" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.75" fill="currentColor"/><path d="M5.25 7V5.25a2.75 2.75 0 0 1 5.5 0V7" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="g-live" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.75" fill="currentColor"/></symbol>
+    <symbol id="g-seal" viewBox="0 0 16 16"><path d="M8 1.75 13.25 4v4.1c0 3.1-2.3 5.2-5.25 6.15C5.05 13.3 2.75 11.2 2.75 8.1V4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8.1 7.3 9.8 10.5 6.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+
+  <!-- ══ Bar: where you are, how to get anywhere, and the one-click stop ══ -->
+  <header class="bar">
+    <a class="brand" href="cockpit.html" aria-label="Nerva, home">
+      <svg class="mark" aria-hidden="true"><use href="#mark"/></svg>
+      <span class="brand-name">Nerva</span>
+    </a>
+
+    <nav class="areas" aria-label="Areas">
+      <a class="area is-here" href="cockpit.html" aria-current="page">Home</a>
+      <a class="area" href="#work">Work <span class="chip chip--yours" aria-label="9 need you">9<span class="w-wide">&nbsp;need you</span></span></a>
+      <a class="area" href="#agents">Agents</a>
+      <a class="area" href="#memory">Memory</a>
+      <a class="area" href="secondary.html">Trust</a>
+      <a class="area" href="#build">Build</a>
+      <a class="area" href="#connect">Connect</a>
+      <a class="area" href="#observe">Observe <span class="chip chip--note" aria-label="4 services down">4<span class="w-wide">&nbsp;services down</span></span></a>
+      <a class="area" href="#settings">Settings</a>
+    </nav>
+
+    <button class="find" type="button" aria-label="Search and command. Finds every area, panel, agent and action. Control K">
+      <svg aria-hidden="true"><use href="#i-search"/></svg>
+      <span class="w-wide">Search every area, panel, agent and action</span>
+      <span class="lt-wide">Search and command</span>
+      <kbd>Ctrl K</kbd>
+    </button>
+
+    <div class="view w-wide" role="group" aria-label="View">
+      <div class="seg" role="group" aria-label="Language">
+        <button type="button" aria-pressed="true">EN</button>
+        <button type="button" aria-pressed="false">RO</button>
+      </div>
+      <button class="icon-btn" type="button" data-theme-switch aria-label="Switch theme, dark or light"><svg aria-hidden="true"><use href="#i-theme"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="Glance mode, for an idle or second screen"><svg aria-hidden="true"><use href="#i-glance"/></svg></button>
+    </div>
+    <button class="icon-btn lt-wide" type="button" aria-haspopup="menu" aria-label="View: language, theme, glance mode"><svg aria-hidden="true"><use href="#i-view"/></svg></button>
+
+    <!-- When Today does not fit beside the open decision, the next commitment moves up here. -->
+    <span class="next lt-wide"><span class="meta">Next</span><time>11:00</time><span class="chip chip--note">in 9 min</span></span>
+
+    <time class="now meta" datetime="2026-11-23T10:51"><span class="w-wide">Monday 23 November&ensp;</span><b>10:51</b></time>
+
+    <button class="stop" type="button"><svg aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents</button>
+  </header>
+
+  <main class="bench">
+
+    <!-- ══ Spine: work sorted by what needs you ══ -->
+    <section class="spine" aria-label="Work, sorted by what needs you">
+
+      <div class="mode">
+        <div class="mode-row">
+          <span class="meta" id="mode-l">Approval mode</span>
+          <div class="seg" role="radiogroup" aria-labelledby="mode-l">
+            <button type="button" role="radio" aria-checked="false" title="Safe and reversible actions run on their own; risky ones wait.">Auto</button>
+            <button type="button" role="radio" aria-checked="true" title="Anything with a side effect waits for you.">Ask</button>
+            <button type="button" role="radio" aria-checked="false" title="Agents may read and think, nothing acts.">Off</button>
+          </div>
+          <span class="meta budget">Interruptions today <b>3 of 4</b></span>
+        </div>
+        <p class="meta">Anything with a side effect waits for you.</p>
+      </div>
+
+      <div class="grp">
+        <header class="hero">
+          <h2><span class="tag tag--num">9</span>need you</h2>
+          <span class="meta note">9 actions in 6 decisions · from 18 requests</span>
+        </header>
+        <p class="legend meta">
+          <span><svg class="gates gates--3" aria-hidden="true"><use href="#gates-3"/></svg>3 irreversible or money</span>
+          <span><svg class="gates" aria-hidden="true"><use href="#gates-2"/></svg>1 external</span>
+          <span><svg class="gates" aria-hidden="true"><use href="#gates-1"/></svg>2 reversible</span>
+        </p>
+        <ol class="rows">
+          <li class="row is-open">
+            <svg class="gates gates--3" role="img" aria-label="Three gates: typed confirmation"><use href="#gates-3"/></svg>
+            <div>
+              <a class="row-title" href="#d-g1" aria-current="true">Restart 4 local services that stopped responding</a>
+              <p class="row-why wide-only">Deadline tomorrow 08:14 — then it is blocked, never auto-approved</p>
+              <p class="meta row-meta"><span><b>Irreversible</b> · Steve · 08:14<span class="w-wide"> · 12 requests in 4 actions</span></span><svg class="opens" aria-hidden="true"><use href="#i-chev"/></svg></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates gates--3" role="img" aria-label="Three gates: typed confirmation"><use href="#gates-3"/></svg>
+            <div>
+              <a class="row-title" href="#d-g2">Sweep €4,200 of idle cash to the savings ladder</a>
+              <p class="row-why wide-only">Idle cash in the current account is €4.2k over your target buffer.</p>
+              <p class="meta row-meta"><span><b>Money</b> · Gecko · 08:07<span class="w-wide"> · from your conversation</span></span><svg class="opens" aria-hidden="true"><use href="#i-chev"/></svg></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates gates--3" role="img" aria-label="Three gates: typed confirmation"><use href="#gates-3"/></svg>
+            <div>
+              <a class="row-title" href="#d-g3">Delete logs older than 14 days</a>
+              <p class="row-why wide-only">Would delete 312 files, 2.1 GB.</p>
+              <p class="meta row-meta"><span><b>Irreversible</b> · Jarvis · 07:30 · 2 requests</span><svg class="opens" aria-hidden="true"><use href="#i-chev"/></svg></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates" role="img" aria-label="Two gates: review, then confirm"><use href="#gates-2"/></svg>
+            <div>
+              <a class="row-title" href="#d-g4">Veronica's LinkedIn draft names a client flagged as sensitive</a>
+              <p class="row-why wide-only">Outbound is held until you clear it.</p>
+              <p class="meta row-meta"><span><b>External</b> · Ultron · 07:48</span><a class="btn btn--line btn--sm" href="#d-g4">Review the draft</a></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates" role="img" aria-label="One gate: one click, undo available"><use href="#gates-1"/></svg>
+            <div>
+              <a class="row-title" href="#d-g5">Draft a reply to Raiffeisen with the QBR agenda</a>
+              <p class="row-why wide-only">Would save a draft in your mailbox. Nothing is sent.</p>
+              <p class="meta row-meta"><span><b>Reversible</b> · Stark · 08:05</span><button class="btn btn--line btn--sm" type="button">Approve</button></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates" role="img" aria-label="One gate: one click, undo available"><use href="#gates-1"/></svg>
+            <div>
+              <a class="row-title" href="#d-g6">Move the research sync from 16:30 to 17:15</a>
+              <p class="row-why wide-only">Your 14:00 and 16:30 leave no lunch gap; Vision is async anyway.</p>
+              <p class="meta row-meta"><span><b>Reversible</b> · Pepper · 07:14</span><button class="btn btn--line btn--sm" type="button">Approve</button></p>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="grp">
+        <header class="grp-h">
+          <h2>Running</h2>
+          <span class="chip chip--note">1</span>
+          <span class="meta note">3 agents working</span>
+        </header>
+        <ol class="rows">
+          <li class="row">
+            <svg class="g g--ink" role="img" aria-label="Working"><use href="#g-working"/></svg>
+            <div>
+              <a class="row-title" href="#thread">Answering you — gathering from Pepper and Stark</a>
+              <p class="meta row-meta"><span><b>Jarvis</b> with Pepper, Stark · this conversation · step 3 of 4</span></p>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="grp">
+        <header class="grp-h">
+          <h2>Finished while you were away</h2>
+          <span class="meta note">4 done · 2 held or blocked · 1 problem</span>
+        </header>
+        <ol class="rows">
+          <li class="row row--log"><svg class="g g--quiet" role="img" aria-label="Done"><use href="#g-ok"/></svg><span class="meta who">Vision</span><span>Indexed 17 sources on competitor pricing</span><time>09:40</time></li>
+          <li class="row row--log"><svg class="g g--stop" role="img" aria-label="Problem"><use href="#g-problem"/></svg><span class="meta who">Steve</span><span>lmstudio, qdrant, neo4j and n8n stopped responding</span><time>08:14</time></li>
+          <li class="row row--log"><svg class="g" role="img" aria-label="Blocked"><use href="#g-blocked"/></svg><span class="meta who">Ultron</span><span>SSRF attempt blocked · 1 request denied</span><time>08:01</time></li>
+          <li class="row row--log"><svg class="g g--quiet" role="img" aria-label="Done"><use href="#g-ok"/></svg><span class="meta who">Stark</span><span>KPI snapshot cached for the Raiffeisen review</span><time>08:00</time></li>
+          <li class="row row--log"><svg class="g" role="img" aria-label="Held for you"><use href="#g-held"/></svg><span class="meta who">Ultron</span><span>2 PII findings redacted, outbound held</span><time>07:48</time></li>
+          <li class="row row--log"><svg class="g g--quiet" role="img" aria-label="Done"><use href="#g-ok"/></svg><span class="meta who">Pepper</span><span>Calendar synced · 1 conflict auto-resolved</span><time>07:14</time></li>
+          <li class="row row--log"><svg class="g g--quiet" role="img" aria-label="Done"><use href="#g-ok"/></svg><span class="meta who">Friday</span><span>Morning brief generated — 6 items ranked</span><time>06:00</time></li>
+        </ol>
+      </div>
+
+      <footer class="agents" aria-label="Agents, by exception">
+        <p class="meta"><b>18 agents</b> · 3 working · 3 waiting on you · 2 finished · 9 idle · 1 unavailable</p>
+        <p class="meta ex"><svg class="g g--quiet" role="img" aria-label="Unavailable"><use href="#g-unavailable"/></svg><span><b>Athena</b> · Cloud only — unavailable while egress is sealed</span></p>
+        <p class="meta ex"><svg class="g g--quiet" role="img" aria-label="Idle, cannot run"><use href="#g-blocked"/></svg><span><b>Oracle</b> · n8n is down — workflows cannot run</span></p>
+      </footer>
+    </section>
+
+    <!-- ══ Sheet: the one conversation ══ -->
+    <section class="sheet" aria-label="Conversation with Jarvis">
+      <header class="sheet-h">
+        <h1>Jarvis</h1>
+        <span class="meta">Prime Orchestrator · Orchestrated · today since 08:02</span>
+        <div class="acts">
+          <button class="btn btn--quiet" type="button"><svg aria-hidden="true"><use href="#i-plus"/></svg>New conversation</button>
+        </div>
+      </header>
+
+      <div class="thread" id="thread" tabindex="0" aria-label="Messages">
+        <div class="turns">
+
+          <article class="turn turn--you">
+            <time>08:02</time>
+            <div class="you"><svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg><p><span class="vh">You: </span>Morning Jarvis — what does my day look like?</p></div>
+          </article>
+
+          <article class="turn">
+            <time>08:02</time>
+            <div>
+              <header class="reply-h"><b>Jarvis</b><span class="meta">Prime Orchestrator</span></header>
+              <div class="reply-body"><p>Good morning, Andrei. Three meetings today; the Raiffeisen review at 14:00 is the one that matters. Pepper holds your calendar, Stark prepped the KPI deltas. Weather is clear — good day to cycle in.</p></div>
+              <footer class="reply-f">
+                <span class="runplate"><span class="where"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg>On this machine</span><span class="id">gemma-4-31b</span><span class="basis">by route</span></span>
+                <span class="acts"><button class="icon-btn" type="button" aria-label="More: copy, save, read aloud, create task"><svg aria-hidden="true"><use href="#i-more"/></svg></button></span>
+              </footer>
+            </div>
+          </article>
+
+          <article class="turn turn--you">
+            <time>08:05</time>
+            <div class="you"><svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg><p><span class="vh">You: </span>draft the churn slide <span class="file id"><svg aria-hidden="true"><use href="#i-file"/></svg>QBR-deck.docx</span></p></div>
+          </article>
+
+          <article class="turn">
+            <time>08:05</time>
+            <div>
+              <header class="reply-h"><b>Stark</b><span class="meta">Biz Intel</span></header>
+              <div class="reply-body"><p>Stark pulled the numbers — <strong>Digitaholic MRR is +6.2% WoW</strong>; I flagged the missing churn-cohort slide for the review.</p></div>
+              <button class="activity meta" type="button" aria-expanded="false">
+                <svg aria-hidden="true"><use href="#i-chev"/></svg>
+                <span><b>2 tool calls</b></span>
+                <span class="tool"><span class="id">web_search</span><svg class="g g--quiet" aria-hidden="true"><use href="#g-ok"/></svg>done</span>
+                <span class="tool"><span class="id">file_write</span><svg class="g g--stop" aria-hidden="true"><use href="#g-problem"/></svg>failed</span>
+              </button>
+              <footer class="reply-f">
+                <span class="runplate"><span class="where"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg>On this machine</span><span class="id">gemma-4-31b</span><span class="basis">by route</span></span>
+                <span class="acts"><button class="icon-btn" type="button" aria-label="More: copy, save, read aloud, create task"><svg aria-hidden="true"><use href="#i-more"/></svg></button></span>
+              </footer>
+            </div>
+          </article>
+
+          <article class="turn turn--you">
+            <time>08:07</time>
+            <div class="you"><svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg><p><span class="vh">You: </span>sweep idle cash</p></div>
+          </article>
+
+          <article class="turn">
+            <time>08:07</time>
+            <div>
+              <header class="reply-h"><b>Gecko</b><span class="meta">Markets &amp; Capital</span></header>
+              <div class="reply-body"><p>Gecko's watching the markets — EUR/RON steady at 4.97; idle cash is <strong>€4.2k over buffer</strong>, sweep available.</p></div>
+              <div class="hold">
+                <span class="tag tag--sm">Held for you</span>
+                <p>1 action waits for your decision — <b>Sweep €4,200 to the savings ladder</b></p>
+                <span class="tier meta"><svg class="gates gates--3" aria-hidden="true"><use href="#gates-3"/></svg><b>Money</b></span>
+                <a class="btn btn--line" href="#d-g2">Open the decision</a>
+              </div>
+              <footer class="reply-f">
+                <span class="runplate"><span class="where"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg>On this machine</span><span class="id">gemma-4-31b</span><span class="basis">by route</span></span>
+                <!-- The newest finished reply shows its actions; older ones keep them behind More. -->
+                <span class="acts">
+                  <button class="btn btn--quiet" type="button">Copy</button>
+                  <button class="btn btn--quiet" type="button">Save</button>
+                  <button class="btn btn--quiet w-mid" type="button">Read aloud</button>
+                  <button class="btn btn--quiet w-wide" type="button">Create task</button>
+                  <button class="icon-btn" type="button" aria-label="More"><svg aria-hidden="true"><use href="#i-more"/></svg></button>
+                </span>
+              </footer>
+            </div>
+          </article>
+
+          <article class="turn turn--you">
+            <time>10:48</time>
+            <div class="you-row">
+              <div class="you"><svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg><p lang="ro"><span class="vh" lang="en">You: </span>Ce proiecte sunt de terminat acum?</p></div>
+              <span class="you-acts"><button class="btn btn--quiet btn--sm" type="button">Remember</button><button class="btn btn--quiet btn--sm" type="button">Create task</button></span>
+            </div>
+          </article>
+
+          <article class="turn" aria-busy="true">
+            <time>10:51</time>
+            <div>
+              <header class="reply-h"><b>Jarvis</b><span class="meta">Prime Orchestrator</span></header>
+              <div class="working" role="status">
+                <!-- The mark is a path: Classify → Route → Gather → Synthesize. It is drawn as far as the work has got. -->
+                <svg class="mark" viewBox="0 0 24 24" role="img" aria-label="Step 3 of 4">
+                  <path d="M18 17V7" fill="none" stroke="var(--line-3)" stroke-width="2" stroke-linecap="round" stroke-dasharray="0.01 3.4"/>
+                  <path d="M6 18V6l12 12" fill="none" stroke="var(--ink-1)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <circle cx="6" cy="18" r="2.6" fill="var(--ink-1)"/><circle cx="6" cy="6" r="2.6" fill="var(--ink-1)"/>
+                  <circle cx="18" cy="18" r="3.4" fill="var(--ink-1)"/>
+                  <circle cx="18" cy="6" r="2.1" fill="var(--ground-2)" stroke="var(--line-3)" stroke-width="1.5"/>
+                </svg>
+                <p class="working-line"><b>Gathering</b> — asking Pepper and Stark</p>
+                <ol class="steps meta" aria-label="Steps">
+                  <li class="is-done"><span class="node"></span>Classify</li>
+                  <li class="is-done"><span class="node"></span>Route</li>
+                  <li class="is-now" aria-current="step"><span class="node"></span><b>Gather</b></li>
+                  <li><span class="node"></span>Synthesize</li>
+                </ol>
+                <ul class="subs">
+                  <li><svg class="g" role="img" aria-label="Working"><use href="#g-working"/></svg><span class="meta"><b>Pepper</b></span><span>Checking this week's deadlines</span></li>
+                  <li><svg class="g" role="img" aria-label="Working"><use href="#g-working"/></svg><span class="meta"><b>Stark</b></span><span>Pulling project status for Digitaholic</span></li>
+                </ul>
+                <button class="btn btn--line" type="button"><svg aria-hidden="true"><use href="#i-stop"/></svg>Stop</button>
+              </div>
+              <div class="reply-body"><p lang="ro">Trei proiecte au termene săptămâna aceasta: prezentarea pentru Raiffeisen (azi, 14:00), raportul lunar Digitaholic și<span class="caret" aria-hidden="true"></span></p></div>
+              <footer class="reply-f">
+                <span class="runplate"><span class="where"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg>Running on this machine</span><span class="id">gemma-4-31b</span><span class="basis">by route</span></span>
+              </footer>
+            </div>
+          </article>
+
+        </div>
+      </div>
+
+      <form class="composer" action="#" onsubmit="return false">
+        <div class="composer-box">
+          <div class="composer-top">
+            <button class="pick" type="button"><span class="meta">To</span><b>Jarvis</b><span class="meta">orchestrated</span><svg aria-hidden="true"><use href="#i-chev-d"/></svg></button>
+            <button class="pick" type="button"><span class="meta">Approval mode</span><b>Ask</b><svg aria-hidden="true"><use href="#i-chev-d"/></svg></button>
+          </div>
+          <div class="composer-in">
+            <svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg>
+            <textarea rows="2" placeholder="Message Jarvis…" aria-label="Message Jarvis"></textarea>
+          </div>
+          <div class="composer-tools">
+            <button class="btn btn--quiet" type="button" aria-haspopup="menu" title="Images · Files · Vault note · Board result · Skill"><svg aria-hidden="true"><use href="#i-plus"/></svg>Attach</button>
+            <button class="btn btn--quiet" type="button" aria-haspopup="menu" title="Direct reply (skip extended thinking) · Search chat history · Compare agents · Use previous image">Options<svg aria-hidden="true"><use href="#i-chev-d"/></svg></button>
+            <span class="hint meta w-mid" title="/new · /undo · /refine · /&lt;skill&gt; · @file:path"><kbd>/</kbd> commands · <kbd>@</kbd> files</span>
+            <span class="voice"><button class="icon-btn" type="button" aria-label="Voice"><svg aria-hidden="true"><use href="#i-mic"/></svg></button><span class="meta">Voice ready · runs locally</span></span>
+            <button class="btn btn--send" type="submit" disabled>Send<svg aria-hidden="true"><use href="#i-send"/></svg></button>
+          </div>
+        </div>
+      </form>
+
+      <!-- Wide tier: plan, results and provenance of the answer being made. Below 2240px it opens
+           in the inspector from the working strip or any run plate. -->
+      <aside class="runrail" aria-label="This answer: plan, results and provenance">
+        <header class="runrail-h">
+          <h2>This answer</h2>
+          <span class="meta">step 3 of 4</span>
+        </header>
+        <div class="runrail-b">
+          <section class="rr rr--asked" aria-label="Question">
+            <p class="meta">You asked · 10:48</p>
+            <p class="asked" lang="ro">Ce proiecte sunt de terminat acum?</p>
+          </section>
+          <section class="rr" aria-label="Plan">
+            <ol class="plan">
+              <li class="is-done"><span class="num">1</span><span class="step">Classify</span><span class="state meta">done</span></li>
+              <li class="is-done"><span class="num">2</span><span class="step">Route</span><span class="state meta">to Pepper and Stark</span></li>
+              <li class="is-now"><span class="num">3</span><span class="step"><b>Gather</b></span><span class="state meta"><b>now</b></span>
+                <ul class="subs detail">
+                  <li><svg class="g" role="img" aria-label="Working"><use href="#g-working"/></svg><span class="meta"><b>Pepper</b></span><span>Checking this week's deadlines</span></li>
+                  <li><svg class="g" role="img" aria-label="Working"><use href="#g-working"/></svg><span class="meta"><b>Stark</b></span><span>Pulling project status for Digitaholic</span></li>
+                </ul>
+              </li>
+              <li class="is-next"><span class="num">4</span><span class="step">Synthesize</span><span class="state meta">next</span></li>
+            </ol>
+          </section>
+
+          <section class="rr" aria-labelledby="rr-conv">
+            <header class="rr-h"><h3 id="rr-conv">In this conversation</h3><span class="meta">since 08:02</span></header>
+            <dl class="kv">
+              <dt class="meta">Replies</dt>
+              <dd>3 finished · 1 running<span class="sub meta"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg>all on this machine · <span class="id">gemma-4-31b</span> · by route</span></dd>
+              <dt class="meta">Files</dt>
+              <dd><span class="id">QBR-deck.docx</span><span class="sub meta">attached by you · 08:05</span></dd>
+              <dt class="meta">Tool calls</dt>
+              <dd><span class="tool"><span class="id">web_search</span><svg class="g g--quiet" aria-hidden="true"><use href="#g-ok"/></svg>done</span><span class="tool"><span class="id">file_write</span><svg class="g g--stop" aria-hidden="true"><use href="#g-problem"/></svg>failed</span><span class="sub meta">Stark · 08:05 · nothing was changed</span></dd>
+              <dt class="meta">Held</dt>
+              <dd>Sweep €4,200 to the savings ladder<span class="sub meta">Gecko · 08:07 · money, waits for you</span></dd>
+            </dl>
+          </section>
+
+          <section class="rr" aria-labelledby="rr-seal">
+            <header class="rr-h"><h3 id="rr-seal">Sealed in the audit chain</h3><span class="meta source"><svg class="g g--proven" aria-hidden="true"><use href="#g-seal"/></svg>chain intact</span></header>
+            <ol class="seal">
+              <li><time>10:49</time><div><p class="what"><b>Jarvis</b> · Routed your question to Pepper and Stark</p><p class="proof meta"><svg class="g g--proven" aria-hidden="true"><use href="#g-ok"/></svg>sealed<span class="id">9f2c…a41b</span></p></div></li>
+              <li><time>08:07</time><div><p class="what"><b>Gecko</b> · Proposed transfer of €4,200 — waiting for approval</p><p class="proof meta"><svg class="g g--proven" aria-hidden="true"><use href="#g-ok"/></svg>sealed<span class="id">71bb…e2c4</span></p></div></li>
+              <li><time>08:05</time><div><p class="what"><b>Stark</b> · file_write failed — nothing was changed</p><p class="proof meta"><svg class="g g--proven" aria-hidden="true"><use href="#g-ok"/></svg>sealed<span class="id">2e90…0b6a</span></p></div></li>
+            </ol>
+          </section>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ══ Inspector: whatever is selected in the spine. The conversation does not move. ══ -->
+    <aside class="rail" aria-label="Inspector">
+
+      <section class="card" id="d-g1" aria-labelledby="d-g1-t">
+        <header class="card-h">
+          <span class="tag">Held for you</span>
+          <span class="of meta"><span>Decision 1 of 6</span>
+            <button type="button" data-go="d-g6" aria-label="Previous decision"><svg aria-hidden="true"><use href="#i-chev-l"/></svg></button>
+            <button type="button" data-go="d-g2" aria-label="Next decision"><svg aria-hidden="true"><use href="#i-chev"/></svg></button>
+          </span>
+        </header>
+        <div class="card-b">
+          <p class="tier-line"><svg class="gates gates--3" aria-hidden="true"><use href="#gates-3"/></svg><b>Irreversible</b><span class="meta">typed confirmation<span class="w-mid"> · cannot be bulk-approved</span></span></p>
+          <h2 id="d-g1-t">Restart 4 local services that stopped responding</h2>
+          <p class="meta from"><b>Steve</b> · CTO / Builds · raised 08:14, repeated 3 times</p>
+          <p class="why meta">Held because the approval mode is Ask.</p>
+
+          <div class="members">
+            <p class="members-h meta"><b>12 requests</b> grouped into 4 actions</p>
+            <div class="member">
+              <span class="id num">#402</span>
+              <span class="what"><span class="id">lmstudio</span><span class="id">127.0.0.1:1234</span></span>
+              <span class="impact w-wide">Not blocking: the model is being served by Ollama instead.</span>
+            </div>
+            <div class="member">
+              <span class="id num">#409</span>
+              <span class="what"><span class="id">qdrant</span><span class="id">127.0.0.1:6333</span></span>
+              <span class="impact w-wide">Long-term recall is using the built-in vector store.</span>
+            </div>
+            <div class="member">
+              <span class="id num">#410</span>
+              <span class="what"><span class="id">neo4j</span><span class="id">127.0.0.1:7474</span></span>
+              <span class="impact w-wide">The knowledge graph is running in memory only.</span>
+            </div>
+            <div class="member">
+              <span class="id num">#411</span>
+              <span class="what"><span class="id">n8n</span><span class="id">127.0.0.1:5678</span></span>
+              <span class="impact w-wide">Oracle's workflows cannot run.</span>
+            </div>
+          </div>
+
+          <dl class="facts">
+            <dt class="meta">Preview</dt>
+            <dd>Would run the configured restart command for each service on this machine. <button class="link" type="button">Run a dry run</button></dd>
+            <dt class="meta">Undo</dt>
+            <dd>None — a restart interrupts anything the service is doing.</dd>
+            <dt class="meta">Deadline</dt>
+            <dd>tomorrow 08:14 — then it is blocked, never auto-approved</dd>
+            <dt class="meta">Recorded</dt>
+            <dd class="sealed"><svg class="g g--proven" aria-hidden="true"><use href="#g-ok"/></svg>Sealed in the audit chain<span class="meta">08:14</span><span class="id">c03e…1d9f</span></dd>
+          </dl>
+
+          <div class="confirm">
+            <label class="confirm-l" for="typed-g1">Type <kbd>restart</kbd> to approve once for all 4</label>
+            <div class="confirm-row">
+              <input id="typed-g1" type="text" placeholder="restart" autocomplete="off" spellcheck="false">
+              <button class="btn btn--primary" type="button" disabled>Approve once for all 4</button>
+            </div>
+          </div>
+
+          <div class="card-acts">
+            <button class="btn btn--line" type="button">Edit then approve</button>
+            <button class="btn btn--line" type="button">Defer</button>
+            <button class="btn btn--line" type="button">Reject group</button>
+          </div>
+          <p class="meta card-note">No keyboard shortcut approves or rejects.</p>
+        </div>
+      </section>
+
+      <!-- The other five decisions: the same card, one at a time. The spine row, the ‹ › arrows, a hold
+           in the conversation (Open the decision) and links from other pages (cockpit.html#d-g2) switch
+           it. Friction follows the tier: typed confirmation for irreversible and money, review then
+           confirm for external, one click with undo for reversible. -->
+      <section class="card" id="d-g2" aria-labelledby="d-g2-t" hidden>
+        <header class="card-h">
+          <span class="tag">Held for you</span>
+          <span class="of meta"><span>Decision 2 of 6</span>
+            <button type="button" data-go="d-g1" aria-label="Previous decision"><svg aria-hidden="true"><use href="#i-chev-l"/></svg></button>
+            <button type="button" data-go="d-g3" aria-label="Next decision"><svg aria-hidden="true"><use href="#i-chev"/></svg></button>
+          </span>
+        </header>
+        <div class="card-b">
+          <p class="tier-line"><svg class="gates gates--3" aria-hidden="true"><use href="#gates-3"/></svg><b>Money</b><span class="meta">typed confirmation<span class="w-mid"> · cannot be bulk-approved</span></span></p>
+          <h2 id="d-g2-t">Sweep €4,200 of idle cash to the savings ladder</h2>
+          <p class="meta from"><b>Gecko</b> · Markets &amp; Capital · raised 08:07, from your conversation</p>
+          <p class="why meta">Money always waits for you.</p>
+
+          <dl class="facts">
+            <dt class="meta">Reason</dt>
+            <dd>Idle cash in the current account is €4.2k over your target buffer.</dd>
+            <dt class="meta">Preview</dt>
+            <dd>Would move €4,200 from the current account to the savings ladder. <button class="link" type="button">Run a dry run</button></dd>
+            <dt class="meta">Undo</dt>
+            <dd>A transfer back takes 1–2 working days.</dd>
+            <dt class="meta">Recorded</dt>
+            <dd class="sealed"><svg class="g g--proven" aria-hidden="true"><use href="#g-ok"/></svg>Sealed in the audit chain<span class="meta">08:07</span><span class="id">71bb…e2c4</span></dd>
+          </dl>
+
+          <div class="confirm">
+            <label class="confirm-l" for="typed-g2">Type <kbd>4,200</kbd> to approve moving €4,200</label>
+            <div class="confirm-row">
+              <input id="typed-g2" type="text" placeholder="4,200" autocomplete="off" spellcheck="false" inputmode="decimal">
+              <button class="btn btn--primary" type="button" disabled>Approve moving €4,200</button>
+            </div>
+          </div>
+
+          <div class="card-acts">
+            <button class="btn btn--line" type="button">Edit then approve</button>
+            <button class="btn btn--line" type="button">Defer</button>
+            <button class="btn btn--line" type="button">Reject</button>
+          </div>
+          <p class="meta card-note">No keyboard shortcut approves or rejects.</p>
+        </div>
+      </section>
+
+      <section class="card" id="d-g3" aria-labelledby="d-g3-t" hidden>
+        <header class="card-h">
+          <span class="tag">Held for you</span>
+          <span class="of meta"><span>Decision 3 of 6</span>
+            <button type="button" data-go="d-g2" aria-label="Previous decision"><svg aria-hidden="true"><use href="#i-chev-l"/></svg></button>
+            <button type="button" data-go="d-g4" aria-label="Next decision"><svg aria-hidden="true"><use href="#i-chev"/></svg></button>
+          </span>
+        </header>
+        <div class="card-b">
+          <p class="tier-line"><svg class="gates gates--3" aria-hidden="true"><use href="#gates-3"/></svg><b>Irreversible</b><span class="meta">typed confirmation<span class="w-mid"> · cannot be bulk-approved</span></span></p>
+          <h2 id="d-g3-t">Delete logs older than 14 days</h2>
+          <p class="meta from"><b>Jarvis</b> · Prime Orchestrator · raised 07:30, repeated once</p>
+          <p class="why meta">Held because the approval mode is Ask.</p>
+
+          <dl class="facts">
+            <dt class="meta">Preview</dt>
+            <dd>Would delete 312 files, 2.1 GB. <button class="link" type="button">Run a dry run</button></dd>
+            <dt class="meta">Undo</dt>
+            <dd>None.</dd>
+          </dl>
+
+          <div class="confirm">
+            <label class="confirm-l" for="typed-g3">Type <kbd>delete</kbd> to approve deleting 312 files</label>
+            <div class="confirm-row">
+              <input id="typed-g3" type="text" placeholder="delete" autocomplete="off" spellcheck="false">
+              <button class="btn btn--primary" type="button" disabled>Approve deleting 312 files</button>
+            </div>
+          </div>
+
+          <div class="card-acts">
+            <button class="btn btn--line" type="button">Edit then approve</button>
+            <button class="btn btn--line" type="button">Defer</button>
+            <button class="btn btn--line" type="button">Reject</button>
+          </div>
+          <p class="meta card-note">No keyboard shortcut approves or rejects.</p>
+        </div>
+      </section>
+
+      <section class="card" id="d-g4" aria-labelledby="d-g4-t" hidden>
+        <header class="card-h">
+          <span class="tag">Held for you</span>
+          <span class="of meta"><span>Decision 4 of 6</span>
+            <button type="button" data-go="d-g3" aria-label="Previous decision"><svg aria-hidden="true"><use href="#i-chev-l"/></svg></button>
+            <button type="button" data-go="d-g5" aria-label="Next decision"><svg aria-hidden="true"><use href="#i-chev"/></svg></button>
+          </span>
+        </header>
+        <div class="card-b">
+          <p class="tier-line"><svg class="gates" aria-hidden="true"><use href="#gates-2"/></svg><b>External</b><span class="meta">review, then confirm</span></p>
+          <h2 id="d-g4-t">Veronica's LinkedIn draft names a client flagged as sensitive</h2>
+          <p class="meta from"><b>Ultron</b> · Security &amp; Automation · raised 07:48</p>
+          <p class="why meta">Outbound is held until you clear it.</p>
+
+          <dl class="facts">
+            <dt class="meta">Recorded</dt>
+            <dd class="sealed"><svg class="g g--proven" aria-hidden="true"><use href="#g-ok"/></svg>Sealed in the audit chain<span class="meta">07:48</span><span class="id">0d3f…5c82</span></dd>
+          </dl>
+
+          <div class="confirm">
+            <p class="confirm-l">Review what will be sent, then confirm</p>
+            <div class="confirm-row">
+              <button class="btn btn--line" type="button">Review the draft</button>
+              <button class="btn btn--primary" type="button" disabled>Redact and send</button>
+            </div>
+          </div>
+
+          <div class="card-acts">
+            <button class="btn btn--line" type="button">Edit then approve</button>
+            <button class="btn btn--line" type="button">Defer</button>
+            <button class="btn btn--line" type="button">Reject</button>
+          </div>
+          <p class="meta card-note">No keyboard shortcut approves or rejects.</p>
+        </div>
+      </section>
+
+      <section class="card" id="d-g5" aria-labelledby="d-g5-t" hidden>
+        <header class="card-h">
+          <span class="tag">Held for you</span>
+          <span class="of meta"><span>Decision 5 of 6</span>
+            <button type="button" data-go="d-g4" aria-label="Previous decision"><svg aria-hidden="true"><use href="#i-chev-l"/></svg></button>
+            <button type="button" data-go="d-g6" aria-label="Next decision"><svg aria-hidden="true"><use href="#i-chev"/></svg></button>
+          </span>
+        </header>
+        <div class="card-b">
+          <p class="tier-line"><svg class="gates" aria-hidden="true"><use href="#gates-1"/></svg><b>Reversible</b><span class="meta">one click, undo available</span></p>
+          <h2 id="d-g5-t">Draft a reply to Raiffeisen with the QBR agenda</h2>
+          <p class="meta from"><b>Stark</b> · Biz Intel · raised 08:05</p>
+          <p class="why meta">Held because the approval mode is Ask.</p>
+
+          <dl class="facts">
+            <dt class="meta">Preview</dt>
+            <dd>Would save a draft in your mailbox. Nothing is sent.</dd>
+            <dt class="meta">Undo</dt>
+            <dd>Delete the draft.</dd>
+          </dl>
+
+          <div class="card-acts">
+            <button class="btn btn--primary" type="button">Approve</button>
+            <button class="btn btn--line" type="button">Edit then approve</button>
+            <button class="btn btn--line" type="button">Defer</button>
+            <button class="btn btn--line" type="button">Reject</button>
+          </div>
+          <p class="meta card-note">No keyboard shortcut approves or rejects.</p>
+        </div>
+      </section>
+
+      <section class="card" id="d-g6" aria-labelledby="d-g6-t" hidden>
+        <header class="card-h">
+          <span class="tag">Held for you</span>
+          <span class="of meta"><span>Decision 6 of 6</span>
+            <button type="button" data-go="d-g5" aria-label="Previous decision"><svg aria-hidden="true"><use href="#i-chev-l"/></svg></button>
+            <button type="button" data-go="d-g1" aria-label="Next decision"><svg aria-hidden="true"><use href="#i-chev"/></svg></button>
+          </span>
+        </header>
+        <div class="card-b">
+          <p class="tier-line"><svg class="gates" aria-hidden="true"><use href="#gates-1"/></svg><b>Reversible</b><span class="meta">one click, undo available</span></p>
+          <h2 id="d-g6-t">Move the research sync from 16:30 to 17:15</h2>
+          <p class="meta from"><b>Pepper</b> · Chief of Staff · raised 07:14</p>
+          <p class="why meta">Held because the approval mode is Ask.</p>
+
+          <dl class="facts">
+            <dt class="meta">Reason</dt>
+            <dd>Your 14:00 and 16:30 leave no lunch gap; Vision is async anyway.</dd>
+            <dt class="meta">Undo</dt>
+            <dd>Move it back.</dd>
+          </dl>
+
+          <div class="card-acts">
+            <button class="btn btn--primary" type="button">Approve</button>
+            <button class="btn btn--line" type="button">Edit then approve</button>
+            <button class="btn btn--line" type="button">Defer</button>
+            <button class="btn btn--line" type="button">Reject</button>
+          </div>
+          <p class="meta card-note">No keyboard shortcut approves or rejects.</p>
+        </div>
+      </section>
+
+      <section class="sec" aria-labelledby="today-h">
+        <header class="sec-h">
+          <h2 id="today-h">Today</h2>
+          <span class="meta note">București · 9 °C · Mist</span>
+        </header>
+        <ol class="day">
+          <li class="is-past"><time>09:30</time><span class="ev">Standup — Digitaholic<span class="meta">Google Meet</span></span></li>
+          <li class="is-now"><time>10:51</time><span class="line meta">now</span></li>
+          <li class="is-next"><time>11:00</time><span class="ev">1:1 with Cosmina<span class="meta">Office</span></span><span class="chip chip--note">in 9 min</span></li>
+          <li class="is-key"><time>14:00</time><span class="ev"><b>Raiffeisen quarterly review</b><span class="meta">Conf Room A · prep 13:15</span></span></li>
+          <li><time>16:30</time><span class="ev">Vision research sync<span class="meta">Async</span></span></li>
+          <li><time>19:00</time><span class="ev">Gym — Hercules plan<span class="meta">Personal</span></span></li>
+        </ol>
+      </section>
+    </aside>
+  </main>
+
+  <!-- ══ Plate: the state of this machine. The trust signals live here and never leave. ══ -->
+  <footer class="plate" aria-label="State of this machine">
+    <div class="cell cell--state">
+      <span class="cell-k">State · since 08:14 · checked 10:50</span>
+      <span class="cell-v"><svg class="g" role="img" aria-label="Attention"><use href="#g-attention"/></svg><b>Degraded</b><span><span class="w-mid">Working, with </span>4 local services down</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Runs on this machine</span>
+      <span class="cell-v"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg><b>100%</b><span class="w-mid">41 of 41 runs today</span><span class="basis">by route</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Egress</span>
+      <span class="cell-v"><svg class="g g--proven" aria-hidden="true"><use href="#g-lock"/></svg><b>Sealed</b><span class="w-wide">— nothing can leave this machine</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Microphone</span>
+      <span class="cell-v"><svg class="g" aria-hidden="true"><use href="#i-mic"/></svg><b>On</b></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Model</span>
+      <span class="cell-v"><span class="id">gemma-4-31b</span><span class="w-mid">loaded on Ollama</span></span>
+    </div>
+    <div class="cell wide-only">
+      <span class="cell-k">Channels</span>
+      <span class="cell-v"><b>2 of 2</b><span>running · 1 session in the last 15 min</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Data on screen</span>
+      <span class="cell-v"><svg class="g" aria-hidden="true"><use href="#g-live"/></svg><b>Live</b><span class="w-mid">every section</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Latency p50</span>
+      <span class="cell-v"><svg class="g g--unknown" aria-hidden="true"><use href="#g-unknown"/></svg><span>— unknown</span></span>
+    </div>
+    <div class="cell cell--meters w-wide">
+      <div class="meter"><span class="cell-k">RAM</span><span class="cell-v"><b>19%</b><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:19%"></span></span><span>36 of 192 GB</span></span></div>
+      <div class="meter"><span class="cell-k">VRAM</span><span class="cell-v"><b>96%</b><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:96%"></span></span><span>23.0 of 24 GB</span></span></div>
+      <div class="meter"><span class="cell-k">GPU load</span><span class="cell-v"><b>3%</b><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:3%"></span></span></span></div>
+    </div>
+  </footer>
+</div>
+
+<script>
+  /* Small behaviours only: theme switch, and which decision the inspector shows. Verdict controls
+     have no keyboard shortcut, by rule. */
+  document.querySelectorAll('[data-theme-switch]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var r = document.documentElement;
+      r.dataset.theme = r.dataset.theme === 'light' ? 'dark' : 'light';
+    });
+  });
+
+  /* One decision at a time. The address (#d-g2) chooses it, so the spine row, Open the decision,
+     the ‹ › arrows and links from other pages all land on the same card. Showing never decides. */
+  (function () {
+    var rail = document.querySelector('.rail');
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.rail > .card[id^="d-"]'));
+    function show(id) {
+      var card = document.getElementById(id);
+      if (!card || cards.indexOf(card) < 0) return false;
+      cards.forEach(function (c) { c.hidden = c !== card; });
+      document.querySelectorAll('.spine .row-title[href^="#d-"]').forEach(function (a) {
+        var on = a.getAttribute('href') === '#' + id;
+        a.closest('.row').classList.toggle('is-open', on);
+        if (on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+      });
+      return true;
+    }
+    function fromAddress() { return show(decodeURIComponent(location.hash.slice(1))); }
+    window.addEventListener('hashchange', function () { if (fromAddress()) rail.scrollTop = 0; });
+    document.querySelectorAll('[data-go]').forEach(function (b) {
+      b.addEventListener('click', function () { location.hash = b.getAttribute('data-go'); });
+    });
+    fromAddress();
+  })();
+</script>
+</body>
+</html>

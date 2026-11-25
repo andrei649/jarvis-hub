@@ -2,7 +2,6 @@ import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DemoBanner } from '../app';
 import { readDemoMode, replaceDemoMode, useDemoMode } from '../demo-mode';
 
 function DemoHarness() {
@@ -78,13 +77,5 @@ describe('useDemoMode', () => {
     });
 
     expect(screen.getByTestId('mode').textContent).toBe('demo');
-  });
-});
-
-describe('DemoBanner', () => {
-  it('shows the canonical share address beside the demo provenance', () => {
-    render(<DemoBanner onExit={() => {}} />);
-
-    expect(screen.getByText(/DEMO DATA/).textContent).toContain('/v2/?demo=1');
   });
 });

@@ -21,7 +21,9 @@
    list — it used to read "not deleted" over a list that still showed the deleted rows. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiDelete, apiDownload, apiGet, apiPatch, apiPost } from '../api/client';
-import { Card, Row, State, arr, asLive, mono, refusalReason } from '../panel-kit';
+// The panel keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { Card, Row, State, arr, asLive, mono, note as noteS, refusalReason } from '../panel-kit';
+import { LABEL, MONO } from '../theme/type';
 
 export const RESUME_PATH = '/sessions/resume';
 /** H218 — archive, bring back, or delete a conversation for good (backup first, admin). */
@@ -53,17 +55,18 @@ export function RecapView({ recap, session }: { recap: any; session: string }) {
   const exchanges = Array.isArray(recap?.exchanges) ? recap.exchanges : [];
   const total = Number(recap?.total) || exchanges.length;
   return <div data-testid="session-recap" style={{ marginTop: 8, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
-    <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-2)', marginBottom: 4 }}>
+    <div style={{ ...MONO, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>
       RESUMED {session} · {exchanges.length < total ? `LAST ${exchanges.length} OF ${total} EXCHANGES` : `${total} EXCHANGE${total === 1 ? '' : 'S'}`}
     </div>
-    {exchanges.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>This conversation has no turns yet.</div>}
+    {exchanges.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>This conversation has no turns yet.</div>}
     {exchanges.map((ex: any[], i: number) => <div key={i} data-testid="recap-exchange" style={{ padding: '3px 0' }}>
       {(Array.isArray(ex) ? ex : []).map((t: any, j: number) => (
-        <div key={j} style={{ fontSize: 11, lineHeight: 1.45, color: t.role === 'user' ? 'var(--amber)' : 'var(--ink)' }}>
+        <div key={j} style={{ fontSize: 'var(--n-fs-meta)', lineHeight: 1.45, color: t.role === 'user' ? 'var(--amber)' : 'var(--ink)' }}>
           <span aria-hidden="true">{t.role === 'user' ? '● ' : '◆ '}</span>
-          <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{t.role === 'user' ? 'you' : (t.agent || 'nerva')}: </span>
+          {/* 'you' is a word; an agent is named by its id. */}
+          <span style={{ ...(t.role === 'user' ? noteS : mono), fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{t.role === 'user' ? 'you' : (t.agent || 'nerva')}: </span>
           {String(t.text ?? '')}
-          {toolLine(t) && <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}> {toolLine(t)}</span>}
+          {toolLine(t) && <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}> {toolLine(t)}</span>}
         </div>
       ))}
     </div>)}
@@ -494,22 +497,22 @@ export function SessionsPanel() {
       <input aria-label="Search loaded recent sessions" type="search" maxLength={256}
         placeholder="Search loaded recent sessions" value={query}
         onChange={(event) => changeSearch(event.target.value)}
-        style={{ flex: 1, minWidth: 0, fontSize: 12, background: 'transparent', color: 'var(--ink)',
+        style={{ flex: 1, minWidth: 0, fontSize: 'var(--n-fs-label)', background: 'transparent', color: 'var(--ink)',
           border: '1px solid var(--panel-line)', borderRadius: 3, padding: '5px 7px' }} />
       {query.length > 0 && <button className="tool-btn" aria-label="Clear session search"
         onClick={() => changeSearch('')}>clear</button>}
     </div>
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 5 }}>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 5 }}>
       Searches the recent sessions loaded here, not message text.
     </div>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 5 }}>
-      <label style={{ fontSize: 11 }}>Agent <select aria-label="Filter loaded sessions by agent" value={agentFilter}
+      <label style={{ fontSize: 'var(--n-fs-meta)' }}>Agent <select aria-label="Filter loaded sessions by agent" value={agentFilter}
         onChange={(event) => { clearFilterContext(); setAgentFilter(event.target.value); }}>
         <option value="all">All agents</option>
         <option value="unassigned">Unassigned</option>
         {agentOptions.map((agent) => <option key={agent} value={`agent:${agent}`}>{agent}</option>)}
       </select></label>
-      <label style={{ fontSize: 11 }}>Date <select aria-label="Filter loaded sessions by date" value={dateFilter}
+      <label style={{ fontSize: 'var(--n-fs-meta)' }}>Date <select aria-label="Filter loaded sessions by date" value={dateFilter}
         onChange={(event) => { clearFilterContext(); setDateFilter(event.target.value as DateFilter); }}>
         <option value="all">All dates</option>
         <option value="7">Last 7 days</option>
@@ -518,12 +521,12 @@ export function SessionsPanel() {
       </select></label>
       {filtersActive && <button className="tool-btn" aria-label="Reset session filters" onClick={resetFilters}>reset filters</button>}
     </div>
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 5 }}>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 5 }}>
       Filters apply to all pages loaded here. Load older sessions to include more. Date groups use your local calendar; recent ranges exclude future dates.
     </div>
     <State e={listError || null} loading={loading} n={list.length} />
     {!loading && !listError && list.length > 0 && (normalizedQuery || filtersActive) && visibleSessions.length === 0 &&
-      <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>
+      <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
         {filtersActive ? 'No loaded sessions match these filters' : 'No recent sessions match this search'}
       </div>}
     {visibleSessions.map((s: any, i: number) => {
@@ -533,12 +536,12 @@ export function SessionsPanel() {
       const group = sessionDateGroup(s);
       const groupStart = i === 0 || group !== sessionDateGroup(visibleSessions[i - 1]);
       const separator = groupStart && <div data-testid="session-date-group" role="heading" aria-level={3}
-        style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 10, marginBottom: 3 }}>{group}</div>;
+        style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10, marginBottom: 3 }}>{group}</div>;
       if (renaming?.sid === sid) return <React.Fragment key={sid || i}>{separator}<Row>
         <input aria-label={`title for ${sid}`} value={renaming.title} maxLength={100} autoFocus
           onChange={(ev) => setRenaming({ sid, title: ev.target.value })}
           onKeyDown={(ev) => { if (ev.key === 'Enter') rename(); if (ev.key === 'Escape') setRenaming(null); }}
-          style={{ flex: 1, minWidth: 0, fontSize: 12, background: 'transparent', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 3, padding: '2px 5px' }} />
+          style={{ flex: 1, minWidth: 0, fontSize: 'var(--n-fs-label)', background: 'transparent', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 3, padding: '2px 5px' }} />
         <button className="tool-btn" disabled={!!busy || !renaming.title.trim()} aria-label={`save title for ${sid}`} onClick={rename}>
           {busy === sid ? 'saving…' : 'save'}
         </button>
@@ -547,18 +550,18 @@ export function SessionsPanel() {
       return <React.Fragment key={sid || i}>{separator}<Row>
         {/* H413: the session's title (its first words, then the local model's name); the id stays visible. */}
         {s?.title
-          ? <span style={{ fontSize: 12, color: 'var(--ink)' }} title={sid}>{s.title}
-              <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', marginLeft: 6 }}>{sid.slice(0, 8)}</span></span>
+          ? <span style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink)' }} title={sid}>{s.title}
+              <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginLeft: 6 }}>{sid.slice(0, 8)}</span></span>
           : <span style={{ ...mono, color: 'var(--accent-light)' }}>{sid}</span>}
         {pinned && <span data-testid="pinned-badge" title={`pinned ${s.pinned_at}`}
-          style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>pinned</span>}
+          style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>pinned</span>}
         {more > 0 && <span data-testid="lineage-badge"
           title={`${plural(more, 'other session')} in this conversation (earlier parts, other branches)`}
-          style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>+{more}</span>}
+          style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>+{more}</span>}
         {s?.earlier_part === true && <span data-testid="earlier-part-badge"
           title="an earlier part of this conversation, used again after it was continued — its later turns are only here"
-          style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>earlier part · in use</span>}
-        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{s?.turns ?? s?.count ?? ''}</span>
+          style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>earlier part · in use</span>}
+        <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{s?.turns ?? s?.count ?? ''}</span>
         {sid && <button className="tool-btn" disabled={!!busy} aria-label={`preview retained conversation ${sid}`}
           aria-expanded={preview?.sid === sid} onClick={() => void openPreview(sid)}>preview</button>}
         {sid && <button className="tool-btn" disabled={!!busy} aria-label={`rename ${sid}`}
@@ -585,35 +588,35 @@ export function SessionsPanel() {
       {preview?.sid === sid && <section aria-label={`retained conversation ${sid}`}
         style={{ padding: 8, borderBottom: '1px solid var(--panel-line)' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ ...mono }}>Retained conversation · {sid}</span>
+          <span style={{ ...noteS }}>Retained conversation · {sid}</span>
           <button className="tool-btn" aria-label={`close retained conversation ${sid}`} onClick={clearPreview}>close</button>
           <button className="tool-btn" disabled={preview.downloading} aria-label={`download retained conversation JSON ${sid}`}
             onClick={() => void downloadTranscript(sid)}>{preview.downloading ? 'saving…' : 'download JSON'}</button>
         </div>
-        <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+        <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           Current retained user and assistant text only; automatic secret redaction applied.
           Compacted archives, tool results, media and system messages are excluded. This is not a complete conversation archive.
         </p>
         {preview.loading && <div role="status">Loading retained conversation…</div>}
-        {preview.error && <div role="alert" style={{ color: 'var(--red)', fontSize: 11 }}>{preview.error}</div>}
-        {preview.note && <div role="status" style={{ fontSize: 11 }}>{preview.note}</div>}
+        {preview.error && <div role="alert" style={{ color: 'var(--red)', fontSize: 'var(--n-fs-meta)' }}>{preview.error}</div>}
+        {preview.note && <div role="status" style={{ fontSize: 'var(--n-fs-meta)' }}>{preview.note}</div>}
         {preview.data && <>
-          <div style={{ fontSize: 11 }}>{plural(preview.data.turn_count, 'retained text turn')} · redacted</div>
-          {preview.data.turn_count === 0 && <div style={{ fontSize: 11 }}>No retained text turns.</div>}
+          <div style={{ fontSize: 'var(--n-fs-meta)' }}>{plural(preview.data.turn_count, 'retained text turn')} · redacted</div>
+          {preview.data.turn_count === 0 && <div style={{ fontSize: 'var(--n-fs-meta)' }}>No retained text turns.</div>}
           <div style={{ maxHeight: 320, overflow: 'auto', overflowWrap: 'anywhere' }}>
             {preview.data.turns.map((turn, index) => <div key={index} style={{ paddingTop: 8 }}>
               <div style={{ ...mono, color: 'var(--ink-2)' }}>{turn.role}{turn.agent_id ? ` · ${turn.agent_id}` : ''}{turn.timestamp ? ` · ${turn.timestamp}` : ''}</div>
-              <div style={{ whiteSpace: 'pre-wrap', fontSize: 12 }}>{turn.content}</div>
+              <div style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--n-fs-label)' }}>{turn.content}</div>
             </div>)}
           </div>
         </>}
       </section>}
       </React.Fragment>;
     })}
-    {paginationUnavailable && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 5 }}>
+    {paginationUnavailable && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 5 }}>
       Showing the latest 20 sessions. Loading older sessions is unavailable on this account or hub.
     </div>}
-    {olderError && <div role="alert" style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>
+    {olderError && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 4 }}>
       Could not load older sessions · {olderError}
     </div>}
     {nextCursor && !paginationUnavailable && <div style={{ marginTop: 6 }}>
@@ -622,13 +625,13 @@ export function SessionsPanel() {
         {loadingOlder ? 'loading older sessions…' : olderError ? 'retry older sessions' : 'load older sessions'}
       </button>
     </div>}
-    {archived && confirming && <div role="note" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>
+    {archived && confirming && <div role="note" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
       A backup is written first; then the conversation, its checkpoints and its checklist are gone from the hub
       {confirmingMore > 0 ? ` — all ${confirmingMore + 1} sessions of it, earlier parts and other branches included, each with its own backup.` : '.'}</div>}
-    {error && <div role="alert" style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>{error}</div>}
-    {note && <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{note}</div>}
+    {error && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 4 }}>{error}</div>}
+    {note && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{note}</div>}
     {resumed && (resumed.recap
       ? <RecapView recap={resumed.recap} session={resumed.session} />
-      : <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>resumed {resumed.session}</div>)}
+      : <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>resumed {resumed.session}</div>)}
   </Card>;
 }

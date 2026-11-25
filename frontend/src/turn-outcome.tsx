@@ -130,7 +130,7 @@ export function TurnToolActivity({ activity, lang }: { activity?: TurnOutcome['t
       : `; proposed ${activity.proposed}, queued ${activity.queued}, failures ${activity.failures ?? 'unknown'}`
     : '';
   return <output aria-label={ro ? 'Activitate instrumente agent' : 'Agent tool activity'}
-    style={{ display: 'block', margin: '4px 0', color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
+    style={{ display: 'block', margin: '4px 0', color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>
     {ro ? 'Apeluri de instrumente înregistrate: ' : 'Agent tool calls recorded: '}{executed}{details}
   </output>;
 }
@@ -221,7 +221,7 @@ export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; 
   if (!outcome) return null;
   const recall = outcome.recall ? recallLines(outcome.recall) : [];
   return <section aria-label="Turn outcome" style={{ display: 'block', padding: '4px 8px',
-    color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 10,
+    color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)',
     width: '100%', maxWidth: '100%', minWidth: 0, minHeight: 0, flexShrink: 1, boxSizing: 'border-box',
     maxHeight: '35vh', overflowX: 'auto', overflowY: 'auto', overflowWrap: 'anywhere',
     lineHeight: 1.4 }}>
@@ -247,7 +247,7 @@ export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; 
     </output>}
     {outcome.cache_hit !== undefined && <output aria-label="Prompt cache hit"
       data-band={outcome.cache_hit >= 70 ? 'high' : outcome.cache_hit >= 40 ? 'medium' : 'low'}
-      style={{ display: 'block', color: outcome.cache_hit >= 70 ? 'var(--accent)' : outcome.cache_hit >= 40 ? 'var(--amber)' : 'var(--red, #ef4444)' }}>
+      style={{ display: 'block', color: outcome.cache_hit >= 70 ? 'var(--accent)' : outcome.cache_hit >= 40 ? 'var(--amber)' : 'var(--red)' }}>
       Cache hit since invalidation: {outcome.cache_hit.toFixed(1)}%
     </output>}
     {outcome.tps !== undefined && <output aria-label="Request output tokens per second" style={{ display: 'block' }}>
