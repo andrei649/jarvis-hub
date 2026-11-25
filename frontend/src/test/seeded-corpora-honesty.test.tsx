@@ -10,7 +10,7 @@
  *                        /api/arena/leaderboard returned nothing
  *   OBSERVE.traces     — seed rows (tr-8f3a "what does my day look like?")
  *                        kept when /api/traces returned nothing
- *   mark('OBSERVE')    — fired on Signal Layer health alone, stamping LIVE over
+ *   mark('OBSERVE')    — fired on a neighbour's health alone, stamping LIVE over
  *                        a panel whose every Jarvis source could be pure seed
  *   ADMIN.keys         — "ANTHROPIC_API_KEY sk-ant-••••4f2a valid rotated 14d
  *                        ago" — never fetched, always fiction
@@ -169,7 +169,6 @@ vi.mock('../api/actions', () => ({
   engageEstop: vi.fn(),
   resumeEstop: vi.fn(),
 }));
-vi.mock('../world-intelligence', () => ({ WorldIntelligencePanel: () => null }));
 vi.mock('../gap', () => ({ RoomsPanel: () => null }));
 
 import { ObserveMode } from '../modes2';

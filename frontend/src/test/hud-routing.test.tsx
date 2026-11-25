@@ -1,5 +1,5 @@
 /* HUD URLs (PHASE_B_PLAN.md §3.4, §8.3): route validity is unchanged; titles come from the page
-   registry (`<Page> · <Area> · Nerva`, the `· Console ·` titles are gone); World and the Console
+   registry (`<Page> · <Area> · Nerva`, the `· Console ·` titles are gone); mode pages and the Console
    are ordinary pages, so Back and Forward walk plain history, and Glance is the one overlay whose
    close returns to where the owner was. */
 import React from 'react';
@@ -40,19 +40,19 @@ describe('HUD URLs', () => {
   it('keeps console index distinct from the selected panel', () => {
     expect(parseHudRoute('/v2/console')).toMatchObject({ valid: true, mode: 'console', panel: null, title: 'All pages · Nerva' });
   });
-  it('supports root aliases and legacy world links', () => {
+  it('supports root aliases and sends the removed World links Home', () => {
     expect(parseHudRoute('/v2/')).toMatchObject({ mode: 'cockpit', valid: true });
-    expect(parseHudRoute('/v2', '?world=1')).toMatchObject({ mode: 'world', valid: true });
-    expect(parseHudRoute('/v2/', '', '#world')).toMatchObject({ mode: 'world', valid: true });
+    expect(parseHudRoute('/v2', '?world=1')).toMatchObject({ mode: 'cockpit', valid: true });
+    expect(parseHudRoute('/v2/', '', '#world')).toMatchObject({ mode: 'cockpit', valid: true });
     expect(parseHudRoute('/v2/chat', '?world=1', '#world').mode).toBe('chat');
+    expect(parseHudRoute('/v2/world')).toMatchObject({ valid: false, mode: 'cockpit', path: '/v2/cockpit' });
   });
   it('keeps floating chat truthful even with a different bookmark', () => {
     expect(parseHudRoute('/v2/', '?desktop=floating', '', true).mode).toBe('chat');
     expect(parseHudRoute('/v2/memory', '?desktop=floating', '', true)).toMatchObject({ mode: 'chat', valid: false });
   });
-  it('preserves unrelated query and hash while clearing old World toggles', () => {
+  it('preserves unrelated query and hash', () => {
     expect(routeHref('/v2/chat', 'http://localhost/v2/?demo=1&desktop=floating&keep=ok#anchor')).toBe('/v2/chat?demo=1&desktop=floating&keep=ok#anchor');
-    expect(routeHref('/v2/chat', 'http://localhost/v2/?world=1&demo=1#world')).toBe('/v2/chat?demo=1');
     expect(routeHref('/v2/chat', 'http://localhost/v2/console/pending-skills#skill=print-proof')).toBe('/v2/chat');
   });
   it('replaces root/unknown routes, updates titles and reports unknown URLs', async () => {
@@ -112,7 +112,7 @@ describe('overlay entry return destinations', () => {
     expect(location.hash).toBe('#anchor');
     expect(history.state.foreign).toEqual({ selected: 42 });
   });
-  it.each(['/v2/world', '/v2/console/decision-inbox'])('makes %s an ordinary page: no return record, and Back restores the invoking page and its state across remount', async path => {
+  it.each(['/v2/observe', '/v2/console/decision-inbox'])('makes %s an ordinary page: no return record, and Back restores the invoking page and its state across remount', async path => {
     history.replaceState({ foreign: { selected: 42 } }, '', '/v2/chat?keep=1#anchor');
     const first = renderHook(() => useHudRoute());
     act(() => navigateHud(path));
@@ -129,7 +129,7 @@ describe('overlay entry return destinations', () => {
     expect(location.hash).toBe('#anchor');
     expect(history.state.foreign).toEqual({ selected: 42 });
   });
-  it.each(['/v2/glance', '/v2/world', '/v2/console/decision-inbox'])('closes a direct bookmark at %s to cockpit', path => {
+  it.each(['/v2/glance', '/v2/observe', '/v2/console/decision-inbox'])('closes a direct bookmark at %s to cockpit', path => {
     history.replaceState({ foreign: 'untouched' }, '', path + '?demo=1');
     renderHook(() => useHudRoute());
     act(() => closeHudOverlay());
@@ -139,10 +139,10 @@ describe('overlay entry return destinations', () => {
   it('returns Glance to the page it was opened from after moving between pages, which Back walks as plain history', async () => {
     history.replaceState(null, '', '/v2/chat');
     const { result } = renderHook(() => useHudRoute());
-    act(() => navigateHud('/v2/world'));
+    act(() => navigateHud('/v2/observe'));
     act(() => navigateHud('/v2/console'));
     act(() => navigateHud('/v2/console/decision-inbox'));
-    // moving between pages (World, All pages, a panel) writes no return record
+    // moving between pages (Observe, All pages, a panel) writes no return record
     expect(history.state?.__nervaHudRoute).toBeUndefined();
     act(() => navigateHud('/v2/glance'));
     // Glance again from Glance is the same entry and keeps where it returns to
@@ -157,7 +157,7 @@ describe('overlay entry return destinations', () => {
     await waitFor(() => expect(location.pathname).toBe('/v2/console'));
     expect(result.current.route).toMatchObject({ mode: 'console', panel: null });
     act(() => history.back());
-    await waitFor(() => expect(result.current.route.mode).toBe('world'));
+    await waitFor(() => expect(result.current.route.mode).toBe('observe'));
     act(() => history.back());
     await waitFor(() => expect(result.current.route.mode).toBe('chat'));
     // Forward to Glance again, and its close returns to the page it was opened from

@@ -1,6 +1,6 @@
 # Nerva — Architecture Reference
 
-> WorldView was retired on 2026-10-27 and is no longer installed, started or exposed by Nerva. Any WorldView stack or bridge references below are historical; Signal Layer remains independent.
+> WorldView was retired on 2026-10-27 and is no longer installed, started or exposed by Nerva. Any WorldView stack or bridge references below are historical. Signal Layer and the Argus agent were removed on 2026-11-25.
 
 > For assistant conventions see **AGENTS.md** | architecture overview: **NERVA.md** | tasks: **BACKLOG.md**
 
@@ -9,7 +9,7 @@
 ## 1. TL;DR / Orientation
 
 - Local-first multi-agent AI orchestration. Python 3.12 + FastAPI + LM Studio (port 1234).
-- 17 active agents (4 tiers, incl. Argus + Howard), 14 bench agents (dormant, promotable at runtime).
+- 16 active agents (4 tiers, incl. Howard), 14 bench agents (dormant, promotable at runtime).
 - Single entry point for web: `serve.py` → `agents/web.py` (FastAPI `app`); uvicorn binds on port 8080.
 - CLI REPL entry point: `agents/run.py` → `Orchestrator.handle_input`.
 - Everything routes through `agents/core/orchestrator.py:Orchestrator`.
@@ -864,7 +864,7 @@ never pull a strict-local agent to the cloud) → **(2)** `llm_policy` from the 
 | Policy | Agents |
 |--------|--------|
 | `local` | `frigga`, `ultron`, `howard` — never leave the machine; **fail closed** if local backend is down (no cloud fallback, ever) |
-| `claude` | `vision`, `steve`, `argus` (argus via registry) — Claude Sonnet via Anthropic API |
+| `claude` | `vision`, `steve` — Claude Sonnet via Anthropic API |
 | `cloud` | `athena` — Gemini flash via Gemini API |
 | `auto` | All others — local first, escalate on size/complexity |
 
@@ -1321,6 +1321,5 @@ docs/
 | `docs/business/PILOT_GUIDE.md` | **Nerva Workspace** pilot guide (RO) — install, model server, Caddy, SSO, limits, security posture, backup, upgrade, CLI recovery, troubleshooting |
 | `docs/VOICE.md` | Voice subsystem — browser HUD loop + server pipeline, endpoints, what's real vs scaffolded |
 | `docs/COGNITION.md` | Cognition subsystem (planned ORIZONT 21) — living memory + personality **schematic & diagnostic map** (brain analogies, tiers, troubleshooting playbook) |
-| `worldview/README.md` | **WorldView (4D OSINT)** — separate Vite + CesiumJS + Fastify stack (ports 3000/4000), not sharing the Python runtime. Bridged into JARVIS by the **Argus** agent (`agents/argus/`, geoint router intent → read-only governed plugin). Launched by `START.bat`/`start.sh`. |
 | `docs/contracts/worldview-bridge.md` | **The hub↔WorldView integration contract** (v1) — the only coupling between the two stacks: 6 read-only GET endpoints, enforced by contract tests on both sides (`tests/test_worldview_bridge_contract.py` · `worldview/backend-api/test/bridgeContract.test.ts`) |
 | `docs/2026-06-08-future-developments-report.md` | Forward roadmap — remaining v1.0 gate, WorldView follow-ups (#169/#170), audit-debt hardening, post-1.0 horizons (O20 Hermes, O21 Cognition), recommended sequencing |

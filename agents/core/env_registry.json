@@ -2568,45 +2568,6 @@
    "required_when": "",
    "doc": ""
   },
-  "NERVA_SIGNAL_GOVERNANCE": {
-   "aliases": [
-    "JARVIS_SIGNAL_GOVERNANCE"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SIGNAL_LAYER": {
-   "aliases": [
-    "JARVIS_SIGNAL_LAYER"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SIGNAL_LAYER_MODE": {
-   "aliases": [
-    "JARVIS_SIGNAL_LAYER_MODE"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
   "NERVA_SKILL_ENVIRONMENTS": {
    "aliases": [
     "JARVIS_SKILL_ENVIRONMENTS"

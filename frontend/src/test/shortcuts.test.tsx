@@ -2,7 +2,7 @@
 /* H209 — one registry for every HUD shortcut; a panel (mod+/) lists, searches and rebinds
    them; no chord can reach an approval or a decision. A page load picks its registry from the
    frame; since the cutover that is the Ledger's (PHASE_B_PLAN.md §3.6): the nine areas on 1–9 in
-   masthead order, 0 the conversation, w World signals, the backtick the panels, a Glance. */
+   masthead order, 0 the conversation, the backtick the panels, a Glance. */
 import { describe, it, expect, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
@@ -23,7 +23,7 @@ describe('the registry — H209', () => {
     expect(defaults).toEqual({
       'mode.cockpit': '1', 'mode.work': '2', 'mode.agents': '3', 'mode.memory': '4', 'mode.trust': '5',
       'mode.build': '6', 'mode.interop': '7', 'mode.observe': '8', 'mode.admin': '9', 'mode.chat': '0',
-      'view.world': 'w', 'view.console': '`', 'view.ambient': 'a', 'view.cinema': 'm',
+      'view.console': '`', 'view.ambient': 'a', 'view.cinema': 'm',
       'cinema.orb': 'o', 'cinema.mesh': 'n', 'cinema.brain': 'b',
       'composer.focus': '/', 'session.palette': 'mod+k', 'session.shortcuts': 'mod+/',
     });
@@ -131,8 +131,8 @@ describe('overrides', () => {
   });
 
   it('name the chord an action answers now, for its hint', () => {
-    expect(chordOf({}, 'view.world')).toBe('w');
-    expect(chordOf({ 'view.world': 'y' }, 'view.world')).toBe('y');
+    expect(chordOf({}, 'view.ambient')).toBe('a');
+    expect(chordOf({ 'view.ambient': 'y' }, 'view.ambient')).toBe('y');
     expect(chordOf({}, 'no.such.action')).toBe('');
   });
 
@@ -185,7 +185,7 @@ describe('dispatch', () => {
   it('answers Shift+letter with the bare letter unless shift+letter is bound (F9)', () => {
     const list = bindings({});
     expect(matchAction(ev('O', { shiftKey: true }), list, 'cinema').id).toBe('cinema.orb');
-    expect(matchAction(ev('W', { shiftKey: true }), list, 'global').id).toBe('view.world');
+    expect(matchAction(ev('W', { shiftKey: true }), list, 'global')).toBeNull();
     expect(matchAction(ev('A', { shiftKey: true }), list, 'global').id).toBe('view.ambient');
     expect(matchAction(ev('K', { shiftKey: true, ctrlKey: true }), list, 'global')).toBeNull();
     expect(matchAction(ev('A', { shiftKey: true }), bindings({ 'view.cinema': 'shift+a' }), 'global').id).toBe('view.cinema');

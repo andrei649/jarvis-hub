@@ -425,12 +425,16 @@ def test_select_backend_strict_local_never_cloud(monkeypatch):
 
 def test_registry_llm_policy_is_honored(monkeypatch):
     """agents.yaml is the canonical registry — its llm_policy must drive routing
-    (argus is registered `claude` but is absent from the in-code CLAUDE_AGENTS set)."""
+    (here veronica is registered `claude` but is absent from the in-code CLAUDE_AGENTS set)."""
+    import core.llm.hybrid_router as hr
+
+    assert "veronica" not in hr.CLAUDE_AGENTS
+    monkeypatch.setattr(hr, "_registry_policies", lambda: {"veronica": "claude"})
     router = HybridRouter(anthropic_api_key="test")
-    assert router.get_agent_policy("argus") == "claude"
+    assert router.get_agent_policy("veronica") == "claude"
     router._claude_available = True
     router._claude_backend = FakeBackend()
-    backend, model, route = router.select_backend("argus", "hello")
+    backend, model, route = router.select_backend("veronica", "hello")
     assert route == "claude"
 
 

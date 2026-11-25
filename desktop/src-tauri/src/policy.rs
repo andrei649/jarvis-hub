@@ -75,7 +75,7 @@ mod tests {
         for path in [
             "/v2/chat",
             "/v2/memory",
-            "/v2/world",
+            "/v2/observe",
             "/v2/console/decision-inbox",
         ] {
             let url = format!("http://127.0.0.1:8080{path}?demo=1#anchor")

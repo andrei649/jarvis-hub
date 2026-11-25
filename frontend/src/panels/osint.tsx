@@ -1,5 +1,4 @@
-/* OSINT — the P2 investigator pack (agents/core/routers/osint.py) plus the Signal Layer's
-   per-domain brief (agents/core/routers/signals.py:105). All three routes shipped
+/* OSINT — the P2 investigator pack (agents/core/routers/osint.py). Both routes shipped
    user-reachable with no client that ever called them.
 
    What this panel is NOT allowed to imply, checked against the handlers:
@@ -23,33 +22,20 @@
       (_coerce, correlate.py:99) — pydantic has no min_length, so there is no 422 and no
       error. The only trace is counts.evidence < rows sent, which is why this panel sends
       only complete rows and still compares the two numbers.
-   6. /api/signals/brief/{domain} answers 200 for unavailability, never 503, and has THREE
-      distinct empty states: available:false + reason (the sidecar said nothing),
-      known_domain:false ("unknown domain"), and count:0 ("no signals"). In the unavailable
-      branch count:0 and known_domain:null are placeholders, not measurements — rendering
-      that as "0 signals" would be the exact lie this panel exists to avoid.
-   7. Every `headline` on screen is the backend's own string, printed verbatim. There is no
+   6. Every `headline` on screen is the backend's own string, printed verbatim. There is no
       client-composed headline and no fallback prose.
-   8. There is NO route to start, enable or configure the Signal Layer sidecar, so no control
-      for it is offered. All three routes are user-tier (user_guard) — nothing here is admin.
+   7. Both routes are user-tier (user_guard) — nothing here is admin.
 
    apiPost throws on 4xx and carries the parsed body, so both POST buttons pass onErr and the
    refusal is rendered from the backend's own body (422 detail array, 401/403 detail string,
    429 error, 500 message) — never collapsed into one invented sentence, and never left
-   sitting beside a stale success drawer. apiGet throws WITHOUT a body, so the GET keeps
-   top/limit inside their declared ranges rather than explaining an unreadable 422. */
+   sitting beside a stale success drawer. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, note, asLive, Card, State, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
+import { arr, mono, note, asLive, Card, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
 import { LABEL } from '../theme/type';
 
 const CORRELATE_PATH = '/api/osint/correlate';
 const BRIEF_PATH = '/api/osint/brief';
-const SIGNAL_BRIEF_PREFIX = '/api/signals/brief/';
-
-/* Mirrors signal_routing.DOMAINS (signal_routing.py:19) purely as a convenience picker —
-   the response's own `known_domain` is the authority, which is why free text is allowed. */
-const ROUTER_DOMAINS = ['conflict', 'cyber', 'economy', 'aerospace', 'maritime', 'energy', 'health'];
-
 /* pydantic max_length per EvidenceItem field (osint.py:24-30). Enforced on the inputs so a
    422 is designed out instead of being explained after the fact. */
 const CAP = { source: 64, kind: 32, value: 512, observed_at: 40, url: 1024, detail: 2000 };
@@ -131,26 +117,6 @@ export function OsintPanel() {
   const findings = out ? (out.view === 'brief' ? arr(d, 'top') : arr(d, 'findings')) : [];
   const dropped = out && counts && Number.isFinite(Number(counts.evidence))
     ? out.sent - Number(counts.evidence) : 0;
-
-  /* ── Card B state: the Signal Layer per-domain brief ────────────────────── */
-  const [draft, setDraft] = useState('');
-  const [domain, setDomain] = useState('');      // committed; '' = not asked yet
-  const [sTop, setSTop] = useState(5);
-  const [sLimit, setSLimit] = useState(20);
-
-  const sigPath = SIGNAL_BRIEF_PREFIX + encodeURIComponent(domain) + '?top=' + sTop + '&limit=' + sLimit;
-  const sig = useApi(sigPath, domain !== '');
-  const s = domain !== '' ? sig.d : null;
-  const sAvailable = !!(s && s.available === true);
-  const sTopList = sAvailable ? arr(s, 'top') : [];
-  const freshness = sAvailable && s.freshness && typeof s.freshness === 'object' ? s.freshness : null;
-
-  const commitDomain = () => {
-    const v = draft.trim();
-    if (!v) return;
-    if (v === domain) sig.reload(); else setDomain(v);
-  };
-  const pickDomain = (v) => { setDraft(v); if (v === domain) sig.reload(); else setDomain(v); };
 
   return (
     <>
@@ -335,124 +301,6 @@ export function OsintPanel() {
           and nothing here is queued, escalated or written back. Live collection (SpiderFoot, news feeds) is owner-gated wiring and is not reachable from this panel. The brief view calls
           the correlator internally, so its counts are the same numbers over the same drawer — only the
           headline and the top-N truncation are new.
-        </div>
-      </Card>
-
-      <Card
-        title="SIGNAL LAYER · DOMAIN BRIEF"
-        live={asLive(s, s && s.available === true)}
-        sub={domain ? domain : 'no domain picked'}
-        onReload={domain ? sig.reload : undefined}
-      >
-        <Row>
-          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>domain</span>
-          <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            {ROUTER_DOMAINS.map((dm) => (
-              <button
-                key={dm} className="tool-btn"
-                style={{ fontSize: 'var(--n-fs-meta)', padding: '1px 5px', color: dm === domain ? 'var(--accent-light)' : undefined }}
-                onClick={() => pickDomain(dm)}
-              >{dm}</button>
-            ))}
-          </span>
-        </Row>
-        <Row>
-          <input
-            style={{ ...inpS, width: 150 }} value={draft} maxLength={64}
-            placeholder="or type a domain" aria-label="domain"
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitDomain}
-            onKeyDown={(e) => { if (e.key === 'Enter') commitDomain(); }}
-          />
-          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>top</span>
-          <input
-            type="number" min={1} max={50} value={sTop} aria-label="signal top"
-            style={{ ...inpS, width: 58 }}
-            onChange={(e) => setSTop(clampInt(e.target.value, 1, 50, 5))}
-          />
-          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>limit</span>
-          <input
-            type="number" min={1} max={200} value={sLimit} aria-label="signal limit"
-            style={{ ...inpS, width: 58 }}
-            onChange={(e) => setSLimit(clampInt(e.target.value, 1, 200, 20))}
-          />
-        </Row>
-
-        {domain === '' ? (
-          <div style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)', marginTop: 6 }}>
-            pick a domain — nothing is requested until you do
-          </div>
-        ) : sig.e ? (
-          /* apiGet throws without a body: the status line is everything this panel can know. */
-          <State e={sig.e} loading={false} n={undefined} />
-        ) : !s ? (
-          <State e={null} loading={sig.loading} n={undefined} />
-        ) : (
-          <>
-            {s.available === false ? (
-              <>
-                <div style={{ ...note, color: 'var(--amber)', marginTop: 6 }}>
-                  {typeof s.headline === 'string' ? s.headline : 'available: false'} · reason: {String(s.reason)}
-                </div>
-                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
-                  the sidecar returned nothing — this is NOT "zero signals". In this branch the route sends
-                  count 0 and known_domain null as placeholders, so neither is shown as a measurement.
-                </div>
-                <Row>
-                  <span style={{ ...mono, color: 'var(--ink-2)' }}>count —</span>
-                  <span style={{ ...mono, color: 'var(--ink-2)' }}>known_domain —</span>
-                </Row>
-              </>
-            ) : s.known_domain === false ? (
-              <>
-                <div style={{ ...note, color: 'var(--amber)', marginTop: 6 }}>
-                  {typeof s.headline === 'string' ? s.headline : ''}
-                </div>
-                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
-                  the router has no keyword rules for "{s.domain}" (known_domain false), so no signal can
-                  route into it. The sidecar answered — this is not an outage.
-                </div>
-              </>
-            ) : (
-              <>
-                <div style={{ ...note, color: 'var(--ink)', margin: '6px 0' }}>
-                  {typeof s.headline === 'string' ? s.headline : ''}
-                </div>
-                <Row>
-                  <span style={{ ...note, color: 'var(--ink-2)' }}>
-                    count {num(s.count)} routed into {String(s.domain)}
-                  </span>
-                </Row>
-                <State e={null} loading={false} n={sTopList.length} />
-                {sTopList.map((g, i) => (
-                  <Row key={i}>
-                    <span
-                      style={{ ...note, color: 'var(--accent-light)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                    >{(g && g.title) || '—'}</span>
-                    {g && g.severity != null && <Tag>sev {String(g.severity)}</Tag>}
-                    {g && g.summary
-                      ? <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.summary}</span>
-                      : null}
-                  </Row>
-                ))}
-                {Number(s.count) > sTopList.length && (
-                  <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
-                    showing top {sTopList.length} of {num(s.count)} (severity-ranked)
-                  </div>
-                )}
-                {freshness && Object.keys(freshness).length > 0 && <Json v={freshness} />}
-              </>
-            )}
-          </>
-        )}
-
-        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
-          User-tier GET, read-only. Signals come from the local Signal Layer sidecar
-          (SIGNAL_LAYER_API_URL, default http://localhost:8787); with it down this route still answers 200
-          with available:false and the reason above is the sidecar's or the router's own string, printed
-          verbatim. There is no route to start, enable or configure the sidecar, so this panel offers no
-          such control. The chips mirror signal_routing.DOMAINS — the response's known_domain is the
-          authority, which is why any domain can be typed.
         </div>
       </Card>
     </>

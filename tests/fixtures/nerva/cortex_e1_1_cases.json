@@ -84,9 +84,9 @@
     "privacy_class": "synthetic_public"
   },
   {
-    "case_id": "satellite-overflight",
-    "text": "satellite overflight report",
-    "expected_primary": "argus",
+    "case_id": "workout-plan",
+    "text": "fitness workout plan",
+    "expected_primary": "hercules",
     "expected_source": "keyword_match",
     "privacy_class": "synthetic_public"
   },

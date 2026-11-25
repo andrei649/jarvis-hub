@@ -1,0 +1,1 @@
+import"./agents-policy-CPIuhi5c.js";function e(e){let t=[],n=new Set;for(let r of e){if(!r||typeof r!=`object`)continue;let e=r,i=typeof e.id==`string`?e.id.trim().toLowerCase():``;i&&!n.has(i)&&(n.add(i),t.push({id:i,name:typeof e.name==`string`&&e.name.trim()?e.name.trim():i,role:typeof e.role==`string`&&e.role.trim()?e.role.trim():null}))}return t}export{e as t};

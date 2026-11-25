@@ -259,7 +259,7 @@ export function honestObserveSeed() {
 }
 
 /* The OBSERVE live badge means "Jarvis observability data arrived this cycle".
- * Signal Layer health says nothing about whether /api/quality or /api/traces
+ * A neighbour's health says nothing about whether /api/quality or /api/traces
  * ever answered, so it must not stamp the badge over a still-seeded panel. */
 export function observeEvidence(bench: any, quality: any, resil: any, arenaRows: any, traceRows: any) {
   return !!(
@@ -429,8 +429,7 @@ export function useLiveModes(): LiveModes {
       // OBSERVE — compose from several Jarvis endpoints. Seed traces/arena/
       // by_agent are stripped first: an empty leaderboard or a silent
       // /api/traces must read as "no data", not as the demo corpus. The live
-      // badge needs Jarvis evidence (observeEvidence), not neighbour health —
-      // the World Intelligence panel talks to Signal Layer on its own.
+      // badge needs Jarvis evidence (observeEvidence), not neighbour health.
       set('OBSERVE', honestObserveSeed());
       await Promise.all([
         apiGet('/bench/stats').catch(() => null),

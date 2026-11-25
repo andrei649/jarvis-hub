@@ -56,11 +56,6 @@ migrations apply automatically. Full steps + version notes: [UPGRADE.md](UPGRADE
 (erases memory, transcripts, vectors, and the graph at rest). Retention TTLs can prune
 automatically.
 
-### What are WorldView and the Signal Layer?
-**Optional** companion stacks: WorldView is the 4D OSINT globe (needs Node + Docker); the
-Signal Layer is a situational-awareness API (replay mode by default). Both are opt-out
-(`JARVIS_WORLDVIEW=0`, `JARVIS_SIGNAL_LAYER=0`) and Jarvis runs fine without them.
-
 ### Something's wrong — where do I look?
 Run `nerva doctor`: every red row names its reason and links the section of
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) with the fix. That guide has the fixed recovery

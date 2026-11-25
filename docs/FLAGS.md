@@ -2099,14 +2099,13 @@ the compose file's own line.**
 | `deploy/windows/install-service.ps1` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_SHUTDOWN_TIMEOUT`, `JARVIS_HOME` (script parameters) |
 
 `start.sh` and `START.bat` only *default* a variable when it is not set
-(`JARVIS_HUD=v2`, `JARVIS_SIGNAL_LAYER_MODE=replay`), and they look at both spellings
-first, so a `NERVA_HUD` or `NERVA_SIGNAL_LAYER_MODE` of yours is never turned into a
+(`JARVIS_HUD=v2`), and they look at both spellings
+first, so a `NERVA_HUD` of yours is never turned into a
 conflict. Two pins were removed because they only restated the code's default
 (`JARVIS_HUD=v2` in the image and the quickstart compose file, `JARVIS_LOG_LEVEL=info`
 in the hub unit): those two can be set under either spelling everywhere.
 
-Names that stay `JARVIS_`-only because nothing in the hub reads them through the alias:
-`JARVIS_WORLDVIEW` (a comment in the systemd env template; no code reads it) and the
+Names that stay `JARVIS_`-only because nothing in the hub reads them through the alias: the
 `$JARVIS_ADMIN_TOKEN` / `$JARVIS_USER_TOKEN` shell variables in the generated API sweep
 snippets (`scripts/gen_api_sweep.py`, text for a human to paste).
 

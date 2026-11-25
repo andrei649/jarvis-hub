@@ -39,8 +39,7 @@
   (e.g. `{situation:'SITUATION', allnominal:'ALL NOMINAL'}`).
 - `Reactor`/icons draw in `currentColor` and size from their container — give
   the wrapper a color and explicit width/height spans.
-- App-level exports excluded from sync: App, WorldIntelligenceMode (WorldAwareApp
-  until its deletion; componentSrcMap nulls) + src/main.tsx excluded from the synth entry
+- App-level exports excluded from sync: App (componentSrcMap nulls) + src/main.tsx excluded from the synth entry
   (libOverrides fork — Vite bootstrap side effect).
 
 ## Wave-1 learnings (folded 2026-07-06)
@@ -75,14 +74,8 @@
   `.obs-grid`/`.admin-grid` collapse to one column and `.comms-body` narrows below
   1300px viewport WIDTH (media queries key on the viewport, zoom doesn't help).
   Fixed via `cfg.overrides.<Mode>.viewport = "1440x810"` for the 8 full modes +
-  CommsMode + WorldIntelligencePanel. Some previews also carry a harmless
+  CommsMode. Some previews also carry a harmless
   ContextColumn-precedent scoped re-assert from pre-override iterations.
-- **Roster correction**: WorldIntelligencePanel lives in `src/world-intelligence.tsx`
-  (modes_world.tsx holds only the excluded app-level WorldIntelligenceMode).
-- **Cross-origin fetch shim**: the Signal Layer client hits absolute
-  `http://localhost:8787` URLs — pathname matching catches them; UNstubbed
-  cross-origin paths fail with real network errors, which correctly drives the
-  designed PARTIAL (Promise.allSettled) and layer-down states.
 - Mode staging numbers: definite-size flex stages ~1240w, zoom .58–.66
   (ChatMode 880w @ .90); stage to content+~10%; `panel-body` clips silently —
   size stages by counting seed rows. Story-keyed shim also covers mode-internal
@@ -91,9 +84,7 @@
   delta only (no `.pmode.on` rule); V2.COMMS seed threads lack `replyable`/
   `thread_id` (reply composer unreachable in demo); TodayPanel timestamp wraps
   (no nowrap); SafeCommsDraftPanel leaves its action select interactive under
-  the offline degrade row; WorldIntelligencePanel shows green `freshness: ok`
-  when the layer is fully down + renders "high high" (severity+confidence
-  unlabelled); SandboxPanel has no <State> row (silent fail-open when offline).
+  the offline degrade row; SandboxPanel has no <State> row (silent fail-open when offline).
 
 ## Known render warns (triaged legitimate — re-syncs: not new)
 

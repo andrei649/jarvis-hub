@@ -2,7 +2,7 @@ name: CI
 
 # Development-speed posture (2026-08-29, owner decision): pull requests run a
 # fast advisory lane — ruff + the pytest suite on ubuntu (~3 min). The heavy
-# lanes (Windows matrix, sandbox containment, Signal Layer smoke, HUD JSDOM
+# lanes (Windows matrix, sandbox containment, HUD JSDOM
 # suite, OpenAPI typegen drift) run post-merge on push to main, so they still
 # catch regressions without sitting on the PR critical path.
 #
@@ -144,26 +144,6 @@ jobs:
         env:
           RUN_SANDBOX_ISOLATION: "1"
           JARVIS_TESTING: "1"
-
-  signal-layer-smoke:
-    # Post-merge only. Proves the provider-neutral Signal Layer can run its
-    # deterministic replay path without WorldMonitor, Docker, API keys, or
-    # network access. Observed under a minute; 15 is the bound.
-    timeout-minutes: 15
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ["ubuntu-latest", "windows-latest"]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
-        with:
-          node-version: "22"
-      - name: Smoke test Signal Layer replay mode
-        run: npm test
-        working-directory: services/signal-layer
 
   frontend:
     # Post-merge only. HUD (React-via-globals) unit tests — runs the real

@@ -1,10 +1,10 @@
 // @ts-nocheck
 /* The inline HUD findings that all lived inside shared files — DRA-08's governed-tools
    checkbox, DRA-23's network headline, DRA-52's refusal text, DRA-47's tile label, the
-   wall's "no live decision feed", and the three registry agents the demo corpus never had.
+   wall's "no live decision feed", and the registry agent the demo corpus never had.
    (A seventh, the fixed WORLD button sitting on top of the mode rail, went with both: the
-   button and the rail were deleted with the classic shell, and World is a page of Observe —
-   PHASE_B_PLAN.md §8.2 row 16.)
+   button and the rail were deleted with the classic shell — PHASE_B_PLAN.md §8.2 row 16 —
+   and the World page itself was removed on 2026-11-25.)
 
    Each one is a place the HUD said something it could not back. They are tested together
    because they were fixed together, and because the shape of the mistake is the same in
@@ -235,12 +235,12 @@ describe('the briefing wall stops claiming there is no decision feed', () => {
   });
 });
 
-/* ── the two registry agents the demo corpus never had ─ ──────────────────── */
+/* ── the registry agent the demo corpus never had ─ ──────────────────── */
 
 describe('the demo roster covers the whole registry', () => {
-  const REGISTRY_ONLY = ['argus', 'howard'];
+  const REGISTRY_ONLY = ['howard'];
 
-  it('gives argus and howard a roster row and a dossier', () => {
+  it('gives howard a roster row and a dossier', () => {
     for (const id of REGISTRY_ONLY) {
       const row = V2.AGENTS.find((a) => a.id === id);
       expect(row, `${id} is active in agents.yaml and must be in the demo roster`).toBeTruthy();
@@ -256,8 +256,6 @@ describe('the demo roster covers the whole registry', () => {
   it('copies their registry facts rather than inventing them', () => {
     // Every field below is in agents/_system/agents.yaml. If one is edited here without
     // the registry agreeing, this is the test that notices.
-    expect(V2.DOSSIER.argus.channel).toBe('web-dashboard');
-    expect(V2.DOSSIER.argus.plugins).toEqual(['signal-layer', 'cloud-llm']);
     expect(V2.DOSSIER.howard.heartbeat).toBe('no');
     expect(V2.DOSSIER.howard.plugins).toEqual([]);
   });

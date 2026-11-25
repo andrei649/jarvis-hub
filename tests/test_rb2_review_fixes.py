@@ -211,23 +211,6 @@ def test_the_launcher_scripts_never_turn_a_new_spelling_into_a_conflict(tmp_path
     assert run({}) == "HUD=v2 NEW=unset PORT=8080"
     assert run({"NERVA_HUD": "v1", "NERVA_PORT": "9001"}) == "HUD=unset NEW=v1 PORT=9001"
     assert run({"JARVIS_HUD": "v1", "JARVIS_PORT": "9002"}) == "HUD=v1 NEW=unset PORT=9002"
-    signal = [line for line in (ROOT / "start.sh").read_text(encoding="utf-8").splitlines()
-              if "JARVIS_SIGNAL_LAYER" in line and not line.lstrip().startswith(("#", "echo"))]
-    assert all("NERVA_SIGNAL_LAYER" in line for line in signal) and len(signal) == 2
-    config = subprocess.run(
-        ["node", "--input-type=module", "-e",
-         "import {loadConfig} from './services/signal-layer/src/config.mjs';"
-         "console.log([loadConfig({NERVA_SIGNAL_LAYER_MODE:'live'}).mode,"
-         "loadConfig({JARVIS_SIGNAL_LAYER_MODE:'live'}).mode, loadConfig({}).mode].join(','))"],
-        cwd=ROOT, capture_output=True, text=True, timeout=60) if _has("node") else None
-    if config is not None:
-        assert config.stdout.strip() == "live,live,replay", config.stderr
-
-
-def _has(program: str) -> bool:
-    import shutil
-
-    return shutil.which(program) is not None
 
 
 def test_the_supervisor_stops_on_a_refused_configuration_instead_of_respawning(tmp_path):

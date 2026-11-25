@@ -1,6 +1,6 @@
 // @ts-nocheck
 /* WORKFLOW TRACES panel — GET /api/workflows/traces and POST /api/workflows/hierarchical
-   (both user-tier). fetch is mocked, like src/panels/signals-governance.test.tsx.
+   (both user-tier). fetch is mocked, like src/panels/osint.test.tsx.
 
    The assertions that matter here are the ones that would catch a shape-not-substance
    panel:

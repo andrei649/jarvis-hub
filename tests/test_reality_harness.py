@@ -49,10 +49,10 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     assert len(default_skills | optional_sources) == 12
     # Plugins: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4), the three
     # default-off cloud video providers (G19) and the SMS channel (G16) joined the registry.
-    assert sum(record.kind == "plugin" for record in records.values()) == 53  # + room-peers (H658); - camera-frigate (removed 2026-11-25)
+    assert sum(record.kind == "plugin" for record in records.values()) == 52  # + room-peers (H658); - camera-frigate, - signal-layer (removed 2026-11-25)
     # H086 browser broker and H214/H238/H590 pets add construction-status probes.
     assert sum(record.kind == "component" for record in records.values()) == 26
-    assert len(cases) == len(records) == 91 - len(optional_sources) == 84
+    assert len(cases) == len(records) == 90 - len(optional_sources) == 83
     assert results["component:browser_broker"] is True
     assert results["component:pets"] is True
     assert results["plugin:a2a"] is True
@@ -175,7 +175,7 @@ async def test_seeded_cases_prove_rails_and_promote():
     states = {c["id"]: c["state"] for c in snap["capabilities"]}
     assert states["plugin:system-control"] == cr.VERIFIED
     assert "plugin:worldview" not in states
-    assert states["plugin:signal-layer"] == cr.VERIFIED
+    assert states["plugin:apple-health"] == cr.VERIFIED
     assert snap["harness_pending"] is False  # something is now genuinely verified
 
 

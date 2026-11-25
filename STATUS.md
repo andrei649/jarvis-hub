@@ -158,7 +158,7 @@ The 2026-07-03 local batch that bundled M1.3/M1.4/M1.5/M2.2/M2.4/M2.6 is recorde
 
 ---
 
-## ✅ Agents — 17 active (15 classic cabinet + Howard emerging + Argus WorldView bridge)
+## ✅ Agents — 16 active (15 classic cabinet + Howard emerging)
 
 | Agent | Role | Tier | SOUL.md | HEARTBEAT.md |
 |-------|------|------|---------|-------------|
@@ -177,7 +177,6 @@ The 2026-07-03 local batch that bundled M1.3/M1.4/M1.5/M2.2/M2.4/M2.6 is recorde
 | Hercules | Fitness | foundation | ✅ | ✅ daily |
 | Hephaestus | Builder | foundation | ✅ | ✅ daily |
 | Frigga | Family | foundation | ✅ | ✅ daily |
-| Argus | Geoint (WorldView bridge, read-only) | business | ✅ | ❌ reactive |
 | Howard | Digital Twin (emerging, local-only) | foundation | ✅ | ❌ reactive |
 
 ---

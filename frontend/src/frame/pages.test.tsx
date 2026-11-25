@@ -178,7 +178,7 @@ describe('ModePage', () => {
     expect(document.querySelector('.n-areapage__head [data-source-state]')?.getAttribute('data-source-state')).toBe('live');
   });
 
-  it('always draws a mode without sources (the roster, projects, jobs, world signals)', () => {
+  it('always draws a mode without sources (the roster, projects, jobs)', () => {
     render(<ModePage mode="agents" page={pageForRoute({ mode: 'agents', panel: null })} navigate={() => {}} {...common}
       demo={false} live={{}} onDemo={() => {}}><p>roster</p></ModePage>);
     expect(screen.getByText('roster')).toBeTruthy();

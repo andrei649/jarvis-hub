@@ -1,5 +1,5 @@
 // @ts-nocheck
-/* Registry-only agents (howard, argus, …) have no hand-drawn glyph in the
+/* Registry-only agents (howard, …) have no hand-drawn glyph in the
    seed corpus. Every renderer that turns a glyph into an SVG <path> must still emit
    a visible neutral mark instead of an empty one, so live agents never appear as
    invisible roster entries.
@@ -14,7 +14,7 @@ import { Glyph } from '../primitives';
 import { V2 } from '../data';
 import { NetworkBrain } from '../network';
 
-const REGISTRY_ONLY = ['howard', 'argus', 'totally-new-agent'];
+const REGISTRY_ONLY = ['howard', 'totally-new-agent'];
 
 describe('Glyph fallback for registry agents without a seed glyph', () => {
   it('renders a non-empty path for a known seed agent', () => {
@@ -54,7 +54,7 @@ describe('NetworkBrain draws every agent, seeded or not', () => {
   const agents = [
     { id: 'jarvis', name: 'Jarvis', tier: 'CNS', status: 'active' },
     { id: 'howard', name: 'Howard', tier: 'CNS', status: 'idle' },
-    { id: 'argus', name: 'Argus', tier: 'BIZ', status: 'idle' },
+    { id: 'newcomer', name: 'Newcomer', tier: 'BIZ', status: 'idle' },
   ];
   const t = { network: 'NETWORK', agents: 'AGENTS' };
 

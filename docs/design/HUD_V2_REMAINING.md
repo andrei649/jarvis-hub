@@ -33,7 +33,7 @@ CONSOLE and WORLD buttons. Every theme now draws one structure, the **Ledger fra
   rejects, defers, stops or changes a mode.
 - **Routes** are unchanged and four are added (`/v2/work`, `/v2/timeline`, `/v2/artifacts`,
   `/v2/glance`). `/v2/console` is **All pages**, a site map; `/v2/console/<id>` is that panel as a
-  page of its area, beside the area's contents column; World is Observe › World signals; Glance
+  page of its area, beside the area's contents column; the World page was removed on 2026-11-25; Glance
   replaces Ambient (`a`); Cinema (`m`) keeps the mesh, the orb and the wall. The number keys follow
   the masthead.
 - **Retired for honesty:** the cockpit's cognition trace and its live scoring subscription (stages,

@@ -86,8 +86,6 @@ const KnowledgeMode = lazy(() => import('./modes4').then(m => ({ default: m.Know
 const FamilyMode = lazy(() => import('./modes4').then(m => ({ default: m.FamilyMode })));
 const FirstRunGate = lazy(() => import('./gap').then(m => ({ default: m.FirstRunGate })));
 const ProjectsMode = lazy(() => import('./gap').then(m => ({ default: m.ProjectsMode })));
-// World is a page of Observe (Observe › World signals), not an overlay.
-const WorldIntelligenceMode = lazy(() => import('./modes_world').then(m => ({ default: m.WorldIntelligenceMode })));
 // The Ledger frame's own pages (PHASE_B_PLAN.md §6), loaded when their route is first visited.
 const WorkOverview = lazy(() => import('./pages/WorkOverview').then(m => ({ default: m.WorkOverview })));
 const Timeline = lazy(() => import('./pages/Timeline').then(m => ({ default: m.Timeline })));
@@ -562,8 +560,7 @@ function App({ floating = false }: {
       }
       e.preventDefault();   // a rebound chord (Ctrl+J, Ctrl+D) runs the HUD action, not the browser's too
       if (action.id.startsWith('mode.')) setMode(action.id.slice(5));
-      // World is a page of Observe, Glance is a route, the backtick opens the sheet on panels.
-      else if (action.id === 'view.world') navigateHud('/v2/world');
+      // Glance is a route, the backtick opens the sheet on panels.
       else if (action.id === 'view.ambient') navigateHud('/v2/glance');
       else if (action.id === 'view.cinema') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
       else if (action.id === 'view.console') { setSheetFilter('panels'); setPalette((p) => !p); }
@@ -1299,7 +1296,6 @@ function ledgerModeBody(mode: string, t: any, ctx: LedgerModeContext): React.Rea
     case 'jobs': return <JobsWorkspace />;
     // The roster opens the Dossier without changing who the owner writes to (§3.2).
     case 'agents': return <AgentsMode agents={ctx.agents} onOpen={ctx.onOpenAgent} t={t} onChanged={ctx.onChanged} />;
-    case 'world': return <WorldIntelligenceMode t={t} />;
     // Saved replies: the Artifacts panel as a page; "Discuss in chat" stages the project and goes Home.
     case 'artifacts': return <ArtifactsPage lang={ctx.frameLang} demo={ctx.demo} refreshKey={ctx.artifactsRefresh}
       onInspectBlend={ctx.onInspectBlend} onDiscussProject={ctx.onDiscussProject} />;

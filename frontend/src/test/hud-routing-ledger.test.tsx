@@ -42,8 +42,8 @@ describe('titles', () => {
 });
 
 describe('overlays', () => {
-  it('make World and the Console ordinary pages: no return record, Back walks plain history', () => {
-    navigateHud('/v2/world');
+  it('make a mode page and the Console ordinary pages: no return record, Back walks plain history', () => {
+    navigateHud('/v2/observe');
     expect(history.state?.__nervaHudRoute).toBeUndefined();
     navigateHud('/v2/console/logs');
     expect(history.state?.__nervaHudRoute).toBeUndefined();
@@ -72,7 +72,7 @@ describe('a browser that still carries the deleted switch\'s classic word', () =
     localStorage.setItem('hud.frame', 'classic');
     expect(parseHudRoute('/v2/console/payments').title).toBe('Payments · Trust · Nerva');
     expect(parseHudRoute('/v2/nowhere').title).toBe('Today · Nerva');
-    navigateHud('/v2/world');
+    navigateHud('/v2/observe');
     expect(history.state?.__nervaHudRoute).toBeUndefined();
     expect(location.search).toBe('?frame=classic');   // the context is kept, and means nothing
   });

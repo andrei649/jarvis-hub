@@ -8,8 +8,8 @@
    says which: Live, Demo sample, or Unknown. The live flags (api/live.ts) carry no check time
    and stay set after a source stops answering, so a live mode follows the hub's own reading
    (`hubState`): when the hub is stale or offline the head says so, never "Live", and with no
-   time it does not have. A mode with no source keys (Agents, Projects, Scheduled jobs, World
-   signals, and the Ledger's own pages) is always drawn and keeps its own labels. Mode bodies
+   time it does not have. A mode with no source keys (Agents, Projects, Scheduled jobs,
+   and the Ledger's own pages) is always drawn and keeps its own labels. Mode bodies
    load lazily: while one loads, the page head and the contents column stay and only the body
    says "Loading page…". */
 import React, { Suspense } from 'react';

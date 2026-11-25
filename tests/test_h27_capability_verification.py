@@ -300,7 +300,8 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     # providers (G19) and plugin:channel_sms (G16); H696 moved the optional skills out of
     # the boot registry; + plugin:room-peers (H658 remote room members' egress).
     # H086 browser_broker and H214/H238/H590 pets add two constructed-component probes.
-    assert len(records) == len(cases) == len(by_ref) == 91 - len(H696_OPTIONAL_SKILL_TITLES) == 84
+    # - plugin:signal-layer (removed 2026-11-25).
+    assert len(records) == len(cases) == len(by_ref) == 90 - len(H696_OPTIONAL_SKILL_TITLES) == 83
     assert by_ref["reality-v1:plugin:cloud-image"].capability_id == "plugin:cloud-image"
     assert by_ref["reality-v1:plugin:kanban-attachments"].capability_id == "plugin:kanban-attachments"
     assert by_ref["reality-v1:plugin:ntfy"].capability_id == "plugin:ntfy"
@@ -308,11 +309,11 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
         kind: sum(case.capability_id.startswith(f"{kind}:") for case in cases)
         for kind in ("plugin", "component", "skill")
     } == {
-        "plugin": 53,
+        "plugin": 52,
         "component": 26,
         "skill": 5,
     }
-    assert len({case.capability_id for case in cases}) == 84
+    assert len({case.capability_id for case in cases}) == 83
     for name in ("browser_broker", "pets"):
         assert orch.components.status[name] == "ok"
         assert getattr(orch, name) is not None
@@ -323,7 +324,7 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
 
     combined = all_reality_cases(orch)
     assert combined[: len(CASES)] == CASES
-    assert len(combined) == len(CASES) + 84
+    assert len(combined) == len(CASES) + 83
     all_refs = [case.ref for case in combined]
     assert len(all_refs) == len(set(all_refs))
 
@@ -340,7 +341,7 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     assert len(tool_records) == 2
     # + the three default-off cloud video providers, + channel_sms (G16), + hook.exec (G17),
     # + plugin:room-peers (H658), browser_broker and pets constructed-component cases
-    assert len(verification_pairs) == 42 + 2 + 84 == 128
+    assert len(verification_pairs) == 42 + 2 + 83 == 127
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1
@@ -358,8 +359,8 @@ async def test_registry_policy_cases_pass_while_default_off_plugins_remain_seams
     by_id = {item["capability_id"]: item for item in result["results"]}
 
     _assert_h696_boot_skill_split(records.values())
-    assert result["total"] == 84   # + browser_broker and pets construction probes
-    assert result["passed"] == 83
+    assert result["total"] == 83   # + browser_broker and pets construction probes; - signal-layer
+    assert result["passed"] == 82
     assert by_id["component:browser_broker"]["passed"] is True
     assert by_id["component:pets"]["passed"] is True
     assert by_id["plugin:ntfy"]["passed"] is True

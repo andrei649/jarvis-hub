@@ -17,7 +17,8 @@ describe('the registry', () => {
     expect(['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((k) => area(ACTIONS.find((a) => a.chord === k)!.id))).toEqual(AREAS.map((a) => a.id));
     expect(c['mode.autonomy']).toBeUndefined();
     expect(c['mode.comms']).toBeUndefined();
-    expect(c).toMatchObject({ 'view.world': 'w', 'view.console': '`', 'view.ambient': 'a', 'view.cinema': 'm', 'composer.focus': '/', 'session.palette': 'mod+k', 'session.shortcuts': 'mod+/' });
+    expect(c['view.world']).toBeUndefined();
+    expect(c).toMatchObject({ 'view.console': '`', 'view.ambient': 'a', 'view.cinema': 'm', 'composer.focus': '/', 'session.palette': 'mod+k', 'session.shortcuts': 'mod+/' });
   });
 
   it('words the labels for the new places', () => {
@@ -29,7 +30,6 @@ describe('the registry', () => {
     expect(label('mode.chat')).toBe('Go to Conversation');
     expect(label('view.console')).toBe('Find a panel');
     expect(label('view.ambient')).toBe('Glance');
-    expect(label('view.world')).toBe('Open World signals');
   });
 
   it('holds no chord for an approval or a decision, no docket verb and no duplicate chord in a scope', () => {

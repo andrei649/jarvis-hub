@@ -41,9 +41,6 @@ NOT_VARIABLES = {
     # variables of a CI workflow, set and read inside .github/workflows only
     "JARVIS_EVAL_CACHE_PREFIX", "JARVIS_EVAL_CI_SMALL_MODEL", "JARVIS_EVAL_CI_SMALL_MODEL_ID",
     "JARVIS_NEO4J_LIVE",
-    # JARVIS_-only on purpose (docs/FLAGS.md says so): nothing in the hub reads them
-    "JARVIS_WORLDVIEW",              # a comment in the systemd env template
-    "JARVIS_WORLDVIEW_MODE",         # the signal layer's test that this old name is IGNORED
 }
 # Prefix tokens (a name cut at an underscore in prose or a prefix tuple) that are not families.
 NOT_FAMILIES = {"JARVIS_AUX_"}       # mobile/PARITY.md writes "JARVIS_AUX_*" for the AUX_* variables
@@ -91,13 +88,12 @@ def jarvis_tokens() -> set[str]:
 
 
 def test_the_scan_reaches_beyond_the_python_tree(jarvis_tokens):
-    """The names the first inventory missed live in a shell script, a batch file, a
-    JavaScript module and a skill: they are found now, and each has both spellings."""
-    for name in ("JARVIS_SIGNAL_LAYER", "JARVIS_SIGNAL_LAYER_MODE", "JARVIS_TZ"):
+    """The names the first inventory missed live in a shell script, a batch file
+    and a skill: they are found now, and each has both spellings."""
+    for name in ("JARVIS_HUD", "JARVIS_PORT", "JARVIS_TZ"):
         assert name in jarvis_tokens and env_config.is_hub_name(name), name
-    for path, both in (("start.sh", ("NERVA_SIGNAL_LAYER", "NERVA_SIGNAL_LAYER_MODE", "NERVA_HUD", "NERVA_PORT")),
-                       ("START.bat", ("NERVA_SIGNAL_LAYER", "NERVA_SIGNAL_LAYER_MODE", "NERVA_HUD")),
-                       ("services/signal-layer/src/config.mjs", ("NERVA_SIGNAL_LAYER_MODE",)),
+    for path, both in (("start.sh", ("NERVA_HUD", "NERVA_PORT")),
+                       ("START.bat", ("NERVA_HUD",)),
                        ("agents/cli/completion.py", ("NERVA_HOME", "NERVA_MEMORY_DIR"))):
         text = (ROOT / path).read_text(encoding="utf-8")
         for name in both:

@@ -1,7 +1,7 @@
 // @ts-nocheck
 /* REVIEW & QUALITY panel — GET /api/review/stats (open), GET /api/quality/scores and
    POST /api/review/flag (user-tier), plus the read-only /api/quality availability probe.
-   fetch is mocked per URL, like src/panels/signals-governance.test.tsx.
+   fetch is mocked per URL, like src/panels/osint.test.tsx.
 
    The assertions that matter are the negative ones, because every trap on this lane is a
    200 that looks like data:

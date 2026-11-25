@@ -117,17 +117,17 @@ def test_agents_yaml_interval_fills_only_agents_without_a_heartbeat_file(tmp_pat
     _write(tmp_path, "friday")
     hb = HeartbeatScheduler(agents_dir=str(tmp_path))
     hb.load_all()
-    hb.load_from_config(_registry(friday="6h", argus="6h", jerome="no"))
+    hb.load_from_config(_registry(friday="6h", vision="6h", jerome="no"))
 
     assert hb._heartbeat_configs["friday"]["cadence"] == "cron:30 6 * * *"
-    assert hb._heartbeat_configs["argus"] == {
-        "agent": "argus", "cadence": "interval:21600", "interval_seconds": 21600,
+    assert hb._heartbeat_configs["vision"] == {
+        "agent": "vision", "cadence": "interval:21600", "interval_seconds": 21600,
     }
     assert "jerome" not in hb._heartbeat_configs
 
     hb.scheduler = _Scheduler()
     hb.start(orchestrator=None)
-    assert sorted(hb.scheduler.ids()) == ["heartbeat-argus", "heartbeat-friday"]
+    assert sorted(hb.scheduler.ids()) == ["heartbeat-friday", "heartbeat-vision"]
 
 
 def test_every_shipped_heartbeat_file_survives_the_shipped_registry(tmp_path):
@@ -167,7 +167,10 @@ def test_every_shipped_heartbeat_file_survives_the_shipped_registry(tmp_path):
         if agent.status == "active" and isinstance(agent.heartbeat, str)
         and agent.heartbeat != "no" and agent_id not in shipped
     }
-    assert fallback_only, "the registry should still supply an interval to someone"
+    # No shipped agent relies on the registry interval since Argus (the only active agent
+    # with a registry heartbeat and no HEARTBEAT.md) was removed on 2026-11-25. The fallback
+    # itself is covered by test_agents_yaml_interval_fills_only_agents_without_a_heartbeat_file;
+    # this loop still holds any such agent the registry gains to the interval cadence.
     for agent_id in fallback_only:
         assert hb._heartbeat_configs[agent_id]["cadence"].startswith("interval:"), agent_id
 
@@ -240,7 +243,7 @@ async def test_get_status_never_lists_an_agent_under_both_heartbeats_and_blocked
     hb = HeartbeatScheduler(agents_dir=str(tmp_path))
     _refuse(hb, "friday")
     hb.load_all()
-    hb.load_from_config(_registry(friday="6h", jarvis="12h", argus="6h"))
+    hb.load_from_config(_registry(friday="6h", jarvis="12h", vision="6h"))
     hb.scheduler = AsyncIOScheduler()
     try:
         hb.start(orchestrator=None)
@@ -251,7 +254,7 @@ async def test_get_status_never_lists_an_agent_under_both_heartbeats_and_blocked
     assert status["scheduler_running"] is True
     scheduled = {entry["agent_id"] for entry in status["heartbeats"]}
     blocked = {entry["agent_id"] for entry in status["blocked"]}
-    assert scheduled == {"jarvis", "argus"}
+    assert scheduled == {"jarvis", "vision"}
     assert blocked == {"friday"}
     assert not scheduled & blocked
     assert status["blocked"][0]["flags"] == ["you are now\\b"]

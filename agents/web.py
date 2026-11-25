@@ -1288,7 +1288,6 @@ _AGENT_META = {
     "stark":      {"tier": "BIZ", "role": "Biz Intel"},
     "veronica":   {"tier": "BIZ", "role": "Content & Comms"},
     "vision":     {"tier": "BIZ", "role": "Deep Research / OSINT"},
-    "argus":      {"tier": "BIZ", "role": "Geospatial OSINT / Intel"},
     "steve":      {"tier": "SEC", "role": "CTO / Builds"},
     "oracle":     {"tier": "SEC", "role": "N8N Workflows"},
     "ultron":     {"tier": "SEC", "role": "Security & Automation"},
@@ -2546,7 +2545,6 @@ from agents.core.routers.jarvis_os import router as _jarvis_os_router  # noqa: E
 from agents.core.routers.data_spaces import router as _data_spaces_router  # noqa: E402
 from agents.core.routers.design_manifest import router as _design_manifest_router  # noqa: E402
 from agents.core.routers.vault import router as _vault_router  # noqa: E402
-from agents.core.routers.signals import router as _signals_router  # noqa: E402
 from agents.core.routers.packs import router as _packs_router  # noqa: E402
 from agents.core.routers.integrations import router as _integrations_router  # noqa: E402
 from agents.core.routers.memory_hud import router as _memory_hud_router  # noqa: E402
@@ -2645,7 +2643,6 @@ app.include_router(_status_router)
 app.include_router(_data_spaces_router)
 app.include_router(_design_manifest_router)
 app.include_router(_vault_router)
-app.include_router(_signals_router)
 app.include_router(_packs_router)
 app.include_router(_secrets_router)
 app.include_router(_mesh_router)
