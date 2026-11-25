@@ -55,7 +55,7 @@ describe('the §3.3 placement table', () => {
     expect(panels.filter((p) => p.auto).map(idOf)).toEqual([]);
     const count = (area: AreaId) => panels.filter((p) => p.area === area).length;
     expect(Object.fromEntries(AREA_IDS.map((a) => [a, count(a)]))).toEqual({
-      home: 9, work: 13, agents: 9, memory: 14, trust: 21, build: 22, connect: 17, observe: 16, settings: 17,
+      home: 7, work: 13, agents: 9, memory: 14, trust: 21, build: 22, connect: 17, observe: 16, settings: 17,
     });
     expect(panels).toHaveLength(CONSOLE_PANELS.length);
   });
@@ -91,10 +91,10 @@ describe('the §3.3 placement table', () => {
     expect(PAGES.some((p) => p.key === ALL_PAGES.key)).toBe(false);
   });
 
-  it('moves Today to Home and puts ten pages behind "More in Home"', () => {
+  it('moves Today to Home and puts eight pages behind "More in Home"', () => {
     expect(pageForPanel('today')?.area).toBe('home');
     const home = areaById('home')!;
-    expect(home.pages.filter((p) => p.listed && !p.landing)).toHaveLength(10);
+    expect(home.pages.filter((p) => p.listed && !p.landing)).toHaveLength(8);
   });
 
   it('gives every key once', () => {

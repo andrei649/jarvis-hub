@@ -203,187 +203,6 @@ async def test_call_budget_refusal_records_nothing_but_a_placed_or_broken_call_d
     queue.close()
 
 
-_HOUSE = {"version": 1, "control": "light", "entity_id": "light.kitchen", "action": "on",
-          "risk_tier": 1, "reversible": True, "signal_quality": 1.0}
-
-
-@pytest.mark.asyncio
-async def test_house_kernel_denial_records_nothing_but_a_verified_actuation_succeeds(
-        tmp_path, monkeypatch):
-    """The house handler raises on a failed result (the task must not settle as DONE),
-    so its refusal reaches the worker as an exception carrying the reason."""
-    from agents.core.autonomy.executor import TaskExecutor
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
-    from agents.core.kernel import Verdict
-    from tests.test_h30_house_actuation import _actuator, _Kernel, _Simulator
-
-    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
-    queue = _queue(tmp_path / "autonomy.db")
-    sim = _Simulator()
-    denied = register_house_handlers(
-        TaskExecutor(), _actuator(tmp_path / "deny", sim, kernel=_Kernel(Verdict.DENY)))
-    task = await _run_real(queue, denied.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
-    assert task.status == TaskStatus.FAILED.value and "kernel_denied" in task.result["error"]
-    assert sim.calls == [] and _counts(queue, HOUSE_CONTROL_KIND) == (0, 0)
-
-    granted = register_house_handlers(TaskExecutor(), _actuator(tmp_path / "grant", sim))
-    task = await _run_real(queue, granted.execute, HOUSE_CONTROL_KIND, _HOUSE)
-    assert task.result["status"] == "verified" and sim.state == "on"
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (1, 0)
-    queue.close()
-
-
-def _house_rig(tmp_path, monkeypatch, sim):
-    from agents.core.autonomy.executor import TaskExecutor
-    from agents.core.house.actuation import register_house_handlers
-    from tests.test_h30_house_actuation import _actuator
-
-    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
-    actuator = _actuator(tmp_path / "house", sim)
-    return actuator, register_house_handlers(TaskExecutor(), actuator)
-
-
-@pytest.mark.asyncio
-async def test_house_verification_failure_raised_by_the_handler_records_a_failure(
-        tmp_path, monkeypatch):
-    """Round 3, item 3: the device was commanded and never reached the state asked for.
-    The registered handler raises ``HouseActuationError("verification_failed")``; a
-    reason on a raised error is not by itself a refusal, so this records a failure."""
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND
-    from tests.test_h30_house_actuation import _Simulator
-
-    sim = _Simulator()
-    sim.apply_updates = False                       # the light never turns on
-    _actuator, executor = _house_rig(tmp_path, monkeypatch, sim)
-    queue = _queue(tmp_path / "autonomy.db")
-    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
-    assert task.status == TaskStatus.FAILED.value
-    assert task.result == {"error": "verification_failed"}
-    assert len(sim.calls) == 1                      # commanded once; retries read the cache
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
-    queue.close()
-
-
-@pytest.mark.asyncio
-async def test_house_attempt_that_actuated_then_raised_is_a_failure_not_in_progress(
-        tmp_path, monkeypatch):
-    """Round 3, item 2: the first attempt commands the device, verification fails and the
-    ledger's ``finish`` raises once (sqlite busy), leaving the attempt's row ``running``.
-    The retries must not read that stranded row as a concurrent execution (the refusal
-    ``execution_in_progress``): the device was commanded and nobody verified it, so the
-    task fails as ``execution_stranded`` and records a failure — and the device is never
-    commanded a second time."""
-    import sqlite3
-
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND
-    from tests.test_h30_house_actuation import _Simulator
-
-    sim = _Simulator()
-    sim.apply_updates = False
-    actuator, executor = _house_rig(tmp_path, monkeypatch, sim)
-    real_finish = actuator._ledger.finish
-    calls = {"n": 0}
-
-    def flaky_finish(task_id, result):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise sqlite3.OperationalError("database is locked")
-        return real_finish(task_id, result)
-
-    monkeypatch.setattr(actuator._ledger, "finish", flaky_finish)
-    queue = _queue(tmp_path / "autonomy.db")
-    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
-    assert task.status == TaskStatus.FAILED.value
-    # Round 4 (hunt NIT 1): the task record says a human must look at the device.
-    assert task.result == {"error": "execution_stranded", "manual_recovery_required": True}
-    assert len(sim.calls) == 1
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
-    queue.close()
-
-
-@pytest.mark.parametrize("begun_with", ["same_payload", "other_payload"])
-@pytest.mark.asyncio
-async def test_house_row_stranded_by_a_crash_is_a_failure_and_never_reactuates(
-        tmp_path, monkeypatch, begun_with):
-    """The same after a crash between ``begin`` and ``finish``: the row is ``running``
-    and no execution of the task is in flight in this process. An unfinished row is a
-    begun attempt whatever payload it began with (never ``task_payload_changed``)."""
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import (
-        HOUSE_CONTROL_KIND,
-        _canonical_task,
-        _payload_hash,
-    )
-    from tests.test_h30_house_actuation import _Simulator
-
-    sim = _Simulator()
-    actuator, executor = _house_rig(tmp_path, monkeypatch, sim)
-    queue = _queue(tmp_path / "autonomy.db")
-    task_id = queue.enqueue("jarvis", HOUSE_CONTROL_KIND, "real handler", risk_tier=1,
-                            autonomy_level=ACT, payload=_HOUSE)
-    digest = _payload_hash(_canonical_task(HOUSE_CONTROL_KIND, queue.get(task_id).payload))
-    if begun_with == "other_payload":
-        digest = "0" * len(digest)
-    assert actuator._ledger.begin(task_id, digest)      # the attempt that died
-    queue.transition(task_id, TaskStatus.APPROVED)
-    worker = AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor.execute)
-    for _ in range(MAX_ATTEMPTS):
-        await worker.tick()
-    task = queue.get(task_id)
-    assert task.status == TaskStatus.FAILED.value
-    # Round 4 (hunt NIT 1): the task record says a human must look at the device.
-    assert task.result == {"error": "execution_stranded", "manual_recovery_required": True}
-    assert sim.calls == []
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
-    queue.close()
-
-
-@pytest.mark.asyncio
-async def test_house_concurrent_execution_of_the_same_task_is_a_refusal(tmp_path, monkeypatch):
-    """The genuine ``execution_in_progress``: another execution of this very task is in
-    flight right now (its device call has not returned). This attempt ran nothing and
-    records nothing; the execution in flight completes on its own."""
-    import asyncio
-
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND
-    from tests.test_h30_house_actuation import _Simulator
-
-    sim = _Simulator()
-    actuator, executor = _house_rig(tmp_path, monkeypatch, sim)
-    entered, release = asyncio.Event(), asyncio.Event()
-    real_apply = sim.apply
-
-    async def held_apply(command):
-        entered.set()
-        await release.wait()
-        return await real_apply(command)
-
-    sim.apply = held_apply
-    queue = _queue(tmp_path / "autonomy.db")
-    task_id = queue.enqueue("jarvis", HOUSE_CONTROL_KIND, "real handler", risk_tier=1,
-                            autonomy_level=ACT, payload=_HOUSE)
-    queue.transition(task_id, TaskStatus.APPROVED)
-    in_flight = asyncio.create_task(actuator.execute_task(queue.get(task_id)))
-    await asyncio.wait_for(entered.wait(), 5)
-    worker = AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor.execute)
-    for _ in range(MAX_ATTEMPTS):
-        await worker.tick()
-    task = queue.get(task_id)
-    assert task.status == TaskStatus.FAILED.value
-    assert task.result == {"error": "execution_in_progress"}
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 0)
-    release.set()
-    assert (await asyncio.wait_for(in_flight, 5))["status"] == "verified"
-    assert len(sim.calls) == 1 and sim.state == "on"
-    queue.close()
-
-
 @pytest.mark.asyncio
 async def test_channel_reply_contract_block_records_nothing_but_a_send_does(tmp_path):
     from agents.core.channel_reply import ChannelReplyBroker
@@ -640,7 +459,6 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
     for kind, reasons in REFUSAL_REASONS_BY_KIND.items():
         for reason in reasons:
             kinds_by_reason.setdefault(reason, set()).add(kind)
-    house = {"house.control", "house.security_control"}
     voice_grant_update = {"settings.voice_command", "permission.grant", "hub.update"}
     assert {reason: kinds for reason, kinds in kinds_by_reason.items() if len(kinds) > 1} == {
         # round 6, item 6: plugin.egress's execution guards report a missing credential
@@ -648,12 +466,6 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
         "credential_not_configured": {"call.outbound", "social.*", "writeback.*",
                                       "plugin.egress"},
         "approved_payload_changed": {"tool.rpc", "plugin.egress"},
-        "kernel_denied": house | {"tool.rpc"},
-        "execution_in_progress": house,
-        "task_payload_changed": house,
-        # round 5, item 6: the two switches, decided before any driver call.
-        "unified_action_api_disabled": house,
-        "action_kernel_disabled": house,
         "human_decision_required": voice_grant_update,
         "decision_not_approval": voice_grant_update,
         "payload_required": voice_grant_update,
@@ -668,9 +480,6 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
     for kind, reason in (("call.outbound", "interrupt_budget_exhausted"),
                          ("call.outbound", "budget_exceeded"),
                          ("call.outbound", "credential_not_configured"),
-                         ("house.control", "kernel_denied"),
-                         ("house.security_control", "strong_confirmation_required"),
-                         ("house.control", "execution_in_progress"),
                          ("tool.rpc", "tool_not_allowed"),
                          ("tool.rpc", "kernel_denied"),
                          ("skill.install", "promotion_refused"),
@@ -693,8 +502,6 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
                       {"status": "failed", "reason": "kill-switch engaged for scope 'node:phone'"})
     # ... and a reason, or a prefix, is a refusal only for the kind that uses it.
     for kind, reason in (("call.outbound", "kernel_denied"), ("tool.rpc", "execution_in_progress"),
-                         ("house.control", "tool_not_allowed"),
-                         ("house.control", "strong_confirmation_required"),
                          ("kg.write", "kernel_denied"), ("social.x.post", "interrupt_budget_exhausted"),
                          ("node.dispatch", "call_config_missing:account_sid"),
                          ("call.outbound", "kill-switch engaged for scope 'node:phone'"),
@@ -705,7 +512,7 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
     every_kind = list(REFUSAL_REASONS_BY_KIND)
     for reason in ("client_error", "send_failed", "tool_error", "apply_failed", "invalid_call",
                    "verification_failed", "wall_time_budget_exceeded", "invalid_result",
-                   "house_state_unavailable", "something_new", "", None,
+                   "something_new", "", None,
                    # machinery failures and reasons that can follow an attempt
                    "classify_failed", "provider_store_unavailable", "install_failed",
                    "promotion_store_unavailable", "execution_stranded", "validation_failed",
@@ -733,12 +540,11 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
     # Only a FAILED result is read through the vocabulary: a success that happens to
     # carry a listed reason is still a success.
     assert not is_refusal("tool.rpc", {"status": "ok", "reason": "kernel_denied"})
-    assert not is_refusal("house.control", {"status": "verified", "reason": "execution_in_progress"})
 
 
 @pytest.mark.asyncio
 async def test_a_reason_is_a_refusal_only_from_the_kind_that_uses_it(tmp_path):
-    """Round 4, item 4: ``kernel_denied`` is house's and tool.rpc's refusal. A call or a
+    """Round 4, item 4: ``kernel_denied`` is tool.rpc's refusal. A call or a
     graph write never says it, so from their handlers it is a failure, not a refusal
     borrowed from another kind; from tool.rpc it still records nothing."""
     queue = _queue(tmp_path / "autonomy.db")
@@ -883,7 +689,7 @@ async def test_worker_injects_stats_but_taint_still_forces_approval(tmp_path):
 
 
 class _RaisedRefusal(RuntimeError):
-    """A refusal raised instead of returned (the shape of the house handler's)."""
+    """A refusal raised instead of returned."""
 
     def __init__(self, reason):
         super().__init__(reason)
@@ -919,11 +725,11 @@ async def _attempts(queue, kind, outcomes):
                       {"status": "refused", "reason": "run_already_open_for_goal"}]),
     ("call.outbound", [RuntimeError("carrier timed out after dialling"),
                        {"status": "failed", "reason": "interrupt_budget_exhausted"}]),
-    # The house handler raises its refusals: the retries after an attempt that broke
-    # raise ``execution_in_progress`` until the retry budget is spent.
-    ("house.control", [RuntimeError("database is locked"),
-                       _RaisedRefusal("execution_in_progress"),
-                       _RaisedRefusal("execution_in_progress")]),
+    # A handler may raise its refusals: the retries after an attempt that broke
+    # raise ``tool_not_allowed`` until the retry budget is spent.
+    ("tool.rpc", [RuntimeError("database is locked"),
+                  _RaisedRefusal("tool_not_allowed"),
+                  _RaisedRefusal("tool_not_allowed")]),
 ], ids=["open_run_refused_on_retry", "returned_failed_refusal", "raised_refusal"])
 @pytest.mark.asyncio
 async def test_a_refusal_after_an_attempt_that_broke_records_one_failure(tmp_path, kind, outcomes):
@@ -940,10 +746,10 @@ async def test_a_refusal_after_an_attempt_that_broke_records_one_failure(tmp_pat
 @pytest.mark.parametrize("kind, outcomes, expected", [
     ("goal.approve", [{"status": "refused", "reason": "run_already_open_for_goal"}], (0, 0)),
     ("call.outbound", [{"status": "failed", "reason": "interrupt_budget_exhausted"}], (0, 0)),
-    ("house.control", [_RaisedRefusal("execution_in_progress")] * 3, (0, 0)),
+    ("tool.rpc", [_RaisedRefusal("tool_not_allowed")] * 3, (0, 0)),
     # A refusal raised by an earlier attempt is not a failure either.
-    ("house.control", [_RaisedRefusal("kernel_denied"),
-                       {"status": "failed", "reason": "kernel_denied"}], (0, 0)),
+    ("tool.rpc", [_RaisedRefusal("kernel_denied"),
+                  {"status": "failed", "reason": "kernel_denied"}], (0, 0)),
     # A later attempt that succeeds is the task's one outcome.
     ("call.outbound", [RuntimeError("carrier timed out"), {"status": "ok"}], (1, 0)),
 ], ids=["returned_refused", "returned_failed_refusal", "raised_refusals",
@@ -1131,54 +937,6 @@ async def test_goal_approve_with_a_work_run_ledger_that_failed_to_construct_is_a
     queue.close()
 
 
-# ── round 4, item 7: house — the recovery flag, the shared in-flight claim ────
-
-
-@pytest.mark.asyncio
-async def test_house_two_actuators_on_one_ledger_share_the_in_flight_claim(tmp_path, monkeypatch):
-    """Hunt NIT 4: ``routers/house.py`` builds a new HouseActuator on the same ledger
-    file when the orchestrator changes. An execution in flight through the first must
-    read, through the second, as the refusal ``execution_in_progress`` — not as a
-    stranded row (a failure asking for manual recovery) — and the device is commanded
-    once. A claim kept per actuator instance fails this."""
-    import asyncio
-
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND
-    from tests.test_h30_house_actuation import _Simulator
-
-    sim = _Simulator()
-    first, _first_executor = _house_rig(tmp_path, monkeypatch, sim)
-    second, executor = _house_rig(tmp_path, monkeypatch, sim)
-    assert first is not second and first._ledger.path == second._ledger.path
-    entered, release = asyncio.Event(), asyncio.Event()
-    real_apply = sim.apply
-
-    async def held_apply(command):
-        entered.set()
-        await release.wait()
-        return await real_apply(command)
-
-    sim.apply = held_apply
-    queue = _queue(tmp_path / "autonomy.db")
-    task_id = queue.enqueue("jarvis", HOUSE_CONTROL_KIND, "real handler", risk_tier=1,
-                            autonomy_level=ACT, payload=_HOUSE)
-    queue.transition(task_id, TaskStatus.APPROVED)
-    in_flight = asyncio.create_task(first.execute_task(queue.get(task_id)))
-    await asyncio.wait_for(entered.wait(), 5)
-    worker = AutonomyWorker(queue, policy=AutonomyPolicy(), executor=executor.execute)
-    for _ in range(MAX_ATTEMPTS):
-        await worker.tick()
-    task = queue.get(task_id)
-    assert task.status == TaskStatus.FAILED.value
-    assert task.result == {"error": "execution_in_progress"}
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 0)
-    release.set()
-    assert (await asyncio.wait_for(in_flight, 5))["status"] == "verified"
-    assert len(sim.calls) == 1 and sim.state == "on"
-    queue.close()
-
-
 # ── round 5, item 2: a store that cannot load is a store failure ──────────────
 
 
@@ -1270,145 +1028,6 @@ async def test_a_done_transition_that_raised_is_the_workers_error_not_the_capabi
     assert task.status == status and task.attempts == len(outcomes)
     assert _counts(queue, "goal.approve") == expected
     queue.close()
-
-
-# ── round 5, item 6: house — a broken kernel is a failure ─────────────────────
-
-
-@pytest.mark.parametrize("kernel, reason", [
-    ("raises", "kernel_error"),
-    ("not_a_decision", "kernel_error"),
-    ("missing", "kernel_unavailable"),
-])
-@pytest.mark.asyncio
-async def test_house_kernel_that_broke_is_a_failure_not_kernel_denied(
-        tmp_path, monkeypatch, kernel, reason):
-    """Closure NIT: a kernel that raised, returned something that is not a Decision, or
-    is not there is the house machinery failing — its own reason, a failure (0,1) —
-    not the refusal ``kernel_denied``. The device is never commanded. A real Decision
-    that denies stays ``kernel_denied`` and records nothing (the test above)."""
-    from agents.core.autonomy.executor import TaskExecutor
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import (
-        HOUSE_CONTROL_KIND,
-        HouseActuator,
-        register_house_handlers,
-    )
-    from tests.test_h30_house_actuation import _Simulator
-
-    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
-
-    def raising(_action, capability=None):
-        raise RuntimeError("policy store unreadable")
-
-    def not_a_decision(_action, capability=None):
-        return {"verdict": "grant"}
-
-    sim = _Simulator()
-    actuator = HouseActuator(
-        state_reader=sim, driver=sim,
-        authorizer={"raises": raising, "not_a_decision": not_a_decision, "missing": None}[kernel],
-        outcome_provider=lambda _cap: {"total": 0, "confidence": 0.0},
-        ledger_path=tmp_path / "actuation.db", clock=lambda: sim.now)
-    queue = _queue(tmp_path / "autonomy.db")
-    executor = register_house_handlers(TaskExecutor(), actuator)
-    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
-    assert task.status == TaskStatus.FAILED.value
-    assert task.result == {"error": reason}
-    assert sim.calls == [] and sim.state == "off"
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
-    queue.close()
-
-
-@pytest.mark.parametrize("unset, reason", [
-    ("JARVIS_UNIFIED_ACTION_API", "unified_action_api_disabled"),
-    ("JARVIS_ACTION_KERNEL", "action_kernel_disabled"),
-])
-@pytest.mark.asyncio
-async def test_house_switched_off_is_a_refusal_under_its_own_reason(tmp_path, monkeypatch, unset, reason):
-    """The config states that mean "not allowed to run" — the unified action API or the
-    kernel switched off — are decided before any driver call: refusals that record
-    nothing, named for the switch (not ``kernel_denied``: no kernel denied anything)."""
-    from agents.core.autonomy.executor import TaskExecutor
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
-    from tests.test_h30_house_actuation import _actuator, _Simulator
-
-    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
-    monkeypatch.delenv(unset)
-    sim = _Simulator()
-    queue = _queue(tmp_path / "autonomy.db")
-    executor = register_house_handlers(TaskExecutor(), _actuator(tmp_path, sim))
-    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
-    assert task.result == {"error": reason}
-    assert sim.calls == []
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 0)
-    queue.close()
-
-
-@pytest.mark.parametrize("returned", ["approval_required", "kernel_denied"])
-@pytest.mark.asyncio
-async def test_house_a_reason_the_driver_returned_after_it_ran_is_never_a_refusal(
-        tmp_path, monkeypatch, returned):
-    """Closure NIT: ``CapabilityActionAPI._invoke`` maps a handler OUTPUT reason
-    (``approval_required``, ``kernel_denied``) to queued/refused — after the handler ran.
-    For the house the driver was called, so the device may have been commanded: the
-    post-actuation verification decides (here the state never changed:
-    ``verification_failed``, a failure), never the refusal ``kernel_denied``. The
-    ledger row is finished, not aborted, so a retry never commands the device again."""
-    from agents.core.autonomy.executor import TaskExecutor
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
-    from tests.test_h30_house_actuation import _actuator, _Simulator
-
-    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
-    sim = _Simulator()
-    sim.apply_updates = False
-
-    async def refusing_apply(command):
-        sim.calls.append(dict(command))
-        return {"ok": False, "reason": returned}
-
-    sim.apply = refusing_apply
-    queue = _queue(tmp_path / "autonomy.db")
-    executor = register_house_handlers(TaskExecutor(), _actuator(tmp_path, sim))
-    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
-    assert task.status == TaskStatus.FAILED.value
-    assert task.result == {"error": "verification_failed"}
-    assert len(sim.calls) == 1
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
-    queue.close()
-
-
-@pytest.mark.asyncio
-async def test_house_rollback_names_a_broken_kernel_not_kernel_denied(tmp_path, monkeypatch):
-    """The rollback's own perform: a kernel that raised on the recovery is
-    ``kernel_error`` in the rollback record (manual recovery required), not the
-    ``kernel_denied`` a real Decision gives (``test_h30_house_actuation``)."""
-    from types import SimpleNamespace
-
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND
-    from agents.core.kernel import Decision, Verdict
-    from tests.test_h30_house_actuation import _actuator, _Simulator
-
-    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
-
-    def kernel(action, capability=None):
-        if action.kind == HOUSE_CONTROL_KIND:
-            return Decision(Verdict.GRANT, reason="ok", tier=1)
-        raise RuntimeError("policy store unreadable")
-
-    sim = _Simulator(state="on")
-    sim.forced_state_after_apply = "jammed"
-    result = await _actuator(tmp_path, sim, kernel=kernel).execute_task(
-        SimpleNamespace(id=82, kind=HOUSE_CONTROL_KIND, agent="jarvis",
-                        payload={**_HOUSE, "action": "off"}))
-    assert result["reason"] == "verification_failed" and result["manual_recovery_required"] is True
-    assert result["rollback"] == {"status": "failed", "reason": "kernel_error"}
 
 
 # ── round 5, item 7: node.dispatch — a broker that failed to start ────────────
@@ -1593,78 +1212,6 @@ async def test_a_nested_degraded_result_is_never_a_success(tmp_path, nested_reas
 
 
 # ── round 6, item 5: a driver that failed on a device already in the state ────
-
-
-@pytest.mark.parametrize("driver, driver_reason", [
-    ("service_failed", "ha_service_failed"),
-    ("raises", "implementation_error"),
-    ("returns_kernel_denied", "kernel_denied"),
-])
-@pytest.mark.asyncio
-async def test_house_a_failed_driver_on_a_matching_device_is_a_failure(
-        tmp_path, monkeypatch, driver, driver_reason):
-    """Closure P6 (round 6, item 5): the post-actuation check verifies the WORLD, not the
-    driver. With the light already ``on`` and the task asking for ``on``, a driver that
-    failed (returned an error, raised, or returned a refusal after it ran) read as
-    ``verified`` — a success (1,0) for an actuation that did not work. It is a failure
-    now; the row still finishes (no rollback: the world is in the approved state), the
-    result names both facts, and the device is commanded once over every attempt."""
-    from agents.core.autonomy.executor import TaskExecutor
-    from agents.core.autonomy.worker import MAX_ATTEMPTS
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
-    from tests.test_h30_house_actuation import _actuator, _Simulator
-
-    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
-    sim = _Simulator(state="on")
-
-    async def apply(command):
-        sim.calls.append(dict(command))
-        if driver == "raises":
-            raise RuntimeError("home assistant unreachable")
-        if driver == "service_failed":
-            return {"ok": False, "transport_status": 500, "reason": "ha_service_failed"}
-        return {"ok": False, "reason": "kernel_denied"}
-
-    sim.apply = apply
-    actuator = _actuator(tmp_path, sim)
-    queue = _queue(tmp_path / "autonomy.db")
-    executor = register_house_handlers(TaskExecutor(), actuator)
-    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE, ticks=MAX_ATTEMPTS)
-    assert task.status == TaskStatus.FAILED.value
-    assert task.result == {"error": "driver_failed", "state_verified": True,
-                           "driver_reason": driver_reason}, task.result
-    assert len(sim.calls) == 1 and sim.state == "on"
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (0, 1)
-    # The finished row is the task's result: no second command, no rollback.
-    from types import SimpleNamespace
-
-    cached = await actuator.execute_task(SimpleNamespace(
-        id=task.id, kind=HOUSE_CONTROL_KIND, agent="jarvis", payload=dict(_HOUSE)))
-    assert cached == {"status": "failed", "reason": "driver_failed", "verified": False,
-                      "state_verified": True, "driver_reason": driver_reason,
-                      "manual_recovery_required": False}
-    assert len(sim.calls) == 1
-    queue.close()
-
-
-@pytest.mark.asyncio
-async def test_house_a_driver_that_worked_on_a_matching_device_still_succeeds(tmp_path, monkeypatch):
-    """The contrast: a driver that answered ``ok`` on a device already in the state is
-    a verified success (1,0)."""
-    from agents.core.autonomy.executor import TaskExecutor
-    from agents.core.house.actuation import HOUSE_CONTROL_KIND, register_house_handlers
-    from tests.test_h30_house_actuation import _actuator, _Simulator
-
-    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-    monkeypatch.setenv("JARVIS_UNIFIED_ACTION_API", "1")
-    sim = _Simulator(state="on")
-    queue = _queue(tmp_path / "autonomy.db")
-    executor = register_house_handlers(TaskExecutor(), _actuator(tmp_path, sim))
-    task = await _run_real(queue, executor.execute, HOUSE_CONTROL_KIND, _HOUSE)
-    assert task.result["status"] == "verified" and len(sim.calls) == 1
-    assert _counts(queue, HOUSE_CONTROL_KIND) == (1, 0)
-    queue.close()
 
 
 # ── round 6, item 6: the execution guard reports why it declined ─────────────

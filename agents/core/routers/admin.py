@@ -880,8 +880,8 @@ async def admin_network_calls(plugin: str = Query(None), limit: int = Query(100)
     therefore reading a claim about PLUGIN policy, not about whether anything left the
     machine — which is why the HUD's headline takes `model_egress_total` as its own term.
     Still not instrumented at all (recorded so this docstring does not overclaim in the
-    other direction): cloud TTS in `voice/tts.py`, `skills/importer.py`,
-    `cameras/frigate.py`, `house/home_assistant.py` and `channels/telegram.py`.
+    other direction): cloud TTS in `voice/tts.py`, `skills/importer.py`
+    and `channels/telegram.py`.
 
     H381 — the ledger survives a restart. Tallies and `recent` are read back from the
     owner-only, bounded `egress_ledger.db` under the data root, so rows recorded before

@@ -313,19 +313,25 @@ def test_main_exits_zero_offline_when_only_seam_capabilities_fail(tmp_path):
 
 def test_main_exits_zero_in_live_mode_when_owner_hardware_is_absent(tmp_path, monkeypatch):
     """The scheduled lane runs with JARVIS_REALITY_HARNESS=1 on a GitHub runner: the
-    owner-live house/camera cases report their opt-in as missing and must count as
+    owner-live cases report their opt-in as missing and must count as
     'not exercised on this host', never as a red nightly (2026-09-03 run 70)."""
     from agents.core.observability.reality_evidence import main
 
     monkeypatch.setenv("JARVIS_REALITY_HARNESS", "1")
-    monkeypatch.delenv("JARVIS_H30_HA_LIVE", raising=False)
     out = tmp_path / "latest-run.json"
     rc = main(["--store-root", str(tmp_path), "--json-out", str(out), "--lane", "scheduled"])
     record = json.loads(out.read_text(encoding="utf-8"))
     totals = record["totals"]
     failing = {c["capability_id"] for c in record["cases"] if not c["passed"] and not c["skipped"]}
     assert rc == 0, _verdict_message(record)
-    assert totals["owner_live_not_exercised"] >= 1
+    # Every owner-live case of the seeded pack is excused here, and nothing else is. The house
+    # and camera packs were the last owner-live cases; since their removal (2026-11-25) the
+    # seeded pack may carry none, and then nothing may be reported as "not exercised".
+    from agents.core.observability import reality_harness as rh
+
+    live_ids = {case.capability_id for case in rh.CASES if case.live}
+    assert set(record["owner_live_not_exercised"]) <= live_ids
+    assert (totals["owner_live_not_exercised"] >= 1) == bool(live_ids)
     assert set(record["expected_seam_failures"]) | set(record["owner_live_not_exercised"]) == failing
     for case in record["cases"]:
         # a capability id is shared by its offline and owner-live cases; only the

@@ -6,7 +6,6 @@ import { LABEL } from '../theme/type';
 const ROLE_LABELS = {
   'role:approval_judge': 'Approval judge',
   'role:telegram_media_reader': 'Telegram image descriptions',
-  'role:camera_descriptions': 'Camera descriptions',
   'role:video_analysis': 'Video analysis',
   'role:video_fallback_1': 'Video fallback 1',
   'role:video_fallback_2': 'Video fallback 2',
@@ -58,12 +57,6 @@ export function DataHandling({ value, reload }) {
       Telegram image descriptions require a local VLM on the Nerva server.
       Unknown or training policies require their own acknowledgment.
       Acknowledgment does not enable remote image descriptions.
-    </p>}
-    {targets.some(t => t.target_id === 'role:camera_descriptions') && <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
-      Camera descriptions require a local VLM on the Nerva server.
-      Unknown or training policies require separate model-data acknowledgment.
-      Acknowledgment does not enable camera capture, event description or remote destinations,
-      and does not replace household consent.
     </p>}
     {targets.some(t => t.target_id === 'role:video_analysis') && <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
       Video analysis requires a separate owner-approved tool call. Remote model use also

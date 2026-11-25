@@ -103,7 +103,7 @@ export function ChatHistorySearch({ lang, opener, onClose, hasDraft, hasAttachme
   const [allowCloud, setAllowCloud] = useState(false);
   const passage = useRef<HTMLTextAreaElement>(null);
   const [chosen, setChosen] = useState('');
-  // The hub's strictly local agents (signals/agents-policy.ts, LOCAL_ONLY_AGENTS, hestia included)
+  // The hub's strictly local agents (signals/agents-policy.ts, LOCAL_ONLY_AGENTS)
   // never pass a passage to a cloud model, so they need no cloud consent.
   const localRecipient = isLocalOnlyAgent(recipient);
 

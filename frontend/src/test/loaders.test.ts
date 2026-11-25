@@ -158,7 +158,7 @@ describe('loadJarvisData degraded roster parity', () => {
         agents: [
           { id: 'jarvis', status: 'ready' },
           { id: 'howard', status: 'idle' },
-          { id: 'hestia', status: 'idle' },
+          { id: 'argus', status: 'idle' },
         ],
       });
       return unavailable(); // /api/agents and everything else down
@@ -169,7 +169,7 @@ describe('loadJarvisData degraded roster parity', () => {
 
     const ids = data.agents.map((a) => a.id);
     expect(ids).toContain('howard');
-    expect(ids).toContain('hestia');
+    expect(ids).toContain('argus');
     expect(ids).toContain('jarvis');
   });
 });

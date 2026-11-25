@@ -31,7 +31,7 @@
 
 ---
 
-### 18 Specialist Agents (4 Tiers)
+### 17 Specialist Agents (4 Tiers)
 
 | Tier | Agent | Role |
 |------|-------|------|
@@ -257,7 +257,7 @@ Chatbots are **reactive** — they wait for you. Workflow builders are **rigid**
 
 ### The Product
 
-**Nerva is your personal AI operating system** — 18 specialist agents that work 24/7, proactively, on your hardware.
+**Nerva is your personal AI operating system** — 17 specialist agents that work 24/7, proactively, on your hardware.
 
 It doesn't wait to be asked. It monitors your system health, watches your email and calendar, scans its own logs for bugs, and consolidates every conversation into a knowledge graph every night. Every morning at 07:00 it delivers a prioritized brief.
 
@@ -308,7 +308,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 
 > *"The AI that works while you sleep."*
 
-> *"18 agents. One system. Your data stays home."*
+> *"17 agents. One system. Your data stays home."*
 
 > *"Finally: an AI assistant that learns what to stop asking you."*
 

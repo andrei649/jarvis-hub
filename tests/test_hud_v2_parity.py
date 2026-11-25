@@ -177,12 +177,9 @@ RULES = [
     ("/api/desktop", "build"),  # governed desktop operator (H15.3)
     # op-host-probe: read-only "what can this host honestly offer the operator, and why
     # not" probe — the desktop operator's own honesty surface, so it lives beside it.
-    # Distinct from ("/api/house", "home") below: neither prefix matches the other.
     ("/api/host/", "build"),
     ("/api/operator", "build"),  # H28.2 action-hierarchy selection (DRA-22/DRA-42)
     ("/api/media", "build"),  # governed generation + live Media Director panel (H12.24/H29)
-    ("/api/house", "home"),  # H30 House Brain state + governed proposals/owner ceremony
-    ("/api/cameras", "home"),  # H31 local camera metadata + privacy-safe temporal search
     ("/api/ambient", "home"),  # H33 redacted live-monitor and decision transparency
     ("/api/acquisition", "build"),  # H32 governed capability lifecycle + hash-only audit
     # observe (traces / eval / quality / review / arena / resilience / bench / cost)
@@ -380,47 +377,6 @@ def test_media_director_routes_have_a_live_build_surface():
         assert route in panel
     assert "ADMIN · DEVICE REGISTRY" in panel
     assert "<iframe" not in panel.lower()
-
-
-def test_house_routes_have_a_live_home_surface():
-    house_routes = {
-        "/api/house/state",
-        "/api/house/control/light",
-        "/api/house/control/climate",
-        "/api/house/control/security",
-    }
-    assert house_routes.issubset(set(_routes()))
-    assert {_classify(path) for path in house_routes} == {"home"}
-
-    source = GAP.read_text(encoding="utf-8")
-    start = source.index("export function HousePanel")
-    end = source.index("/* 0.37", start)
-    panel = source[start:end]
-    for route in house_routes:
-        assert route in panel
-    assert "/api/house/security/" in panel
-    assert "ADMIN · STRONG CONFIRMATION" in panel
-    assert "<iframe" not in panel.lower()
-
-
-def test_camera_routes_have_a_metadata_only_home_surface():
-    camera_routes = {
-        "/api/cameras/status",
-        "/api/cameras/events",
-        "/api/cameras/search",
-        "/api/cameras/onvif/discover",
-    }
-    assert camera_routes.issubset(set(_routes()))
-    assert {_classify(path) for path in camera_routes} == {"home"}
-
-    source = GAP.read_text(encoding="utf-8")
-    _assert_console_registration(source, "Home", "CameraPanel")
-    start = source.index("export function CameraPanel")
-    end = source.index("/* 0.37", start)
-    panel = source[start:end]
-    for route in ("/api/cameras/status", "/api/cameras/events", "/api/cameras/search"):
-        assert route in panel
-    assert all(tag not in panel.lower() for tag in ("<img", "<video", "<iframe"))
 
 
 def test_acquisition_routes_have_a_live_hash_only_build_surface():

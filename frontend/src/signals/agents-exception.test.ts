@@ -6,7 +6,7 @@ import { T0, at, empty, live, refused } from './test-support';
 import type { AgentState, TabTurn } from './types';
 import type { TaskLite } from './wire';
 
-const ROSTER = ['jarvis', 'pepper', 'stark', 'steve', 'ultron', 'athena', 'frigga', 'howard', 'hestia'].map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1), role: `${id} role` }));
+const ROSTER = ['jarvis', 'pepper', 'stark', 'steve', 'ultron', 'athena', 'frigga', 'howard', 'gecko'].map((id) => ({ id, name: id[0].toUpperCase() + id.slice(1), role: `${id} role` }));
 const task = (id: number, agent: string | null, extra: Partial<TaskLite> = {}): TaskLite => ({ id, kind: 'send_email', title: `Task ${id}`, agent, createdAt: null, service: null, ...extra });
 const trust = (cloud: boolean) => ({ mic: 'on' as const, strictLocal: !cloud, cloudAvailable: cloud, claudeAvailable: false });
 const turn = (agent: string): TabTurn => ({ turnId: 1, agent, askedAt: T0, startedAt: T0, firstTokenAt: null });
@@ -14,10 +14,10 @@ const base = (over: Partial<AgentsInput> = {}): AgentsInput => ({ roster: ROSTER
 const state = (input: AgentsInput, id: string, lang = 'en'): AgentState => agentsByException(input, lang).agents.find((a) => a.id === id) as AgentState;
 
 describe('agent policy', () => {
-  it('lists the hub\'s local-only agents (hestia included) and its cloud-only one', () => {
-    expect([...LOCAL_ONLY_AGENTS].sort()).toEqual(['frigga', 'hestia', 'howard', 'ultron']);
+  it('lists the hub\'s local-only agents and its cloud-only one', () => {
+    expect([...LOCAL_ONLY_AGENTS].sort()).toEqual(['frigga', 'howard', 'ultron']);
     expect([...CLOUD_ONLY_AGENTS]).toEqual(['athena']);
-    expect(isLocalOnlyAgent('Hestia')).toBe(true);
+    expect(isLocalOnlyAgent('Howard')).toBe(true);
     expect(isLocalOnlyAgent('jarvis')).toBe(false);
     expect(isCloudOnlyAgent(' ATHENA ')).toBe(true);
     expect(isCloudOnlyAgent(null)).toBe(false);

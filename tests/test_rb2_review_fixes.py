@@ -159,7 +159,6 @@ def test_every_hub_variable_that_names_a_path_is_on_the_list():
     looks_like_a_path = re.compile(r"(?:^|_)(?:ROOTS?|DIR|HOME|FILE|LOG|STATE|STORE|DEST|BUNDLE|PATH)(?:_|$)")
     not_a_path = {
         "FILE_MAX_BYTES", "FILE_BROWSER_MAX_BYTES", "FILE_TOOLS", "LOG_BACKUPS", "LOG_LEVEL", "LOG_MAX_MB", "LOG_REDACTION",   # sizes, switches
-        "HOME_ASSISTANT",                 # a switch (the Home Assistant integration)
         "ROOT_PATH",                      # an ASGI URL prefix, where "/" is a meaning of its own
         "RESTORE_STAGE_TTL_HOURS", "RUNTIME_RESTORE_GRACE_SECONDS", "RUNTIME_RESTORE_POLL",
         "RESTORE_RUNTIME_WAIT_SECONDS",
@@ -172,8 +171,8 @@ def test_every_hub_variable_that_names_a_path_is_on_the_list():
     for suffix in env_alias.PATH_TYPED:
         assert env_alias.path_typed("NERVA_" + suffix) and env_alias.path_typed("JARVIS_" + suffix)
     # by name, never by a substring: these only LOOK like paths, endpoints or files
-    for name in ("JARVIS_HOME_ASSISTANT", "JARVIS_FILE_TOOLS", "JARVIS_FILE_MAX_BYTES", "JARVIS_PLAYWRIGHT_HOST",
-                 "JARVIS_DESKTOP_HOST", "JARVIS_HOST", "JARVIS_HA_URL", "JARVIS_LOG_LEVEL", "NERVA_HUB_URL", "PATH"):
+    for name in ("JARVIS_FILE_TOOLS", "JARVIS_FILE_MAX_BYTES", "JARVIS_PLAYWRIGHT_HOST",
+                 "JARVIS_DESKTOP_HOST", "JARVIS_HOST", "JARVIS_COMFYUI_URL", "JARVIS_LOG_LEVEL", "NERVA_HUB_URL", "PATH"):
         assert not env_alias.path_typed(name), name
     assert not hasattr(env_alias, "reference_sensitive") and not hasattr(env_alias, "refuse_unsafe_paths")
 
@@ -309,14 +308,14 @@ def test_the_mcp_passthrough_list_gives_the_child_what_the_old_spelling_gives(cl
 def test_a_setting_may_name_a_hub_variable_under_either_spelling(clean):
     from agents.core import settings_interpolation as si
 
-    clean.setenv("NERVA_HA_URL", "http://ha.local:8123")
+    clean.setenv("NERVA_COMFYUI_URL", "http://comfy.local:8188")
     clean.setenv("NERVA_ADMIN_TOKEN", "admin-token-for-refusal")
     env_alias.normalize_process_env()
-    for reference in ("${NERVA_HA_URL}", "${env:NERVA_HA_URL}", "${JARVIS_HA_URL}", "${env:JARVIS_HA_URL}"):
-        assert si.expand(reference, setting="integrations.home_assistant_url") == "http://ha.local:8123", reference
-    assert si.expand("x${NERVA_HA_URL}/y", setting="a.b") == "xhttp://ha.local:8123/y"
-    rows = si.references("${NERVA_HA_URL} ${JARVIS_HA_URL} ${NERVA_NOT_SET_ANYWHERE}")
-    assert rows == [{"name": "JARVIS_HA_URL", "set": True}, {"name": "NERVA_NOT_SET_ANYWHERE", "set": False}]
+    for reference in ("${NERVA_COMFYUI_URL}", "${env:NERVA_COMFYUI_URL}", "${JARVIS_COMFYUI_URL}", "${env:JARVIS_COMFYUI_URL}"):
+        assert si.expand(reference, setting="integrations.comfyui_url") == "http://comfy.local:8188", reference
+    assert si.expand("x${NERVA_COMFYUI_URL}/y", setting="a.b") == "xhttp://comfy.local:8188/y"
+    rows = si.references("${NERVA_COMFYUI_URL} ${JARVIS_COMFYUI_URL} ${NERVA_NOT_SET_ANYWHERE}")
+    assert rows == [{"name": "JARVIS_COMFYUI_URL", "set": True}, {"name": "NERVA_NOT_SET_ANYWHERE", "set": False}]
     # the hub's own credentials stay unnameable, under either spelling
     for reference in ("${NERVA_ADMIN_TOKEN}", "${JARVIS_ADMIN_TOKEN}"):
         refuse = lambda name, value: si.refusal(name, credential_setting=True)   # noqa: E731

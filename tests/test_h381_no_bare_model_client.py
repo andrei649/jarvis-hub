@@ -278,26 +278,6 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
         "goes through TelegramChannel._post (H069 outbound gate) to the channel's client, "
         "which refuses any host but HTTPS api.telegram.org",
         frozenset({"TelegramChannel.__init__", "TelegramChannel._start_claimed", "TelegramChannel._answer_callback", "TelegramChannel._edit_message", "TelegramChannel._handle_pending_callback", "TelegramChannel._post_clip", "TelegramChannel._send_ephemeral_chunk", "TelegramChannel._send_message", "TelegramChannel._send_plain_chunk", "TelegramChannel.publish_command_menu", "TelegramChannel.request_decision_reason", "TelegramChannel.send_action", "TelegramChannel.send_card", "TelegramChannel.send_file", "TelegramChannel.send_media", "TelegramChannel.send_owner_once_card", "TelegramChannel.send_pending_card", "TelegramChannel.send_scheduled_text"})),
-    "agents/core/cameras/frigate.py": (
-        "Frigate NVR API on the owner's LAN", frozenset({"_FrigateHTTP.request_bytes"})),
-    "agents/core/house/home_assistant.py": (
-        "Home Assistant REST API on the owner's LAN. _HttpxREST.request refuses any destination "
-        "but a literal LAN address before a client exists (test_the_house_transports_refuse_"
-        "every_non_lan_destination); its callers are checked: __init__ builds it, snapshot "
-        "hands it the validated origin pinned to its resolved LAN address (_runtime_endpoint)",
-        frozenset({"_HttpxREST.request", "HomeAssistantAdapter.__init__",
-                   "HomeAssistantAdapter.snapshot"})),
-    "agents/core/house/actuation.py": (
-        "POSTs an approved Home Assistant service call through the adapter's REST transport to "
-        "the adapter's validated origin pinned to its resolved LAN address (_runtime_endpoint); "
-        "the transport refuses any non-LAN destination itself",
-        frozenset({"HomeAssistantServiceDriver._adapter_service_call"})),
-    "agents/core/house/wled.py": (
-        "WLED light controller JSON API on the LAN. HttpxJSONTransport refuses any destination "
-        "whose origin fails validate_wled_origin (test_the_house_transports_refuse_every_non_lan_"
-        "destination); its callers are checked: __init__ builds it with the bridge's allowlist, "
-        "_apply hands it the validated origin + /json/state",
-        frozenset({"HttpxJSONTransport.__call__", "WLEDBridge.__init__", "WLEDBridge._apply"})),
     "agents/core/routers/onboarding.py": (
         "local model inventory of the hub's own router (get_local_model_inventory(router="
         "llm_router)): catalog/residency GETs of its configured LM Studio/Ollama servers; no prompt",
@@ -346,15 +326,6 @@ _PINNED_DESTINATIONS: dict[tuple[str, str], str] = {
     ("agents/core/http_client.py", "PluginHTTPClient.stream"):
         "the streaming twin of _request_pinned: the same _guard policy check and plugin ledger "
         "row before the pinned send (tests/test_plugin_egress.py)",
-    ("agents/core/house/home_assistant.py", "_validated_origin"):
-        "returns only an owner-allowlisted or LAN-literal origin whose every resolved address is "
-        "on the LAN, else raises HAConfigError (tests/test_h30_house_adapter.py)",
-    ("agents/core/house/wled.py", "validate_wled_origin"):
-        "the same LAN-only origin rule for the WLED strip, else WLEDConfigError "
-        "(tests/test_wled_bridge.py)",
-    ("agents/core/cameras/frigate.py", "_FrigateHTTP._resolve_pinned"):
-        "re-resolves the configured Frigate origin before every attempt and refuses it unless "
-        "every address is an allowed LAN IP (lan_origin_required); the send is pinned to it",
 }
 
 
@@ -3488,30 +3459,48 @@ _VLM_SEND = "        resp = await self.client.post(endpoint, json=payload, heade
 _VLM_IMPORT = "from .egress import llm_async_client\n"
 _SEND_THROUGH = {
     # The reviewer's probes on the real VLM backend: its cloud prompt sent through the bare
-    # client inside a classified generic sender instead of its ledgered client.
-    "home assistant REST": (
+    # client inside a generic sender instead of its ledgered client. The two senders were the
+    # Home Assistant REST and WLED JSON transports until the house area was removed
+    # (2026-11-25); the same two shapes now live in the probe modules below.
+    "generic REST transport": (
         "        resp = await _HttpxREST().request('POST', self.base_url.rstrip('/') + endpoint, "
         "json=payload, headers=self._headers())",
-        "from ..house.home_assistant import _HttpxREST\n"),
-    "wled JSON transport": (
+        "from ..tools.zz_probe_rest import _HttpxREST\n"),
+    "generic JSON transport": (
         "        resp = await HttpxJSONTransport()(endpoint, payload)",
-        "from ..house.wled import HttpxJSONTransport\n"),
+        "from ..tools.zz_probe_json import HttpxJSONTransport\n"),
+}
+_SEND_SENDERS = {
+    # A generic send-through method and a generic send-through ``__call__``: each takes the
+    # URL and body from its caller and dials it through a bare client.
+    "agents/core/tools/zz_probe_rest.py": (
+        "import httpx\n"
+        "class _HttpxREST:\n"
+        "    async def request(self, method, url, **kw):\n"
+        "        async with httpx.AsyncClient() as c:\n"
+        "            return await c.request(method, url, **kw)\n"),
+    "agents/core/tools/zz_probe_json.py": (
+        "import httpx\n"
+        "class HttpxJSONTransport:\n"
+        "    async def __call__(self, url, body):\n"
+        "        async with httpx.AsyncClient() as c:\n"
+        "            return await c.post(url, json=body)\n"),
 }
 _SEND_PROBES = {
     # ... and a new llm/ module posting a prompt through each of them.
     "agents/core/llm/zz_probe_send.py": (
-        "from agents.core.house.home_assistant import _HttpxREST\n"
-        "from agents.core.house.wled import HttpxJSONTransport\n"
+        "from agents.core.tools.zz_probe_rest import _HttpxREST\n"
+        "from agents.core.tools.zz_probe_json import HttpxJSONTransport\n"
         "async def ask_rest(prompt):\n"
         "    return await _HttpxREST().request('POST', 'https://api.openai.com/v1/chat/completions',\n"
         "        json={'messages': [{'role': 'user', 'content': prompt}]})\n"
-        "async def ask_wled(prompt):\n"
+        "async def ask_json(prompt):\n"
         "    return await HttpxJSONTransport()('https://api.openai.com/v1/chat/completions',\n"
         "        {'messages': [{'role': 'user', 'content': prompt}]})\n"),
     # A forwarding helper outside llm/ is a sender itself, so the llm/ module that hands it
     # the cloud URL is a finding even if the helper were ever classified.
     "agents/core/tools/zz_probe_relay.py": (
-        "from agents.core.house.home_assistant import _HttpxREST\n"
+        "from agents.core.tools.zz_probe_rest import _HttpxREST\n"
         "async def relay(url, body):\n"
         "    return await _HttpxREST().request('POST', url, json=body)\n"),
     "agents/core/llm/zz_probe_relayed.py": (
@@ -3519,28 +3508,28 @@ _SEND_PROBES = {
         "async def ask(prompt):\n"
         "    return await relay('https://api.openai.com/v1/chat/completions', {'prompt': prompt})\n"),
 }
-_HA_SENDER = "agents/core/house/home_assistant.py:_HttpxREST"
-_WLED_SENDER = "agents/core/house/wled.py:HttpxJSONTransport"
+_REST_SENDER = "agents/core/tools/zz_probe_rest.py:_HttpxREST"
+_JSON_SENDER = "agents/core/tools/zz_probe_json.py:HttpxJSONTransport"
 
 
 def test_the_reviewer_send_through_probes_fail_the_repo_rule():
     """Round-4 review's mutation, made permanent through the whole pipeline: the real VLM
     backend sending its prompt through ``_HttpxREST.request`` or
-    ``HttpxJSONTransport.__call__`` (classified generic senders that take the method, URL and
+    ``HttpxJSONTransport.__call__`` (generic senders that take the method, URL and
     body from their caller) passed all 17 structural tests, because only a client leaving
     its function was followed. A function whose bare client dials a host its caller decides
     is a sender now, and every caller is a finding of its own."""
     source = (REPO / _VLM).read_text(encoding="utf-8")
     assert source.count(_VLM_SEND) == 1 and source.count(_VLM_IMPORT) == 1, (
         f"{_VLM} changed; update this mutation")
-    # One scan: the HA swap in the real vlm.py, the WLED swap in a copy of it beside it.
+    # One scan: the REST swap in the real vlm.py, the JSON swap in a copy of it beside it.
     swaps = {}
     for (send, imported), rel in zip(_SEND_THROUGH.values(), (_VLM, "agents/core/llm/zz_vlm_copy.py"),
                                      strict=True):
         swaps[rel] = source.replace(_VLM_SEND, send).replace(_VLM_IMPORT, _VLM_IMPORT + imported)
-    in_scope, outside, _ = _scan_repo({**swaps, **_SEND_PROBES})
+    in_scope, outside, _ = _scan_repo({**swaps, **_SEND_SENDERS, **_SEND_PROBES})
     offenders = _prompt_offenders(in_scope)
-    for rel, target in zip(swaps, (_HA_SENDER, _WLED_SENDER), strict=True):
+    for rel, target in zip(swaps, (_REST_SENDER, _JSON_SENDER), strict=True):
         failing = [o for o in offenders if o.startswith(rel + ":")]
         assert any("VLMBackend.generate_vision_checked" in o and f"constructs {target}" in o
                    for o in failing), (rel, failing)
@@ -3548,7 +3537,7 @@ def test_the_reviewer_send_through_probes_fail_the_repo_rule():
                    for o in failing), (rel, failing)
     probe = {o.split(" — ")[0].split(" ", 1)[1] for o in offenders
              if o.startswith("agents/core/llm/zz_probe_send.py:")}
-    assert probe == {"ask_rest", "ask_wled"}, offenders
+    assert probe == {"ask_rest", "ask_json"}, offenders
     relayed = [o.split(" — ")[1] for o in offenders if o.startswith("agents/core/llm/zz_probe_relayed.py:")]
     assert relayed == ["calls agents/core/tools/zz_probe_relay.py:relay, which sends through a "
                        "bare client to a host its caller decides"], relayed
@@ -3572,11 +3561,11 @@ def test_every_caller_of_a_send_through_is_checked():
     found = {q for q, _, s in scan_source(added, rel) if "sends" in s or "hands a host" in s}
     assert {"LLMRouter.ping", "LLMRouter.checker"} <= found, found
     assert not {(rel, "LLMRouter.ping"), (rel, "LLMRouter.checker")} & set(PROMPT_SCOPE_ALLOWLIST)
-    # A new caller of the classified Home Assistant transport, in its own module.
-    rel = "agents/core/house/home_assistant.py"
+    # A new caller of the classified Telegram transport, in its own module.
+    rel = "agents/core/channels/telegram.py"
     source = (REPO / rel).read_text(encoding="utf-8") + (
-        "\n\nasync def _raw(url, body):\n"
-        "    return await _HttpxREST().request('POST', url, json=body)\n")
+        "\n\nasync def _raw(channel: TelegramChannel, url, body):\n"
+        "    return await channel._post(url, json=body)\n")
     new = {q for q, _, _ in scan_source(source, rel)} - NOT_A_MODEL_PROVIDER[rel][1]
     assert new == {"_raw"}, new
 
@@ -3721,42 +3710,6 @@ def test_the_telegram_client_dials_only_the_bot_api(monkeypatch):
 
     asyncio.run(run())
     assert sent == ["https://api.telegram.org/bot123:abc/getMe"]
-
-
-def test_the_house_transports_refuse_every_non_lan_destination(monkeypatch):
-    """Round-4 review's runtime probe: both house transports POSTed a prompt to
-    api.openai.com. Each now checks the destination itself, before a client exists."""
-    import asyncio
-
-    import httpx
-    import pytest
-
-    from agents.core.house import home_assistant as ha
-    from agents.core.house import wled
-
-    sent: list[str] = []
-
-    async def wire(self, request):
-        sent.append(str(request.url))
-        return httpx.Response(200, json={"on": False}, request=request)
-
-    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", wire)
-    prompt = {"messages": [{"role": "user", "content": "secret prompt"}]}
-    public = wled.HttpxJSONTransport(resolver=lambda host, port: ["203.0.113.9"])
-
-    async def run():
-        for url in ("https://api.openai.com/v1/chat/completions", "http://8.8.8.8:8123/api",
-                    "http://ha.home.local:8123/api/states", "http://user@192.168.1.44/api"):
-            with pytest.raises(ha._RESTDestinationRefused):
-                await ha._HttpxREST().request("POST", url, json=prompt)
-        assert (await ha._HttpxREST().request("GET", "http://192.168.1.44:8123/api/states")).status_code == 200
-        for url in ("https://api.openai.com/v1/chat/completions", "http://8.8.8.8/json/state",
-                    "http://wled.local/json/state", "http://192.168.1.40/json/state?x=1"):
-            assert await public(url, prompt) == {"ok": False, "reason": "wled_url_rejected"}, url
-        assert (await wled.HttpxJSONTransport()("http://192.168.1.40/json/state", {"on": False}))["ok"]
-
-    asyncio.run(run())
-    assert sent == ["http://192.168.1.44:8123/api/states", "http://192.168.1.40/json/state"]
 
 
 def test_the_comfyui_backend_refuses_a_non_loopback_config(tmp_path):
@@ -4016,23 +3969,21 @@ def test_sys_modules_is_caught_like_import_module():
 def test_a_reason_must_cite_a_test_that_exists():
     """Round-5 review: two NOT_A_MODEL_PROVIDER reasons cited tests that were never written and
     the reason checker only measured length. A cited test name or tests/ file must exist."""
-    old = [("agents/core/house/home_assistant.py",
+    old = [("a/rest.py",
             "refuses any destination but a literal LAN address before a client exists "
             "(test_ha_rest_transport_refuses_every_non_lan_destination)"),
-           ("agents/core/house/wled.py",
+           ("a/json.py",
             "refuses any destination whose origin fails validate_wled_origin "
             "(test_wled_transport_refuses_every_non_lan_destination)"),
            ("x", "pinned in code (tests/test_no_such_file.py)")]
     assert _citation_errors(old) == [
-        "agents/core/house/home_assistant.py cites test_ha_rest_transport_refuses_every_non_lan_"
+        "a/rest.py cites test_ha_rest_transport_refuses_every_non_lan_"
         "destination, which no test defines",
-        "agents/core/house/wled.py cites test_wled_transport_refuses_every_non_lan_destination, "
+        "a/json.py cites test_wled_transport_refuses_every_non_lan_destination, "
         "which no test defines",
         "x cites tests/test_no_such_file.py, which does not exist"]
-    for rel in ("agents/core/house/home_assistant.py", "agents/core/house/wled.py"):
-        assert "test_the_house_transports_refuse_every_non_lan_destination" in NOT_A_MODEL_PROVIDER[rel][0]
     assert _citation_errors([("y", "see tests/test_plugin_egress.py and "
-                                   "test_the_house_transports_refuse_every_non_lan_destination")]) == []
+                                   "test_the_telegram_client_dials_only_the_bot_api")]) == []
 
 
 # ── the Adopt lane: vendored Hermes code is scanned like any other module ───────

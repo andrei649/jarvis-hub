@@ -56,8 +56,7 @@ ENABLED_SETTING = "channels.pending_inputs_enabled"
 UNAVAILABLE = {"ok": False, "reason": "clarify_context_unavailable"}
 SECRET_UNAVAILABLE = {"ok": False, "reason": "secret_prompt_unavailable_here"}
 #: request_secret only asks for an environment-style key name (``WEATHER_API_KEY``).
-#: Every name a system component keeps in the broker (``house_confirmation_key``,
-#: ``camera.vault_key``, ``a2a.peer.<id>``, ``frigate.token`` …) is lower-case or
+#: Every name a system component keeps in the broker (``a2a.peer.<id>`` …) is lower-case or
 #: dotted, so it can never be asked for; on top of that the name must be declared by an
 #: owner-vouched skill and pass the code-environment rules (_declared_secret_name).
 _SECRET_NAME = re.compile(r"[A-Z][A-Z0-9_]{1,127}\Z")

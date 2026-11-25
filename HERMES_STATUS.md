@@ -30,19 +30,19 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | [cli](docs/HERMES_CAPABILITIES.md#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 21 | 33 | 0 | 2 | 0 | 123 | seed din dovezi |
 | [gateway](docs/HERMES_CAPABILITIES.md#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 6 | 25 | 0 | 2 | 0 | 252 | seed din dovezi |
-| [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 6 | 27 | 0 | 6 | 0 | 46 | seed din dovezi |
+| [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 6 | 27 | 0 | 6 | 0 | 43 | seed din dovezi |
 | [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 15 | 23 | 0 | 2 | 0 | 71 | seed din dovezi |
 | [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 6 | 46 | 0 | 2 | 0 | 54 | seed din dovezi |
 | [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 4 | 19 | 0 | 2 | 0 | 30 | seed din dovezi |
 | [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 10 | 8 | 0 | 0 | 0 | 34 | seed din dovezi |
-| [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
+| [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 155 | seed din dovezi |
 | [tools](docs/HERMES_CAPABILITIES.md#area-tools) — Agent-callable tools and toolsets | adopt/own | 32 | 11 | 20 | 0 | 1 | 0 | 82 | seed din dovezi |
 | [skills](docs/HERMES_CAPABILITIES.md#area-skills) — Skills: authoring, catalogue and curation | adopt/own | 33 | 14 | 18 | 0 | 1 | 0 | 80 | seed din dovezi |
 | [providers](docs/HERMES_CAPABILITIES.md#area-providers) — Model providers, routing and fallback | adopt/own | 27 | 6 | 17 | 0 | 4 | 0 | 83 | seed din dovezi |
 | [agent-core](docs/HERMES_CAPABILITIES.md#area-agent-core) — Agent loop, context and sessions | own | 36 | 11 | 25 | 0 | 0 | 0 | 113 | seed din dovezi |
 | [memory](docs/HERMES_CAPABILITIES.md#area-memory) — Memory and recall | own | 27 | 10 | 17 | 0 | 0 | 0 | 70 | seed din dovezi |
 | [automation](docs/HERMES_CAPABILITIES.md#area-automation) — Automation: schedules, goals, delegation, kanban | own | 32 | 6 | 26 | 0 | 0 | 0 | 101 | seed din dovezi |
-| [security](docs/HERMES_CAPABILITIES.md#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 9 | 24 | 0 | 1 | 0 | 217 | seed din dovezi |
+| [security](docs/HERMES_CAPABILITIES.md#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 9 | 24 | 0 | 1 | 0 | 212 | seed din dovezi |
 | [media](docs/HERMES_CAPABILITIES.md#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 20 | 0 | 0 | 0 | 101 | seed din dovezi |
 | [editor-acp](docs/HERMES_CAPABILITIES.md#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 5 | 0 | 1 | 0 | 5 | seed din dovezi |
 | [mcp](docs/HERMES_CAPABILITIES.md#area-mcp) — MCP client and server | own/run | 13 | 3 | 10 | 0 | 0 | 0 | 19 | seed din dovezi |

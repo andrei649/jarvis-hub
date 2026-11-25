@@ -20,7 +20,7 @@
 
 .n-home__bandrow { flex: none; }
 
-/* "More in Home · 10 pages" at the foot of the day register; the list opens in place */
+/* "More in Home · 8 pages" at the foot of the day register; the list opens in place */
 .n-spread__cell > .n-home__more { flex: none; }
 .n-home__more {
   padding: var(--n-s-2) 0 var(--n-s-3);

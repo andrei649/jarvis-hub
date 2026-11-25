@@ -61,7 +61,7 @@ a double rule under a total are the only ornaments, and both carry meaning.
 - Background: Carbon `#0e1210`, no texture.
 - Center-left: the ring-N mark and wordmark `Nerva` (Literata, ink) + tagline in ink: **"The AI that works while you sleep."**
 - Right third: a straight (not angled) crop of the real Today page: the docket with one entry awaiting signature (the only vermilion on the asset) and the conversation beside it.
-- Bottom line in Barlow, ink secondary, sentence case: `Local-first · 18 agents · Governed autonomy · $0 a month`.
+- Bottom line in Barlow, ink secondary, sentence case: `Local-first · 17 agents · Governed autonomy · $0 a month`.
 - This doubles as the GitHub repo social preview and the README hero until a demo GIF exists.
 
 ### B. The "three pillars" card — `1080 × 1080` (square, for social)

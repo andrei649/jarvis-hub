@@ -21,10 +21,9 @@
 ## 1. Executive Repo Summary
 
 **Core Purpose:** Nerva (repo codename *jarvis-hub*) is a **local-first Personal Intelligence
-Operating System**: a multi-agent AI orchestration engine with 18 active agents (4 tiers) plus 14
+Operating System**: a multi-agent AI orchestration engine with 17 active agents (4 tiers) plus 14
 dormant bench agents, coordinated by a prime orchestrator ("Jarvis"), with long-term memory,
-governed autonomy, voice, smart-home ("House Brain"), camera intelligence, and a governed
-capability-acquisition pipeline.
+governed autonomy, voice, and a governed capability-acquisition pipeline.
 
 **Tech Stack:**
 
@@ -144,7 +143,7 @@ inbox/channels within the interrupt budget → executor dispatch, all kernel-med
 
 ### Strict Guardrails (non-negotiable — MOONSHOT.md §5 + AGENTS.md)
 
-1. **Local-first:** `frigga`, `ultron`, `howard`, `hestia` are `LOCAL_ONLY_AGENTS`
+1. **Local-first:** `frigga`, `ultron`, `howard` are `LOCAL_ONLY_AGENTS`
    (`llm/hybrid_router.py`) — code-enforced, never routed to cloud, fail closed. Every cloud hop is
    an explicit, auditable opt-in.
 2. **No ungoverned mutation:** any effect on the host, money, external services, memory purge, or

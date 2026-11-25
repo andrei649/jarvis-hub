@@ -1854,300 +1854,8 @@ export async function removeMediaDevice(config: ServerConfig, deviceId: string):
   return normalizeMediaMutation(raw);
 }
 
-// ── House Brain (read parity only) ───────────────────────────────
-
-export type HouseRoom = {
-  room_id: string;
-  name: string;
-};
-
-export type HouseDevice = {
-  entity_id: string;
-  domain: string;
-  state: string;
-  room_id: string;
-};
-
-export type HousePresence = {
-  occupant_id: string;
-  status: 'present' | 'vacant' | 'unknown';
-  room_id?: string;
-  privacy: string;
-  confidence: number;
-  fresh: boolean;
-};
-
-export type HouseStateResponse = {
-  enabled: boolean;
-  status: 'disabled' | 'degraded' | 'live';
-  reason: string;
-  observed_at: number;
-  freshness_seconds: number | null;
-  rooms: HouseRoom[];
-  devices: HouseDevice[];
-  presence: HousePresence[];
-  // Presence-writer state, distinct from the array: empty presence + 'live'
-  // means "nobody detected", not "the feature was never built" (GAP-9a).
-  // Absent on hubs that predate the writer — do not default it.
-  presence_status?: 'off' | 'unavailable' | 'live' | 'degraded';
-  privacy_status: string;
-};
-
-const HOUSE_PSEUDONYM = /^occ-[0-9a-f]{32}$/;
-
-function houseText(value: unknown, limit: number): string {
-  const text = securityString(value).trim();
-  return text.length <= limit ? text : '';
-}
-
-function normalizeHouseRoom(value: unknown): HouseRoom | null {
-  const raw = securityRecord(value);
-  const roomId = houseText(raw.room_id, 128);
-  const name = houseText(raw.name, 160);
-  return roomId && name ? { room_id: roomId, name } : null;
-}
-
-function normalizeHouseDevice(value: unknown): HouseDevice | null {
-  const raw = securityRecord(value);
-  const entityId = houseText(raw.entity_id, 128);
-  const domain = houseText(raw.domain, 64);
-  const state = houseText(raw.state, 256);
-  if (!entityId || !domain || !state) return null;
-  return {
-    entity_id: entityId,
-    domain,
-    state,
-    room_id: houseText(raw.room_id, 128),
-  };
-}
-
-function normalizeHousePresence(value: unknown): HousePresence | null {
-  const raw = securityRecord(value);
-  const occupantId = houseText(raw.occupant_id, 36);
-  if (!HOUSE_PSEUDONYM.test(occupantId)) return null;
-  const rawStatus = houseText(raw.status, 16);
-  const status = rawStatus === 'present' || rawStatus === 'vacant' ? rawStatus : 'unknown';
-  const privacy = houseText(raw.privacy, 128) || 'household';
-  const rawConfidence = securityNumber(raw.confidence);
-  const confidence = Number.isFinite(rawConfidence)
-    ? Math.max(0, Math.min(rawConfidence, 1))
-    : 0;
-  const roomId = privacy.toLowerCase() === 'private' ? '' : houseText(raw.room_id, 128);
-  return {
-    occupant_id: occupantId,
-    status,
-    ...(roomId ? { room_id: roomId } : {}),
-    privacy,
-    confidence,
-    fresh: securityBool(raw.fresh),
-  };
-}
-
-export async function fetchHouseState(config: ServerConfig): Promise<HouseStateResponse> {
-  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/house/state', undefined, {
-    retries: 2,
-  });
-  const rawStatus = houseText(raw.status, 32);
-  const status = rawStatus === 'disabled' || rawStatus === 'degraded' || rawStatus === 'live'
-    ? rawStatus
-    : 'degraded';
-  const rawPresenceStatus = houseText(raw.presence_status, 16);
-  const presenceStatus = rawPresenceStatus === 'off' || rawPresenceStatus === 'unavailable'
-    || rawPresenceStatus === 'live' || rawPresenceStatus === 'degraded'
-    ? rawPresenceStatus
-    : undefined;
-  const observedAt = securityNumber(raw.observed_at);
-  const rawFreshness = raw.freshness_seconds;
-  return {
-    enabled: securityBool(raw.enabled),
-    status,
-    reason: typeof raw.reason === 'string' ? raw.reason.slice(0, 256) : '',
-    observed_at: Number.isFinite(observedAt) && observedAt >= 0 ? observedAt : 0,
-    freshness_seconds:
-      typeof rawFreshness === 'number' && Number.isFinite(rawFreshness) && rawFreshness >= 0
-        ? rawFreshness
-        : null,
-    rooms: Array.isArray(raw.rooms)
-      ? raw.rooms.map(normalizeHouseRoom).filter((item): item is HouseRoom => item !== null).slice(0, 500)
-      : [],
-    devices: Array.isArray(raw.devices)
-      ? raw.devices.map(normalizeHouseDevice).filter((item): item is HouseDevice => item !== null).slice(0, 500)
-      : [],
-    presence: Array.isArray(raw.presence)
-      ? raw.presence.map(normalizeHousePresence).filter((item): item is HousePresence => item !== null).slice(0, 500)
-      : [],
-    ...(presenceStatus ? { presence_status: presenceStatus } : {}),
-    privacy_status: houseText(raw.privacy_status, 32) || 'unavailable',
-  };
-}
-
-// ── Camera Intelligence (metadata only) ─────────────────────────
-
-export type CameraSourceStatus = {
-  status: string;
-  camera_count: number;
-  last_success_at: number | null;
-  last_error: string | null;
-};
-
-export type CameraStorageStatus = {
-  status: string;
-  items: number;
-  bytes: number;
-  last_sweep_at: number | null;
-};
-
-export type CameraStatusResponse = {
-  enabled: boolean;
-  status: string;
-  reason: string;
-  source: CameraSourceStatus | null;
-  storage: CameraStorageStatus | null;
-};
-
-export type CameraEvent = {
-  event_id: string;
-  camera_id: string;
-  label: 'person' | 'vehicle' | 'animal' | 'package';
-  occurred_at: number;
-  confidence: number;
-  anonymous: boolean;
-  zone?: string;
-  room_id?: string;
-  description?: string;
-  description_provenance?: 'local_vlm_on_demand';
-};
-
-export type CameraEventsResponse = {
-  enabled: boolean;
-  status: string;
-  reason: string;
-  interpretation: Record<string, string | number>;
-  events: CameraEvent[];
-};
-
-const CAMERA_EVENT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const CAMERA_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const CAMERA_LABELS = new Set(['person', 'vehicle', 'animal', 'package']);
-const CAMERA_ERROR = /^[a-z][a-z0-9_]{0,63}$/;
-
-function cameraText(value: unknown, limit: number): string {
-  const text = securityString(value).trim();
-  return text.length <= limit && !/[\u0000-\u001f]/.test(text) ? text : '';
-}
-
-function cameraTimestamp(value: unknown): number | null {
+function wireTimestamp(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
-function normalizeCameraStatus(rawValue: unknown): CameraStatusResponse {
-  const raw = securityRecord(rawValue);
-  const sourceRaw = securityRecord(raw.source);
-  const sourceStatus = cameraText(sourceRaw.status, 32);
-  const source = raw.source && sourceStatus
-    ? {
-      status: sourceStatus,
-      camera_count: Math.max(0, Math.min(128, Math.trunc(securityNumber(sourceRaw.camera_count) || 0))),
-      last_success_at: cameraTimestamp(sourceRaw.last_success_at),
-      last_error: CAMERA_ERROR.test(cameraText(sourceRaw.last_error, 64))
-        ? cameraText(sourceRaw.last_error, 64)
-        : sourceRaw.last_error ? 'source_error' : null,
-    }
-    : null;
-  const storageRaw = securityRecord(raw.storage);
-  const storageStatus = cameraText(storageRaw.status, 32);
-  const storage = raw.storage && storageStatus
-    ? {
-      status: storageStatus,
-      items: Math.max(0, Math.trunc(securityNumber(storageRaw.items) || 0)),
-      bytes: Math.max(0, Math.trunc(securityNumber(storageRaw.bytes) || 0)),
-      last_sweep_at: cameraTimestamp(storageRaw.last_sweep_at),
-    }
-    : null;
-  return {
-    enabled: securityBool(raw.enabled),
-    status: cameraText(raw.status, 32) || 'unavailable',
-    reason: cameraText(raw.reason, 128),
-    source,
-    storage,
-  };
-}
-
-function normalizeCameraEvent(value: unknown): CameraEvent | null {
-  const raw = securityRecord(value);
-  const eventId = cameraText(raw.event_id, 128);
-  const cameraId = cameraText(raw.camera_id, 64);
-  const label = cameraText(raw.label, 32);
-  const occurredAt = cameraTimestamp(raw.occurred_at);
-  const rawConfidence = typeof raw.confidence === 'number' ? raw.confidence : Number.NaN;
-  if (
-    !CAMERA_EVENT_ID.test(eventId)
-    || !CAMERA_ID.test(cameraId)
-    || !CAMERA_LABELS.has(label)
-    || occurredAt === null
-    || !Number.isFinite(rawConfidence)
-  ) return null;
-  const description = cameraText(raw.description, 512);
-  const provenance = cameraText(raw.description_provenance, 64);
-  const localDescription = description && provenance === 'local_vlm_on_demand';
-  return {
-    event_id: eventId,
-    camera_id: cameraId,
-    label: label as CameraEvent['label'],
-    occurred_at: occurredAt,
-    confidence: Math.max(0, Math.min(1, rawConfidence)),
-    anonymous: label === 'person',
-    ...(cameraText(raw.zone, 64) ? { zone: cameraText(raw.zone, 64) } : {}),
-    ...(cameraText(raw.room_id, 64) ? { room_id: cameraText(raw.room_id, 64) } : {}),
-    ...(localDescription ? { description, description_provenance: 'local_vlm_on_demand' as const } : {}),
-  };
-}
-
-function normalizeCameraEvents(rawValue: unknown): CameraEventsResponse {
-  const raw = securityRecord(rawValue);
-  const interpretationRaw = securityRecord(raw.interpretation);
-  const interpretation: Record<string, string | number> = {};
-  for (const key of ['after', 'before', 'label', 'camera_id', 'zone', 'room_id']) {
-    const value = interpretationRaw[key];
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) interpretation[key] = value;
-    else if (typeof value === 'string' && cameraText(value, 64)) interpretation[key] = cameraText(value, 64);
-  }
-  return {
-    enabled: securityBool(raw.enabled),
-    status: cameraText(raw.status, 32) || 'unavailable',
-    reason: cameraText(raw.reason, 128),
-    interpretation,
-    events: Array.isArray(raw.events)
-      ? raw.events.map(normalizeCameraEvent).filter((item): item is CameraEvent => item !== null).slice(0, 100)
-      : [],
-  };
-}
-
-export async function fetchCameraStatus(config: ServerConfig): Promise<CameraStatusResponse> {
-  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/cameras/status', undefined, { retries: 2 });
-  return normalizeCameraStatus(raw);
-}
-
-export async function fetchCameraEvents(config: ServerConfig): Promise<CameraEventsResponse> {
-  const raw = await request<Record<string, unknown>>(config, 'GET', '/api/cameras/events', undefined, { retries: 2 });
-  return normalizeCameraEvents(raw);
-}
-
-export async function searchCameraEvents(
-  config: ServerConfig,
-  query: string,
-  limit = 100,
-): Promise<CameraEventsResponse> {
-  const text = query.trim();
-  if (!text || text.length > 256) throw new ApiError('Camera search must be 1 to 256 characters');
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new ApiError('Camera search limit is invalid');
-  const raw = await request<Record<string, unknown>>(
-    config,
-    'POST',
-    '/api/cameras/search',
-    { query: text, limit },
-  );
-  return normalizeCameraEvents(raw);
 }
 
 // ── Ambient Intelligence (redacted read parity) ────────────────
@@ -2216,7 +1924,7 @@ function normalizeAmbientDecision(value: unknown): AmbientDecision | null {
   const raw = securityRecord(value);
   const monitorId = ambientText(raw.monitor_id, 128);
   const rung = ambientText(raw.rung, 16) as AmbientRung;
-  const decidedAt = cameraTimestamp(raw.decided_at);
+  const decidedAt = wireTimestamp(raw.decided_at);
   if (!AMBIENT_ID.test(monitorId) || !AMBIENT_RUNGS.has(rung) || decidedAt === null) return null;
   return {
     monitor_id: monitorId,
@@ -2248,7 +1956,7 @@ function normalizeAmbientMonitor(value: unknown): AmbientMonitor | null {
     alert_rung: alertRung,
     recovery_rung: recoveryRung,
     state: ambientText(raw.state, 16) || 'waiting',
-    last_event_at: cameraTimestamp(raw.last_event_at),
+    last_event_at: wireTimestamp(raw.last_event_at),
     last_decision: normalizeAmbientDecision(raw.last_decision),
   };
 }
@@ -2260,7 +1968,7 @@ function normalizeAmbientSource(value: unknown): AmbientSource | null {
   return {
     source,
     status: ambientText(raw.status, 16) || 'waiting',
-    last_event_at: cameraTimestamp(raw.last_event_at),
+    last_event_at: wireTimestamp(raw.last_event_at),
     reason: ambientText(raw.reason, 64),
     queued: ambientCount(raw.queued, 2_048),
     critical_backpressure: ambientCount(raw.critical_backpressure),
@@ -2551,7 +2259,7 @@ function normalizeCaptureRecord(value: unknown): CaptureRecord | null {
     preview: securityString(raw.preview).slice(0, 500),
     redacted: securityBool(raw.redacted),
     triples: ambientCount(raw.triples, 10_000),
-    created_at: cameraTimestamp(raw.created_at),
+    created_at: wireTimestamp(raw.created_at),
   };
 }
 
@@ -2619,7 +2327,7 @@ export async function fetchCaptureExport(
   );
   return {
     version: ambientCount(raw.version, 1_000),
-    exported_at: cameraTimestamp(raw.exported_at),
+    exported_at: wireTimestamp(raw.exported_at),
     surface: typeof raw.surface === 'string' ? raw.surface.slice(0, 32) : null,
     count: ambientCount(raw.count, 100_000),
     surfaces: captureSurfaceMap(raw.surfaces),

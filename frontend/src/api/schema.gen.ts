@@ -10927,8 +10927,8 @@ export interface paths {
          *     therefore reading a claim about PLUGIN policy, not about whether anything left the
          *     machine — which is why the HUD's headline takes `model_egress_total` as its own term.
          *     Still not instrumented at all (recorded so this docstring does not overclaim in the
-         *     other direction): cloud TTS in `voice/tts.py`, `skills/importer.py`,
-         *     `cameras/frigate.py`, `house/home_assistant.py` and `channels/telegram.py`.
+         *     other direction): cloud TTS in `voice/tts.py`, `skills/importer.py`
+         *     and `channels/telegram.py`.
          *
          *     H381 — the ledger survives a restart. Tallies and `recent` are read back from the
          *     owner-only, bounded `egress_ledger.db` under the data root, so rows recorded before
@@ -14552,196 +14552,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/house/state": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** House State */
-        get: operations["house_state_api_house_state_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/house/presence/explain": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * House Presence Explain
-         * @description Explain one current private-store decision with the selected local model.
-         */
-        post: operations["house_presence_explain_api_house_presence_explain_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/house/control/light": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** House Control Light */
-        post: operations["house_control_light_api_house_control_light_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/house/control/climate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** House Control Climate */
-        post: operations["house_control_climate_api_house_control_climate_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/house/control/security": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** House Control Security */
-        post: operations["house_control_security_api_house_control_security_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/house/security/{task_id}/challenge": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** House Security Challenge */
-        post: operations["house_security_challenge_api_house_security__task_id__challenge_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/house/security/{task_id}/confirm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** House Security Confirm */
-        post: operations["house_security_confirm_api_house_security__task_id__confirm_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/cameras/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Camera Status */
-        get: operations["camera_status_api_cameras_status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/cameras/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Camera Events */
-        get: operations["camera_events_api_cameras_events_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/cameras/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Camera Search */
-        post: operations["camera_search_api_cameras_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/cameras/onvif/discover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Camera Onvif Discover */
-        post: operations["camera_onvif_discover_api_cameras_onvif_discover_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/acquisition/status": {
         parameters: {
             query?: never;
@@ -17998,16 +17808,6 @@ export interface components {
             /** Agent */
             agent?: string | null;
         };
-        /** CameraSearchBody */
-        CameraSearchBody: {
-            /** Query */
-            query: string;
-            /**
-             * Limit
-             * @default 100
-             */
-            limit: number;
-        };
         /** CanvasPostBody */
         CanvasPostBody: {
             /**
@@ -18247,18 +18047,6 @@ export interface components {
             notices: components["schemas"]["TurnNotice"][];
             outcome?: components["schemas"]["TurnOutcome"] | null;
         };
-        /** ClimateControlBody */
-        ClimateControlBody: {
-            /** Entity Id */
-            entity_id: string;
-            /**
-             * Action
-             * @enum {string}
-             */
-            action: "set_temperature" | "set_mode";
-            /** Value */
-            value: number | string;
-        };
         /** CommandBody */
         CommandBody: {
             /** Argv */
@@ -18367,11 +18155,6 @@ export interface components {
              * @default false
              */
             confirm_expensive: boolean;
-        };
-        /** ConfirmationBody */
-        ConfirmationBody: {
-            /** Challenge Token */
-            challenge_token: string;
         };
         /** ContextCompressBody */
         ContextCompressBody: {
@@ -18622,7 +18405,7 @@ export interface components {
             /** Scope */
             scope: string;
             /** Target */
-            target?: ("role:approval_judge" | "role:telegram_media_reader" | "role:camera_descriptions" | "role:video_analysis" | "role:video_fallback_1" | "role:video_fallback_2" | "role:video_fallback_3" | "role:video_fallback_4") | null;
+            target?: ("role:approval_judge" | "role:telegram_media_reader" | "role:video_analysis" | "role:video_fallback_1" | "role:video_fallback_2" | "role:video_fallback_3" | "role:video_fallback_4") | null;
         };
         /** DatasetRunBody */
         DatasetRunBody: {
@@ -19363,18 +19146,6 @@ export interface components {
             /** Model */
             model?: string | null;
         };
-        /** LightControlBody */
-        LightControlBody: {
-            /** Entity Id */
-            entity_id: string;
-            /**
-             * State
-             * @enum {string}
-             */
-            state: "on" | "off";
-            /** Brightness Pct */
-            brightness_pct?: number | null;
-        };
         /** LinkBody */
         LinkBody: {
             /** Parent Id */
@@ -20095,11 +19866,6 @@ export interface components {
             /** Idle Seconds */
             idle_seconds?: number | null;
         };
-        /** PresenceExplainBody */
-        PresenceExplainBody: {
-            /** Occupant Id */
-            occupant_id: string;
-        };
         /** PresentBody */
         PresentBody: {
             /** Content */
@@ -20617,16 +20383,6 @@ export interface components {
              * Format: password
              */
             value: string;
-        };
-        /** SecurityControlBody */
-        SecurityControlBody: {
-            /** Entity Id */
-            entity_id: string;
-            /**
-             * Action
-             * @enum {string}
-             */
-            action: "lock" | "unlock" | "arm_home" | "arm_away" | "disarm" | "open" | "close";
         };
         /** SelectBody */
         SelectBody: {
@@ -44084,334 +43840,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    house_state_api_house_state_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    house_presence_explain_api_house_presence_explain_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PresenceExplainBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    house_control_light_api_house_control_light_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LightControlBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    house_control_climate_api_house_control_climate_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClimateControlBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    house_control_security_api_house_control_security_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SecurityControlBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    house_security_challenge_api_house_security__task_id__challenge_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    house_security_confirm_api_house_security__task_id__confirm_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                task_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConfirmationBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    camera_status_api_cameras_status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    camera_events_api_cameras_events_get: {
-        parameters: {
-            query?: {
-                after?: number | null;
-                before?: number | null;
-                label?: string | null;
-                camera_id?: string | null;
-                zone?: string | null;
-                room_id?: string | null;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    camera_search_api_cameras_search_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CameraSearchBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    camera_onvif_discover_api_cameras_onvif_discover_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };

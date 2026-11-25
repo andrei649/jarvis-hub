@@ -126,19 +126,19 @@ def test_every_masked_hub_variable_is_classified_as_a_credential_or_not():
         "decide whether a .env that builds it from an unset ${...} must refuse to start.")
     assert matched == env_alias.CREDENTIALS | env_alias.NOT_CREDENTIALS            # nothing stale
     assert not env_alias.CREDENTIALS & env_alias.NOT_CREDENTIALS
-    assert {"BUDGET_MAX_TOKENS", "PASSIVE_CAPTURE", "HA_TOKEN_REF", "KEY_DIR", "MCP_SAMPLING_DAILY_TOKENS",
+    assert {"BUDGET_MAX_TOKENS", "PASSIVE_CAPTURE", "KEY_DIR", "MCP_SAMPLING_DAILY_TOKENS",
                                          "NOUS_CLIENT_ID"} == env_alias.NOT_CREDENTIALS
     for name in ("JARVIS_ADMIN_TOKEN", "NERVA_USER_TOKEN", "JARVIS_AUDIT_KEY", "NERVA_ROLE_VISION_KEY",
                  "JARVIS_ROLE_VIDEO_FALLBACK_2_KEY", "NERVA_VLM_KEY"):
         assert env_alias.credential(name), name
-    for name in ("JARVIS_BUDGET_MAX_TOKENS", "NERVA_PASSIVE_CAPTURE", "JARVIS_HA_TOKEN_REF", "JARVIS_KEY_DIR",
+    for name in ("JARVIS_BUDGET_MAX_TOKENS", "NERVA_PASSIVE_CAPTURE", "JARVIS_MCP_SAMPLING_DAILY_TOKENS", "JARVIS_KEY_DIR",
                  "JARVIS_ROLE_VISION_MODEL", "JARVIS_PORT", "OPENAI_API_KEY", "NERVA_WORKSPACE_SSO_SECRET"):
         assert not env_alias.credential(name), name
     assert ep.masked("JARVIS_BUDGET_MAX_TOKENS") and ep.masked("NERVA_PASSIVE_CAPTURE")    # display: unchanged
 
 
 @pytest.mark.parametrize("line", ["JARVIS_BUDGET_MAX_TOKENS=${BUDGET}", "JARVIS_PASSIVE_CAPTURE=${CAPTURE}",
-                                  "JARVIS_HA_TOKEN_REF={{secret:${HA_NAME}}}"])
+                                  "JARVIS_MCP_SAMPLING_DAILY_TOKENS=${DAILY}"])
 def test_a_masked_name_that_is_not_a_credential_starts_as_on_main(tmp_path, line):
     home = tmp_path / "home"
     _write(home / ".env", line + "\n")

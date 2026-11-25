@@ -119,7 +119,7 @@ class DataHandlingAck(BaseModel):
     acknowledged: StrictBool
     scope: StrictStr = Field(pattern=r"^[0-9a-f]{64}$")
     target: Literal[
-        "role:approval_judge", "role:telegram_media_reader", "role:camera_descriptions",
+        "role:approval_judge", "role:telegram_media_reader",
         "role:video_analysis", "role:video_fallback_1", "role:video_fallback_2",
         "role:video_fallback_3", "role:video_fallback_4",
     ] | None = None

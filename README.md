@@ -427,7 +427,7 @@ Details: [`apps/jarvis-os/README.md`](apps/jarvis-os/README.md).
 Generated status: **v1.0.0** · backend **38,268** · frontend **5,027** · mobile **535** · **950** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `075f0c14c198`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
-**v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for evidence-based situational awareness, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 17 specialist agents (incl. **Argus** for evidence-based situational awareness and **Howard**, the emerging digital twin; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge
@@ -441,7 +441,8 @@ the only two open items (H12.14 fine-tuned agentic model, H13.3 speculative deco
 backup/restore + export-delete, operability, quality + user docs — see the
 [version roadmap](BACKLOG.md#version-roadmap)) proven with real design-partner users — **and (b) the
 AI-OS capability program** (ORIZONT 27–33: capability registry, computer/browser operator, media
-director, house brain, cameras, capability acquisition, ambient intelligence —
+director, capability acquisition, ambient intelligence; house brain and cameras were
+removed 2026-11-25 —
 [`NERVA_VISION.md`](NERVA_VISION.md), gate expanded 2026-07-11); manual testing
 ([`docs/MANUAL_TESTING.md`](docs/MANUAL_TESTING.md)) + code audit
 ([`docs/AUDIT.md`](docs/AUDIT.md)) are the release step that tags a version. The HUD V2 cockpit is the default UI;

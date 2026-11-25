@@ -1319,22 +1319,8 @@ controls; queued approval, kernel refusal, nested `output.ok=false`, and driver-
 are rendered as distinct outcomes. The panel displays bounded metadata only and never embeds
 remote media. `tests/test_hud_v2_parity.py` pins every Director route to the live Build surface.
 
-**H30.5 House Brain (2026-07-13):** the default-off `/api/house/*` surface is live in the new
-Console Home cluster. `HousePanel` renders bounded topology and pseudonymous presence, pauses
-controls whenever live Home Assistant state is unavailable, and exposes only narrow governed
-light/climate/security proposals. Security proposals remain visually distinct and use an
-admin-authenticated two-step challenge bound to the durable task; success is never shown for a
-queued, denied, or unverified outcome. Native mobile parity is read-first with an Approvals handoff
-and intentionally has no security confirmation shortcut. The HUD parity gate pins every user route
-to the Home surface.
-
-**H31.5 Camera Intelligence (2026-07-13):** the default-off `/api/cameras/*` surface is live in
-the Home cluster. `CameraPanel` shows only bounded time/type/camera/zone/confidence metadata and
-optional strict-local description provenance, with deterministic temporal search. It creates no
-image/video/embed or private media request. Admin-authenticated ONVIF discovery is onboarding-only and
-needs the manually installed `wsdiscovery` package (deliberately unlocked; a stock install's
-discover route answers `onvif_dependency_missing` with the install remedy in `detail`);
-native parity covers status, recent events, and private-body search without an admin shortcut.
+**H30.5 House Brain / H31.5 Camera Intelligence:** removed 2026-11-25 by owner decision (`docs/decisions/2026-11-25-nerva-finish-line.md`). `HousePanel`,
+`CameraPanel`, their console routes and the `/api/house/*` and `/api/cameras/*` surfaces no longer exist.
 
 **H32.6 Capability Acquisition (2026-07-13):** the default-off `/api/acquisition/*` surface is
 live in the Build cluster. `AcquisitionPanel` separates user-readable lifecycle/reuse/package and
@@ -1501,9 +1487,7 @@ requirements and independent configuration-bound acknowledgment/revocation. Unkn
 role IDs have no controls. Judge/provider compatibility and unavailable-store
 feedback are retained.
 
-Trust now includes independent camera-description model-data controls as well.
-The UI separates them from household camera consent, capture enablement and remote
-access. Camera provisioning is still a separate H31 integration requirement.
+The camera-description model-data controls were removed with camera intelligence (2026-11-25).
 
 2026-09-27 — Voice → Command providers now works with task mediation set to
 `enforce`, using the existing Decision Inbox card and human approval. `hold`

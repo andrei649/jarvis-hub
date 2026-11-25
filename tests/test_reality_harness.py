@@ -10,14 +10,6 @@ import pytest
 
 from agents.core.observability import capability_registry as cr
 from agents.core.observability import reality_harness as rh
-from agents.core.observability.camera_reality import (
-    H31_CAMERA_LIVE_CASES,
-    H31_CAMERA_REALITY_CASES,
-)
-from agents.core.observability.house_reality import (
-    H30_HOUSE_LIVE_CASES,
-    H30_HOUSE_REALITY_CASES,
-)
 from agents.core.observability.media_reality import H29_MEDIA_REALITY_CASES
 from agents.core.observability.reality_harness import RealityCase, run_reality
 
@@ -55,12 +47,12 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
             if record.kind == "skill"} == default_skills
     assert default_skills.isdisjoint(optional_sources)
     assert len(default_skills | optional_sources) == 12
-    # 53 plugins: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4), the three
+    # Plugins: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4), the three
     # default-off cloud video providers (G19) and the SMS channel (G16) joined the registry.
-    assert sum(record.kind == "plugin" for record in records.values()) == 54  # + room-peers (H658)
+    assert sum(record.kind == "plugin" for record in records.values()) == 53  # + room-peers (H658); - camera-frigate (removed 2026-11-25)
     # H086 browser broker and H214/H238/H590 pets add construction-status probes.
     assert sum(record.kind == "component" for record in records.values()) == 26
-    assert len(cases) == len(records) == 92 - len(optional_sources) == 85
+    assert len(cases) == len(records) == 91 - len(optional_sources) == 84
     assert results["component:browser_broker"] is True
     assert results["component:pets"] is True
     assert results["plugin:a2a"] is True
@@ -193,22 +185,6 @@ def test_canonical_seeded_harness_registers_the_h29_media_pack_once():
 
     assert h29_names
     assert all(seeded_names.count(name) == 1 for name in h29_names)
-
-
-def test_canonical_seeded_harness_registers_the_h30_house_pack_once():
-    h30_names = [case.name for case in H30_HOUSE_REALITY_CASES + H30_HOUSE_LIVE_CASES]
-    seeded_names = [case.name for case in rh.CASES]
-
-    assert h30_names
-    assert all(seeded_names.count(name) == 1 for name in h30_names)
-
-
-def test_canonical_seeded_harness_registers_the_h31_camera_pack_once():
-    h31_names = [case.name for case in H31_CAMERA_REALITY_CASES + H31_CAMERA_LIVE_CASES]
-    seeded_names = [case.name for case in rh.CASES]
-
-    assert h31_names
-    assert all(seeded_names.count(name) == 1 for name in h31_names)
 
 
 async def test_kill_switch_rail_is_a_real_hermetic_proof():

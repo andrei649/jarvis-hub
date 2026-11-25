@@ -162,17 +162,16 @@ def test_the_doctor_warns_on_a_literal_root_and_does_not_fail(tmp_path):
 BOOTS, WARNS, ROOT_WARNED = "boots", "boots with a warning", "boots, announced as a root"
 TABLE = [
     # the feature-off idiom: defined, and blank
-    ("HA_URL=\nHA_TOKEN=\n{p}_HA_URL=${{HA_URL}}\n{p}_H30_HA_TOKEN=${{HA_TOKEN}}\n", BOOTS, None),
-    ("HA_ON=\n{p}_HOME_ASSISTANT=${{HA_ON}}\n", BOOTS, None),
+    ("HB_URL=\nHB_TOKEN=\n{p}_HERMES_BRIDGE_URL=${{HB_URL}}\n{p}_HERMES_BRIDGE_TOKEN=${{HB_TOKEN}}\n", BOOTS, None),
+    ("CALL_ON=\n{p}_CALL_LIVE=${{CALL_ON}}\n", BOOTS, None),
     ("LOGDIR=\n{p}_LOG_FILE=/var/log/${{LOGDIR}}hub.log\n", BOOTS, None),               # blank, not leading
     ("{p}_ADMIN_TOKEN=\n{p}_USER_TOKEN=${{{p}_ADMIN_TOKEN}}\n", BOOTS, None),           # a credential, blank reference
     # flags and addresses that only LOOK like paths: never judged by a substring of their name
-    ("{p}_HOME_ASSISTANT=${{UNSET_FLAG}}\n", WARNS, "HOME_ASSISTANT"),
     ("{p}_FILE_TOOLS=${{UNSET_FLAG}}\n", WARNS, "FILE_TOOLS"),
     ("{p}_FILE_MAX_BYTES=${{UNSET_SIZE}}\n", WARNS, "FILE_MAX_BYTES"),
     ("{p}_PLAYWRIGHT_HOST=${{UNSET_HOST}}\n", WARNS, "PLAYWRIGHT_HOST"),
     ("{p}_DESKTOP_HOST=${{UNSET_HOST}}\n", WARNS, "DESKTOP_HOST"),
-    ("{p}_HA_URL=http://${{UNSET_HOST}}:8123\n", WARNS, "HA_URL"),
+    ("{p}_COMFYUI_URL=http://${{UNSET_HOST}}:8188\n", WARNS, "COMFYUI_URL"),
     ("{p}_ALLOWED_HOSTS=nerva.local,${{TAILNET}}\n", WARNS, "ALLOWED_HOSTS"),
     ("{p}_TRUSTED_PROXIES=${{PROXY_CIDR}}\n", WARNS, "TRUSTED_PROXIES"),
     ("{p}_HOST=${{BIND}}\n", WARNS, "HOST"),
@@ -193,7 +192,7 @@ TABLE = [
     # masked by name, and not credentials: an integer, a flag, a secret handle (main's value, a warning)
     ("{p}_BUDGET_MAX_TOKENS=${{BUDGET}}\n", WARNS, "BUDGET_MAX_TOKENS"),
     ("{p}_PASSIVE_CAPTURE=${{CAPTURE}}\n", WARNS, "PASSIVE_CAPTURE"),
-    ("{p}_HA_TOKEN_REF={{{{secret:${{HA_SECRET_NAME}}}}}}\n", WARNS, "HA_TOKEN_REF"),
+    ("{p}_MCP_SAMPLING_DAILY_TOKENS=${{DAILY}}\n", WARNS, "MCP_SAMPLING_DAILY_TOKENS"),
     ("{p}_NOUS_CLIENT_ID=${{CLIENT}}\n", WARNS, "NOUS_CLIENT_ID"),
     ("{p}_ADMIN_TOKEN=abc${{NOT_SET_ANYWHERE}}def\n", ep.CREDENTIAL_UNSET, "ADMIN_TOKEN"),
     ("{p}_AUDIT_KEY='k1${{x}}k2'\n", ep.CREDENTIAL_UNSET, "AUDIT_KEY"),

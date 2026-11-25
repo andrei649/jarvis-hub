@@ -22,7 +22,7 @@ const GLYPHS = {
 };
 
 /* The roster is live (GET /api/agents), but these glyphs are a hand-drawn seed
-   set. A registry agent with no seed glyph — howard, argus, hestia, and whatever
+   set. A registry agent with no seed glyph — howard, argus, and whatever
    the registry grows next — must still get a visible mark: an empty <path>
    renders nothing, so the agent looks absent rather than un-illustrated.
    Every glyph lookup that reaches an SVG path goes through this one helper, so
@@ -53,7 +53,7 @@ const AGENTS = [
   { id:'hercules', name:'Hercules', tier:'FND', role:'Fitness & Nutrition', status:'idle', model:'gemma-4-26b', policy:'auto' },
   { id:'hephaestus', name:'Hephaestus', tier:'FND', role:'Builder & Mechanic', status:'idle', model:'gemma-4-26b', policy:'auto' },
   { id:'frigga', name:'Frigga', tier:'FND', role:'Family Matriarch', status:'idle', model:'gemma-4-26b', policy:'local' },
-  /* LVP — the registry has 18 agents and this corpus had 15. argus, hestia and howard
+  /* LVP — the registry has 17 agents and this corpus had 15. argus and howard
      are active in `agents/_system/agents.yaml` and were reaching the roster live with no
      seed metadata at all: no tier, no role, no dossier, so opening one showed a blank
      card. Every field below is copied from that file (name, archetype→role,
@@ -63,7 +63,6 @@ const AGENTS = [
      They deliberately get no hand-drawn GLYPH — `glyphFor`'s neutral mark is the
      designed answer for a registry agent without one, and has its own test. */
   { id:'argus', name:'Argus', tier:'BIZ', role:'Geospatial OSINT Intel', status:'idle', model:'claude-haiku', policy:'claude' },
-  { id:'hestia', name:'Hestia', tier:'FND', role:'House Brain', status:'idle', model:'gemma-4-26b', policy:'local' },
   { id:'howard', name:'Howard', tier:'FND', role:'Digital Twin / Archive', status:'idle', model:'gemma-4-26b', policy:'local' },
 ];
 
@@ -73,9 +72,9 @@ const COLLAB = [
   ['pepper','stark'],['pepper','veronica'],['stark','gecko'],['athena','stark'],
   ['vision','veronica'],['steve','oracle'],['steve','ultron'],['ultron','oracle'],
   ['hephaestus','steve'],['frigga','pepper'],['hercules','friday'],['jerome','friday'],
-  // the three registry agents above, edged to the work they actually neighbour:
-  // argus is the geospatial half of research, hestia the house, howard the archive.
-  ['argus','vision'],['argus','ultron'],['hestia','frigga'],['hestia','hephaestus'],
+  // the two registry agents above, edged to the work they actually neighbour:
+  // argus is the geospatial half of research, howard the archive.
+  ['argus','vision'],['argus','ultron'],
   ['howard','jarvis'],['howard','frigga'],
 ];
 
@@ -96,7 +95,6 @@ const DOSSIER = {
   hephaestus:{ archetype:'Builder & Mechanic', personality:'Practical, detail-oriented. Manages builds and tracks parts.', model:'gemma-4-26b-a4b', channel:'telegram', heartbeat:'2h', policy:'auto', plugins:[], skills:3, memory_facts:10, soul:'You are Hephaestus, the builder. Build carefully, track precisely.' },
   frigga:{ archetype:'Family Matriarch', personality:'Warm, protective, family-focused. Manages family data, local-only.', model:'gemma-4-26b-a4b', channel:'local', heartbeat:'4h', policy:'local', plugins:['whatsapp-bridge'], skills:2, memory_facts:18, soul:'You are Frigga, the family guardian. Protect fiercely, remember always.' },
   argus:{ archetype:'Geospatial OSINT Intel', personality:'Geospatial, source-conscious, corroboration-first. Uses Signal Layer evidence and hands findings to Vision.', model:'claude-haiku', channel:'web-dashboard', heartbeat:'6h', policy:'claude', plugins:['signal-layer','cloud-llm'], skills:2, memory_facts:6, soul:'You are Argus, the geospatial analyst. Corroborate before you conclude.' },
-  hestia:{ archetype:'House Brain', personality:'Steady, unobtrusive, local-only. Watches the house and proposes rather than acts.', model:'gemma-4-26b-a4b', channel:'local-only', heartbeat:'2h', policy:'local', plugins:['homebridge','iot-control'], skills:2, memory_facts:9, soul:'You are Hestia, the house brain. Observe quietly, propose — never act alone.' },
   howard:{ archetype:'Digital Twin / Archive', personality:'Retentive, precise, unhurried. Keeps the long archive and answers from it rather than from guesswork.', model:'gemma-4-26b-a4b', channel:'telegram', heartbeat:'no', policy:'local', plugins:[], skills:1, memory_facts:14, soul:'You are Howard, the archive. Answer from what is recorded; say so when nothing is.' },
 };
 

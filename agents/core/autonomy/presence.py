@@ -1,9 +1,8 @@
 """presence.py — owner desk-presence state (H34.2).
 
 A tiny, pure, offline-testable tracker for **owner desk presence** — is the
-owner *at the machine* right now, or away from it. This is deliberately NOT the
-household room-occupancy inference in ``agents/core/house/presence.py`` (that is
-per-room, per-occupant, consent-gated, household-sensitive). This one models a
+owner *at the machine* right now, or away from it. This is deliberately NOT
+household room-occupancy inference. This one models a
 single boolean-ish signal reported by an owner-side host daemon (a Windows
 idle/lock watcher or the 0.64 Tauri host overlay) so the autonomy layer can
 decide *where* a decision card should land:

@@ -120,8 +120,6 @@ const SPEC: readonly AreaSpec[] = [
       ] },
       { id: 'around', en: 'Around you', ro: 'În jurul tău', pages: [
         panel('ambient-watch', 'Ambient watch', 'Supraveghere ambientală'),
-        panel('house', 'House', 'Casa'),
-        panel('camera', 'Camera', 'Cameră'),
       ] },
       { id: 'start', en: 'Start here', ro: 'Începe aici', pages: [
         panel('command-center', 'Command center', 'Centru de comandă', MORE),

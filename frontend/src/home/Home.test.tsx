@@ -85,7 +85,7 @@ describe('Home', () => {
   it('opens Home\'s other pages behind "More in Home" at the foot of the day register', () => {
     const navigate = vi.fn();
     render(<MoreInHome lang="en" navigate={navigate} />);
-    const toggle = screen.getByRole('button', { name: 'More in Home · 10 pages' });
+    const toggle = screen.getByRole('button', { name: 'More in Home · 8 pages' });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     const list = document.getElementById(toggle.getAttribute('aria-controls') as string) as HTMLElement;
     expect(list.hidden).toBe(true);
@@ -93,7 +93,7 @@ describe('Home', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(list.hidden).toBe(false);
     const links = within(list).getAllByRole('link');
-    expect(links).toHaveLength(10);
+    expect(links).toHaveLength(8);
     expect(links[0].textContent).toBe('Conversation');
     expect(links.some((a) => a.textContent === 'Today')).toBe(false);
     const today = within(list).getByRole('link', { name: 'What Nerva did today' });
@@ -107,7 +107,7 @@ describe('Home', () => {
     render(<Home hub={initialHubSnapshot()} clock={MONDAY} lang="ro" demo={false} navigate={() => {}} talk={talk} turns={[]} />);
     expect(screen.getByRole('heading', { level: 1, name: 'Azi — luni, 23 noiembrie' })).toBeTruthy();
     // at the foot of the day register (from 1680px) and at the end of the day band (below it); CSS shows one
-    expect(screen.getAllByRole('button', { name: 'Mai multe în Acasă · 10 pagini' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Mai multe în Acasă · 8 pagini' })).toHaveLength(2);
   });
 
   it('keeps Home\'s other pages one click away below 1680px: "More in Home" ends the day band', () => {
@@ -117,9 +117,9 @@ describe('Home', () => {
     const more = band.querySelector('[data-home-more="band"]') as HTMLElement;
     expect(more.closest('[data-frame="dayband"]')).not.toBeNull();
     expect(more.classList.contains('n-home__more--popover')).toBe(true);
-    const toggle = within(more).getByRole('button', { name: 'More in Home · 10 pages' });
+    const toggle = within(more).getByRole('button', { name: 'More in Home · 8 pages' });
     fireEvent.click(toggle);
-    expect(within(more).getAllByRole('link')).toHaveLength(10);
+    expect(within(more).getAllByRole('link')).toHaveLength(8);
     // Escape closes the list and stays in the band
     fireEvent.keyDown(toggle, { key: 'Escape' });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
