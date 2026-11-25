@@ -179,7 +179,7 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-9 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
+12 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
 `tests/test_doc_reference_integrity.py` keeps this number honest). The owner-jobs routes under
 `/api/jobs` added 2026-09-07 (Hermes absorption, wave 2) were on this list for one commit — the
@@ -193,13 +193,19 @@ construction, two duplicates of already-wired surfaces) and eight are deliberate
 HA-4i-S1 adds CLI extension inspection; its `/api/plugins/extensions` view still needs a
 dedicated HUD/mobile caller, separate from the existing acquisition panel.
 The local Kanban CLI/chat/backend integration now has browser HUD consumers across all mounted
-`/api/kanban/*` routes (`41 -> 18`, surfacing explicit 503/409 refusals where backend Nerva
-adapters remain unbound); `/api/autonomy/kanban/dispatch` and native Kanban controls remain open.
-Signed-provider installation and credential routes also remain on this list. On 2026-11-14, 13 earlier routes left the punch list (`54 -> 41`) with live
+`/api/kanban/*` routes (`ProjectsMode`), governed intake `/api/autonomy/kanban/dispatch`
+(`AutonomyControlPanel`), and the signed-provider installation/credential/selection routes
+(`ProviderPackagesPanel`), bringing `UNCALLED_BACKLOG` down to the 8 documented design-refusal
+and duplicate-alias routes (`41 -> 8`); explicit 503/409 refusals remain visible where backend
+Nerva adapters are unbound, and native Kanban controls (`H18.34`) remain open. On 2026-11-14, 13 earlier routes left the punch list (`54 -> 41`) with live
 HUD consumers (`OAuthPanel` Nous Portal status/start/poll/logout, `SubAgentsPanel` transcript/result/claim,
 `A2AInboxPanel` outbound peer send, `MCPPanel` elicitation answer, `ChannelDeliveriesPanel` dead-target clear,
 and `JobsPanel` run history, completion ack and KV notepad keys); native mobile controls remain tracked separately,
 and backend routes/CLI access alone never establish graphical parity.
+On 2026-11-24 the HUD Phase B cleanup (the Ledger frame replacing the HUD v2 shell) added one
+route back (`11 -> 12`): `/api/cognition/stream`, whose only caller was the HUD v2 cockpit's
+cognition trace, retired for drawing stages, timings and routed agents the chat stream does not
+report. The route is still served; the punch-list entry says what a new caller must honour.
 A shrinking number is only good news when it shrinks for the right reason — an earlier pass of this
 sprint moved six routes into `MACHINE_FACING` to get the gate green, and an adversarial review
 caught that four of those reasons were false; they are back on the list. DRA-15 and DRA-36 both stay

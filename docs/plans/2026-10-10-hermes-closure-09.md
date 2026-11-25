@@ -24,7 +24,7 @@ Rollback is this small boot-composition unit and its regression.
 Read-only source/clause review is in batch08/next-h067-contract-review.json and
 next-clarify-startup.json. Frozen donor commit remains
 59b2aeef6c7a3ecbb2625a54c66111a56eb64e3e, MIT; original reviewed native mapping is
-recorded in docs/hermes/pending-input-plan-2026-10-05.md. The whole H067 acceptance
+recorded in docs/archive/hermes/pending-input-plan-2026-10-05.md. The whole H067 acceptance
 requires per-chat numeric/label/multiselect/free-text clarification; native and
 typed once/always/cancel interception; confirmed new/reset/undo with governed
 persistent opt-out; and safe deletion of ephemeral bot notices. Existing native

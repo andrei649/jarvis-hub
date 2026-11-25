@@ -6,8 +6,10 @@
    it queues an `lsp.install` approval card and says so. Start/stop are admin writes; a
    refusal shows the backend's own code verbatim. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, Row, Tag, State, actA, inpS } from '../panel-kit';
+// The section keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { useApi, arr, mono, note as noteS, Row, Tag, State, actA, inpS } from '../panel-kit';
 import { apiDelete } from '../api/client';
+import { LABEL } from '../theme/type';
 
 const STATUS_PATH = '/api/codeintel/lsp/status';
 const INSTALL_PATH = '/api/codeintel/lsp/install';
@@ -53,9 +55,9 @@ export function LspSection() {
   const trusted = arr(s, 'trusted_workspaces');
 
   return (
-    <div style={{ marginTop: 10, borderTop: '1px solid var(--line, #333)', paddingTop: 8 }}>
+    <div style={{ marginTop: 10, borderTop: '1px solid var(--panel-line)', paddingTop: 8 }}>
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>language servers</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>language servers</span>
         {s && (
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             <Tag c={s.enabled ? undefined : 'var(--amber)'}>{s.enabled ? 'diagnostics on write' : 'off (JARVIS_LSP=0)'}</Tag>
@@ -66,14 +68,14 @@ export function LspSection() {
       </Row>
       <State e={status.e} loading={status.loading} n={s ? 1 : 0} />
       {s && s.isolation !== 'bwrap' && (
-        <div style={{ fontSize: 10, color: 'var(--amber)' }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
           {s.can_start === false
             ? 'no namespace sandbox on this host, and one is required — no language server will start (JARVIS_LSP_REQUIRE_SANDBOX=0 runs them with limits only)'
             : 'no namespace sandbox on this host — servers run with resource limits and a scrubbed environment only'}
         </div>
       )}
       <Row>
-        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>trusted workspaces</span>
+        <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>trusted workspaces</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
           {trusted.length === 0 && <Tag c="var(--ink-2)">none — no server starts anywhere</Tag>}
           {trusted.map((t) => (
@@ -102,7 +104,7 @@ export function LspSection() {
         return (
           <Row key={row.id}>
             <span style={{ ...mono, color: 'var(--accent-light)' }}>{row.id}</span>
-            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{arr(row, 'languages').join(' · ')}</span>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{arr(row, 'languages').join(' · ')}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {row.available
                 ? <Tag>found · {row.source}</Tag>
@@ -119,7 +121,7 @@ export function LspSection() {
                 >install…</button>
               )}
               {!row.available && !row.installable && recipe.hint && (
-                <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{recipe.hint}</span>
+                <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{recipe.hint}</span>
               )}
               {row.available && s.enabled && (
                 <button className="tool-btn" disabled={!!busy}
@@ -150,15 +152,15 @@ export function LspSection() {
         <Row key={`b:${row.server}:${row.root}`}>
           <Tag c="var(--amber)">broken</Tag>
           <span style={{ ...mono }}>{row.server}</span>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{row.reason} · retry in {row.retry_in}s</span>
+          <span style={{ ...noteS, color: 'var(--ink-2)' }}>{row.reason} · retry in {row.retry_in}s</span>
         </Row>
       ))}
       {note && (
-        <div role="alert" style={{ ...mono, marginTop: 6, color: note.kind === 'err' ? 'var(--red)' : 'var(--green)' }}>
+        <div role="alert" style={{ ...noteS, marginTop: 6, color: note.kind === 'err' ? 'var(--red)' : 'var(--green)' }}>
           {note.text}
         </div>
       )}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
         Servers start only in a git workspace you trusted here, because a server reads — and some can
         be led to run — what the workspace ships. After the agent writes a file, the running server's
         diagnostics are compared before and after

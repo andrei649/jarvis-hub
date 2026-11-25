@@ -697,7 +697,7 @@ async def test_resuming_an_archived_chat_brings_it_back(cp, monkeypatch):
     async def resume(sid):
         return True
 
-    async def history(sid):
+    async def history(sid, *, include_board_sources=False):
         return []
     orch = SimpleNamespace(checkpoints=cp, memory=SimpleNamespace(resume_session=resume, get_history=history))
     client = _client(monkeypatch, orch)

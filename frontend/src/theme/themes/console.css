@@ -1,0 +1,199 @@
+/* =====================================================================================
+   Theme · Console
+   -------------------------------------------------------------------------------------
+   Source: docs/design/hud-next/console/ (README.md, tokens.css, console.css).
+   Idea: a dense, terminal-grade instrument. One strict grid of tiled panes divided by
+   hairlines, real tables with tabular numerals, nothing on screen that is not a reading.
+   The screen is neutral graphite or paper; amber is lit only where something waits for
+   the owner and red only where something is broken, failed or stopped, so the colour on
+   screen is itself the to-do list.
+     Night (dark, default)  graphite frame, panes one step lighter, amber signal
+     Day   (light)          paper panes on a grey desk (the frame is darker than the
+                            panes), a burnt amber that still reads as a line on paper
+   The accent is the signal amber and means only "waits for you". Emphasis and primary
+   actions are ink, as drawn: the current area is ink over an ink underline, a selected row
+   is raised (surface-2) with an ink edge, and Send and the solid button fill with ink on
+   frame-coloured words. Inputs are raised too (surface-2).
+   Normal is never coloured (the design has no green, no blue, and no green OK), so ok is
+   ink-2 and info the quieter ink-3. Amber means only "waits for you" and red only broken,
+   so a warning that is neither takes a quiet copper between the two: apricot at night,
+   terracotta by day, following the signal as it shifts from yellow-amber to burnt amber.
+   Cloud (a run that left the machine) is a quiet violet. The five stay apart (contract §3)
+   because legacy screens still encode status by hue.
+   ===================================================================================== */
+
+:is(:root, .n-theme-scope)[data-look="console"] {
+  color-scheme: dark;
+
+  /* frame and wells < panes < raised (the decision sheet, inputs, owner turns) < hover
+     (hover, keycaps). The design presses with the hover fill and selects with the raised
+     step; bg-3 continues its ~0.034 ladder one step past hover so a pressed control, a
+     meter track and a selected row still read on a pane. */
+  --n-bg:          oklch(0.150 0.004 75);
+  --n-bg-2:        oklch(0.258 0.006 75);
+  --n-bg-3:        oklch(0.292 0.007 75);
+  --n-sheet:       oklch(0.184 0.004 75);
+  --n-sheet-2:     oklch(0.224 0.005 75);
+  --n-scrim:       oklch(0 0 0 / 0.55);
+
+  --n-text:        oklch(0.955 0.006 85);
+  --n-text-2:      oklch(0.810 0.006 85);
+  --n-text-3:      oklch(0.690 0.006 85);
+
+  --n-rule:        oklch(0.272 0.005 75);
+  --n-rule-2:      oklch(0.360 0.006 75);
+  --n-rule-field:  oklch(0.540 0.008 75);
+  --n-rule-heavy:  oklch(0.690 0.006 85);
+
+  --n-accent:      oklch(0.830 0.140 80);
+  --n-accent-text: oklch(0.830 0.140 80);
+  --n-accent-wash: oklch(0.245 0.038 78);
+  --n-on-accent:   oklch(0.190 0.030 75);
+
+  /* the stop: a fault-red edge and square around ink words; a solid fill takes on-fault */
+  --n-stop:        oklch(0.700 0.180 28);
+  --n-on-stop:     oklch(0.170 0.030 28);
+
+  --n-ok:          oklch(0.810 0.006 85);
+  --n-warn:        oklch(0.785 0.090 58);
+  --n-bad:         oklch(0.735 0.160 28);
+  --n-info:        oklch(0.690 0.006 85);
+  --n-cloud:       oklch(0.785 0.080 300);
+  --n-ok-wash:     oklch(0.232 0.005 75);
+  --n-warn-wash:   oklch(0.264 0.007 75);
+  --n-bad-wash:    oklch(0.240 0.045 28);
+
+  /* focus and selection are ink, never a colour */
+  --n-focus:       oklch(0.955 0.006 85);
+  --n-selection:   oklch(0.380 0.006 75);
+
+  /* derived roles (contract §3): emphasis is ink on the raised step (the design's
+     --nv-selected), the primary action an ink fill with frame-coloured words, and fields
+     are raised like the composer */
+  --n-emph:       var(--n-text);
+  --n-emph-wash:  var(--n-sheet-2);
+  --n-primary:    var(--n-text);
+  --n-on-primary: var(--n-bg);
+  --n-field-bg:   var(--n-sheet-2);
+
+  /* tabular numerals everywhere, as drawn */
+  --n-numerals:   lining-nums tabular-nums;
+
+  /* A DIN 1451 engineering sans in two widths. The instrument (cells, controls,
+     navigation, labels) is semi-condensed; conversation, decision titles and figures are
+     normal width. Production face Barlow + Barlow Semi Condensed; the installed stand-in
+     is Bahnschrift, whose "Bahnschrift SemiCondensed" family Chromium on Windows resolves
+     to the 87.5% width. */
+  --n-font-ui:      "Barlow Semi Condensed", "Bahnschrift SemiCondensed", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-label:   var(--n-font-ui);
+  --n-font-text:    "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-title:   "Barlow", "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --n-font-display: "Barlow", "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --n-font-mono:    "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --n-label-case:   none;
+  --n-label-track:  0.01em;
+  --n-label-weight: var(--n-w-med);
+  /* Barlow is self-hosted since 2026-11-23, so night takes its static instances 400 / 500 /
+     600 (README §2). With the Bahnschrift stand-in night ran one grade lighter (350
+     SemiLight, 450 Regular); the semi-condensed interface face, Barlow Semi Condensed, is
+     not vendored and still renders in Bahnschrift SemiCondensed on Windows. */
+  --n-w-reg:  400;
+  --n-w-med:  500;
+  --n-w-semi: 600;
+  --n-w-bold: 600;
+
+  /* denser than the default: cells, controls and navigation 13/18, the conversation 14/21,
+     the selected decision 16/22, readings 26/32, the one figure that matters 36/38 */
+  --n-fs-ui:      13px;  --n-lh-ui:      18px;
+  --n-fs-own:     14px;  --n-lh-own:     21px;
+  --n-fs-prose:   14px;  --n-lh-prose:   21px;
+  --n-fs-title:   16px;  --n-lh-title:   22px;
+  --n-fs-verdict: 26px;  --n-lh-verdict: 32px;
+  --n-fs-figure:  36px;  --n-lh-figure:  38px;
+  --n-measure:    72ch;
+
+  /* radius only on what you press or type into: 4 buttons and fields, 6 the raised sheet
+     and transient layers; panes tile square */
+  --n-r-0: 0;
+  --n-r-1: 4px;
+  --n-r-2: 6px;
+  --n-r-3: 6px;
+  --n-panel-bg:     var(--n-sheet);
+  --n-panel-border: 1px solid var(--n-rule);
+  --n-panel-top:    1px solid var(--n-rule);
+  --n-panel-radius: 0;
+  --n-panel-shadow: none;
+  --n-panel-pad:    var(--n-s-3);
+  /* a register is a pane: its words keep the pane's margin from its edge */
+  --n-register-pad: var(--n-panel-pad);
+
+  /* panes are flat; only transient layers cast a shadow; the sheet you decide on is one
+     step lighter with a 3px signal edge */
+  --n-shadow-1:     none;
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 12px 32px oklch(0 0 0 / 0.5);
+  --n-shadow-sheet: 0 0 0 1px var(--n-rule-2), inset 0 3px 0 var(--n-accent);
+
+  --n-control-h:    28px;
+  --n-control-h-sm: 24px;
+  --n-bar-h:        44px;
+}
+
+:is(:root, .n-theme-scope)[data-look="console"][data-scheme="light"] {
+  color-scheme: light;
+
+  --n-bg:          oklch(0.930 0.006 85);
+  --n-bg-2:        oklch(0.905 0.007 85);
+  --n-bg-3:        oklch(0.880 0.008 85);
+  --n-sheet:       oklch(0.975 0.004 85);
+  --n-sheet-2:     oklch(1.000 0.000 0);
+  --n-scrim:       oklch(0.200 0.010 80 / 0.35);
+
+  --n-text:        oklch(0.205 0.010 80);
+  --n-text-2:      oklch(0.360 0.010 80);
+  --n-text-3:      oklch(0.455 0.010 80);
+
+  --n-rule:        oklch(0.885 0.006 85);
+  --n-rule-2:      oklch(0.780 0.008 85);
+  --n-rule-field:  oklch(0.560 0.010 85);
+  --n-rule-heavy:  oklch(0.455 0.010 80);
+
+  /* by day the signal shifts to a burnt amber that still makes 3:1 as a line on paper
+     (the drawn line, 0.590, is lifted to 0.618 so its own on-signal ink reads on it) */
+  --n-accent:      oklch(0.618 0.150 62);
+  --n-accent-text: oklch(0.480 0.115 62);
+  --n-accent-wash: oklch(0.948 0.048 80);
+  --n-on-accent:   oklch(0.220 0.030 70);
+
+  --n-stop:        oklch(0.560 0.210 28);
+  --n-on-stop:     oklch(0.990 0.000 0);
+
+  --n-ok:          oklch(0.360 0.010 80);
+  --n-warn:        oklch(0.420 0.080 35);
+  --n-bad:         oklch(0.500 0.190 28);
+  --n-info:        oklch(0.455 0.010 80);
+  --n-cloud:       oklch(0.450 0.095 300);
+  --n-ok-wash:     oklch(0.955 0.005 85);
+  --n-warn-wash:   oklch(0.915 0.008 85);
+  --n-bad-wash:    oklch(0.950 0.030 28);
+
+  --n-focus:       oklch(0.205 0.010 80);
+  --n-selection:   oklch(0.840 0.008 85);
+
+  /* dark ink on paper does not spread: one weight step heavier (strong 650 as drawn,
+     700 in production Barlow; Bahnschrift renders both as its Bold) */
+  --n-w-reg:  400;
+  --n-w-med:  500;
+  --n-w-semi: 650;
+  --n-w-bold: 700;
+
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 12px 32px oklch(0.2 0.01 80 / 0.18);
+}
+
+/* The owner's screen, 2560 x 1353: more columns and more words, never wider measures.
+   The selected decision title and the stake step up; reading sizes stay. */
+@media (min-width: 2200px) {
+  :root[data-look="console"] {
+    --n-fs-title:  18px;  --n-lh-title:  24px;
+    --n-fs-figure: 44px;  --n-lh-figure: 46px;
+  }
+}

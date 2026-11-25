@@ -91,7 +91,9 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () =>
     url.endsWith('/sessions/resume') ? { ok: true, session: 'older', turns: [{ role: 'assistant', content: 'Older answer' }] }
       : (url.endsWith('/sessions') || url.includes('/sessions/page?')) ? { sessions: [{ id: 'older', title: 'Older session' }], next_cursor: null } : { agents: [
-      { id: 'jarvis', name: 'Jarvis' }, { id: 'frigga', name: 'Frigga' },
+      { id: 'jarvis', name: 'Jarvis', chat_routing: 'orchestrated' },
+      { id: 'frigga', name: 'Frigga', chat_routing: 'local' },
+      { id: 'unavailable', name: 'Disabled agent', enabled: false },
     ] },
   })));
 });
@@ -168,8 +170,13 @@ it('clears a duration when an image turn starts without putting it on the image 
 it('preserves an old reply but suppresses its duration after agent A to B to A', async () => {
   mount();
   const old = await send('Agent pending');
-  fireEvent.click(screen.getByText('jarvis'));
-  fireEvent.click(await screen.findByText('Frigga'));
+  expect(screen.getByLabelText('Configured routing policy: Orchestrated')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Choose agent, current recipient Jarvis'));
+  const frigga = await screen.findByText('Frigga');
+  expect(screen.queryByText('Disabled agent')).toBeNull();
+  fireEvent.click(frigga);
+  expect(screen.getByLabelText(/Configured routing policy: Local/)).toBeTruthy();
+  expect(screen.getByPlaceholderText('Message @frigga…')).toBeTruthy();
   fireEvent.click(screen.getByText('Frigga'));
   fireEvent.click(await screen.findByText('Jarvis'));
   await act(async () => old.end('Old agent reply', 'saved', { latency_ms: 600 }));
@@ -181,7 +188,7 @@ it('clears an idle completed duration as soon as the selected agent changes', as
   mount();
   await complete('Before agent');
   expect(duration()).toBeTruthy();
-  fireEvent.click(screen.getByText('jarvis'));
+  fireEvent.click(screen.getByLabelText('Choose agent, current recipient Jarvis'));
   fireEvent.click(await screen.findByText('Frigga'));
   expect(duration()).toBeNull();
 });
@@ -192,7 +199,7 @@ it('suppresses an in-flight duration when stored agent preference resolves later
   mount();
   const old = await send('Before preference');
   await act(async () => resolvePrefs({ agent: 'frigga' }));
-  expect(screen.getByText('frigga')).toBeTruthy();
+  expect(screen.getByLabelText('Choose agent, current recipient Frigga')).toBeTruthy();
   await act(async () => old.end('Preselection reply', 'saved', { latency_ms: 777 }));
   expect(screen.getByText('Preselection reply')).toBeTruthy();
   expect(duration()).toBeNull();

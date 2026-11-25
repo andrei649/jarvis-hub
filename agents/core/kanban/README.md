@@ -45,6 +45,9 @@ The enabled coordinator runs approved board turns concurrently through the same
 signed queue claims and execution permits. Total and per-agent budgets include
 durable running queue rows; excess approvals wait. A strict host worker lock
 prevents overlapping dispatcher batches. Ordinary kinds retain serial execution.
+While an approved board turn runs, a later signed board approval can use a free
+slot within the tick's admission limit. The same live gates, total cap and
+per-agent cap apply.
 A zero total or per-agent budget withholds board execution and new proposals
 rather than substituting a larger default. Safe mode disables both
 board, dispatch and network opt-ins and clamps these budgets to the stricter

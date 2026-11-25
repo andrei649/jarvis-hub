@@ -1,5 +1,6 @@
 import React from 'react';
-import { asLive, Card, Row, State, mono, useApi } from '../panel-kit';
+import { asLive, Card, Row, State, note, useApi } from '../panel-kit';
+import { MONO } from '../theme/type';
 
 type Counts = {
   runs: number; input_tokens: number; output_tokens: number;
@@ -31,10 +32,12 @@ function LocalityBar({ name, values }: { name: string; values: Record<'local' | 
   </div>;
 }
 
-function UsageRow({ label, row }: { label: string; row: Counts }) {
+/* The words are set in the interface face (the card's note); the figures, and a label that
+   is an agent or model id (`ident`), keep the identifier face (contract §5). */
+function UsageRow({ label, row, ident = false }: { label: string; row: Counts; ident?: boolean }) {
   return <Row>
-    <span>{label}</span>
-    <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
+    <span style={ident ? MONO : undefined}>{label}</span>
+    <span style={{ ...MONO, marginLeft: 'auto', textAlign: 'right' }}>
       {integer(row.runs)} runs · {tokens(row)} tokens ({integer(row.input_tokens)} in / {integer(row.output_tokens)} out) · {dollars(row.cost_usd)} estimated
       {row.unpriced_calls > 0 && <span> · {integer(row.unpriced_calls)} unpriced call{row.unpriced_calls === 1 ? '' : 's'}</span>}
     </span>
@@ -48,7 +51,7 @@ export function UsagePanel() {
   const totals = summary?.totals;
   return <Card title="USAGE" live={asLive(d)} onReload={reload}>
     <State e={e} loading={loading} n={totals ? 1 : 0} />
-    {totals && <div style={{ ...mono, fontSize: 11 }}>
+    {totals && <div style={{ ...note, fontSize: 'var(--n-fs-meta)' }}>
       <h3>Totals</h3>
       <UsageRow label="all usage" row={totals} />
       <p style={{ color: 'var(--ink-2)' }}>Costs are token price estimates for known models. Unpriced calls are excluded from dollar amounts; totals are not an invoice.</p>
@@ -72,11 +75,11 @@ export function UsagePanel() {
       </> : <p>Route attribution unavailable for this rollup.</p>}
       <h3>By agent</h3>
       {summary.by_agent?.length ? summary.by_agent.map(row =>
-        <UsageRow key={row.agent} label={row.agent} row={row} />) : <p>No recorded calls.</p>}
+        <UsageRow key={row.agent} label={row.agent} row={row} ident />) : <p>No recorded calls.</p>}
       <h3>By model</h3>
       {summary.by_model?.length ? summary.by_model.map(row =>
         <React.Fragment key={row.model}>
-          <UsageRow label={row.model} row={row} />
+          <UsageRow label={row.model} row={row} ident />
           {row.estimated_from_last_model && <p>Legacy model attribution for {row.model} is estimated from the last recorded model.</p>}
           {row.legacy_unattributed && <p>Legacy calls have no reliable model attribution.</p>}
         </React.Fragment>) : <p>No recorded models.</p>}

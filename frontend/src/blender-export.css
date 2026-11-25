@@ -1,0 +1,19 @@
+.blender-composer-option { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 5px 0; color: var(--ink-2); font-size: var(--n-fs-meta); }
+.blender-composer-option button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-light); }
+.blender-composer-option details, .blender-composer-option [role="alert"] { flex-basis: 100%; }
+.blender-composer-option pre { max-height: 170px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; border: 1px solid var(--panel-line); border-radius: 6px; }
+.blender-composer-option [role="alert"], .blender-model [role="alert"] { color: var(--amber); }
+.blender-model { margin: 8px 0; padding: 10px; border: 1px solid var(--panel-line); border-radius: 8px; }
+.blender-model-preview { margin: 0; max-width: 420px; }
+.blender-model-preview svg { display: block; width: 100%; height: auto; }
+.blender-model-preview figcaption { margin-top: 3px; font-size: var(--n-fs-meta); color: var(--ink-2); }
+.blender-model p { margin: 6px 0; }
+.blender-model-objects { overflow-wrap: anywhere; font-size: var(--n-fs-meta); color: var(--ink-2); }
+.blender-model-error { color: var(--amber); font-size: var(--n-fs-meta); }
+.blender-review-overlay { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 12px; background: var(--n-scrim); }
+/* Portaled to <body>: the overlay ground and hairline come from the :root tokens the theme sets. */
+.blender-review-dialog { width: min(560px, 100%); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 14px; color: var(--ink); background: var(--void-2); border: 1px solid var(--panel-line); border-radius: 9px; box-shadow: var(--shadow); }
+.blender-review-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.blender-review-launch { flex: none; padding: 5px 12px; border-top: 1px solid var(--panel-line); }
+.blender-review-dialog .blender-model { margin-bottom: 0; }
+.blender-model-winding { color: var(--amber); }

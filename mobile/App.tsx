@@ -1,7 +1,7 @@
 import { Text } from './src/components/ThemedText';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
-import { Platform, Pressable, SafeAreaView, StyleSheet, View } from 'react-native';
+import { Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
 import { AppearanceProvider } from './src/context/AppearanceContext';
 import { ServerProvider } from './src/context/ServerContext';
 import { ApprovalsScreen } from './src/screens/ApprovalsScreen';
@@ -38,6 +38,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'status', label: 'Status', icon: '▤' },
   { key: 'settings', label: 'Settings', icon: '⚙' },
 ];
+const PRIMARY_TABS: Tab[] = ['chat', 'tasks', 'skills'];
 
 const TITLES: Record<Tab, string> = {
   chat: 'Jarvis',
@@ -59,6 +60,7 @@ const TITLES: Record<Tab, string> = {
 function AppShell() {
   const { theme, styles } = useThemeStyles(makeStyles);
   const [tab, setTab] = useState<Tab>('chat');
+  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -84,16 +86,47 @@ function AppShell() {
       </View>
 
       <View style={styles.tabBar}>
-        {TABS.map((t) => {
+        {TABS.filter(t => PRIMARY_TABS.includes(t.key)).map((t) => {
           const active = t.key === tab;
           return (
-            <Pressable key={t.key} style={styles.tab} onPress={() => setTab(t.key)}>
+            <Pressable key={t.key} style={styles.tab} onPress={() => setTab(t.key)}
+              accessibilityRole="tab" accessibilityLabel={`${t.label} tab`} accessibilityState={{ selected: active }}>
               <Text style={[styles.tabIcon, active && styles.tabActive]}>{t.icon}</Text>
               <Text style={[styles.tabLabel, active && styles.tabActive]}>{t.label}</Text>
             </Pressable>
           );
         })}
+        <Pressable style={styles.tab} onPress={() => setMoreOpen(true)} accessibilityRole="tab"
+          accessibilityLabel="More destinations" accessibilityState={{ selected: !PRIMARY_TABS.includes(tab) }}>
+          <Text style={[styles.tabIcon, !PRIMARY_TABS.includes(tab) && styles.tabActive]}>⋯</Text>
+          <Text style={[styles.tabLabel, !PRIMARY_TABS.includes(tab) && styles.tabActive]}>More</Text>
+        </Pressable>
       </View>
+      <Modal visible={moreOpen} transparent animationType="fade" onRequestClose={() => setMoreOpen(false)}>
+        <View style={styles.menuBackdrop}>
+          <Pressable style={styles.dismissLayer} onPress={() => setMoreOpen(false)} accessibilityLabel="Dismiss More menu" />
+          <View style={styles.menuSheet}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>More destinations</Text>
+              <Pressable onPress={() => setMoreOpen(false)} accessibilityLabel="Close More menu" style={styles.menuClose}>
+                <Text style={styles.menuCloseText}>Close</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.menuList}>
+              {TABS.filter(t => !PRIMARY_TABS.includes(t.key)).map(t => {
+                const active = t.key === tab;
+                return <Pressable key={t.key} style={[styles.menuItem, active && styles.menuItemActive]}
+                  onPress={() => { setTab(t.key); setMoreOpen(false); }} accessibilityRole="button"
+                  accessibilityLabel={`Open ${TITLES[t.key]}${active ? ', current destination' : ''}`}
+                  accessibilityState={{ selected: active }}>
+                  <Text style={[styles.menuItemText, active && styles.tabActive]}>{t.icon}  {TITLES[t.key]}</Text>
+                  {active && <Text style={styles.tabActive}>✓</Text>}
+                </Pressable>;
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -135,8 +168,21 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 18 : 6,
     paddingTop: 6,
   },
-  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+  tab: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
   tabIcon: { color: theme.textDim, fontSize: 18, marginBottom: 2 },
-  tabLabel: { color: theme.textDim, fontSize: 10, fontWeight: '600' },
+  tabLabel: { color: theme.textDim, fontSize: 12, fontWeight: '600' },
   tabActive: { color: theme.accent },
+  menuBackdrop: { flex: 1, backgroundColor: '#000a', justifyContent: 'flex-end', padding: 16 },
+  dismissLayer: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 },
+  menuSheet: { backgroundColor: theme.surfaceAlt, borderColor: theme.border, borderWidth: 1,
+    borderRadius: 16, padding: 12, maxHeight: '75%' },
+  menuHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 8 },
+  menuTitle: { color: theme.text, fontSize: 17, fontWeight: '700' },
+  menuClose: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
+  menuCloseText: { color: theme.accent, fontSize: 14, fontWeight: '600' },
+  menuList: { flexShrink: 1 },
+  menuItem: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderBottomWidth: 1, borderBottomColor: theme.border, paddingHorizontal: 12 },
+  menuItemActive: { backgroundColor: theme.surface },
+  menuItemText: { color: theme.text, fontSize: 15, flexShrink: 1 },
 });

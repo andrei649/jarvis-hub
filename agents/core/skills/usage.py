@@ -84,7 +84,8 @@ _ORIGINS = (ORIGIN_AGENT, ORIGIN_IMPORT, ORIGIN_BUNDLED, ORIGIN_LOCAL, ORIGIN_UN
 WRITE_BACKGROUND = "background_review"
 WRITE_LEARNING = "learning"
 WRITE_TOOL = "assistant_tool"
-_WRITE_ORIGINS = (WRITE_BACKGROUND, WRITE_LEARNING, WRITE_TOOL)
+WRITE_REVIEWED_REPLY = "owner_reviewed_reply"
+_WRITE_ORIGINS = (WRITE_BACKGROUND, WRITE_LEARNING, WRITE_TOOL, WRITE_REVIEWED_REPLY)
 # A stored write origin that is not one of the words above (a hand-edited file): nobody
 # knows who wrote the skill, so the curator never touches it.
 WRITE_UNKNOWN = "unknown"
@@ -1110,5 +1111,5 @@ def usage_summary(store: Any, name: str) -> dict:
 __all__ = ["SkillUsageStore", "latest_activity_at", "usage_summary",
            "STATE_ACTIVE", "STATE_STALE", "STATE_ARCHIVED",
            "ORIGIN_AGENT", "ORIGIN_IMPORT", "ORIGIN_BUNDLED", "ORIGIN_LOCAL", "ORIGIN_UNKNOWN",
-           "WRITE_BACKGROUND", "WRITE_LEARNING", "WRITE_TOOL", "KNOWN_SOURCES", "SOURCE_MARKETPLACE",
+           "WRITE_BACKGROUND", "WRITE_LEARNING", "WRITE_TOOL", "WRITE_REVIEWED_REPLY", "KNOWN_SOURCES", "SOURCE_MARKETPLACE",
            "WRITE_UNKNOWN", "CORRUPT_COPIES_KEPT", "PinRefused", "clean_source", "clean_install_id"]

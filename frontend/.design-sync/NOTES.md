@@ -18,6 +18,11 @@
 - DesignSync auth was unavailable in the first sync session (non-interactive);
   build/verify ran local-first, upload deferred until the user authorizes
   (interactive `/design-login` or Claude Design "Send to Claude Code Web").
+- **2026-11-24, Phase B stage 5:** the HUD v2 shell components and their previews are
+  deleted (TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient,
+  ConsoleOverlay, CognitionStream), with `world_app.tsx` (WorldAwareApp) and their
+  `config.json` overrides. The learnings below that name them are history. `shell.tsx`
+  now holds only CinemaMesh; the HUD's structure is the Ledger frame in `src/frame/`.
 
 ## Preview recipe (calibrated on the solo set, 2026-07-06)
 
@@ -34,8 +39,8 @@
   (e.g. `{situation:'SITUATION', allnominal:'ALL NOMINAL'}`).
 - `Reactor`/icons draw in `currentColor` and size from their container — give
   the wrapper a color and explicit width/height spans.
-- App-level exports excluded from sync: App, WorldAwareApp, WorldIntelligenceMode
-  (componentSrcMap nulls) + src/main.tsx excluded from the synth entry
+- App-level exports excluded from sync: App, WorldIntelligenceMode (WorldAwareApp
+  until its deletion; componentSrcMap nulls) + src/main.tsx excluded from the synth entry
   (libOverrides fork — Vite bootstrap side effect).
 
 ## Wave-1 learnings (folded 2026-07-06)

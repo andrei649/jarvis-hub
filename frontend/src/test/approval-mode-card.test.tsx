@@ -11,8 +11,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { DecisionInboxPanel } from '../gap';
-import { ContextColumn } from '../shell';
 import { approvalModeNote, decisionCard } from '../api/loaders';
+import { parseDocketFeed } from '../docket/model';
+import { whySentences } from '../docket/DocketEntry';
+import { DOCKET_STRINGS } from '../docket/strings';
 
 const t = new Proxy({}, { get: (_target, key) => String(key) });
 const now = (effective, source = 'global', overall = effective) => ({ effective, source, global: overall });
@@ -62,25 +64,49 @@ describe('approvalModeNote', () => {
   });
 });
 
-describe('the cockpit decision card', () => {
+describe('the briefing wall\'s read-only decision card', () => {
   it('carries the mode of the task it was projected from', () => {
     const card = decisionCard({ id: 7, agent: 'friday', kind: 'comms.send', title: 'Send it', reversible: false,
       approval_mode: now('auto'), asked_under: asked('ask', true, 'agent', 'auto') });
     expect(card.mode.label).toBe('asked under ask · agent override');
     expect(decisionCard({ id: 8, kind: 'file.write', title: 'x', reversible: true }).mode).toBeNull();
   });
+});
 
-  it('renders the mode line, and none for a card without one', () => {
-    const decisions = [
-      { ...decisionCard({ id: 1, agent: 'friday', kind: 'k', title: 'first', reversible: true,
-        approval_mode: now('off'), asked_under: asked('off', true) }), _id: 'a' },
-      { ...decisionCard({ id: 2, agent: 'jarvis', kind: 'k', title: 'second', reversible: true }), _id: 'b' },
-    ];
-    const { container } = render(<ContextColumn decisions={decisions} onDecision={() => {}} t={t} />);
-    const cards = [...container.querySelectorAll('.dcard')];
-    expect(cards[0].querySelector('.dm').textContent).toBe('asked under off');
-    expect(cards[0].querySelector('.dm').getAttribute('title')).toContain('nothing a machine approved runs');
-    expect(cards[1].querySelector('.dm')).toBeNull();
+/* The cockpit's decision cards (the HUD v2 context column) were deleted with the classic shell; the
+   docket is where a waiting task is decided now (PHASE_B_PLAN.md §5.4, §8.3), and its Why row says
+   the same things, fail-closed, from its own words table. Docket.test.tsx draws them in an entry. */
+describe('the docket entry\'s Why row', () => {
+  const why = (task) => {
+    const [entry] = parseDocketFeed({ tasks: [{ id: 1, kind: 'k', title: 'first', risk_tier: 1, ...task }] }).entries;
+    return whySentences(entry.why, entry.pushed, DOCKET_STRINGS.en);
+  };
+
+  it('says a recorded mode is why it waits, and nothing for a task without one', () => {
+    expect(why({ approval_mode: now('off'), asked_under: asked('off', true) }))
+      .toEqual(['Held because the approval mode was Off when this was queued: nothing a machine approved runs.']);
+    expect(why({})).toEqual([]);
+  });
+
+  it('without a recorded mode it says only the mode now, and that the earlier one is not known', () => {
+    expect(why({ approval_mode: now('ask') }))
+      .toEqual(['Approval mode is Ask now. The mode in force when this was queued was not recorded, so it may not be why this waits.']);
+    expect(why({ approval_mode: now('ask', 'agent', 'auto') })).toContain('This agent has its own approval mode.');
+  });
+
+  it('says a recorded mode that is not why it waits, and a mode that moved since', () => {
+    expect(why({ approval_mode: now('auto'), asked_under: asked('auto', false) }))
+      .toEqual(['Queued under approval mode Auto. The mode is not why it waits: its risk tier, a money cap or a safety check is.']);
+    expect(why({ approval_mode: now('auto'), asked_under: asked('ask', true) }))
+      .toEqual(['Held because the approval mode was Ask when this was queued: anything with a side effect waits for you.', 'The mode is Auto now.']);
+  });
+
+  it('shows nothing for a value that is not a mode, never a guessed one', () => {
+    for (const bad of ['ask', {}, { effective: 'yolo' }, { effective: true }, { effective: 'ASK' }]) {
+      expect(why({ approval_mode: bad }), JSON.stringify(bad)).toEqual([]);
+    }
+    expect(why({ approval_mode: now('auto'), asked_under: { mode: 'yolo', by_mode: true } }))
+      .toEqual(['Approval mode is Auto now. The mode in force when this was queued was not recorded, so it may not be why this waits.']);
   });
 });
 

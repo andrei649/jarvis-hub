@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, jest } from '@jest/globals';
 import * as client from '../client';
+import { historyRequiresCloudConsent, historySourceReceipt, projectSessionTranscript, validHistoryReference, verifiedSessionTurn } from '../sessionTranscript';
 const config = { baseUrl: 'https://hub.test/', token: ' user ', adminToken: ' owner ' };
 const transcript = () => ({ schema_version: 1, session_id: 'root', scope: 'retained_current_history', redacted: true, turn_count: 2,
   turns: [{ role: 'user', content: 'Question', agent_id: null, timestamp: '2026-11-13T12:00:00Z' },
@@ -70,4 +71,69 @@ it('enforces the exact compact JSON UTF8 limit at 2 MiB', async () => {
   mockFetch.mockResolvedValueOnce(response(body)); await expect(client.fetchSessionTranscript(config, 'root')).resolves.toEqual(body);
   body.turns[0].content += 'a'; mockFetch.mockResolvedValueOnce(response(body));
   await expect(client.fetchSessionTranscript(config, 'root')).rejects.toThrow();
+});
+
+it('preserves original ordinals, including gaps left by system turns', async () => {
+  const body = transcript();
+  Object.assign(body.turns[0], { turn: 1, private_note: 'do not export' });
+  Object.assign(body.turns[1], { turn: 3 });
+  mockFetch.mockResolvedValue(response(body));
+  const current = await client.fetchSessionTranscript(config, 'root');
+  expect(current.turns.map(row => row.turn)).toEqual([1, 3]);
+  expect(JSON.stringify(current)).not.toContain('private_note');
+  const hit: client.SessionMessageHit = { session_id: 'root', turn: 3, role: 'assistant',
+    timestamp: '2026-11-13T12:00:01Z', agent_id: 'frigga', snippet: 'Answer' };
+  expect(client.verifiedSessionTurn(current, hit)).toEqual(current.turns[1]);
+  expect(client.verifiedSessionTurn(current, { ...hit, turn: 1 })).toBeNull();
+  expect(client.verifiedSessionTurn(current, { ...hit, snippet: '…swer' })).toEqual(current.turns[1]);
+  expect(client.verifiedSessionTurn(current, { ...hit, snippet: '…missing…' })).toBeNull();
+  expect(client.verifiedSessionTurn(current, { ...hit, agent_id: 'other' })).toBeNull();
+  expect(client.verifiedSessionTurn(current, { ...hit, timestamp: null })).toBeNull();
+});
+
+it('accepts legacy transcripts without ordinals but cannot verify a search hit against them', async () => {
+  mockFetch.mockResolvedValue(response(transcript()));
+  const legacy = await client.fetchSessionTranscript(config, 'root');
+  expect(client.verifiedSessionTurn(legacy, { session_id: 'root', turn: 0, role: 'user',
+    timestamp: '2026-11-13T12:00:00Z', agent_id: null, snippet: 'Question' })).toBeNull();
+});
+
+it.each([
+  [{ turn: 0 }, { turn: 0 }], [{ turn: -1 }, { turn: 2 }],
+  [{ turn: 0.5 }, { turn: 2 }], [{ turn: 0 }, {}],
+])('rejects ambiguous or invalid ordinals %#', async (first, second) => {
+  const body = transcript();
+  Object.assign(body.turns[0], first); Object.assign(body.turns[1], second);
+  mockFetch.mockResolvedValue(response(body));
+  await expect(client.fetchSessionTranscript(config, 'root')).rejects.toThrow();
+});
+
+it('keeps revisions only in opt-in source reads and strips them from previews and exports', () => {
+  const body = transcript(); const revision = 'a'.repeat(64);
+  Object.assign(body.turns[0], { turn: 0, reference_revision: revision });
+  Object.assign(body.turns[1], { turn: 1, reference_revision: 'invalid' });
+  expect(projectSessionTranscript(body, 'root').turns[0]).not.toHaveProperty('reference_revision');
+  const source = projectSessionTranscript(body, 'root', true);
+  expect(source.turns[0].reference_revision).toBe(revision);
+  expect(source.turns[1]).not.toHaveProperty('reference_revision');
+  expect(projectSessionTranscript(source, 'root').turns[0]).not.toHaveProperty('reference_revision');
+  const hit: client.SessionMessageHit = { session_id: 'root', turn: 0, role: 'user', timestamp: body.turns[0].timestamp,
+    agent_id: null, snippet: 'Question' };
+  expect(verifiedSessionTurn(source, hit)).not.toHaveProperty('reference_revision');
+  expect(verifiedSessionTurn(source, hit, true)).toHaveProperty('reference_revision', revision);
+});
+
+it('validates exact bounded history references and projects receipts', () => {
+  expect(['frigga', 'howard', 'ultron', 'Ultron', 'jarvis', 'athena'].map(historyRequiresCloudConsent))
+    .toEqual([false, false, false, true, true, true]);
+  const reference = { session_id: 'root', turn: 0, revision: 'b'.repeat(64), excerpt: '😀'.repeat(2000), allow_cloud: false };
+  expect(validHistoryReference(reference)).toBe(true);
+  expect(validHistoryReference({ ...reference, excerpt: '😀'.repeat(2001) })).toBe(false);
+  expect(validHistoryReference({ ...reference, excerpt: '' })).toBe(false);
+  expect(validHistoryReference({ ...reference, allow_cloud: 'false' })).toBe(false);
+  expect(validHistoryReference({ ...reference, revision: 'wrong' })).toBe(false);
+  expect(historySourceReceipt({ ...reference, role: 'assistant', private: 'hidden' })).toEqual({
+    session_id: 'root', turn: 0, revision: reference.revision, role: 'assistant',
+  });
+  expect(historySourceReceipt({ ...reference, role: 'tool' })).toBeNull();
 });

@@ -1,15 +1,49 @@
 # Jarvis mobile
 
 A native iOS & Android companion app for the Jarvis hub, built with
-[Expo](https://docs.expo.dev/) (SDK 57 / React Native 0.86).
+[Expo](https://docs.expo.dev/) (SDK 58 / React Native 0.88).
 
-It talks to the same HTTP API the web HUD uses (`agents/web.py`):
+The app uses the same hub API as the web HUD. The bottom bar opens Chat, Tasks and Skills. Tap **More** for the other
+destinations, including Settings, Memory and Approvals.
 
 - **Chat** — streaming conversation over `POST /chat/stream` (server-sent
   events, rendered token-by-token). Assistant replies render **Markdown**
   (code blocks, lists, bold/italic, links). Pick the **agent** (`GET /api/agents`),
   tap 🔊 to hear a reply via **TTS** (`POST /tts`), and **Stop** mid-stream.
-  The thread is **persisted on-device** and survives restarts.
+  When the hub reports which models it called, their provider and model names appear
+  below the reply. The thread and its recorded calls survive restarts on the same connection.
+  **Agent tool calls recorded** shows how many tool executions the hub observed for that
+  reply. A zero means the hub recorded no agent tool execution. A delivery confirmation
+  comes from the messaging service itself.
+  In **Commands → Skills**, select an approved skill for the current agent.
+  Search by name when the agent has several skills. Your task stays in the
+  editor until you tap **Send**. Switching agents keeps the task text.
+  While a local model prepares its first token, the hub sends a keepalive every 15 seconds.
+  The mobile client reports a stalled stream after 45 seconds without incoming bytes.
+  For a short question, choose **Send direct reply** to ask a supported model to
+  skip extended thinking for that message. To keep a fact for future owner chats,
+  tap **Remember message** under your own message. Edit the copy, choose **Agent notes**
+  or **User profile**, then tap **Save fact**. Saving uses the owner access configured
+  for this chat. To update an older preference, tap **Replace a saved fact**,
+  choose its current wording in that store, and tap **Save correction**.
+  To remove a preference, tap **Forget a saved fact**, choose its exact wording
+  and confirm. **Undo forget** restores it while the saved facts still match.
+  To find an older message, tap **History → Search messages**, enter words from
+  the message and submit. Tap **Review source** to read the full saved turn,
+  then **Continue this conversation** to reopen that chat. Your typed message
+  stays in the composer until you send it. Message search requires owner access.
+  To quote it in your current chat, type or paste the exact passage, or tap
+  **Use entire message**. Confirm cloud sharing if your selected agent can use
+  a cloud model, then tap **Use passage in next message**. You can remove the
+  passage before sending. The question keeps a citation after you reopen the app.
+  To use the connected Obsidian vault, type a question, tap **Obsidian notes**,
+  review the matching excerpts, then choose **Send with notes**. Only the selected
+  excerpts go to the agent with that question. If an excerpt changes, review it again.
+  Tap **Save to Obsidian** under a completed answer to edit its title and text,
+  review the vault and inbox, and save. Tap **Open saved note** to read the
+  current version from the hub, including after reopening the app on the same
+  cached conversation. **Open in Obsidian on this device**
+  uses the phone's local copy when the same vault is available there.
 - **Memory** — read-only session memory, notes, and knowledge graph data over
   `GET /memory`, `GET /api/notes`, and `GET /api/kg/*`. The tab has Turns and
   Graph views for recent turns, current notes, graph entities/relations, and

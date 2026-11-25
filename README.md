@@ -5,7 +5,7 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-37469-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-38268-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -98,7 +98,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **37,469** · frontend **3,214** · mobile **420**. Route surface: **933**.
+Generated test matrix: backend **38,268** · frontend **5,027** · mobile **535**. Route surface: **950**.
 <!-- project-status:run:end -->
 
 **One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
@@ -155,6 +155,200 @@ Your data is never touched unless you also pass `--purge-data`.
 - **CLI REPL:** `python agents/run.py`
 - **Scripted chat:** [CLI receipts and session attribution](docs/cli-chat-receipts.md).
 
+### Open an existing profile from this checkout
+
+Point the launcher at the named profile directory that already holds your settings,
+tasks and memory. For example, on Windows:
+
+```powershell
+.\.venv\Scripts\python.exe -I scripts/start_profile.py "C:\Nerva\data-profiles\studio"
+```
+
+On Linux or macOS, use `.venv/bin/python` and the absolute path to your profile.
+Add `--check` to see the selected checkout and profile before starting. The
+launcher binds the hub to loopback and uses the port and vault in the profile's
+own `.env`. Open the local URL printed at startup. Stop the running hub with
+Ctrl+C before using the same profile from another checkout.
+
+Under a chat reply, **Agent tool calls recorded** shows how many tool executions
+the hub observed for that turn. A draft can show zero. For a message you asked
+the agent to send, check the messaging service's confirmation for delivery.
+
+When you pick an agent in Chat or Cockpit, refreshing the same tab restores
+the recipient for that conversation. If the selected agent becomes unavailable,
+choose another before sending. A fresh tab starts with Jarvis.
+
+To find an earlier message, open **Search chat history** in Chat or Cockpit
+with owner access. Enter words from the message and choose **Review source**
+to see the saved turn. **Continue this conversation** reopens its conversation
+and keeps the text in your composer. Search returns up to 20 matches.
+On iOS and Android, open **Chat → History → Search messages** to find and reopen a conversation.
+
+To quote an earlier message in your current web chat, select a passage in the
+review and choose **Use in this chat**. Your draft and selected agent stay in place.
+You can remove the passage before sending. If the agent can use a cloud model,
+confirm that it may receive the passage. When you send, the hub checks the saved
+message again. The question in your history keeps a citation to the source.
+On iOS and Android, choose **Use passage in next message** in the source review
+to attach the passage to your current draft.
+
+### Saved facts in chat
+
+In the HUD, open **Memory → Saved facts**. Choose **Agent notes** for a project
+fact or **User profile** for a preference, then save it. Use **Correct fact**
+when the information changes. New owner chats can include these facts in the
+selected model's prompt. Each fact also has **Forget fact**, with an undo
+option after removal. Curated facts are stored in the hub profile. The Obsidian
+picker reads the notes you choose for a particular message. To find a source
+again later, select its excerpt and include its relative path in your message.
+The model sees the path, and you can copy it from chat history.
+
+In Chat, Cockpit or the mobile app, choose **Remember message** under your own
+message. Edit the text and choose **Agent notes** or **User profile**. To update
+an earlier preference, choose **Replace a saved fact**, select the old wording,
+then confirm the correction. For a new fact, choose **Save fact**. New owner
+conversations can use the correction when automatic memory is on. The original
+message stays in chat history. To remove a shared preference, choose **Forget a
+saved fact**, select its store and wording, and confirm. **Undo forget** can
+restore it while the saved facts still match the state after removal. Chat
+transcripts and Obsidian notes have their own copies.
+To ask about an existing note, type a question and tap **Obsidian notes**. Review
+the matching passages from your connected hub and choose **Send with notes**.
+The search can find a lesson near the end of a long note even when the title
+contains none of your search words. In web Chat and Cockpit, **Choose passage**
+opens the matching part of the note so you can highlight the exact text to share.
+If the selected passage changes before you send it, Chat asks you to review it again.
+
+To keep a completed reply in your vault, choose **Save to Obsidian** under the
+reply in mobile Chat, web Chat or Cockpit. Review the destination vault and inbox, edit the
+title and note, then choose **Save note**. The confirmation shows the saved
+Markdown path. **Open in Obsidian** opens the note when a native link is available.
+If another note already uses your title for different text, choose a new title.
+If the connection drops during the save, **Retry save** checks the same request.
+On mobile, tap **Open saved note** to read the current version from the hub.
+The link is retained with the conversation cached on that phone.
+
+### Ask about a Word document or Excel workbook
+
+In web Chat or Cockpit, choose **Files** and open a `.docx` or
+`.xlsx` file. Select a passage or worksheet rows and attach them. Choose
+**Add another document** to compare up to eight passages in one question.
+For example, attach the agreed dispatch date from a Word contract and the
+booking date from an Excel sheet, then ask how many days apart they are.
+Each passage is labeled with its filename and, for Excel, its sheet. Use
+**Review attached passage** to change a selection from the same source. The hub opens each
+file for preview. The selected agent receives the labeled passages.
+In a long Word document, choose **Next page** or **Previous page** to review
+12,000 characters at a time. Excel previews show up to 32 nonempty worksheets
+and the first 12,000 characters of each. Choose **Download Word** below
+the completed reply to save the comparison as an editable document.
+
+### Edit an agent reply in Photoshop
+
+In web Chat or Cockpit, choose **Photoshop** below a completed reply. Edit the
+title and body, optionally choose a local PNG or JPEG, and check the preview.
+Choose **Download PSD** to save a 1200 × 800 document. In Photoshop you can edit
+the text layers or move the image independently. Photoshop may ask to update a
+text layer on its first edit. Check the line breaks afterward. The browser
+builds the PSD locally.
+
+### Ask for a reply in another language
+
+Write the language into the current message, for example **Răspunde în engleză**
+or **Reply in Romanian**. The choice applies to that reply, including a draft
+you ask an agent to write. You can keep the interface and your source notes in
+their usual languages.
+
+### Ask about a Blender project
+
+In **Artifacts**, choose **Inspect Blender file** and select a `.blend` file
+up to 64 MiB. In Chat, click **Inspect with Blender** to upload it to your hub.
+The hub needs an installed copy of Blender. Choose a section such as **Objects**,
+select the names you want to share, and send your question. The agent receives
+the selected text. A saved thumbnail, when available, appears in your preview.
+
+### Create an editable Blender model
+
+In web Chat or Cockpit, describe the shape and dimensions, then choose
+**Make editable Blender model**. You can review the request before sending it
+to the selected agent. For example, ask for a square pyramid named Beacon
+with a four-unit base and a tip three units above its center.
+
+When the agent returns a supported Wavefront OBJ block, choose **Review Blender model**
+to see the shape, object counts and any warning about inconsistent face orientation
+or a closed shell that appears to face inward.
+Choose **Download Blender project** to have the connected
+hub build a native `.blend` file. Open it in Blender and switch to Edit Mode to
+work on the vertices and faces. This export supports named polygon meshes in
+Blender XYZ coordinates. It requires owner access and Blender installed on the hub.
+
+### Work on a Godot scene or script
+
+In web Chat or Cockpit, choose **Files** and open a `.tscn` scene, a `.gd`
+script or `project.godot` (UTF-8, up to 1 MiB). Browse the source pages,
+select the passage you want to share and send it with your question.
+For example, attach a node's scoring function and ask how it sets the score.
+The browser reads the file locally. The selected agent receives your excerpt
+when you send the message.
+
+For an editable result, ask for a full script in a `gdscript` code block or a
+scene in a `tscn` block. Use **Download Godot script** or **Download Godot
+scene** beneath the code. Review the source and save it under the filename
+your project references before opening it in Godot.
+
+### Ask two agents the same question
+
+In web Chat, Cockpit or mobile Chat, choose **Compare agents**. Review the
+question, pick two agents and submit it once. Each agent answers separately using
+the question and its public role. Local comparisons support Ollama and LM Studio.
+The hub requests a direct reply when the local Ollama model supports it.
+The built-in Gemini and Claude routes also require your permission in the dialog
+and approval under the hub's cloud policy. Closing the comparison returns you to
+your original chat draft.
+
+To keep one answer, choose **Save to Obsidian** on its card. The note includes
+the question, the selected agent, its answer, and any reported model and route.
+Review the vault and inbox, edit the title or text, then choose **Save note**.
+The confirmation shows the Markdown path. On mobile, **Open saved note** on
+that agent’s card reads the latest copy from the original vault.
+
+### Following parallel tasks
+
+In Chat or Cockpit, choose **Create task** underneath a message or a finished
+reply. Select a board, edit the title and description, and confirm. The card
+appears in **Triage**, where you can review and assign it.
+
+Open **Projects** to see which agents are working on the selected board. Select
+a task in **Active workers** to open its history. With two worker slots enabled,
+you can approve a second agent's task while the first agent is still working.
+The total and per-agent limits also apply to these later approvals. When several
+tasks share a prerequisite, open its **Child results** section to read their
+outputs together. Selecting a child's title opens its own history.
+
+When a worker finishes, its card shows the recorded result. If the worker only
+left a run summary, the card labels it. Open the card for the full text.
+
+Choose **Discuss result in Chat** on a completed card, or **Board result** in
+Chat or Cockpit. Review the recorded result, select a passage or attach the
+whole result. To compare two workers’ findings, open **Board result** again,
+add a passage from the second task and send one question to the selected agent.
+You can include up to eight tasks from different boards. Each passage keeps its
+board, task ID and result or summary label. The composer rechecks every source
+when you send. If a task has changed, review its current output or remove it
+before sending the remaining passages. An agent that can use a cloud model needs
+your consent to receive the passages.
+
+To keep the selected passages in your vault, choose **Save results to Obsidian**.
+The preview checks each source against the board and includes its content
+fingerprint. Edit the title and text, then save to the connected vault inbox.
+You can do this with an empty chat draft. Saving calls no model.
+
+The saved question includes a link to each source. Open a link after reopening
+the chat to see the current result on the original board. If the task output has
+changed, the source viewer labels the new version. The saved citation contains
+the board, task ID, result type and content fingerprint. Reading a citation
+requires owner access and leaves your draft in place.
+
 ### ANDREI OS — J.A.R.V.I.S. Second Brain & 3D Workshop (`apps/jarvis-os/`)
 
 A 3D knowledge galaxy over an Obsidian vault plus this repo's own docs, a chat HUD, and a 3D
@@ -164,7 +358,18 @@ workshop. It runs two ways from one set of files:
   cockpit. Chat goes through the hub's orchestrator (`/chat`, with its guards and approval gates;
   matching vault notes ride along as fenced attachments), speech through `/tts`, and the vault graph
   through user-guarded `/api/os/*` routes. Point it at a vault with `JARVIS_OS_VAULT_PATH`; without
-  one it shows the demo galaxy.
+  one it shows the demo galaxy. To teach an agent a workflow from a single reply in Chat
+  or Cockpit, select **Teach skill**, give the procedure a description, and edit its steps.
+  Follow the review link to read and approve the saved version. In a new chat with that
+  agent, choose the procedure from **Skills** in the HUD or **Commands → Skills**
+  in mobile Chat. When several skills are available, search by words from their
+  names. The selection keeps your task in the editor until you send it. Changing
+  agents drops the selected skill and keeps the task text. To correct a procedure
+  you taught from a reply, open **Skills → Edit steps** in Chat or Cockpit. Submit
+  your changes and follow the review link to compare the steps. Once approved
+  and applied, the same skill uses the new steps in a fresh chat. For a review of the
+  whole conversation, open **Skills → Review this conversation** in the HUD,
+  add a focus if needed, and send.
 - **Standalone — http://localhost:4719.** A zero-dependency Python 3.9+ server (stdlib
   `ThreadingHTTPServer`, loopback only) with its own multi-provider chat router, sharing nothing
   with the hub's runtime:
@@ -191,7 +396,7 @@ Standalone routes (the hub serves the vault ones as `/api/os/status`, `/api/os/b
 |---|---|---|
 | `/api/status` | GET | Providers, active engine, resolved `vaultPath` / `nervaPath` |
 | `/api/brain` | GET | Knowledge graph: nodes, edges, categories, top hubs |
-| `/api/brain/note` | GET | One note's full body (`?relPath=`) |
+| `/api/brain/note` | GET | First 6,000 characters of an indexed Markdown note (`?relPath=`) |
 | `/api/brain/capture` | POST | Write a note into the vault's `08 Inbox/` |
 | `/api/config` | POST | Save settings to `config.json` |
 | `/api/claude/login` | POST | Start the Claude Code CLI subscription sign-in |
@@ -219,7 +424,7 @@ Details: [`apps/jarvis-os/README.md`](apps/jarvis-os/README.md).
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **37,469** · frontend **3,214** · mobile **420** · **933** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 24 open or blocked of 313 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `3a482575ec9d`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **38,268** · frontend **5,027** · mobile **535** · **950** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `075f0c14c198`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for evidence-based situational awareness, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

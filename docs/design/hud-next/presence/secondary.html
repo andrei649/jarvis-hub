@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva — Trust · Overview</title>
+<script>
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'light' || t === 'dark' ? t : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="presence.css">
+<style>
+  /* ---- Trust: the record, the boundary, the stop ---------------------------
+     Same chrome as Home (top line above, instrument foot below). Between them:
+     the area's own navigation (all 21 panels, dimmer than content) and the
+     Overview, which says three plain things and then shows the evidence.    */
+  .app { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100vh; min-height: 38rem; overflow: hidden; }
+  .trust { display: grid; grid-template-columns: 15.5rem minmax(0, 1fr); min-height: 0; }
+
+  /* ---- second-level navigation: every Trust panel, grouped, never hidden ---- */
+  .subnav { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 1.25rem var(--sp-4) 1.25rem var(--page-pad); border-right: 1px solid var(--line); background: var(--sunken); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+  .subnav__head { display: flex; align-items: baseline; gap: var(--sp-3); padding-bottom: var(--sp-3); }
+  .subnav__head h2 { font-size: var(--fs-lead); font-weight: var(--fw-strong); color: var(--ink-1); }
+  .subnav__head span { font-size: var(--fs-small); color: var(--ink-3); }
+  .subnav__group { margin-top: var(--sp-4); }
+  .subnav__group > p { padding: 0 0 0.25rem var(--sp-3); font-size: var(--fs-micro); letter-spacing: var(--track-label); color: var(--ink-3); }
+  .panel { display: flex; align-items: baseline; gap: var(--sp-2); height: 1.875rem; padding: 0 var(--sp-2) 0 var(--sp-3); border-radius: var(--radius-s); font-size: var(--fs-body); color: var(--ink-2); white-space: nowrap; }
+  .panel:hover { background: var(--surface); color: var(--ink-1); }
+  .panel { align-items: center; }
+  .panel small { margin-left: auto; font-size: var(--fs-small); color: var(--ink-3); }
+  .panel small.yours { color: var(--yours); font-weight: var(--fw-strong); }
+  .panel.is-here { background: var(--surface); color: var(--ink-1); font-weight: var(--fw-strong); box-shadow: inset 2px 0 0 var(--ink-1), 0 0 0 1px var(--line); }
+  .subnav__more { margin-top: var(--sp-4); padding: var(--sp-3) 0 0 var(--sp-3); border-top: 1px solid var(--line); font-size: var(--fs-small); line-height: 1.45; color: var(--ink-3); }
+  .subnav__more kbd { font-family: var(--font-mono); font-size: var(--fs-micro); padding: 0 0.3125rem; border: 1px solid var(--line-strong); border-radius: var(--radius-xs); color: var(--ink-2); }
+
+  /* ---- the overview ----------------------------------------------------------- */
+  .tc { display: grid; grid-template-rows: auto auto minmax(0, 1fr); min-height: 0; padding: 1.125rem var(--page-pad) 1.25rem var(--sp-6); row-gap: 1.25rem; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+  .tc__head { display: flex; align-items: baseline; gap: var(--sp-4); min-width: 0; white-space: nowrap; }
+  .crumb { font-size: var(--fs-small); color: var(--ink-3); }
+  .tc__head h1 { font-size: 1.375rem; font-weight: var(--fw-strong); letter-spacing: var(--track-display); }
+  .tc__head .end { margin-left: auto; display: flex; align-items: baseline; gap: var(--sp-4); }
+  .tc__head .end span { font-size: var(--fs-small); color: var(--ink-3); }
+
+  /* three plain sentences — the presence giving its report — each with its basis */
+  .verdicts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); }
+  .verdict { display: grid; align-content: start; row-gap: 0.4375rem; padding: 0.875rem var(--sp-6) 1.125rem 0; min-width: 0; }
+  .verdict + .verdict { padding-left: var(--sp-6); border-left: 1px solid var(--line); }
+  .verdict__label { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-small); color: var(--ink-3); }
+  .verdict__say { font-size: 1.875rem; line-height: var(--lh-tight); letter-spacing: var(--track-display); font-weight: var(--fw-text); text-wrap: balance; }
+  .verdict__basis { font-size: var(--fs-body); line-height: 1.45; color: var(--ink-2); }
+  .verdict__basis b { color: var(--ink-1); }
+  .verdict__line { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3) var(--sp-5); }
+  .btn--stop { height: 2.75rem; padding: 0 var(--sp-5); font-size: var(--fs-lead); }
+
+  /* the evidence: the record on the left, the boundary and the grants on the right */
+  .evidence { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); column-gap: var(--sp-7); align-items: start; min-height: 0; }
+  .stack { display: grid; row-gap: var(--sp-5); align-content: start; min-width: 0; }
+  .sec-head { display: flex; align-items: baseline; gap: var(--sp-3); padding-bottom: var(--sp-2); border-bottom: 1px solid var(--line-strong); white-space: nowrap; min-width: 0; }
+  .sec-head h2 { font-size: var(--fs-lead); font-weight: var(--fw-strong); }
+  .sec-head span { font-size: var(--fs-small); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; }
+  .sec-head .data { margin-left: auto; overflow: visible; }
+
+  /* the audit chain, drawn as a chain: each entry is a sealed link to the one before it */
+  .ledger { width: 100%; font-size: var(--fs-body); }
+  .ledger th { padding: 0.5rem var(--sp-3) 0.375rem 0; font-size: var(--fs-micro); letter-spacing: var(--track-label); color: var(--ink-3); white-space: nowrap; border-bottom: 1px solid var(--line); }
+  .ledger td { padding: 0.4375rem var(--sp-3) 0.4375rem 0; border-bottom: 1px solid var(--line); vertical-align: baseline; }
+  .ledger td:last-child, .ledger th:last-child { padding-right: 0; }
+  .ledger .t { color: var(--ink-3); white-space: nowrap; }
+  .ledger .who { white-space: nowrap; color: var(--ink-1); font-weight: var(--fw-strong); }
+  .ledger .what { width: 100%; color: var(--ink-1); }
+  .ledger .what .failed { color: var(--danger); }
+  .ledger .tierc { white-space: nowrap; }
+  .ledger .hash { white-space: nowrap; color: var(--ink-3); text-align: right; }
+  .ledger .hash .ic { display: inline-block; vertical-align: -2px; margin-left: 0.375rem; color: var(--ink-2); }
+  .ledger .link { position: relative; padding: 0 0 0 1.75rem; }
+  .ledger .link::before { content: ""; position: absolute; left: 0.5rem; top: 0; bottom: -1px; width: 1.5px; background: var(--ink-faint); }
+  .ledger tbody tr:first-child .link::before { top: 50%; }
+  .ledger .link i { position: absolute; left: calc(0.5rem + 0.75px); top: 50%; width: 0.5625rem; height: 0.5625rem; transform: translate(-50%, -50%); border-radius: 2px; background: var(--ink-2); box-shadow: 0 0 0 3px var(--ground); }
+  .ledger tr.is-waiting .link i { background: var(--yours-dot); }
+  .ledger th.link::before { display: none; }
+  .ledger tr.is-waiting .what { color: var(--ink-1); }
+  .chain__tail { display: flex; align-items: center; gap: var(--sp-3); padding-top: 0.5rem; font-size: var(--fs-small); color: var(--ink-3); }
+  .chain__tail::before { content: ""; width: 1.5px; height: 1.25rem; margin: 0 0.4375rem 0 0.5rem; background: repeating-linear-gradient(var(--ink-faint) 0 3px, transparent 3px 6px); }
+
+  /* friction follows risk: the ladder the hub applies, in its own words */
+  .ladder { display: grid; }
+  .rung { display: grid; grid-template-columns: 11.5rem minmax(0, 1fr) auto; column-gap: var(--sp-4); align-items: baseline; padding: 0.5625rem 0; border-bottom: 1px solid var(--line); }
+  .rung .tier { font-size: var(--fs-body); }
+  .rung p { color: var(--ink-2); }
+  .rung small { font-size: var(--fs-small); color: var(--ink-3); white-space: nowrap; }
+  .rung small b { color: var(--ink-1); }
+
+  /* where work ran: the ring is the boundary of this machine — the same ring as the mark.
+     Each tick inside it is one run today; a run that took a cloud route would be drawn outside. */
+  .where { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--sp-5); align-items: center; padding-top: var(--sp-4); }
+  .ringfig { width: 8.75rem; height: 8.75rem; }
+  .ringfig .boundary { fill: none; stroke: var(--mark-ring); stroke-width: 1.5; }
+  .ringfig .runs { fill: none; stroke: var(--ink-2); stroke-width: 8; }
+  .ringfig text { fill: var(--ink-1); font-family: var(--font-ui); }
+  .ringfig .n { font-size: 34px; font-weight: 300; }
+  .ringfig .of { font-size: 12.5px; fill: var(--ink-3); letter-spacing: 0.03em; }
+  .where__big { display: flex; align-items: baseline; gap: var(--sp-3); }
+  .where__big b { font-size: 2.75rem; line-height: 1; font-weight: var(--fw-light); letter-spacing: -0.01em; }
+  .where__big span { font-size: var(--fs-lead); color: var(--ink-2); }
+  .where dl { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); column-gap: var(--sp-3); row-gap: 0.125rem; margin-top: var(--sp-3); font-size: var(--fs-small); line-height: 1.45; }
+  .where dt { color: var(--ink-3); }
+  .where dd { color: var(--ink-1); }
+  .basis { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; margin-top: var(--sp-3); font-size: var(--fs-small); }
+  .basis > span:first-child { color: var(--ink-3); margin-right: 0.25rem; }
+  .basis i { font-style: normal; display: inline-flex; align-items: center; gap: 0.3125rem; height: 1.5rem; padding: 0 var(--sp-2); border: 1px solid var(--line); border-radius: var(--radius-xs); color: var(--ink-3); white-space: nowrap; }
+  .basis i.is-now { border-color: var(--ink-1); color: var(--ink-1); font-weight: var(--fw-strong); }
+  .basis i.is-later { border-style: dashed; }
+  .where__note { grid-column: 1 / -1; margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--line); font-size: var(--fs-small); line-height: 1.5; color: var(--ink-2); }
+  .where__note b { color: var(--ink-1); }
+
+  /* grants and money */
+  .grid-table { width: 100%; font-size: var(--fs-body); }
+  .grid-table td { padding: 0.3125rem var(--sp-3) 0.3125rem 0; border-bottom: 1px solid var(--line); vertical-align: baseline; }
+  .grid-table td:last-child { padding-right: 0; text-align: right; white-space: nowrap; }
+  .grid-table .id { color: var(--ink-1); white-space: nowrap; }
+  .grid-table .what { width: 100%; color: var(--ink-2); }
+  .grant { display: inline-flex; align-items: center; gap: 0.375rem; color: var(--ink-2); }
+  .grant--ask { color: var(--ink-1); font-weight: var(--fw-strong); }
+  .money { white-space: nowrap; color: var(--ink-1); font-weight: var(--fw-strong); text-align: right; }
+  .pay-state { color: var(--ink-3); }
+
+  /* ---- widths: the overview reflows; the panel list never disappears -------- */
+  @media (min-width: 2200px) {
+    .trust { grid-template-columns: 17rem minmax(0, 1fr); }
+    .tc { padding-right: calc(var(--page-pad) + 2rem); row-gap: 1.75rem; }
+    .verdict { padding-top: 1.25rem; padding-bottom: 1.5rem; row-gap: 0.625rem; }
+    .verdict__say { font-size: 2.25rem; }
+    .verdict__basis { font-size: var(--fs-lead); }
+    .evidence { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); column-gap: var(--sp-8); }
+    .stack { row-gap: 1.75rem; }
+    .ledger td { padding-top: 0.625rem; padding-bottom: 0.625rem; }
+    .grid-table td { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+    .rung { padding: 0.75rem 0; }
+    .ringfig { width: 10.5rem; height: 10.5rem; }
+  }
+  @media (max-width: 1500px) {
+    .trust { grid-template-columns: 13.5rem minmax(0, 1fr); }
+    .verdict__say { font-size: 1.5rem; }
+    .verdict { padding-right: var(--sp-5); }
+    .verdict + .verdict { padding-left: var(--sp-5); }
+    .evidence { grid-template-columns: minmax(0, 1fr); row-gap: var(--sp-6); }
+    .rung { grid-template-columns: 10rem minmax(0, 1fr); }
+    .rung small { grid-column: 2; }
+  }
+  @media (max-width: 1320px) {
+    .trust { grid-template-columns: 12rem minmax(0, 1fr); }
+    .subnav { padding-left: var(--sp-4); }
+    .panel small { display: none; }
+    .panel small.yours { display: inline; }
+    .verdicts { grid-template-columns: minmax(0, 1fr); }
+    .verdict + .verdict { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 16 16"><rect x="5.75" y="1.75" width="4.5" height="7.5" rx="2.25"/><path d="M3.25 7.75a4.75 4.75 0 0 0 9.5 0M8 12.5v2"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7"/></symbol>
+    <symbol id="i-attention" viewBox="0 0 16 16"><path d="M8 2.5 14 13H2z"/><path d="M8 6.5v3M8 11.2v.1"/></symbol>
+    <symbol id="i-here" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-hold" viewBox="0 0 16 16"><path d="M6 4v8M10 4v8"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-glance" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8" rx="1.5"/><path d="M6 14h4"/></symbol>
+    <symbol id="i-seal" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></symbol>
+    <symbol id="i-chain" viewBox="0 0 16 16"><rect x="5.5" y="1.75" width="5" height="5" rx="1"/><rect x="5.5" y="9.25" width="5" height="5" rx="1"/><path d="M8 6.75v2.5"/></symbol>
+    <symbol id="i-scope" viewBox="0 0 16 16"><path d="M5 3H3v10h2M11 3h2v10h-2"/></symbol>
+    <symbol id="i-gate" viewBox="0 0 16 16"><path d="M3 13V3M13 13V3M3 6h10M3 10h10"/></symbol>
+    <symbol id="i-open" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.5"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+
+  <header class="bar">
+    <a class="brand" href="cockpit.html" aria-label="Nerva — Home. Jarvis is working; something is waiting for you.">
+      <svg class="mark mark--s" viewBox="0 0 96 96" aria-hidden="true">
+        <circle class="mark__ring" cx="48" cy="48" r="44"/>
+        <path class="mark__path mark__path--rest" d="M65 67V29"/>
+        <path class="mark__path mark__path--done" d="M31 67V29L65 67"/>
+        <circle class="mark__node mark__node--done" cx="31" cy="67" r="7.5"/>
+        <circle class="mark__node mark__node--done" cx="31" cy="29" r="7.5"/>
+        <circle class="mark__node mark__node--done" cx="65" cy="67" r="7.5"/>
+        <circle class="mark__node mark__node--rest" cx="65" cy="29" r="6"/>
+        <circle class="mark__bead" cx="79.1" cy="16.9" r="11"/>
+      </svg>
+      <span class="brand__name">Nerva</span>
+    </a>
+    <nav class="areas" aria-label="Areas">
+      <a class="area" href="cockpit.html">Home</a>
+      <a class="area" href="#work">Work <span class="area__badge"><span class="n-full yours-mark">9 need you</span><span class="n-only yours-mark" aria-label="9 need you">9</span></span></a>
+      <a class="area" href="#agents">Agents</a>
+      <a class="area" href="#memory">Memory</a>
+      <a class="area is-here" href="secondary.html" aria-current="page">Trust</a>
+      <a class="area" href="#build">Build</a>
+      <a class="area" href="#connect">Connect</a>
+      <a class="area" href="#observe">Observe <span class="area__badge"><span class="n-full yours-mark">4 services down</span><span class="n-only yours-mark" aria-label="4 services down">4</span></span></a>
+      <a class="area" href="#settings">Settings</a>
+    </nav>
+    <button class="find" type="button" title="Search and command — finds every area, panel, agent and action">
+      <svg class="ic"><use href="#i-search"/></svg>
+      <span class="find__label">Search<span class="find__more"> and command</span></span>
+      <kbd>Ctrl K</kbd>
+    </button>
+    <div class="bar__tools">
+      <div class="seg" role="group" aria-label="Language">
+        <button type="button" aria-pressed="true">EN</button><button type="button" aria-pressed="false">RO</button>
+      </div>
+      <button class="tool" type="button" id="theme" aria-label="Switch theme (dark / light)"><svg class="ic"><use href="#i-theme"/></svg></button>
+      <a class="tool" href="glance.html" title="Glance — idle or second screen"><svg class="ic"><use href="#i-glance"/></svg><span class="wide-only">Glance</span></a>
+      <time class="clock" datetime="2026-11-23T10:51">10:51</time>
+    </div>
+  </header>
+
+  <div class="trust">
+
+    <!-- SECOND LEVEL: the 21 Trust panels. The old Console's panels live here now, as pages. -->
+    <nav class="subnav" aria-label="Trust panels">
+      <div class="subnav__head"><h2>Trust</h2><span>21 panels</span></div>
+      <a class="panel is-here" href="secondary.html" aria-current="page">Overview</a>
+
+      <div class="subnav__group">
+        <p>The record</p>
+        <a class="panel" href="#audit-chain">Audit chain <small>921</small></a>
+        <a class="panel" href="#audit-anchors">Audit anchors</a>
+        <a class="panel" href="#retention">Retention</a>
+        <a class="panel" href="#data-handling">Data handling</a>
+      </div>
+
+      <div class="subnav__group">
+        <p>Control</p>
+        <a class="panel" href="#emergency-stop">Emergency stop <small>armed</small></a>
+        <a class="panel" href="#capabilities">Capabilities <small>6</small></a>
+        <a class="panel" href="#permissions">Permissions</a>
+        <a class="panel" href="#skill-switches">Skill switches</a>
+        <a class="panel" href="#desktop-allowlist">Desktop allowlist</a>
+        <a class="panel" href="#pairing">Pairing</a>
+      </div>
+
+      <div class="subnav__group">
+        <p>Money and keys</p>
+        <a class="panel" href="#payments">Payments <small class="yours">1 waits</small></a>
+        <a class="panel" href="#secrets">Secrets</a>
+        <a class="panel" href="#credential-shares">Credential shares</a>
+      </div>
+
+      <div class="subnav__group">
+        <p>Posture</p>
+        <a class="panel" href="#posture">Posture</a>
+        <a class="panel" href="#security-skills">Security skills</a>
+        <a class="panel" href="#signal-governance">Signal governance</a>
+        <a class="panel" href="#trust-ops">Trust ops</a>
+      </div>
+
+      <p class="subnav__more">and 3 more — <kbd>Ctrl K</kbd> finds every panel by name</p>
+    </nav>
+
+    <main class="tc">
+      <header class="tc__head">
+        <span class="crumb">Trust /</span>
+        <h1>Overview</h1>
+        <div class="end"><span>Each section says whether it is live, a demo sample or empty</span><span class="data">Live · checked 10:50</span></div>
+      </header>
+
+      <!-- three plain sentences: provable, local, governed -->
+      <section class="verdicts" aria-label="Summary">
+        <div class="verdict">
+          <p class="verdict__label"><svg class="ic"><use href="#i-chain"/></svg>Audit chain</p>
+          <p class="verdict__say">The chain is intact.</p>
+          <p class="verdict__basis"><b>921 sealed entries</b> · verified 10:50. Every action is written to this chain, and each entry seals the one before it.</p>
+        </div>
+        <div class="verdict">
+          <p class="verdict__label"><svg class="ic"><use href="#i-here"/></svg>Locality</p>
+          <p class="verdict__say">41 of 41 runs took the local route.</p>
+          <p class="verdict__basis"><b>100% on this machine</b> · by route · egress <b>sealed</b> — nothing can leave this machine.</p>
+        </div>
+        <div class="verdict">
+          <p class="verdict__label"><svg class="ic"><use href="#i-stop"/></svg>Emergency stop</p>
+          <div class="verdict__line">
+            <p class="verdict__say">The stop is armed.</p>
+            <button class="btn btn--danger btn--stop" type="button"><svg class="ic"><use href="#i-stop"/></svg>Stop all agents</button>
+          </div>
+          <p class="verdict__basis">One click. Halts every agent and the job queue until you resume.</p>
+        </div>
+      </section>
+
+      <div class="evidence">
+        <div class="stack">
+
+          <section aria-labelledby="h-chain">
+            <div class="sec-head"><h2 id="h-chain">Audit chain</h2><span>latest 8 of 921 · newest first · each entry seals the one before it</span><span class="data">Live</span></div>
+            <table class="ledger">
+              <thead><tr><th class="link"><span class="vh">Chain</span></th><th>Time</th><th>Agent</th><th>Action</th><th>Tier</th><th style="text-align:right">Hash · sealed</th></tr></thead>
+              <tbody>
+                <tr><td class="link"><i></i></td><td class="t mono">10:49</td><td class="who">Jarvis</td><td class="what">Routed your question to Pepper and Stark</td><td class="tierc"><span class="tier tier--0"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>Read only</span></td><td class="hash mono">9f2c…a41b<svg class="ic ic--s" aria-label="sealed"><use href="#i-check"/></svg></td></tr>
+                <tr><td class="link"><i></i></td><td class="t mono">09:40</td><td class="who">Vision</td><td class="what">Indexed 17 sources into memory</td><td class="tierc"><span class="tier tier--0"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>Read only</span></td><td class="hash mono">5ad1…77e0<svg class="ic ic--s" aria-label="sealed"><use href="#i-check"/></svg></td></tr>
+                <tr class="is-waiting"><td class="link"><i></i></td><td class="t mono">08:14</td><td class="who">Steve</td><td class="what">Proposed restart of 4 services — <a class="yours-link" href="cockpit.html#d1">waiting for approval</a></td><td class="tierc"><span class="tier tier--3"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>Irreversible</span></td><td class="hash mono">c03e…1d9f<svg class="ic ic--s" aria-label="sealed"><use href="#i-check"/></svg></td></tr>
+                <tr class="is-waiting"><td class="link"><i></i></td><td class="t mono">08:07</td><td class="who">Gecko</td><td class="what">Proposed transfer of €4,200 — <a class="yours-link" href="cockpit.html#d2">waiting for approval</a></td><td class="tierc"><span class="tier tier--3"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>Money</span></td><td class="hash mono">71bb…e2c4<svg class="ic ic--s" aria-label="sealed"><use href="#i-check"/></svg></td></tr>
+                <tr><td class="link"><i></i></td><td class="t mono">08:05</td><td class="who">Stark</td><td class="what"><span class="mono">file_write</span> <span class="failed">failed</span> — nothing was changed</td><td class="tierc"><span class="tier tier--1"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>Reversible</span></td><td class="hash mono">2e90…0b6a<svg class="ic ic--s" aria-label="sealed"><use href="#i-check"/></svg></td></tr>
+                <tr><td class="link"><i></i></td><td class="t mono">08:01</td><td class="who">Ultron</td><td class="what">Blocked an outbound request to <span class="mono">10.0.0.x</span> (SSRF rule)</td><td class="tierc"><span class="tier tier--2"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>External</span></td><td class="hash mono">aa47…93f1<svg class="ic ic--s" aria-label="sealed"><use href="#i-check"/></svg></td></tr>
+                <tr><td class="link"><i></i></td><td class="t mono">07:48</td><td class="who">Ultron</td><td class="what">Redacted 2 PII spans in an outbound draft and held it</td><td class="tierc"><span class="tier tier--2"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>External</span></td><td class="hash mono">0d3f…5c82<svg class="ic ic--s" aria-label="sealed"><use href="#i-check"/></svg></td></tr>
+                <tr><td class="link"><i></i></td><td class="t mono">07:14</td><td class="who">Pepper</td><td class="what">Resolved 1 calendar conflict</td><td class="tierc"><span class="tier tier--1"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>Reversible</span></td><td class="hash mono">b6e2…4a10<svg class="ic ic--s" aria-label="sealed"><use href="#i-check"/></svg></td></tr>
+              </tbody>
+            </table>
+            <p class="chain__tail">913 earlier entries · the whole chain was verified at 10:50</p>
+          </section>
+
+          <section aria-labelledby="h-ladder">
+            <div class="sec-head"><h2 id="h-ladder">Friction follows risk</h2><span>decided by the hub in code, per action</span><span class="data">Live</span></div>
+            <div class="ladder">
+              <div class="rung"><span class="tier tier--0"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>Read only</span><p>None — recorded in the audit chain</p><small>runs without asking</small></div>
+              <div class="rung"><span class="tier tier--1"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>Reversible</span><p>One click, undo available</p><small><b>2</b> wait now</small></div>
+              <div class="rung"><span class="tier tier--2"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>External</span><p>Two steps: review what will be sent, then confirm</p><small><b>1</b> waits now</small></div>
+              <div class="rung"><span class="tier tier--3"><span class="tier__bars" aria-hidden="true"><i></i><i></i><i></i></span>Irreversible or money</span><p>Typed confirmation; cannot be bulk-approved</p><small><b>3</b> wait now</small></div>
+            </div>
+          </section>
+
+        </div>
+
+        <div class="stack">
+
+          <section aria-labelledby="h-where">
+            <div class="sec-head"><h2 id="h-where">Where work ran</h2><span>today</span><span class="data">Live</span></div>
+            <div class="where">
+              <svg class="ringfig" viewBox="0 0 160 160" role="img" aria-label="The boundary of this machine, with 41 runs today, all inside it. No run took a cloud route.">
+                <circle class="boundary" cx="80" cy="80" r="72"/>
+                <circle class="runs" cx="80" cy="80" r="61" stroke-dasharray="1.7 7.648" transform="rotate(-90 80 80)"/>
+                <text class="n" x="80" y="86" text-anchor="middle">41</text>
+                <text class="of" x="80" y="103" text-anchor="middle">of 41 runs</text>
+              </svg>
+              <div>
+                <p class="where__big"><b>100%</b><span>on this machine</span></p>
+                <dl>
+                  <dt>Cloud</dt><dd>0% · no run took a cloud route</dd>
+                  <dt>Egress</dt><dd>Sealed — nothing can leave this machine</dd>
+                </dl>
+                <p class="basis" aria-label="How sure this figure is">
+                  <span>Basis</span>
+                  <i class="is-later" title="A network measurement. Not available yet.">verified · not yet</i>
+                  <i class="is-now"><svg class="ic ic--s"><use href="#i-check"/></svg>by route</i>
+                  <i>derived</i>
+                  <i>unknown</i>
+                </p>
+              </div>
+              <p class="where__note">The hub counts which route each run used; it is not a network measurement. <b>Local only, by code:</b> Frigga, Ultron, Howard, Hestia. <b>Athena</b> is cloud only — unavailable while egress is sealed.</p>
+            </div>
+          </section>
+
+          <section aria-labelledby="h-caps">
+            <div class="sec-head"><h2 id="h-caps">Capabilities</h2><span>what agents may do, and on what terms</span><span class="data">Live</span></div>
+            <table class="grid-table">
+              <tbody>
+                <tr><td class="id mono">fs.read</td><td class="what">Read workspace files</td><td><span class="grant"><svg class="ic ic--s"><use href="#i-open"/></svg>Allow</span></td></tr>
+                <tr><td class="id mono">fs.write</td><td class="what">Modify files in <span class="mono">/work</span></td><td><span class="grant"><svg class="ic ic--s"><use href="#i-scope"/></svg>Scoped</span></td></tr>
+                <tr><td class="id mono">net.outbound</td><td class="what">External HTTP via plugins</td><td><span class="grant"><svg class="ic ic--s"><use href="#i-gate"/></svg>Gated</span></td></tr>
+                <tr><td class="id mono">payments.execute</td><td class="what">Move money</td><td><span class="grant grant--ask"><svg class="ic ic--s"><use href="#i-hold"/></svg>Approval</span></td></tr>
+                <tr><td class="id mono">shell.exec</td><td class="what">Run shell commands</td><td><span class="grant grant--ask"><svg class="ic ic--s"><use href="#i-hold"/></svg>Approval</span></td></tr>
+                <tr><td class="id mono">memory.write</td><td class="what">Persist facts to the knowledge graph</td><td><span class="grant"><svg class="ic ic--s"><use href="#i-open"/></svg>Allow</span></td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section aria-labelledby="h-pay">
+            <div class="sec-head"><h2 id="h-pay">Payments</h2><span>today</span><span class="data">Live</span></div>
+            <table class="grid-table">
+              <tbody>
+                <tr><td class="id"><b>Gecko</b></td><td class="what">Savings ladder sweep</td><td class="money">€4,200</td><td><a class="yours-link" href="cockpit.html#d2">Waiting for approval</a></td></tr>
+                <tr><td class="id"><b>Pepper</b></td><td class="what">Conf Room A booking</td><td class="money">€35</td><td class="pay-state">Settled 07:20</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="foot" aria-label="Health and trust">
+    <button class="tell tell--flex tell--attention" type="button" title="Degraded since 08:14 — 4 causes; the fix waits in decision 1">
+      <span class="tell__label">Health<span class="wide-only"> · since 08:14</span> · checked 10:50</span>
+      <span class="tell__value"><svg class="ic"><use href="#i-attention"/></svg><span>Working, with 4 local services down</span></span>
+    </button>
+    <div class="tell tell--flex">
+      <span class="tell__label">18 agents · 9 idle<span class="roomy-only"> · 1 unavailable</span></span>
+      <span class="tell__value"><span>3 working · 3 waiting on you<span class="roomy-only"> · 2 finished</span></span></span>
+    </div>
+    <div class="foot__gap" aria-hidden="true"></div>
+    <div class="tell">
+      <span class="tell__label">Egress</span>
+      <span class="tell__value"><svg class="ic"><use href="#i-here"/></svg>Sealed</span>
+    </div>
+    <div class="tell">
+      <span class="tell__label">On this machine · by route</span>
+      <span class="tell__value"><b>100%</b><span class="dim wide-only">· 41 of 41 runs today</span></span>
+    </div>
+    <div class="tell">
+      <span class="tell__label">Microphone</span>
+      <span class="tell__value"><svg class="ic"><use href="#i-mic"/></svg>On</span>
+    </div>
+    <div class="tell">
+      <span class="tell__label">Model<span class="wide-only"> · loaded on Ollama</span></span>
+      <span class="tell__value"><span class="mono">gemma-4-31b</span></span>
+    </div>
+    <div class="tell">
+      <span class="tell__label">Data<span class="wide-only"> on screen</span></span>
+      <span class="tell__value"><span class="live-dot" aria-hidden="true"></span>Live</span>
+    </div>
+    <div class="foot__stop">
+      <button class="btn btn--danger" type="button"><svg class="ic"><use href="#i-stop"/></svg>Stop all agents</button>
+      <small>Armed<br>one click</small>
+    </div>
+  </footer>
+</div>
+
+<script>
+  document.getElementById('theme').addEventListener('click', function () {
+    var r = document.documentElement;
+    r.setAttribute('data-theme', r.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+/* ==========================================================================
+   Nerva · Ledger — design tokens
+   --------------------------------------------------------------------------
+   One token set, two themes.
+     Carbon (dark, the default)   the copy you work from all day: paper-toned ink on a
+                                  soft green-black. Kind to an always-on OLED panel.
+     Paper  (light)               the original: ink on a faintly green ledger paper.
+                                  Daylight, long reading, anything printed or exported.
+   Rules of the system, so the numbers below make sense:
+     · Neutrals share one hue family (140–165, "ledger green") at very low chroma.
+     · There is exactly one chromatic colour, --seal (vermilion). It is the owner's hand:
+       it marks only where the owner's authority is asked for, given, or recorded as
+       given. Nerva never uses it for itself.
+     · Status is never carried by hue. It is a mark (a shape) plus a word.
+     · Structure is drawn with rules, not boxes. Only a seal is round.
+     · Carbon: no solid bright fills at rest, chrome dimmer than content, nothing pure
+       white, nothing glows.
+   Colour is authored in OKLCH. Every pairing used for text clears WCAG 2.2 AA.
+   ========================================================================== */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* ---- grounds ---------------------------------------------------------- */
+  --paper:       oklch(0.176 0.008 165);  /* the page */
+  --paper-2:     oklch(0.204 0.009 165);  /* hover, quiet fills, meter tracks */
+  --paper-3:     oklch(0.240 0.010 165);  /* pressed, selected row */
+  --sheet:       oklch(0.212 0.010 165);  /* a surface you write or sign on: raised, not whiter */
+
+  /* ---- ink -------------------------------------------------------------- */
+  --ink:         oklch(0.912 0.014 138);  /* text: paper-toned, never pure white */
+  --ink-2:       oklch(0.775 0.014 145);  /* secondary text, navigation at rest */
+  --ink-3:       oklch(0.660 0.014 150);  /* meta, labels, past items (>= 4.5:1 on every ground) */
+
+  /* ---- rules ------------------------------------------------------------ */
+  --rule:        oklch(0.268 0.010 165);  /* hairline between rows and columns */
+  --rule-2:      oklch(0.340 0.012 165);  /* table heads, quiet control edges */
+  --rule-field:  oklch(0.540 0.014 160);  /* edges that identify a control (>= 3:1) */
+  --rule-ink:    oklch(0.640 0.014 150);  /* the 2px rule that opens a register: dimmed, it never glares */
+
+  /* ---- seal: the owner's hand ------------------------------------------- */
+  --seal:        oklch(0.705 0.185 35);   /* vermilion: text, outlines, solid fill */
+  --seal-wash:   oklch(0.255 0.042 35);   /* armed signature line, hover on a seal control */
+  --on-seal:     oklch(0.160 0.012 165);  /* text on a solid seal */
+
+  /* ---- focus, elevation -------------------------------------------------- */
+  --focus:       oklch(0.912 0.014 138);
+  --shadow-sheet: 0 0 0 1px oklch(0.540 0.014 160), 0 22px 48px -18px oklch(0 0 0 / 0.7);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --paper:       oklch(0.979 0.006 150);
+  --paper-2:     oklch(0.958 0.008 150);
+  --paper-3:     oklch(0.932 0.010 150);
+  --sheet:       oklch(0.997 0.002 150);  /* on Paper the sheet is whiter than the page */
+
+  --ink:         oklch(0.205 0.022 165);
+  --ink-2:       oklch(0.375 0.020 165);
+  --ink-3:       oklch(0.485 0.016 165);
+
+  --rule:        oklch(0.880 0.010 150);
+  --rule-2:      oklch(0.770 0.012 155);
+  --rule-field:  oklch(0.555 0.014 160);
+  --rule-ink:    oklch(0.205 0.022 165);  /* on Paper the register rule is printed in full ink */
+
+  --seal:        oklch(0.535 0.200 33);
+  --seal-wash:   oklch(0.958 0.024 45);
+  --on-seal:     oklch(0.992 0.004 150);
+
+  --focus:       oklch(0.205 0.022 165);
+  --shadow-sheet: 0 0 0 1px oklch(0.205 0.022 165), 0 20px 44px -20px oklch(0.205 0.022 165 / 0.38);
+}
+
+:root {
+  /* ---- typefaces ---------------------------------------------------------
+     Serif  = what Nerva writes for you to read, and what you sign.
+     Sans   = the instrument: labels, tables, controls, your own typed words.
+     Mono   = identifiers only: hashes, ids, addresses, model and capability names.
+     Rendered here with installed stand-ins; production faces are open-licence and
+     self-hosted: Literata (for Sitka), Barlow (for Bahnschrift), JetBrains Mono. */
+  --font-serif-small:   "Sitka Small", "Literata", Georgia, serif;        /* <= 14px  */
+  --font-serif-text:    "Sitka Text", "Literata", Georgia, serif;         /* 15–18px  */
+  --font-serif-sub:     "Sitka Subheading", "Literata", Georgia, serif;   /* 19–24px  */
+  --font-serif-head:    "Sitka Heading", "Literata", Georgia, serif;      /* 25–31px  */
+  --font-serif-display: "Sitka Display", "Literata", Georgia, serif;      /* 32px +   */
+  --font-sans:          "Bahnschrift", "Barlow", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font-mono:          "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* ---- type scale (px). Nothing below 12. -------------------------------- */
+  --t-meta:    12px;    /* times, sources, fine print           (sans)  */
+  --t-label:   13px;    /* table cells, labels, secondary lines (sans)  */
+  --t-ui:      14px;    /* controls, navigation, schedule       (sans)  */
+  --t-own:     15px;    /* the owner's own words                (sans)  */
+  --t-note:    15px;    /* consequence prose                    (serif) */
+  --t-prose:   17px;    /* replies                              (serif) */
+  --t-entry:   17px;    /* docket entry titles                  (serif) */
+  --t-title:   22px;    /* register titles, the open entry      (serif) */
+  --t-verdict: 32px;    /* a verdict                            (serif) */
+  --t-figure:  44px;    /* the one large figure on a page       (serif) */
+
+  --lh-meta:   16px;
+  --lh-label:  18px;
+  --lh-ui:     20px;
+  --lh-own:    23px;
+  --lh-note:   21px;
+  --lh-prose:  27px;
+  --lh-entry:  23px;
+  --lh-title:  27px;
+
+  /* Weights. The installed stand-ins expose named instances only: Bahnschrift 400 / 600,
+     Sitka 400 / 700. The production faces (Barlow, Literata) have a true 500, so --w-med
+     can rise to 500 there without touching a component. */
+  --w-reg: 400;
+  --w-med: 400;
+  --w-semi: 600;
+  --w-bold: 700;
+
+  /* ---- space: 4px base, 8px rhythm --------------------------------------- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+
+  /* ---- page geometry ----------------------------------------------------- */
+  --page-x: 32px;        /* outer margin */
+  --col-gap: 56px;       /* gutter between registers; a hairline runs down its middle */
+  --measure: 66ch;       /* the longest line of prose anywhere */
+
+  /* ---- shape ------------------------------------------------------------- */
+  --radius-0: 0;         /* rules, cells, sheets */
+  --radius-1: 2px;       /* controls */
+  --radius-2: 4px;       /* transient layers: menus, the command sheet */
+  --radius-seal: 999px;  /* seals and state marks only */
+
+  /* ---- rule weights ------------------------------------------------------ */
+  --hair: 1px;
+  --heavy: 2px;
+
+  /* ---- motion: stillness by default -------------------------------------- */
+  --dur-1: 120ms;        /* hover, press */
+  --dur-2: 180ms;        /* a seal filling, a row opening */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- convergence layer --------------------------------------------------
+     Role names the HUD and the Workspace app (--ws-*) can both consume. A component
+     written against these never needs to know which product it is in. */
+  --color-bg:            var(--paper);
+  --color-bg-hover:      var(--paper-2);
+  --color-surface-input: var(--sheet);
+  --color-text:          var(--ink);
+  --color-text-2:        var(--ink-2);
+  --color-text-3:        var(--ink-3);
+  --color-border:        var(--rule);
+  --color-border-strong: var(--rule-2);
+  --color-border-control: var(--rule-field);
+  --color-accent:        var(--seal);   /* the one accent, and only for the owner's authority */
+  --color-on-accent:     var(--on-seal);
+  --color-focus:         var(--focus);
+}
+
+/* The owner's screen: 2560 x 1353 CSS px on a 31-inch panel, read from a little further away.
+   The extra room is used, not stretched into: a fourth register appears and the reading
+   sizes step up by one. Measures stay where they were. */
+@media (min-width: 2200px) {
+  :root {
+    --page-x: 40px; --col-gap: 64px;
+    --t-meta: 13px;   --lh-meta: 17px;
+    --t-label: 14px;  --lh-label: 20px;
+    --t-ui: 15px;     --lh-ui: 22px;
+    --t-own: 16px;    --lh-own: 25px;
+    --t-note: 16px;   --lh-note: 23px;
+    --t-prose: 18px;  --lh-prose: 29px;
+    --t-entry: 18px;  --lh-entry: 24px;
+    --t-title: 24px;  --lh-title: 29px;
+    --t-verdict: 36px;
+    --t-figure: 50px;
+  }
+}
+@media (max-width: 1679px) {
+  :root { --page-x: 24px; --col-gap: 48px; }
+}
+@media (max-width: 1339px) {
+  :root { --page-x: 20px; --col-gap: 40px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-1: 0ms; --dur-2: 0ms; }
+}

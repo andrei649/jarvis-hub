@@ -191,6 +191,8 @@ def _match_turn(turn: object, terms: list[str], role: str | None) -> tuple[int, 
     """``(score, first_index, hay)`` when every term is in the turn, else None."""
     if not isinstance(turn, dict):
         return None
+    if turn.get("role") not in ROLES:
+        return None
     content = turn.get("content")
     if not isinstance(content, str) or not content:
         return None
@@ -327,7 +329,8 @@ def _search_index(root: Path, terms: list[str], role: str | None,
             "SELECT t.stem, t.session_id, t.turn_idx, t.role, t.content, t.ts, t.agent_id, t.media,"
             " s.mtime_ns FROM turn_fts JOIN turns t ON t.id = turn_fts.rowid"
             " JOIN sessions s ON s.stem = t.stem"
-            " WHERE turn_fts MATCH ? AND (? IS NULL OR t.stem = ?) AND (? IS NULL OR t.role = ?)"
+            " WHERE turn_fts MATCH ? AND t.role IN ('user','assistant')"
+            " AND (? IS NULL OR t.stem = ?) AND (? IS NULL OR t.role = ?)"
             " ORDER BY s.mtime_ns DESC, t.turn_idx DESC LIMIT ?",
             (match, session_id, session_id, role, role, MAX_INDEX_CANDIDATES + 1),
         ).fetchall()

@@ -16,7 +16,8 @@
      such — the mutation passes onErr, so a refused pull is never a silent success
      (panel-kit.tsx:93-97). The card only polls while a job is running. */
 import React, { useEffect, useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act } from '../panel-kit';
+// The card keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, act } from '../panel-kit';
 
 const fmtGb = (bytes: number) => (Number(bytes || 0) / 1024 ** 3).toFixed(1);
 
@@ -77,15 +78,15 @@ export function ModelSetupPanel() {
             <Tag>{`~${Number(rec.approx_gb || 0)} GB`}</Tag>
             {gpu && <Tag>{gpu.measured ? `${gpu.name} · ${gpu.vram_total_mb} MB` : 'no GPU measured'}</Tag>}
           </div>
-          <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>{String(rec.basis || '')}</div>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>{String(rec.basis || '')}</div>
           {arr(rec, 'reasons').slice(0, 4).map((r, i) => (
-            <div key={i} style={{ fontSize: 10, color: 'var(--ink-2)' }}>{String(r)}</div>
+            <div key={i} style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{String(r)}</div>
           ))}
         </div>
       )}
 
       {ollama && !present && (
-        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>
           {`Ollama not reachable · ${String(ollama.reason || 'unknown')} · ${String(ollama.url || '')} — nothing can be pulled until it runs`}
         </div>
       )}
@@ -97,31 +98,31 @@ export function ModelSetupPanel() {
         </Row>
       ))}
       {present && installed.length === 0 && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>Ollama is up but holds no models yet</div>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>Ollama is up but holds no models yet</div>
       )}
 
       <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="tool-btn" disabled={!canPull} onClick={doPull}>
           {raw && raw.recommended_installed ? 'installed' : rec ? `pull ${rec.model}` : 'pull'}
         </button>
-        {pull && <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{`cap ${Number(pull.max_gb || 0)} GB`}</span>}
+        {pull && <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{`cap ${Number(pull.max_gb || 0)} GB`}</span>}
         {pull && !enabled && (
-          <span style={{ fontSize: 10, color: 'var(--amber)' }}>{`pulls disabled · ${String(pull.hint || 'model_pull_disabled')}`}</span>
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>{`pulls disabled · ${String(pull.hint || 'model_pull_disabled')}`}</span>
         )}
       </div>
 
       {job && (
-        <div style={{ fontSize: 10, color: job.status === 'failed' ? 'var(--red)' : 'var(--ink-2)', marginTop: 6 }} data-testid="pull-job">
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: job.status === 'failed' ? 'var(--red)' : 'var(--ink-2)', marginTop: 6 }} data-testid="pull-job">
           {`${String(job.model)} · ${String(job.status)}${job.stage ? ` · ${String(job.stage)}` : ''}`}
           {job.bytes_total > 0 ? ` · ${fmtGb(job.bytes_completed)} / ${fmtGb(job.bytes_total)} GB` : ''}
           {job.reason ? ` · ${String(job.reason)}` : ''}
         </div>
       )}
 
-      {note && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
-      {err && <div role="alert" style={{ fontSize: 10, color: 'var(--red)', marginTop: 6 }}>{err}</div>}
+      {note && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
+      {err && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 6 }}>{err}</div>}
 
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
         Loopback Ollama only; every pull crosses the Action Kernel and stays under the size cap. Nothing leaves this machine.
       </div>
     </Card>

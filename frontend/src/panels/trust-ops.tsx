@@ -97,8 +97,9 @@
    below passes onErr and clears its success block first — otherwise the refusal branch
    would be dead code and a refused rotation could sit under a success line. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, actA, inpS, taS, Json } from '../panel-kit';
+import { useApi, arr, mono, note, asLive, Card, State, Row, Tag, act, actA, inpS, taS, Json } from '../panel-kit';
 import { ConfirmAction, RISK_TIER } from '../confirm';
+import { IDENT, LABEL } from '../theme/type';
 
 const SPOTLIGHT_PATH = '/api/security/spotlight';
 const BROKER_PATH = '/api/secrets/broker';
@@ -109,9 +110,9 @@ const ROTATE_PATH = '/api/admin/rotate-tokens';
    rewritten to "admin" by the handler, so the control never offers a third. */
 const SCOPES = ['admin', 'user'];
 
-const HDR = { ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', margin: '10px 0 4px' };
-const NOTE = { ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 };
-const WARN = { ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 4 };
+const HDR = { ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '10px 0 4px' };
+const NOTE = { ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 };
+const WARN = { ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 };
 
 /* The refusal, straight from the wire — nothing mapped, merged or renamed.
    `error`  STRING → the router spoke  ("text required", "secret broker not available")
@@ -128,15 +129,15 @@ function Refusal({ err, path }: { err: any; path: string }) {
   const quoted = routerErr != null || detailStr != null || detailList != null;
   return (
     <div role="alert" style={{ marginTop: 8, padding: 6, border: '1px solid var(--red)', borderRadius: 4 }}>
-      <div style={{ ...mono, fontSize: 11, color: 'var(--red)' }}>
+      <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--red)' }}>
         refused · HTTP {(err && err.status) || 'error'} · POST {path}
       </div>
-      {routerErr != null && <div style={{ ...mono, fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{routerErr}</div>}
-      {detailStr != null && <div style={{ ...mono, fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{detailStr}</div>}
+      {routerErr != null && <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{routerErr}</div>}
+      {detailStr != null && <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{detailStr}</div>}
       {detailList != null && <Json v={detailList} max={140} />}
       {!quoted && (
         <>
-          <div style={{ ...mono, fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>
+          <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
             {String((err && err.message) || 'request failed')}
           </div>
           <div style={NOTE}>the response carried no readable error/detail body — the status above is all that is known.</div>
@@ -243,7 +244,7 @@ export function TrustOpsPanel() {
 
   return (
     <Card title="TRUST OPS" live={asLive(anyLive)} sub={rot ? 'rotated · ' + String(rot.scope) : null}>
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
+      <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
         Three credential/trust routes that ship in the backend and had no caller: datamark
         untrusted content, scrub known secret values out of text, rotate an issued token scope.
       </div>
@@ -258,7 +259,7 @@ export function TrustOpsPanel() {
         onChange={(e) => setSpotText(e.target.value)}
       />
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>source</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>source</span>
         <input
           style={{ ...inpS, flex: 1 }}
           aria-label="source label"
@@ -291,7 +292,7 @@ export function TrustOpsPanel() {
               list, so this panel cannot tell you how many were tried.
             </div>
           )}
-          <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 8 }}>
+          <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 8 }}>
             datamarked block — what a model receives. Every whitespace run (newlines included) is
             replaced by ▁, so this is a transform of your input, not your input.
           </div>
@@ -313,7 +314,7 @@ export function TrustOpsPanel() {
           does not know how many stored names a redaction would be compared against.
         </div>
       ) : broker.d != null ? (
-        <div style={{ ...mono, fontSize: 10, color: names.length === 0 ? 'var(--amber)' : 'var(--ink-2)', marginTop: 4 }}>
+        <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: names.length === 0 ? 'var(--amber)' : 'var(--ink-2)', marginTop: 4 }}>
           {names.length === 0
             ? 'GET /api/secrets/broker answered {"names": []} — nothing to compare against. That same answer is returned whether the broker is EMPTY or ABSENT (the GET has no 503 path), so it does not tell you which. Use the probe below.'
             : 'compared against ' + names.length + ' stored name(s): ' + names.map((n) => String((n && n.name) || n)).join(', ')}
@@ -329,7 +330,7 @@ export function TrustOpsPanel() {
       <Row>
         <button className="tool-btn" disabled={!redText || redBusy} onClick={() => sendRedact(false)}>REDACT</button>
         <button className="tool-btn" disabled={redBusy} onClick={() => sendRedact(true)}>probe broker</button>
-        <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
+        <span style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           probe = POST {'{"text": ""}'} · changes nothing · 200 proves orch.secret_broker exists, 503 proves it does not
         </span>
       </Row>
@@ -342,7 +343,7 @@ export function TrustOpsPanel() {
         </div>
       )}
       {red != null && red.out != null && red.probe && (
-        <div style={{ ...mono, fontSize: 11, color: 'var(--green)', marginTop: 6 }}>
+        <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--green)', marginTop: 6 }}>
           200 · the broker component is present (the empty probe passed require_component).
           This says nothing about how many secrets it holds.
         </div>
@@ -350,7 +351,7 @@ export function TrustOpsPanel() {
       {red != null && red.out != null && !red.probe && (
         <div style={{ marginTop: 6 }}>
           <Json v={red.out} max={160} />
-          <div style={{ ...mono, fontSize: 11, marginTop: 4, color: red.out === red.sent ? 'var(--ink-2)' : 'var(--green)' }}>
+          <div style={{ ...note, fontSize: 'var(--n-fs-meta)', marginTop: 4, color: red.out === red.sent ? 'var(--ink-2)' : 'var(--green)' }}>
             {red.out === red.sent
               ? 'unchanged — no stored secret value appeared as an exact literal substring of the text that was sent.'
               : 'changed — [REDACTED:<name>] marker(s) were substituted in.'}
@@ -366,18 +367,18 @@ export function TrustOpsPanel() {
 
       {/* ─────────────── 3 · TOKEN ROTATION ─────────────── */}
       <div style={HDR}>TOKEN ROTATION · admin · DESTRUCTIVE</div>
-      <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', border: '1px solid var(--amber)', borderRadius: 4, padding: 6, marginTop: 4 }}>
+      <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', border: '1px solid var(--amber)', borderRadius: 4, padding: 6, marginTop: 4 }}>
         Rotating a scope DELETES every issued token of that scope and writes a persistent
         revoked:&lt;scope&gt; flag that supersedes JARVIS_ADMIN_TOKEN / JARVIS_USER_TOKEN across
         restarts. The token this browser is using (hud.admin_token / hud.user_token) stops working
         immediately — the next call of that tier will 401 unless you store the new one. There is no
         read route for token state (list_tokens is CLI-only), so this panel cannot show you a
         before/after inventory. Lockout recovery is offline, on the box:
-        {' '}<span style={{ color: 'var(--ink-2)' }}>python -m agents.core.security.token_store rotate &lt;scope&gt;</span>.
+        {' '}<span style={{ ...IDENT, color: 'var(--ink-2)' }}>python -m agents.core.security.token_store rotate &lt;scope&gt;</span>.
         This is not reversible and the old token does not come back.
       </div>
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>scope</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>scope</span>
         <select aria-label="rotation scope" style={{ ...inpS }} value={scope} onChange={(e) => setScope(e.target.value)}>
           {SCOPES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
@@ -404,7 +405,7 @@ export function TrustOpsPanel() {
       {rot != null && (
         <div style={{ marginTop: 6 }}>
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>scope</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>scope</span>
             <Tag c="var(--ink-2)">{String(rot.scope)}</Tag>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>ttl_days</span>
             <Tag c="var(--ink-2)">{rot.ttl_days == null ? 'null · never expires' : String(rot.ttl_days)}</Tag>
@@ -414,13 +415,13 @@ export function TrustOpsPanel() {
             unknown scope to "admin" and any ttl_days &lt;= 0 to null.
           </div>
           {typeof rot.note === 'string' && (
-            <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>{rot.note}</div>
+            <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>{rot.note}</div>
           )}
           <Row>
             <button className="tool-btn" onClick={() => setReveal((v) => !v)}>{reveal ? 'hide token' : 'reveal token'}</button>
             <button className="tool-btn" onClick={storeToken}>store in this browser</button>
           </Row>
-          <pre style={{ ...mono, fontSize: 11, userSelect: 'text', margin: '6px 0 0', padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4, color: 'var(--ink-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          <pre style={{ ...mono, fontSize: 'var(--n-fs-meta)', userSelect: 'text', margin: '6px 0 0', padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4, color: 'var(--ink-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
             {reveal ? String(rot.token) : '••••••••'}
           </pre>
           <div style={NOTE}>
@@ -428,11 +429,11 @@ export function TrustOpsPanel() {
             persisted for you; "store in this browser" writes hud.{rot.scope === 'user' ? 'user' : 'admin'}_token
             {' '}in THIS browser only, and every other client (the CLI included) still needs it pasted.
           </div>
-          {stored !== '' && <div role="status" style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>{stored}</div>}
+          {stored !== '' && <div role="status" style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{stored}</div>}
         </div>
       )}
 
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 10 }}>
+      <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10 }}>
         POST {SPOTLIGHT_PATH} = user tier (X-User-Token) · GET {BROKER_PATH}, POST {REDACT_PATH} and
         POST {ROTATE_PATH} = admin tier (X-Admin-Token).
       </div>

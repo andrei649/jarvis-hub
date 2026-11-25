@@ -67,7 +67,7 @@ export function renderInline(text: string, keyPrefix = ''): React.ReactNode[] {
   return out;
 }
 
-const FENCE = /^\s*(```|~~~)/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
 const QUOTE = /^\s*>\s?(.*)$/;
@@ -98,8 +98,10 @@ export function headingAnchor(text: string): string {
 /** *breaks*: a single newline inside a paragraph is a line break (GitHub's comment
     flavour), for chat replies and notes written line by line; without it the lines of
     a paragraph join, as in a document. */
-export function Markdown({ text, className, breaks = false }: { text: string; className?: string; breaks?: boolean }) {
-  const lines = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
+export function Markdown({ text, className, breaks = false, tableExport, codeExport }: { text: string; className?: string; breaks?: boolean; tableExport?: (rows: string[][]) => React.ReactNode; codeExport?: (language: string, source: string, index: number) => React.ReactNode }) {
+  const source = String(text ?? '');
+  const lines = source.replace(/\r\n?/g, '\n').split('\n');
+  const lineBreaks = codeExport ? source.match(/\r\n|\r|\n/g) || [] : [];
   const blocks: React.ReactNode[] = [];
   const anchors = new Map<string, number>();  // a repeated anchor gets -2, -3 … like GitHub's
   let i = 0;
@@ -109,10 +111,17 @@ export function Markdown({ text, className, breaks = false }: { text: string; cl
     const fence = line.match(FENCE);
     if (fence) {
       const body: string[] = [];
+      const language = line.slice(line.indexOf(fence[1]) + fence[1].length).trim();
+      const closing = new RegExp(`^\\s*${fence[1][0]}{${fence[1].length},}\\s*$`);
       i += 1;
-      while (i < lines.length && !lines[i].trim().startsWith(fence[1])) { body.push(lines[i]); i += 1; }
+      const bodyStart = i;
+      while (i < lines.length && !closing.test(lines[i])) { body.push(lines[i]); i += 1; }
+      const closed = i < lines.length;
       i += 1;  // the closing fence (or the end of the document)
-      blocks.push(<pre key={key}><code>{body.join('\n')}</code></pre>);
+      const exportButton = closed && codeExport?.(language, body.map((part, n) => part + (lineBreaks[bodyStart + n] || '')).join(''), key + 1);
+      blocks.push(exportButton
+        ? <React.Fragment key={key}><pre><code>{body.join('\n')}</code></pre>{exportButton}</React.Fragment>
+        : <pre key={key}><code>{body.join('\n')}</code></pre>);
       continue;
     }
     const heading = line.match(HEADING);
@@ -131,13 +140,15 @@ export function Markdown({ text, className, breaks = false }: { text: string; cl
       const rows: string[][] = [];
       i += 2;
       while (i < lines.length && lines[i].trim() && lines[i].includes('|')) { rows.push(tableCells(lines[i])); i += 1; }
-      blocks.push(
-        <table key={key}>
+      blocks.push(<React.Fragment key={key}>
+        <table>
           <thead><tr>{head.map((cell, c) => <th key={c}>{renderInline(cell, `t${key}-${c}-`)}</th>)}</tr></thead>
           <tbody>{rows.map((row, r) => (
             <tr key={r}>{row.map((cell, c) => <td key={c}>{renderInline(cell, `t${key}-${r}-${c}-`)}</td>)}</tr>
           ))}</tbody>
-        </table>);
+        </table>
+        {tableExport?.([head, ...rows])}
+      </React.Fragment>);
       continue;
     }
     if (RULE.test(line)) { blocks.push(<hr key={key} />); i += 1; continue; }
@@ -161,7 +172,7 @@ export function Markdown({ text, className, breaks = false }: { text: string; cl
         }
       }
       const children = items.map((item, n) => <li key={n}>{renderInline(item, `l${key}-${n}-`)}</li>);
-      blocks.push(ordered ? <ol key={key}>{children}</ol> : <ul key={key}>{children}</ul>);
+      blocks.push(ordered ? <ol key={key} start={Number.parseInt(line, 10)}>{children}</ol> : <ul key={key}>{children}</ul>);
       continue;
     }
     if (!line.trim()) { i += 1; continue; }

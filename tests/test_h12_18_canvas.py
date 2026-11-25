@@ -5,6 +5,8 @@ script); each is attributed, inspectable, pinnable, and clearable by the owner.
 """
 import sys
 from pathlib import Path
+from io import BytesIO
+from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -176,6 +178,44 @@ def test_endpoint_post_list_and_reject(monkeypatch, tmp_path):
     bad = client.post("/api/canvas/post", json={"type": "iframe", "payload": {"body": "x"}})
     assert bad.status_code == 422
     assert len(client.get("/api/canvas").json()["elements"]) == 1
+
+
+@pytest.mark.parametrize(("payload", "part", "extension"), [
+    ({"format": "docx", "text": "# Project memo\n\nA complete reply."}, "word/document.xml", "docx"),
+    ({"format": "xlsx", "rows": [["Item", "Qty"], ["Blue", "3"]]}, "xl/worksheets/sheet1.xml", "xlsx"),
+])
+def test_office_export_returns_download_without_persisting_canvas(monkeypatch, tmp_path, payload, part, extension):
+    client = _client(monkeypatch, tmp_path)
+    response = client.post("/api/canvas/export", json=payload)
+    assert response.status_code == 200
+    assert response.headers["Content-Disposition"].endswith(f'.{extension}"')
+    assert response.headers["Content-Type"].startswith("application/vnd.openxmlformats-officedocument.")
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    with ZipFile(BytesIO(response.content)) as package:
+        assert part in package.namelist()
+    assert not client.get("/api/canvas").json()["elements"]
+
+
+def test_office_export_refuses_invalid_inputs_before_conversion(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    url = "/api/canvas/export"
+    assert client.post(url, content="{}", headers={"Content-Type": "text/plain"}).status_code == 415
+    assert client.post(url, json={"format": "docx", "text": "ok", "url": "https://example.invalid"}).status_code == 422
+    assert client.post(url, json={"format": "xlsx", "rows": [["data"], [True]]}).status_code == 422
+    assert client.post(url, json={"format": "docx", "text": "x" * 65537}).status_code == 422
+    assert client.post(url, content=b" " * (1024 * 1024 + 1), headers={"Content-Type": "application/json"}).status_code == 413
+
+
+def test_office_export_requires_the_canvas_user_guard(monkeypatch):
+    from agents.core.routers._deps import user_guard
+
+    monkeypatch.delitem(web.app.dependency_overrides, user_guard, raising=False)
+    monkeypatch.delenv("JARVIS_USER_TOKEN", raising=False)
+    monkeypatch.delenv("JARVIS_ADMIN_TOKEN", raising=False)
+    remote = TestClient(web.app, client=("203.0.113.9", 50000))
+    response = remote.post("/api/canvas/export", json={"format": "docx", "text": "A reply."})
+    assert response.status_code in (401, 403)
 
 
 def test_endpoint_pin_clear_remove(monkeypatch, tmp_path):

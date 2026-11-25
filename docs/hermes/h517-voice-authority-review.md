@@ -71,7 +71,7 @@ stale evidence was not refreshed indiscriminately.
 - tests/test_h27_capability_verification.py and tests/_snapshots/capability_readiness.json — intentional capability inventory addition.
 - docs/ARCHITECTURE.md, docs/FLAGS.md, docs/design/HUD_V2_REMAINING.md and mobile/PARITY.md — behavior and native configuration gap.
 - docs/hermes/build-queue.md and docs/hermes/assessment.json — truthful partial scope and reviewed evidence.
-- docs/hermes/h517-voice-authority-plan.md, this review, docs/hermes/h517-named-provider-next.md and docs/hermes/evidence/h517-voice-authority-2026-09-27.json — plan, limitations, next contract and verification records.
+- docs/archive/hermes/h517-voice-authority-plan.md, this review, docs/archive/hermes/h517-named-provider-next.md and docs/hermes/evidence/h517-voice-authority-2026-09-27.json — plan, limitations, next contract and verification records.
 - HERMES_STATUS.md, NERVA.md, README.md, STATUS.md, project-status.json and BACKLOG.md — generated/current delivery and test-count synchronization.
 
 ## Remaining work and rollback

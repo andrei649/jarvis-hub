@@ -18,8 +18,9 @@
    by todoTree, the twin of the CLI's builder: a missing, self or cyclic parent draws at
    the top and no item is dropped. ITEMS_SHOWN counts rows in that order. */
 import React from 'react';
-import { Row, Tag, arr, mono } from '../panel-kit';
+import { Row, Tag, arr, mono, note } from '../panel-kit';
 import { todoTree } from '../todo-tree';
+import { LABEL } from '../theme/type';
 
 export const PLANS_PATH = '/sessions/todo';
 export const PLANS_SHOWN = 3;
@@ -64,13 +65,13 @@ export function openPlans(reply: any): Plan[] {
 
 export function PlansInFlight({ reply, error }: { reply: any; error?: string | null }) {
   if (error) {
-    return <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>plans unavailable · {error}</div>;
+    return <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>plans unavailable · {error}</div>;
   }
   const plans = openPlans(reply);
   if (!plans.length) return null;
   return (
     <section aria-label="plans in flight" data-testid="plans-in-flight" style={{ marginTop: 8 }}>
-      <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.06em' }}>
+      <div style={{ ...LABEL, textTransform: 'none', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
         PLANS IN FLIGHT · what the agent intends, before any approval it leads to
       </div>
       {plans.map((plan, i) => {
@@ -81,13 +82,14 @@ export function PlansInFlight({ reply, error }: { reply: any; error?: string | n
         return (
           <div key={plan.session_id || i}>
             <Row>
-              <span style={{ ...mono, color: 'var(--accent-light)' }}>{plan.session_id || 'session'}</span>
+              {/* A session id is an identifier; without one the plan is named by a word. */}
+              <span style={{ ...(plan.session_id ? mono : note), color: 'var(--accent-light)' }}>{plan.session_id || 'session'}</span>
               {plan.agent && <Tag>{plan.agent}</Tag>}
-              <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>
+              <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
                 {done}/{items.length} done{age ? ` · updated ${age}` : ''}
               </span>
             </Row>
-            <ul style={{ listStyle: 'none', margin: '2px 0 6px 10px', padding: 0, fontSize: 11 }}>
+            <ul style={{ listStyle: 'none', margin: '2px 0 6px 10px', padding: 0, fontSize: 'var(--n-fs-meta)' }}>
               {rows.slice(0, ITEMS_SHOWN).map(([item, depth], k) => (
                 <li key={k} data-depth={depth} style={{
                   paddingLeft: depth * 14,

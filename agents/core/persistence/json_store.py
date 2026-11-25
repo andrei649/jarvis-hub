@@ -17,10 +17,11 @@ file never crashes startup.
 from __future__ import annotations
 
 import json
-import os
 import threading
 from pathlib import Path
 from typing import Any
+
+from .private_file import atomic_private_write
 
 
 def atomic_write_json(
@@ -30,56 +31,30 @@ def atomic_write_json(
     indent: int = 2,
     ensure_ascii: bool = False,
 ) -> None:
-    """Write ``data`` as JSON to ``path`` atomically (serialize → tmp → replace).
+    """Write ``data`` as JSON to ``path`` atomically (serialize → scratch → replace).
 
     Module-level twin of ``JsonStore._save`` for the writers that are not stores
     (the per-turn memory snapshot, the ingestion watcher state, the Oracle
     session file). Serialization happens BEFORE the target is touched, and the
-    payload lands on a sibling tmp that is ``replace``d over the target, so a
+    payload lands on a unique sibling that is ``replace``d over the target, so a
     raising serializer, a full disk or a kill mid-write leaves the previous good
-    file intact instead of a truncated one. On any failure the tmp is removed so
-    no stale ``*.tmp`` accumulates next to the store.
+    file intact instead of a truncated one. On failure the scratch is removed.
 
     No fsync: this matches ``JsonStore._save`` and closes the truncation window
     the audit (Q6) describes. Full durability (fsync of tmp + parent dir) would
     change behaviour for every migrated store and belongs in its own change.
 
-    The file lands **owner-only (0600)**. These stores hold personal state and, in
-    the sender-pairing store's case, pairing credentials; ``write_text`` creates
-    with ``0o666 & ~umask`` — 0644 on a default umask — so without this every
-    JSON store was world-readable.
-
-    The tmp is **created empty and owner-only before anything is written into
-    it.** A first cut wrote the payload with ``write_text`` and chmod'd the tmp
-    before the ``replace``, reasoning that ``replace`` moves the tmp's inode over
-    the target so the mode must be right first. That ordering is the better of the
-    two and it does not close the window it claims to: ``write_text`` *creates* the
-    tmp at ``0o666 & ~umask`` — 0644 on a default umask — and the whole payload is
-    in it by the time the ``chmod`` runs, so a store holding a pairing digest sits
-    world-readable for the length of the write. Creating the file first with an
-    explicit mode closes that: ``write_text`` then opens an *existing* file, which
-    leaves its mode alone. The write is still the same ``Path.write_text`` call, so
-    nothing about this helper's failure behaviour changes. (H497)
+    The empty scratch is created 0600 on POSIX. Windows creates it with an
+    explicit protected DACL for owner rights, SYSTEM and Administrators, and
+    verifies that DACL before writing. The verified Windows handle stays open
+    through the write and denies deletion until publication. A parent directory
+    writable by other accounts still permits path replacement or deletion after
+    the handle closes; callers must keep that directory trusted for integrity.
     """
     path = Path(path)
     payload = json.dumps(data, ensure_ascii=ensure_ascii, indent=indent)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    try:
-        # Create the tmp owner-only and EMPTY first, then write into it. `write_text`
-        # opens an existing file without touching its mode, so the payload never
-        # lands in a world-readable file — and the write itself is still the same
-        # `Path.write_text` call, which keeps this helper's failure behaviour (and
-        # the tests that interrupt it) exactly as it was.
-        os.close(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600))
-        # A tmp left over from an older release keeps its own mode through
-        # O_CREAT, so the mode is asserted rather than assumed.
-        os.chmod(tmp, 0o600)
-        tmp.write_text(payload, encoding="utf-8")
-        tmp.replace(path)  # atomic
-    except Exception:
-        tmp.unlink(missing_ok=True)
-        raise
+    atomic_private_write(path, lambda tmp: tmp.write_text(payload, encoding="utf-8"))
 
 
 class JsonStore:

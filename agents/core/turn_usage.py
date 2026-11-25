@@ -37,6 +37,38 @@ def _identity(value: Any, limit: int) -> str | None:
     return value if _IDENTITY.fullmatch(value) and "//" not in value else None
 
 
+def validated_model_calls(value: Any) -> list[dict[str, str]] | None:
+    if not isinstance(value, list) or not 1 <= len(value) <= 8:
+        return None
+    calls = []
+    seen = set()
+    for row in value:
+        if not isinstance(row, dict) or set(row) != {"provider", "model"}:
+            return None
+        provider, model = _identity(row["provider"], 64), _identity(row["model"], 120)
+        if provider is None or model is None or (provider, model) in seen:
+            return None
+        seen.add((provider, model))
+        calls.append({"provider": provider, "model": model})
+    return calls
+
+
+def model_calls_from_snapshot(snapshot: Any) -> list[dict[str, str]] | None:
+    """Report only complete physical API dispatch pairs, independent of token totals."""
+    if not isinstance(snapshot, dict) or snapshot.get("schema") != _SCHEMA:
+        return None
+    total, breakdown = snapshot.get("api_calls"), snapshot.get("breakdown")
+    if (type(total) is not int or not 1 <= total <= _MAX_CALLS
+            or snapshot.get("breakdown_truncated") is not False
+            or not isinstance(breakdown, list) or not 1 <= len(breakdown) <= 8):
+        return None
+    counts = [row.get("api_calls") if isinstance(row, dict) else None for row in breakdown]
+    if any(type(count) is not int or not 1 <= count <= _MAX_CALLS for count in counts) or sum(counts) != total:
+        return None
+    return validated_model_calls([{"provider": row.get("provider"), "model": row.get("model")}
+                                  for row in breakdown])
+
+
 def _owner() -> object:
     try:
         task = asyncio.current_task()
@@ -165,6 +197,38 @@ class TurnUsage:
         self._status_observation: dict | None = None
         self._status_scope: tuple[str, str, str] | None = None
         self._status_key: tuple | None = None
+        self._claimed_session: str | None = None
+        self._claim_used = False
+        self._claim_invalid = False
+        self._reply_committed = False
+        self._reply_calls: list[dict[str, str]] | None = None
+
+    def claim_session(self, session_id: str) -> bool:
+        """One collector may attribute one turn in one session."""
+        with self._lock:
+            if (self._closed or self._claim_used or self._api_calls or self._unattributed
+                    or type(session_id) is not str or not session_id):
+                self._claim_invalid = True
+                self._reply_calls = None
+                return False
+            self._claim_used = True
+            self._claimed_session = session_id
+            return True
+
+    def commit_reply(self, session_id: str) -> list[dict[str, str]] | None:
+        with self._lock:
+            if (self._closed or self._claim_invalid or not self._claim_used
+                    or self._reply_committed or session_id != self._claimed_session):
+                return None
+            self._reply_committed = True
+            self._reply_calls = model_calls_from_snapshot(self.snapshot())
+            return self.reply_model_calls(session_id)
+
+    def reply_model_calls(self, session_id: str) -> list[dict[str, str]] | None:
+        with self._lock:
+            if self._claim_invalid or not self._reply_committed or session_id != self._claimed_session:
+                return None
+            return [dict(row) for row in self._reply_calls] if self._reply_calls else None
 
     def bind_status_scope(self, scope: tuple[str, str, str]) -> bool:
         """Bind authenticated principal and durable conversation instance once."""
@@ -423,6 +487,10 @@ def turn_usage_scope(*, on_progress: Callable[[dict], None] | None = None):
         _CURRENT.reset(token)
 
 
+def current_turn_usage() -> TurnUsage | None:
+    return _CURRENT.get()
+
+
 @contextmanager
 def model_usage_scope(*, model: str, route: str = "", context_window: int | None = None,
                       primary: bool = True, agent_id: str | None = None):
@@ -449,6 +517,19 @@ def model_usage_scope(*, model: str, route: str = "", context_window: int | None
                         collector._unattributed = True
                         collector._poison_cache()
         _MODEL.reset(token)
+
+
+@contextmanager
+def wire_model_usage_scope(*, model: str, route: str):
+    """Replace the wire selector while retaining one active generation's status identity."""
+    parent = _MODEL.get()
+    collector = _CURRENT.get()
+    inherited = parent if parent is not None and parent.active and parent.collector is collector else None
+    with model_usage_scope(model=model, route=route,
+                           context_window=inherited.context_window if inherited else None,
+                           primary=inherited.primary if inherited else True,
+                           agent_id=inherited.agent_id if inherited else None):
+        yield
 
 
 @contextmanager

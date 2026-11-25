@@ -17,6 +17,7 @@ class AppearancePatch(BaseModel):
     font: str | None = Field(None, max_length=32)
     accent: str | None = Field(None, max_length=32)
     look: str | None = Field(None, max_length=32)
+    scheme: str | None = Field(None, max_length=32)
     density: str | None = Field(None, max_length=32)
     motion: str | None = Field(None, max_length=32)
     scanline: str | None = Field(None, max_length=32)

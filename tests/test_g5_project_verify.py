@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -459,8 +460,9 @@ _GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@x", "GIT_COMMITTER_NA
 
 
 def _run_git(root: Path, *args: str, check: bool = True, input_text: str | None = None) -> str:
-    return subprocess.run(["git", *args], cwd=root, env={**os.environ, **_GIT_ENV}, check=check,
-                          capture_output=True, text=True, input=input_text).stdout
+    result = subprocess.run(["git", *args], cwd=root, env={**os.environ, **_GIT_ENV}, check=check,
+                            capture_output=True, input=input_text.encode() if input_text is not None else None)
+    return result.stdout.decode("utf-8")
 
 
 def _signed_head(root: Path) -> None:
@@ -473,11 +475,11 @@ def _signed_head(root: Path) -> None:
     _run_git(root, "update-ref", "HEAD", sha)
 
 
-def _program(tmp_path: Path, marker: Path) -> Path:
+def _program(tmp_path: Path, marker: Path) -> str:
     prog = tmp_path / f"prog-{marker.name}.sh"
     prog.write_text(f"#!/bin/sh\ntouch {marker}\ncat\n", encoding="utf-8")
     prog.chmod(0o755)
-    return prog
+    return prog.as_posix()  # Git config treats backslashes in Windows paths as escapes.
 
 
 def _touch_tracked(root: Path) -> None:
@@ -527,7 +529,7 @@ def _vector_include(root, tmp_path, marker):
     inc = tmp_path / "inc.cfg"
     inc.write_text(f'[filter "i"]\n\tclean = {_program(tmp_path, marker)}\n', encoding="utf-8")
     with open(root / ".git" / "config", "a", encoding="utf-8") as handle:
-        handle.write(f"[include]\n\tpath = {inc}\n")
+        handle.write(f"[include]\n\tpath = {inc.as_posix()}\n")
     _write(root, ".gitattributes", "*.py filter=i\n")
     _touch_tracked(root)
 
@@ -618,6 +620,31 @@ def test_git_output_is_capped_and_the_snapshot_has_one_deadline(_isolated, monke
     assert out is not None and len(out) <= 10
     spent = workspace._Budget(0.0)
     assert workspace.git(root, "status", budget=spent) is None
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_git_config_overflow_refuses_instead_of_accepting_prefix(_isolated, monkeypatch):
+    root = _isolated / "repo"
+    root.mkdir()
+    _git_repo(root)
+    _run_git(root, "config", "branch.main.description", "x" * 5000)
+    monkeypatch.setattr(workspace, "MAX_OUTPUT", 1024)
+    assert workspace.git(root, "config", "--list", "--show-scope", "-z") is not None
+    assert workspace.config_refusal(root) == "its git config could not be read"
+
+
+def test_git_read_timeout_reaps_child(_isolated, monkeypatch):
+    real_popen = subprocess.Popen
+    spawned = []
+
+    def sleeping_child(_argv, **kwargs):
+        child = real_popen([sys.executable, "-c", "import time; time.sleep(3)"], **kwargs)
+        spawned.append(child)
+        return child
+
+    monkeypatch.setattr(workspace.subprocess, "Popen", sleeping_child)
+    assert workspace.git(_isolated, "config", "--list", budget=workspace._Budget(0.1)) is None
+    assert len(spawned) == 1 and spawned[0].poll() is not None
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")

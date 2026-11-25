@@ -1,5 +1,7 @@
 {
-  "preferredProvider": "auto",
+  "preferredProvider": "ollama",
+  "cloudConsent": false,
+  "allowHardLinks": false,
   "vaultMode": "andrei_plus_nerva",
   "vaultPath": "",
   "nervaPath": "",

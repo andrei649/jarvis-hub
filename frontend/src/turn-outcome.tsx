@@ -107,8 +107,33 @@ export function recallLines(recalls: readonly TurnRecall[]): string[] {
 
 const count = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+const toolCount = (value: unknown): value is number => count(value) && value <= 1_000_000;
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
+
+export function toolActivity(value: unknown): NonNullable<TurnOutcome['tools']> | null {
+  if (!object(value) || Object.keys(value).sort().join(',') !== 'basis,executed,failures,proposed,queued'
+      || !toolCount(value.proposed) || !toolCount(value.queued)) return null;
+  if (value.basis === 'observed' && toolCount(value.executed) && toolCount(value.failures))
+    return value as NonNullable<TurnOutcome['tools']>;
+  if (value.basis === 'unknown' && (value.executed === null || toolCount(value.executed)) && value.failures === null)
+    return value as NonNullable<TurnOutcome['tools']>;
+  return null;
+}
+
+export function TurnToolActivity({ activity, lang }: { activity?: TurnOutcome['tools']; lang?: string }) {
+  if (!activity) return null;
+  const ro = lang === 'ro';
+  const executed = activity.executed === null ? (ro ? 'necunoscut' : 'unknown') : activity.executed;
+  const details = activity.proposed || activity.queued || activity.failures || activity.basis === 'unknown'
+    ? ro ? `; propuse ${activity.proposed}, în așteptare ${activity.queued}, eșuări ${activity.failures ?? 'necunoscute'}`
+      : `; proposed ${activity.proposed}, queued ${activity.queued}, failures ${activity.failures ?? 'unknown'}`
+    : '';
+  return <output aria-label={ro ? 'Activitate instrumente agent' : 'Agent tool activity'}
+    style={{ display: 'block', margin: '4px 0', color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>
+    {ro ? 'Apeluri de instrumente înregistrate: ' : 'Agent tool calls recorded: '}{executed}{details}
+  </output>;
+}
 const percent = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
 const finitePositive = (value: unknown): value is number =>
@@ -158,12 +183,8 @@ export function turnOutcome(value: unknown): TurnOutcome | null {
       && count(value.completion.unanswered_tool_results)) {
     result.completion = value.completion as TurnOutcome['completion'];
   }
-  if (object(value.tools) && count(value.tools.proposed) && count(value.tools.queued)
-      && (value.tools.executed === null || count(value.tools.executed))
-      && (value.tools.failures === null || count(value.tools.failures))
-      && (value.tools.basis === 'observed' || value.tools.basis === 'unknown')) {
-    result.tools = value.tools as TurnOutcome['tools'];
-  }
+  const tools = toolActivity(value.tools);
+  if (tools) result.tools = tools;
   if (object(value.output) && (value.output.tokens === null || count(value.output.tokens))
       && ['provider_complete', 'visible_estimate', 'unknown'].includes(String(value.output.basis))) {
     result.output = value.output as TurnOutcome['output'];
@@ -200,7 +221,7 @@ export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; 
   if (!outcome) return null;
   const recall = outcome.recall ? recallLines(outcome.recall) : [];
   return <section aria-label="Turn outcome" style={{ display: 'block', padding: '4px 8px',
-    color: 'var(--ink-2)', fontFamily: 'var(--font-mono)', fontSize: 10,
+    color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)',
     width: '100%', maxWidth: '100%', minWidth: 0, minHeight: 0, flexShrink: 1, boxSizing: 'border-box',
     maxHeight: '35vh', overflowX: 'auto', overflowY: 'auto', overflowWrap: 'anywhere',
     lineHeight: 1.4 }}>
@@ -226,7 +247,7 @@ export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; 
     </output>}
     {outcome.cache_hit !== undefined && <output aria-label="Prompt cache hit"
       data-band={outcome.cache_hit >= 70 ? 'high' : outcome.cache_hit >= 40 ? 'medium' : 'low'}
-      style={{ display: 'block', color: outcome.cache_hit >= 70 ? 'var(--accent)' : outcome.cache_hit >= 40 ? 'var(--amber)' : 'var(--red, #ef4444)' }}>
+      style={{ display: 'block', color: outcome.cache_hit >= 70 ? 'var(--accent)' : outcome.cache_hit >= 40 ? 'var(--amber)' : 'var(--red)' }}>
       Cache hit since invalidation: {outcome.cache_hit.toFixed(1)}%
     </output>}
     {outcome.tps !== undefined && <output aria-label="Request output tokens per second" style={{ display: 'block' }}>

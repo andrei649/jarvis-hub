@@ -44,13 +44,29 @@ def test_the_hud_holds_the_same_anchor_list():
 
 
 def test_every_anchor_is_on_the_hud():
-    shell = (REPO / "frontend" / "src" / "shell.tsx").read_text(encoding="utf-8")
-    cockpit = (REPO / "frontend" / "src" / "cockpit.tsx").read_text(encoding="utf-8")
-    app = (REPO / "frontend" / "src" / "app.tsx").read_text(encoding="utf-8")
-    assert "data-anchor={'mode.'+m.id}" in shell and 'data-anchor="decisions"' in shell
-    assert 'data-anchor="composer"' in cockpit and 'data-anchor="console"' in app
-    modes = re.findall(r"id:'([a-z_]+)'", shell[shell.index("const MODES"):shell.index("];", shell.index("const MODES"))])
-    assert tuple(f"mode.{m}" for m in modes) == cv.POINTER_ANCHORS[:16]
+    """Every anchor a tip may name lands on the HUD's Ledger frame (docs/design/hud-next/
+    PHASE_B_PLAN.md §3.8). The composer and the masthead's Find button carry `composer` and
+    `console` themselves. `decisions` and the sixteen `mode.<id>` anchors had their own elements
+    in the HUD v2 context column and mode rail, both deleted with that shell; pointer.tsx now
+    falls back to the docket register and to the masthead link of the mode's area, which the
+    masthead draws for all nine areas. frontend/src/test/pointer-fallback.test.tsx drives those
+    fallbacks in a DOM and checks that every mode anchor belongs to an area."""
+    src = REPO / "frontend" / "src"
+    cockpit = (src / "cockpit.tsx").read_text(encoding="utf-8")
+    masthead = (src / "frame" / "Masthead.tsx").read_text(encoding="utf-8")
+    area_nav = (src / "frame" / "AreaNav.tsx").read_text(encoding="utf-8")
+    docket = (src / "docket" / "Docket.tsx").read_text(encoding="utf-8")
+    pointer = (src / "pointer.tsx").read_text(encoding="utf-8")
+    hud_modes = (src / "hud-modes.ts").read_text(encoding="utf-8")
+    assert 'data-anchor="composer"' in cockpit and 'data-anchor="console"' in masthead
+    assert "data-anchor={areaAnchor(area.id)}" in area_nav and 'register="docket"' in docket
+    fallbacks = pointer[pointer.index("export function anchorFallbacks"):pointer.index("function usable")]
+    assert "areaAnchor(area)" in fallbacks and "'[data-register=\"docket\"]'" in fallbacks
+    assert "'[data-composer]'" in fallbacks
+    block = hud_modes[hud_modes.index("export const HUD_MODES = ["):hud_modes.index("] as const;")]
+    modes = set(re.findall(r"'([a-z_]+)'", block))
+    assert all(a.startswith("mode.") for a in cv.POINTER_ANCHORS[:16])
+    assert {a.split(".", 1)[1] for a in cv.POINTER_ANCHORS[:16]} <= modes
 
 
 def test_a_tip_is_sanitised_to_one_line(store):

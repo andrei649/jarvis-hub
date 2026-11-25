@@ -157,7 +157,7 @@ def test_resuming_an_archived_conversation_brings_every_member_back(cp, monkeypa
     async def resume(sid):
         return True
 
-    async def history(sid):
+    async def history(sid, *, include_board_sources=False):
         return []
 
     _titled(cp, "root", "Trip plan")
@@ -666,7 +666,7 @@ def test_the_resume_route_refuses_a_title_that_is_not_a_usable_string(cp, monkey
     async def resume(sid):
         return True
 
-    async def history(sid):
+    async def history(sid, *, include_board_sources=False):
         return []
 
     _titled(cp, "root", "Trip plan")

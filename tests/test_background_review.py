@@ -146,8 +146,9 @@ class _FakeLoader:
             path = d
         self.skills[name] = S()
 
-    def generate_skill(self, agent_id, task, steps, command_name=None, output=None, write_origin="learning"):
-        self.generated.append((agent_id, task, steps))
+    def generate_skill(self, agent_id, task, steps, command_name=None, output=None, write_origin="learning",
+                       *, procedure_agents=None):
+        self.generated.append((agent_id, task, steps, write_origin, procedure_agents))
         return "generated_skill_xyz"
 
 
@@ -160,9 +161,23 @@ async def test_new_skill_goes_through_generate_pipeline(tmp_path):
                         "nothing": False}),
         living=_living(tmp_path), skills=loader)
     result = await r.run("u", "a")
-    assert loader.generated == [("background_review", "triage inbox", ["scan", "sort"])]
+    assert loader.generated == [("background_review", "triage inbox", ["scan", "sort"],
+                                 "background_review", ["all"])]
     assert result["counts"]["skills_new"] == 1
     assert any("quarantined" in a for a in result["actions"])
+
+
+async def test_refine_procedure_is_general_with_refine_provenance(tmp_path):
+    loader = _FakeLoader(tmp_path)
+    r = BackgroundReviewer(
+        _llm_returning({"user_facts": [], "agent_facts": [], "corrections": [],
+                        "skill_updates": [{"kind": "new", "task": "triage inbox",
+                                           "steps": ["scan", "sort"]}], "nothing": False}),
+        living=_living(tmp_path), skills=loader)
+    result = await r.run("u", "a", on_demand=True)
+    assert result["counts"]["skills_new"] == 1
+    assert loader.generated == [("refine", "triage inbox", ["scan", "sort"],
+                                 "background_review", ["all"])]
 
 
 async def test_patch_lands_as_pending_proposal_not_live_write(tmp_path):

@@ -30,6 +30,7 @@ import asyncio
 import logging
 import socket
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import IntEnum
 from typing import Callable, Optional
 
@@ -214,12 +215,15 @@ class ProactiveObserver:
     """
 
     def __init__(self, worker, probes: Optional["list[Probe]"] = None, *,
-                 recovery_notices: bool = True):
+                 recovery_notices: bool = True,
+                 clock: Optional[Callable[[], datetime]] = None):
         self.worker = worker
         self.probes = probes or []
         self.recovery_notices = recovery_notices
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._state: dict[str, bool] = {}     # key → last-known healthy
         self._last_signals: dict[str, Signal] = {}
+        self._since: dict[str, str] = {}      # key → ISO time it flipped to unhealthy
 
     # ── pure evaluation (no I/O, fully unit-testable) ─────────────
     def evaluate(self, signals: "list[Signal]") -> "list[Finding]":
@@ -233,11 +237,19 @@ class ProactiveObserver:
             self._last_signals[sig.key] = sig
             was_healthy = self._state.get(sig.key, True)
             if was_healthy and not sig.healthy:
+                # Recorded when the key FLIPS, not on every unhealthy sample, so
+                # "since" keeps meaning "down since", not "last looked at".
+                self._since[sig.key] = self._now_iso()
                 findings.append(Finding(sig, "alert"))
             elif not was_healthy and sig.healthy and self.recovery_notices:
                 findings.append(Finding(sig, "recovery"))
             self._state[sig.key] = sig.healthy
+            if sig.healthy:
+                self._since.pop(sig.key, None)
         return findings
+
+    def _now_iso(self) -> str:
+        return self._clock().astimezone(UTC).isoformat(timespec="seconds")
 
     def _gather(self) -> "list[Signal]":
         signals: list[Signal] = []
@@ -318,7 +330,9 @@ class ProactiveObserver:
             "tracked": len(self._state),
             "unhealthy": [
                 {"key": k, "detail": self._last_signals[k].detail,
-                 "severity": self._last_signals[k].severity.name}
+                 "severity": self._last_signals[k].severity.name,
+                 # ISO-8601 UTC: when the key flipped to unhealthy (the HUD's "since").
+                 **({"since": self._since[k]} if k in self._since else {})}
                 for k, ok in self._state.items()
                 if not ok and k in self._last_signals
             ],

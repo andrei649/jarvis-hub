@@ -46,6 +46,7 @@ def _mock_orch() -> MagicMock:
     """A chat fake still has the real durable session-status authority."""
     mock = MagicMock()
     mock.session_id = "test_session"
+    mock.agents = {"friday": MagicMock()}
     mock.checkpoints = CheckpointManager(":memory:")
     mock.checkpoints.initialize()
     return mock
@@ -54,7 +55,6 @@ def _mock_orch() -> MagicMock:
 def _mock_orch_with_stream(tokens: list[str], full: str | None = None) -> MagicMock:
     """Build a minimal mock Orchestrator whose handle_input_stream emits *tokens*."""
     m = _mock_orch()
-    m.agents = {}
     m.observer = None
 
     expected_full = full if full is not None else "".join(tokens)
@@ -140,7 +140,7 @@ def test_resume_old_topic_returns_its_exact_saved_history(monkeypatch):
         async def resume_session(self, sid):
             return sid == "old_topic"
 
-        async def get_history(self, sid):
+        async def get_history(self, sid, *, include_board_sources=False):
             assert sid == "old_topic"
             return [{"role": "user", "content": "old question"},
                     {"role": "assistant", "content": "old answer"}]
@@ -165,6 +165,165 @@ def test_chat_agent_override_not_jarvis(monkeypatch):
     client.post("/chat", json={"message": "hi", "agent": "friday"})
     _, kwargs = mock.handle_input.call_args
     assert kwargs.get("agent_override") == "friday"
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+@pytest.mark.parametrize("agent", ["retired", "friday"])
+def test_chat_declines_unavailable_agent_before_starting_turn(monkeypatch, path, agent):
+    mock = _mock_orch()
+    mock.handle_input = AsyncMock(return_value="unexpected reply")
+    mock.handle_input_stream = AsyncMock(return_value="unexpected reply")
+    monkeypatch.setattr(web, "orch", mock)
+    monkeypatch.setattr(web, "_AGENT_SETTINGS", {"friday": {"enabled": False}})
+    response = TestClient(web.app).post(path, json={"message": "for one recipient", "agent": agent})
+    assert response.status_code == 409
+    assert response.json()["detail"] == "chat_agent_unavailable"
+    mock.handle_input.assert_not_awaited()
+    mock.handle_input_stream.assert_not_awaited()
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+def test_full_attachments_require_a_supplied_item_without_echoing_payload(monkeypatch, path):
+    monkeypatch.setattr(web, "orch", _mock_orch())
+    secret = "private-prompt-attachment-secret"
+    response = TestClient(web.app).post(path, json={"message": secret, "require_full_attachments": True})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "attachments_required"}
+    assert secret not in response.text
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+@pytest.mark.parametrize("message", ["/new", "/btw any update?"])
+def test_full_attachments_refuse_command_before_turn(monkeypatch, path, message):
+    from agents.core import code_interruptions
+
+    mock = _mock_orch()
+    mock.handle_input = AsyncMock(return_value="unexpected")
+    mock.handle_input_stream = AsyncMock(return_value="unexpected")
+    interrupts = []
+    monkeypatch.setattr(web, "orch", mock)
+    monkeypatch.setattr(code_interruptions, "interrupt", interrupts.append)
+    response = TestClient(web.app).post(path, json={
+        "message": message, "attachments": [{"name": "private", "text": "secret"}],
+        "require_full_attachments": True,
+    })
+    assert response.status_code == 422
+    assert response.json() == {"detail": "attachments_require_message"}
+    assert interrupts == []
+    mock.handle_input.assert_not_awaited()
+    mock.handle_input_stream.assert_not_awaited()
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+@pytest.mark.parametrize("invalid", ["attachment", "flag"])
+def test_malformed_strict_attachment_request_does_not_echo_document(monkeypatch, path, invalid):
+    monkeypatch.setattr(web, "orch", _mock_orch())
+    secret = "private-document-text"
+    body = {"message": "read this", "attachments": [{"name": "private", "text": secret}],
+            "require_full_attachments": True}
+    if invalid == "attachment":
+        body["attachments"][0]["text"] = secret + "x" * 64_000
+    else:
+        body["require_full_attachments"] = "true"
+    response = TestClient(web.app).post(path, json=body)
+    assert response.status_code == 422
+    assert response.json() == {"detail": "invalid_attachment"}
+    assert secret not in response.text
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+def test_full_attachments_reject_unicode_byte_truncation_before_turn(monkeypatch, path):
+    from agents.core import code_interruptions
+
+    mock = _mock_orch()
+    mock.handle_input = AsyncMock(return_value="unexpected")
+    mock.handle_input_stream = AsyncMock(return_value="unexpected")
+    interrupts = []
+    monkeypatch.setattr(web, "orch", mock)
+    monkeypatch.setattr(code_interruptions, "interrupt", interrupts.append)
+    secret = "é" * 32_001  # below the 64K character limit, above the 64K byte limit
+    response = TestClient(web.app).post(path, json={
+        "message": "read this", "attachments": [{"name": "private", "text": secret}],
+        "require_full_attachments": True,
+    })
+    assert response.status_code == 413
+    assert response.json() == {"detail": "attachment_limit"}
+    assert secret not in response.text
+    assert interrupts == []
+    mock.handle_input.assert_not_awaited()
+    mock.handle_input_stream.assert_not_awaited()
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+@pytest.mark.parametrize("file_size", [63_000, 64_000])
+def test_full_attachments_reject_file_budget_cut_or_drop(monkeypatch, tmp_path, path, file_size):
+    from agents.core import code_interruptions
+
+    mock = _mock_orch()
+    mock.handle_input = AsyncMock(return_value="unexpected")
+    mock.handle_input_stream = AsyncMock(return_value="unexpected")
+    interrupts = []
+    monkeypatch.setattr(web, "orch", mock)
+    monkeypatch.setattr(code_interruptions, "interrupt", interrupts.append)
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(tmp_path))
+    for name in ("first.txt", "second.txt"):
+        (tmp_path / name).write_text("x" * file_size, encoding="utf-8")
+    response = TestClient(web.app).post(path, json={
+        "message": "read @file:first.txt and @file:second.txt",
+        "attachments": [{"name": "private", "text": "é" * 2_000}],
+        "require_full_attachments": True,
+    })
+    assert response.status_code == 413
+    assert response.json() == {"detail": "attachment_limit"}
+    assert interrupts == []
+    mock.handle_input.assert_not_awaited()
+    mock.handle_input_stream.assert_not_awaited()
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+@pytest.mark.parametrize("strict", [False, True])
+def test_editor_attachment_exact_unicode_byte_budget_is_accepted(monkeypatch, path, strict):
+    from agents.core import context_refs
+
+    mock = _mock_orch()
+    seen = []
+
+    async def reply(*args, **kwargs):
+        seen.append(context_refs.attached_block())
+        return "done"
+
+    mock.handle_input = reply
+    mock.handle_input_stream = reply
+    monkeypatch.setattr(web, "orch", mock)
+    response = TestClient(web.app).post(path, json={
+        "message": "read this", "attachments": [{"name": "private", "text": "é" * 32_000}],
+        "require_full_attachments": strict,
+    })
+    assert response.status_code == 200
+    assert len(seen) == 1 and "é" * 32_000 in seen[0]
+    assert "cut to" not in seen[0]
+
+
+@pytest.mark.parametrize("path", ["/chat", "/chat/stream"])
+def test_default_attachment_truncation_retains_warning_and_turn(monkeypatch, path):
+    from agents.core import context_refs
+
+    mock = _mock_orch()
+    seen = []
+
+    async def reply(*args, **kwargs):
+        seen.append(context_refs.attached_block())
+        return "done"
+
+    mock.handle_input = reply
+    mock.handle_input_stream = reply
+    monkeypatch.setattr(web, "orch", mock)
+    response = TestClient(web.app).post(path, json={
+        "message": "read this", "attachments": [{"name": "private", "text": "é" * 32_001}],
+    })
+    assert response.status_code == 200
+    assert len(seen) == 1 and "é" * 32_000 in seen[0]
+    assert "private — cut to 64000 bytes" in seen[0]
 
 
 def test_chat_agent_jarvis_passes_no_override(monkeypatch):

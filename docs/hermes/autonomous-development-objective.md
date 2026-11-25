@@ -327,7 +327,7 @@ Exact-preimage pins refreshed for21 rows; inherited stale evidence retained.
 Registry stays129/69718.5%, with0 newly equivalent rows; H595/H660 remain partial
 while fresh isolated-backend/platform evidence and separate transport/resume work
 remain open. Docker is absent on this Mac. All changes local, no staging/publication.
-Next: finish the HUD follow-up producer using docs/hermes/h595-hud-interruption-plan-2026-10-05.md, then H515 provider reuse using docs/hermes/h515-provider-reuse-plan-2026-10-05.md.
+Next: finish the HUD follow-up producer using docs/archive/hermes/h595-hud-interruption-plan-2026-10-05.md, then H515 provider reuse using docs/archive/hermes/h515-provider-reuse-plan-2026-10-05.md.
 The full697 objective stays active.
 
 

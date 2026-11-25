@@ -1,0 +1,5 @@
+.ws-projects { flex: none; color: var(--ink-2); font-size: var(--n-fs-ui); }
+.ws-project-list { padding: 8px; margin-top: 6px; border: 1px solid var(--panel-line); border-radius: 8px; max-height: 16rem; overflow: auto; }
+.ws-project-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--panel-line); }
+.ws-project-row a { color: var(--accent-light); overflow-wrap: anywhere; flex: 1; }
+.ws-projects .ws-project-refresh { margin-bottom: 6px; }

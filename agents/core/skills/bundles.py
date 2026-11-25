@@ -817,7 +817,7 @@ def _summary(load: _Load, loaded: Iterable[str], skipped: Iterable[tuple[str, st
 
 def _begin_members(bundle: Bundle | None, skill_name: str, members: tuple[str, ...],
                    instruction: str, loader: Any, *, session: str,
-                   template_vars: Any = None, strict: bool = False) -> str | None:
+                   template_vars: Any = None, strict: bool = False, agent: str = "") -> str | None:
     """One guarded turn-load path for a stored bundle or an owner's single skill."""
     from ..security.recall_taint import mark_turn_recall_tainted
     from ..turn_notices import record_turn_notice
@@ -834,9 +834,9 @@ def _begin_members(bundle: Bundle | None, skill_name: str, members: tuple[str, .
     skipped: list[tuple[str, str]] = list(missing)
     tainted = False
     for skill in installed:
-        reply, read, _rendered = tools.read_skill(loader, skill.name, session=session, template_vars=template_vars)
+        reply, read, _rendered = tools.read_skill(loader, skill.name, agent=agent, session=session, template_vars=template_vars)
         if read is None:
-            skipped.append((skill.name, _why(loader, skill, reply)))
+            skipped.append((skill.name, _why(loader, skill, reply, agent)))
             continue
         readable.append(skill.name)
         tainted = tainted or reply.get("tainted") is True
@@ -865,32 +865,32 @@ def _begin_members(bundle: Bundle | None, skill_name: str, members: tuple[str, .
     return None
 
 
-def begin_load(inv: Invocation, loader: Any, *, session: str, template_vars: Any = None) -> str | None:
+def begin_load(inv: Invocation, loader: Any, *, session: str, template_vars: Any = None, agent: str = "") -> str | None:
     """Bind a stored bundle; its members share skill_view's read and taint gates."""
     bundle = inv.bundle
     if bundle is None:
         return "A skill bundle loads into a conversation turn; nothing was loaded."
     return _begin_members(bundle, "", bundle.skills, inv.instruction, loader,
-                          session=session, template_vars=template_vars)
+                          session=session, template_vars=template_vars, agent=agent)
 
 
 def begin_skill_load(skill_name: str, instruction: str, loader: Any, *, session: str,
-                     template_vars: Any = None) -> str | None:
+                     template_vars: Any = None, agent: str = "") -> str | None:
     """Bind one installed skill through the same gates, with truthful skill wording."""
     if not isinstance(skill_name, str) or not skill_name:
         return "No skill was loaded."
     return _begin_members(None, skill_name, (skill_name,), instruction, loader,
-                          session=session, template_vars=template_vars)
+                          session=session, template_vars=template_vars, agent=agent)
 
 
 def begin_skill_stack_load(skill_names: tuple[str, ...], instruction: str, loader: Any, *,
-                           session: str, template_vars: Any = None) -> str | None:
+                           session: str, template_vars: Any = None, agent: str = "") -> str | None:
     """Preflight every requested skill before binding a stack to the turn."""
     if (not isinstance(skill_names, tuple) or not 2 <= len(skill_names) <= 5
             or any(not isinstance(name, str) or not name for name in skill_names)):
         return "The skill stack could not be loaded; nothing was sent to the model."
     return _begin_members(None, skill_names[0], skill_names, instruction, loader,
-                          session=session, template_vars=template_vars, strict=True)
+                          session=session, template_vars=template_vars, strict=True, agent=agent)
 
 
 def load_budget(window_tokens: Any) -> int:

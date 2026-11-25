@@ -3,6 +3,7 @@ base.py — Abstract LLM backend interface with streaming support.
 Supports LM Studio (OpenAI-compatible API) and Ollama.
 """
 
+import asyncio
 import inspect
 import json
 import logging
@@ -23,6 +24,7 @@ from .auxiliary_recovery import (
 )
 from .egress import llm_async_client
 from .host_protocol import HostProtocolRefused
+from .physical_local import ollama_wire_model, physical_local_ollama
 from .reasoning_effort import ReasoningEffortRefused
 from .repetition_guard import RepetitionStreamGuard, is_repetition_dominated, is_truncated_finish
 from .request_context import required_job_reasoning
@@ -53,6 +55,10 @@ CLOUD_AUTO_MAX_TOKENS = 8192
 LOCAL_SELECTION_UNAVAILABLE_REPLY = (
     "⚠️ No local language model is available. "
     "Start LM Studio or Ollama and try again."
+)
+CLOUD_SELECTION_UNAVAILABLE_REPLY = (
+    "⚠️ Athena requires a cloud route. "
+    "Choose an available cloud provider or switch to Frigga for a local answer."
 )
 
 
@@ -209,6 +215,7 @@ THINKING_EXHAUSTED_REPLY = (
 #: generation but wrong for a caller that must tell a failed call from an answer that
 #: happens to be a JSON array or a "[1]" list: that caller asks here.
 BACKEND_FAILURE_PREFIXES = (
+    CLOUD_SELECTION_UNAVAILABLE_REPLY,
     "⚠️ No local language model is available.",
     "⚠️ I can't reach the local ",
     "⚠️ The local ",
@@ -253,7 +260,68 @@ def _chat_messages(system: str, prompt: str) -> list:
     return messages
 
 
-# ── Post-processing filter (used on non-stream responses) ─────────────────────
+# ── Response filters ──────────────────────────────────────────────────────────
+
+_THINKING_HEADING = re.compile(
+    r"(?:Here['\u2019]s a thinking process[^\r\n]*|"
+    r"\*{2}Thinking(?: process)?(?:\.{3}|…|[:.])?\*{2}|"
+    r"Thinking(?: process)?(?:\.{3}|…|[:.])?)",
+    re.IGNORECASE,
+)
+_THINKING_END = re.compile(r"\r?\n\r?\n(?=[A-Z\u0102\u00ce\u0218\u021a\u00c2])")
+
+
+class _ThinkingProseFilter:
+    """Withhold an explicit leading thinking section until its answer begins."""
+
+    def __init__(self):
+        self._state = "start"
+        self._pending = ""
+
+    def feed(self, chunk: str) -> str:
+        if self._state == "done":
+            return chunk
+        self._pending += chunk
+        if self._state == "start":
+            line_start = len(self._pending) - len(self._pending.lstrip(" \t\r\n"))
+            newline = self._pending.find("\n", line_start)
+            if newline < 0:
+                prefix = self._pending.lstrip().casefold()
+                candidates = ("here's a thinking process", "here’s a thinking process",
+                              "**thinking", "**thinking process", "thinking", "thinking process")
+                if prefix and not any(
+                    p.startswith(prefix) or (prefix.startswith(p)
+                                             and (len(prefix) == len(p)
+                                                  or p.startswith("here")
+                                                  or prefix[len(p)] in ":.*…"))
+                    for p in candidates
+                ):
+                    self._state = "done"
+                    result, self._pending = self._pending, ""
+                    return result
+                return ""
+            if not _THINKING_HEADING.fullmatch(self._pending[line_start:newline].strip()):
+                self._state = "done"
+                result, self._pending = self._pending, ""
+                return result
+            self._state = "hide"
+            self._pending = "\n" + self._pending[newline + 1:]
+        end = _THINKING_END.search(self._pending)
+        if end:
+            self._state = "done"
+            result, self._pending = self._pending[end.end():], ""
+            return result
+        self._pending = self._pending[-4:]
+        return ""
+
+    def flush(self) -> str:
+        if (self._state == "start"
+                and (self._pending.strip().casefold() in {"thinking", "thinking process"}
+                     or not _THINKING_HEADING.fullmatch(self._pending.strip()))):
+            result, self._pending = self._pending, ""
+            return result
+        return ""
+
 
 def strip_thinking(text: str) -> str:
     """Remove chain-of-thought reasoning from a complete LLM response.
@@ -263,8 +331,8 @@ def strip_thinking(text: str) -> str:
       1a. <think>...</think> XML-style tags (closed)
       1b. <think> with no closing tag — reasoning that never reached an answer
           (e.g. generation truncated at max_tokens mid-thought). Drop to end.
-      2. "Here's a thinking process..." prose blocks with numbered steps
-      3. Leading numbered-step sections before the actual answer
+      2. Explicit leading thinking-process prose blocks
+      3. Leading numbered plans followed by an explicit final answer
     """
     if not text:
         return text
@@ -278,24 +346,19 @@ def strip_thinking(text: str) -> str:
     # leaks verbatim because the closed-tag regex above never matches it.
     cleaned = re.sub(r"<think>.*\Z", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
 
-    # 2. "Here's a thinking process…" / "**Thinking…**" narrative blocks
-    cleaned = re.sub(
-        r"(?:Here['\u2019]?s a thinking process.*?\n|\*{0,2}Thinking.*?\*{0,2}\n)"
-        r"(?:.*?\n)*?(?=\n[A-Z\u0102\u00ce\u0218\u021a\u00c2]|\Z)",
-        "",
-        cleaned,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
+    # 2. Explicit leading thinking-process narrative blocks
+    prose = _ThinkingProseFilter()
+    cleaned = prose.feed(cleaned) + prose.flush()
 
-    # 3. Leading numbered-step blocks (stop at first blank line after steps).
+    # 3. Leading numbered plans with an explicit final-answer delimiter.
     # Each step line is newline-bounded ([ \t] then [^\n]*) so the pattern stays
     # linear — the old `\d+\.\s+.+` let `\s+` span newlines and overlap `.+`,
     # which CodeQL flagged as a super-linear (ReDoS-prone) regex (#1).
     cleaned = re.sub(
-        r"^(?:\d+\.[ \t][^\n]*\n)+\n",
+        r"\A(?:\d+\.[ \t][^\n]*\n)+\n(?=Final answer[:.])",
         "",
         cleaned,
-        flags=re.MULTILINE,
+        flags=re.IGNORECASE,
     )
 
     return cleaned.strip()
@@ -317,6 +380,7 @@ class ThinkingStreamFilter:
     def __init__(self):
         self._in_think: bool = False
         self._buf: str = ""
+        self._prose = _ThinkingProseFilter()
 
     def feed(self, chunk: str) -> str:
         self._buf += chunk
@@ -352,7 +416,7 @@ class ThinkingStreamFilter:
                         self._buf = self._buf[safe_len:]
                     break
 
-        return "".join(out_parts)
+        return self._prose.feed("".join(out_parts))
 
     def flush(self) -> str:
         """Return any remaining buffer after stream ends (skip if in think block)."""
@@ -360,7 +424,7 @@ class ThinkingStreamFilter:
             return ""
         remainder = self._buf
         self._buf = ""
-        return remainder
+        return self._prose.feed(remainder) + self._prose.flush()
 
 
 # ── Async-safe token emitter ──────────────────────────────────────────────────
@@ -993,12 +1057,73 @@ class LMStudioBackend(LLMBackend):
 
 # ── Ollama ────────────────────────────────────────────────────────────────────
 
+class _OllamaReasoningExhausted(Exception):
+    """A completed primary text request spent its budget before emitting an answer."""
+
+
 class OllamaBackend(LLMBackend):
     """Ollama local server."""
 
     # Ollama calls tools over /api/chat with object arguments and no ids; the
     # translation lives in tool_dialects (Hermes absorption, wave 0.1).
     supports_tools = True
+
+    @staticmethod
+    def supports_no_think(metadata: object) -> bool:
+        if not isinstance(metadata, dict):
+            return False
+        thinking = metadata.get("thinking")
+        values = thinking.get("values") if isinstance(thinking, dict) else None
+        return isinstance(values, list) and any(value is False for value in values)
+
+    def _apply_no_think(self, payload: dict, model: str) -> None:
+        from .request_context import ollama_no_think_bound
+
+        if ollama_no_think_bound(self, ollama_wire_model(model)):
+            payload["think"] = False
+
+    async def verified_no_think(self, wire_model, check, *, recovery=False):
+        from .vision_capability import read_local_model_metadata
+
+        client, endpoint, client_url = self.client, self.base_url, str(self.client.base_url)
+        check()
+        metadata = await read_local_model_metadata(self, wire_model, check=check)
+        return (self.client is client and self.base_url == endpoint and str(client.base_url) == client_url
+                and self.supports_no_think(metadata)
+                and (not recovery or not (metadata.get("remote_model") or metadata.get("remote_host"))))
+
+    async def recover_primary_text(self, wire_model, send, check, deadline):
+        from .data_handling import DataHandlingRefused
+        from .direct_transport import require_direct_async_transport
+        from .request_context import primary_ollama_bound, primary_ollama_request
+
+        with primary_ollama_request(self, wire_model, no_think=False):
+            try:
+                return await send()
+            except _OllamaReasoningExhausted:
+                pass
+            loop = asyncio.get_running_loop()
+            if (deadline is not None and loop.time() >= deadline) or wire_model.endswith(":cloud"):
+                return THINKING_EXHAUSTED_REPLY
+            async with asyncio.timeout_at(deadline):
+                if not await self.verified_no_think(wire_model, check, recovery=True):
+                    return THINKING_EXHAUSTED_REPLY
+                if not primary_ollama_bound(self, wire_model, no_think=False):
+                    return THINKING_EXHAUSTED_REPLY
+                client = self.client
+                expected = client.build_request("POST", "/api/generate").url
+
+                def same_request(request):
+                    if (not primary_ollama_bound(self, wire_model, no_think=True)
+                            or request.method != "POST" or request.url != expected):
+                        raise DataHandlingRefused("Ollama recovery route changed")
+                    require_direct_async_transport(client, request.url)
+                    body = json.loads(request.content)
+                    if body.get("model") != wire_model or body.get("think") is not False:
+                        raise DataHandlingRefused("Ollama recovery request changed")
+
+                with primary_ollama_request(self, wire_model, no_think=True):
+                    return await send(request_check=same_request)
 
     def __init__(self, base_url: str = "http://localhost:11434", num_ctx: int = 0, *,
                  trust_env: bool = True):
@@ -1043,13 +1168,14 @@ class OllamaBackend(LLMBackend):
         """Close the HTTP client's connection pool (BUG-7)."""
         await self.client.aclose()
 
+    @physical_local_ollama
     async def warm_up(self, model: str) -> bool:
         """Preload via Ollama's load path (empty prompt loads weights without
         generating) and pin the model resident with keep_alive=-1 so it doesn't
         unload between turns. Best-effort, never raises."""
         try:
             resp = await self.client.post("/api/generate", json={
-                "model": model,
+                "model": ollama_wire_model(model),
                 "prompt": "",
                 "keep_alive": -1,
                 "stream": False,
@@ -1061,6 +1187,7 @@ class OllamaBackend(LLMBackend):
 
     supports_json_schema = True
 
+    @physical_local_ollama
     async def generate(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
@@ -1068,7 +1195,7 @@ class OllamaBackend(LLMBackend):
     ) -> str:
         _require_no_job_reasoning()
         payload = {
-            "model": model,
+            "model": ollama_wire_model(model),
             "prompt": prompt,
             "system": system,
             "stream": False,
@@ -1082,6 +1209,7 @@ class OllamaBackend(LLMBackend):
         }
         if json_schema is not None:     # H440: Ollama's structured output
             payload["format"] = json_schema
+        self._apply_no_think(payload, model)
         try:
             resp = await self.client.post("/api/generate", json=payload)
             resp.raise_for_status()
@@ -1100,16 +1228,23 @@ class OllamaBackend(LLMBackend):
                 # Match the stream's native/proxy fields without exposing reasoning
                 # on a clean stop: Ollama's non-stream path never returned it.
                 reasoning = data.get("thinking") or data.get("reasoning_content") or ""
-                if strip_thinking(reasoning).strip():
+                if isinstance(reasoning, str) and reasoning.strip():
                     report_text_usage(ollama_usage(data))
+                    from .request_context import primary_ollama_bound
+                    if (data.get("done") is True and "error" not in data and data.get("type") != "error"
+                            and primary_ollama_bound(self, payload["model"], no_think=False)):
+                        raise _OllamaReasoningExhausted()
                     return THINKING_EXHAUSTED_REPLY
             report_text_usage(ollama_usage(data))
             return answer
+        except _OllamaReasoningExhausted:
+            raise
         except Exception as e:
             if _schema_refused(self, model, json_schema, e):
                 raise JsonSchemaRejected("Ollama refused the JSON schema") from e
             return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
 
+    @physical_local_ollama
     async def generate_tool_turn(
         self,
         model: str,
@@ -1121,7 +1256,7 @@ class OllamaBackend(LLMBackend):
         """One tool-enabled turn over /api/chat; calls cross `parse_openai_tool_calls`."""
         _require_no_job_reasoning()
         payload: dict[str, Any] = {
-            "model": model,
+            "model": ollama_wire_model(model),
             "messages": ollama_messages(messages),
             "stream": False,
             "options": {
@@ -1132,6 +1267,7 @@ class OllamaBackend(LLMBackend):
         }
         if tools:
             payload["tools"] = [tool.as_openai() for tool in tools]
+        self._apply_no_think(payload, model)
         try:
             resp = await self.client.post("/api/chat", json=payload)
             resp.raise_for_status()
@@ -1158,6 +1294,7 @@ class OllamaBackend(LLMBackend):
                 content=local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
             )
 
+    @physical_local_ollama
     async def generate_stream(
         self, model: str, prompt: str, system: str = "",
         max_tokens: int = 1024, temperature: float = 0.7,
@@ -1166,7 +1303,7 @@ class OllamaBackend(LLMBackend):
     ) -> str:
         _require_no_job_reasoning()
         payload = {
-            "model": model,
+            "model": ollama_wire_model(model),
             "prompt": prompt,
             "system": system,
             "stream": True,
@@ -1178,6 +1315,7 @@ class OllamaBackend(LLMBackend):
                 "temperature": temperature,
             },
         }
+        self._apply_no_think(payload, model)
         emitted = ""
         reasoning_full = ""
         finish = None
@@ -1185,6 +1323,7 @@ class OllamaBackend(LLMBackend):
         usage_failed = False
         sf = ThinkingStreamFilter()
         rg = RepetitionStreamGuard()   # H393: never paint a loop live
+        saw_native_thinking = False
         try:
             async with self.client.stream("POST", "/api/generate", json=payload) as resp:
                 resp.raise_for_status()
@@ -1201,15 +1340,17 @@ class OllamaBackend(LLMBackend):
                             # reasoning_content is the OpenAI-style spelling some
                             # proxies use. Reading both is what lets the exhausted-
                             # thinking guard fire on a real Ollama stream (5c).
-                            reasoning = data.get("thinking") or data.get("reasoning_content") or ""
+                            native_thinking = data.get("thinking")
+                            if isinstance(native_thinking, str) and native_thinking.strip():
+                                saw_native_thinking = True
+                            elif not saw_native_thinking:
+                                reasoning_full += data.get("reasoning_content") or ""
                             if content:
                                 safe = sf.feed(content)
                                 if safe:
                                     emitted += safe
                                     if on_token:
                                         await _emit(on_token, rg.feed(safe))
-                            if reasoning:
-                                reasoning_full += reasoning
                             if data.get("done") is True:
                                 usage = ollama_usage(data)
                                 finish = data.get("done_reason") or finish
@@ -1229,9 +1370,18 @@ class OllamaBackend(LLMBackend):
             if on_token:
                 await _emit(on_token, rg.feed(remainder))
 
-        answer = self._finalize_stream(emitted, reasoning_full, finish, model)
+        # Ollama's native thinking is private. Some compatible proxies put
+        # their completed answer in reasoning_content, which has a separate contract.
+        exhausted = finish == "length" and not emitted.strip() and (saw_native_thinking or bool(reasoning_full.strip()))
+        proxy_fallback = (not saw_native_thinking and finish == "stop" and not usage_failed
+                          and payload.get("think") is not False)
+        answer = (THINKING_EXHAUSTED_REPLY if exhausted else
+                  self._finalize_stream(emitted, reasoning_full if proxy_fallback else "", finish, model))
         if on_token:   # H393: withheld text reaches the bubble iff the answer is kept
             await _emit(on_token, rg.release(answer))
         if usage is not None and not usage_failed:
             report_text_usage(usage)
+        from .request_context import primary_ollama_bound
+        if exhausted and not usage_failed and primary_ollama_bound(self, payload["model"], no_think=False):
+            raise _OllamaReasoningExhausted()
         return answer

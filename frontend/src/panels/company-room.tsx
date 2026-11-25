@@ -43,8 +43,10 @@
    tests/test_hud_v2_parity.py:_has_caller matches comment text as a caller. */
 import React, { useState } from 'react';
 import { apiGet } from '../api/client';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, actA, inpS, taS } from '../panel-kit';
+// The panel keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, act, actA, inpS, taS } from '../panel-kit';
 import { ConfirmAction, RISK_TIER } from '../confirm';
+import { LABEL } from '../theme/type';
 
 const RUNS_PATH = '/api/company/runs';
 const WAITING_PATH = '/api/company/waiting';
@@ -53,11 +55,11 @@ const GOALS_PATH = '/api/company/goals';
 const EM = '—';
 
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
+  <div style={{ fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
 );
 
 const Head = ({ k }: { k: any }) => (
-  <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', marginTop: 10, marginBottom: 2 }}>{k}</div>
+  <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10, marginBottom: 2 }}>{k}</div>
 );
 
 /* Status → chip colour. `unknown` is never green: a state this panel does not
@@ -118,7 +120,7 @@ const proposalRefusal = (err: any) => {
 };
 
 const Field = ({ label, children }: { label: string; children?: any }) => (
-  <label style={{ display: 'block', fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+  <label style={{ display: 'block', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
     {label}
     <div style={{ marginTop: 2 }}>{children}</div>
   </label>
@@ -223,7 +225,7 @@ export function CompanyRoomPanel() {
     >
       <State e={e} loading={loading} n={d ? 1 : 0} />
       <Row>
-        <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>PROPOSE A GOAL</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>PROPOSE A GOAL</span>
         <button
           className="tool-btn" style={{ marginLeft: 'auto' }}
           title="write a goal and send it to the decision inbox for your approval"
@@ -251,7 +253,7 @@ export function CompanyRoomPanel() {
             <textarea aria-label="stop when" style={{ ...taS, minHeight: 32 }} value={fields.stopWhen} onChange={setField('stopWhen')} />
           </Field>
           <Row>
-            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
               20 steps, a day to run; it waits in the decision inbox until you accept it.
             </span>
             <button
@@ -277,14 +279,14 @@ export function CompanyRoomPanel() {
           {/* Above every success: the one finding that changes what to do next. */}
           {unauthorised.length > 0 && (
             <Row>
-              <span style={{ ...mono, color: 'var(--red)' }} role="alert">
+              <span style={{ ...noteS, color: 'var(--red)' }} role="alert">
                 {unauthorised.length} run(s) changed something with no approved task
               </span>
             </Row>
           )}
           {needsYou.length > 0 && (
             <Row>
-              <span style={{ ...mono, color: 'var(--amber)' }}>
+              <span style={{ ...noteS, color: 'var(--amber)' }}>
                 {needsYou.length} run(s) waiting on your approval — decide them in the inbox
               </span>
             </Row>
@@ -297,7 +299,7 @@ export function CompanyRoomPanel() {
               <Head k="WAITING ON YOU" />
               {waiting.map((ask: any) => (
                 <Row key={`${ask.run_id}:${ask.step_seq}`}>
-                  <span style={{ fontSize: 11 }}>{ask.summary || ask.kind || EM}</span>
+                  <span style={{ fontSize: 'var(--n-fs-meta)' }}>{ask.summary || ask.kind || EM}</span>
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                     <Tag c="var(--amber)">{waitedFor(ask.waiting_seconds)}</Tag>
                     {/* No durable task means no decision can ever answer this ask. */}
@@ -316,7 +318,7 @@ export function CompanyRoomPanel() {
             return (
               <div key={run.run_id} style={{ padding: '4px 0' }}>
                 <Row>
-                  <span style={{ fontSize: 12, color: bad ? 'var(--red)' : 'var(--ink-1)' }}>
+                  <span style={{ fontSize: 'var(--n-fs-label)', color: bad ? 'var(--red)' : 'var(--ink)' }}>
                     {run.title || EM}
                   </span>
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -375,10 +377,10 @@ export function CompanyRoomPanel() {
                     <Head k="STEPS" />
                     {detail.steps.map((step: any) => (
                       <Row key={step.seq}>
-                        <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>
+                        <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
                           {step.seq}
                         </span>
-                        <span style={{ fontSize: 11 }}>{step.summary}</span>
+                        <span style={{ fontSize: 'var(--n-fs-meta)' }}>{step.summary}</span>
                         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
                           <Tag c={step.outcome === 'failed' ? 'var(--red)' : undefined}>
                             {step.outcome}
@@ -398,7 +400,7 @@ export function CompanyRoomPanel() {
         </>
       )}
       {note && (
-        <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>
+        <div role="alert" style={{ ...noteS, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>
           {note}
         </div>
       )}

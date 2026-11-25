@@ -8,7 +8,7 @@ per-IP limiter and its lifespan — to prove the integration rather than the sli
   bootstrap's, absolute asset URLs (root-path aware) and assets served with the right
   types;
 * errors: workspace JSON keeps ``{"error", "message"}`` (also for an unhandled exception),
-  while every hub path keeps FastAPI's default validation body and the hub's own 500;
+  reference validation redacts submitted values, and generic hub errors keep their own shapes;
 * the hub limiter never counts workspace traffic; the scheduler follows the lifespan;
 * with ``NERVA_WORKSPACE`` off, every workspace path — API, shell and assets — is a 404;
 * one journey across the real app: setup, upload, a streamed cited answer, the audit.
@@ -30,6 +30,7 @@ from starlette.requests import Request
 
 from agents import web
 from agents.core.routers import workspace_ui
+from agents.core.workspace import auth as ws_auth
 from agents.core.workspace import effects_api, scheduler
 from agents.core.workspace import errors as ws_errors
 from agents.core.workspace import identity as ws_identity
@@ -204,10 +205,12 @@ def test_a_missing_bundle_is_an_honest_503(client, monkeypatch, tmp_path):
 
 def test_the_workspace_handlers_are_registered_on_the_hub_app():
     assert web.app.exception_handlers[ws_errors.WorkspaceError] is ws_errors.workspace_error_handler
-    assert web.app.exception_handlers[RequestValidationError] is ws_errors.validation_error_handler
+    assert web.app.exception_handlers[RequestValidationError] is web.chat_reference_validation_handler
 
 
-def test_workspace_errors_are_workspace_json(client):
+@pytest.mark.parametrize("root_path", ["", "/nerva"])
+def test_workspace_errors_are_workspace_json(client, monkeypatch, root_path):
+    monkeypatch.setattr(web.app, "root_path", root_path)
     unauthenticated = client.get("/api/workspace/me")
     assert unauthenticated.status_code == 401
     assert unauthenticated.json()["error"] == "auth_required"
@@ -216,11 +219,15 @@ def test_workspace_errors_are_workspace_json(client):
     company = seed_company(conn)
     conn.close()
     login(client, company.member_a.email)
-    malformed = client.get("/api/workspace/documents/not-a-number")
+    # A stripping proxy forwards the browser's cookie on the logical path.
+    cookie = ws_auth.SESSION_COOKIE
+    headers = {"Cookie": f"{cookie}={client.cookies[cookie]}"}
+    malformed = client.get("/api/workspace/documents/not-a-number", headers=headers)
     assert malformed.status_code == 422
+    assert malformed.headers["cache-control"] == "no-store"
     assert malformed.json() == {"error": "invalid_request", "message": "invalid value for document_id",
                                 "field": "document_id", "reason": "type"}
-    huge = client.get(f"/api/workspace/documents/{10 ** 20}")
+    huge = client.get(f"/api/workspace/documents/{10 ** 20}", headers=headers)
     assert (huge.status_code, huge.json()["reason"]) == (422, "too_large")
 
 
@@ -230,6 +237,21 @@ def test_hub_validation_errors_keep_fastapis_default_body(client):
     body = response.json()
     assert set(body) == {"detail"} and isinstance(body["detail"], list)
     assert "error" not in body
+
+
+@pytest.mark.parametrize(("path", "body", "detail"), [
+    ("/chat", {"message": "Ask", "board_references": ["private excerpt"]}, "invalid_board_reference"),
+    ("/chat/stream", {"message": "Ask", "board_references": ["private excerpt"]}, "invalid_board_reference"),
+    ("/api/kanban/board-note/preview", {"references": ["private excerpt"]}, "invalid_board_reference"),
+    ("/chat", {"message": "Ask", "history_reference": "private excerpt"}, "invalid_history_reference"),
+    ("/chat/stream", {"message": "Ask", "require_full_attachments": "invalid flag"}, "invalid_attachment"),
+])
+def test_mounted_reference_validation_redacts_submitted_values(prefixed, monkeypatch, path, body, detail):
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "validation-test")
+    response = prefixed.post(path, headers={"X-Admin-Token": "validation-test"}, json=body)
+    assert response.status_code == 422
+    assert response.json() == {"detail": detail}
+    assert "no-store" in response.headers["cache-control"]
 
 
 def test_an_unhandled_workspace_exception_is_a_workspace_500(ws, monkeypatch):

@@ -5,6 +5,74 @@ from types import SimpleNamespace
 import pytest
 
 
+def test_windows_chrome_readiness_uses_the_binary_it_launches(monkeypatch, tmp_path):
+    from agents.core import browser_runtime as runtime
+
+    chrome = tmp_path / 'Google' / 'Chrome' / 'Application' / 'chrome.exe'
+    chrome.parent.mkdir(parents=True)
+    chrome.touch()
+    monkeypatch.setattr(runtime.sys, 'platform', 'win32')
+    monkeypatch.setenv('PROGRAMFILES', str(tmp_path))
+    monkeypatch.setenv('PROGRAMFILES(X86)', str(tmp_path / 'absent'))
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'absent'))
+    assert runtime._chrome_binary() == str(chrome)
+    assert runtime._launch_target() == {'executable_path': str(chrome)}
+
+
+@pytest.mark.asyncio
+async def test_orphan_reap_accepts_windows_playwright_driver_path(monkeypatch, tmp_path):
+    import tempfile
+
+    from agents.core import browser_session
+    from agents.core.browser_profile import create_owned_profile
+    from agents.core.browser_session import BrowserOwnershipJournal
+
+    monkeypatch.setattr(browser_session, '_WINDOWS', True)
+    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
+    profile, identity = create_owned_profile()
+    path = tmp_path / ('a' * 32 + '.json')
+    journal = BrowserOwnershipJournal(tmp_path)
+    record = {'profile': str(profile), 'profile_identity': identity, 'native': None,
+              'owner_process': [1, 1.0], 'controller': [2, 2.0]}
+    monkeypatch.setattr(journal, 'read', lambda _path: record)
+    monkeypatch.setattr(journal, 'remove', lambda _sid: None)
+
+    class Controller:
+        def create_time(self):
+            return 2.0
+        def is_running(self):
+            return True
+        def exe(self):
+            return r'C:\Python\Lib\site-packages\playwright\driver\node.exe'
+        def cmdline(self):
+            return [self.exe(), r'C:\Python\Lib\site-packages\playwright\driver\package\cli.js',
+                    'run-driver']
+        def terminate(self):
+            pass
+        def wait(self, timeout):
+            return 0
+
+    controller = Controller()
+    import psutil
+    monkeypatch.setattr(psutil, 'Process', lambda pid: controller if pid == 2 else (_ for _ in ()).throw(psutil.NoSuchProcess(pid)))
+    monkeypatch.setattr(psutil, 'process_iter', lambda _attrs: [])
+    assert await journal.reap_entry(path) is True
+    assert not profile.exists()
+
+
+def test_driver_path_match_keeps_posix_identity_semantics(monkeypatch):
+    from agents.core import browser_session
+
+    monkeypatch.setattr(browser_session, '_WINDOWS', False)
+    assert browser_session._is_playwright_driver(['/usr/lib/playwright/driver/node'])
+    assert not browser_session._is_playwright_driver([r'C:\Lib\Playwright\Driver\node.exe'])
+    monkeypatch.setattr(browser_session, '_WINDOWS', True)
+    command = [r'C:\Lib\Playwright\Driver\node.exe',
+               r'C:\Lib\Playwright\Driver\package\cli.js', 'run-driver']
+    assert browser_session._is_playwright_driver(command)
+    assert not browser_session._is_playwright_driver([r'C:\editor.exe', *command[1:]])
+
+
 @pytest.mark.asyncio
 async def test_real_driver_mutation_requires_exact_live_task_bound_step():
     from agents.core.browser_kernel import BrowserActionExecutor, approved_step_scope
@@ -60,8 +128,9 @@ async def test_direct_real_driver_mutation_refuses_before_browser_start(method, 
 
 
 @pytest.mark.asyncio
-async def test_close_failure_retains_owned_profile_until_verified_retry(tmp_path):
+async def test_close_failure_retains_owned_profile_until_verified_retry():
     from agents.core.browser_playwright import PlaywrightBrowserDriver, PlaywrightDriverError
+    from agents.core.browser_profile import create_owned_profile
 
     class Context:
         fails = True
@@ -70,12 +139,12 @@ async def test_close_failure_retains_owned_profile_until_verified_retry(tmp_path
                 raise RuntimeError('close failed')
 
     context = Context()
-    profile = tmp_path / 'nerva-browser-owned'
-    profile.mkdir()
+    profile, identity = create_owned_profile()
     (profile / 'marker').write_text('owned')
     driver = PlaywrightBrowserDriver(host_enabled=True)
     driver._context = context
     driver._profile_dir = profile
+    driver._profile_identity = identity
     with pytest.raises(PlaywrightDriverError, match='browser_cleanup_unverified'):
         await driver.close()
     assert driver._context is context and profile.exists()
@@ -90,6 +159,7 @@ async def test_runtime_retains_uncertain_driver_and_blocks_next_proposal(tmp_pat
 
     profile = tmp_path / 'nerva-browser-retained'
     profile.mkdir()
+    monkeypatch.setenv('JARVIS_HOME', str(tmp_path))
 
     class Driver:
         requires_kernel = False
@@ -138,6 +208,7 @@ async def test_hanging_close_retains_owner_across_cancellation_and_bounded_reape
     release = asyncio.Event()
     profile = tmp_path / 'nerva-browser-retained'
     profile.mkdir()
+    monkeypatch.setenv('JARVIS_HOME', str(tmp_path))
 
     class Driver:
         requires_kernel = False
@@ -230,6 +301,21 @@ def test_browser_plan_canonical_bytes_are_stable_and_preserve_exact_step():
     assert first.steps == second.steps
     assert first.sha256 == second.sha256
     assert first.steps[0]['url'] == 'https://example.com/path?x=1'
+
+
+def test_unreadable_ownership_records_disable_the_browser_without_breaking_hub_start(monkeypatch):
+    from agents.core.browser_runtime import BrowserPlanRefused, BrowserRuntime
+    from agents.core.browser_session import BrowserOwnershipJournal, SessionRefused
+
+    def unavailable(_self):
+        raise SessionRefused('browser_journal_unavailable')
+
+    monkeypatch.setattr(BrowserOwnershipJournal, 'entries', unavailable)
+    runtime = BrowserRuntime(queue=None, approved_task=None, authorizer=None,
+                             enqueue=None, execution_check=None)
+    assert not runtime.ready()
+    with pytest.raises(BrowserPlanRefused, match='browser_cleanup_unverified'):
+        runtime._ready()
 
 
 def test_readiness_requires_all_server_prerequisites_and_ignores_private_optin(monkeypatch):

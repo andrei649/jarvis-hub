@@ -44,6 +44,6 @@ current local-development authorization):
 - rows that need network or hardware;
 - the decisions in `docs/OWNER_TASKS.md`.
 
-A single driver session can run all four in order: see `docs/handoff/2026-09-28-handover/PROMPT.md`.
+A single driver session can run all four in order: see `docs/archive/handoff/2026-09-28-handover/PROMPT.md`.
 
 </details>

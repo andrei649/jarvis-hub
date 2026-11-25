@@ -1,7 +1,11 @@
 import type { ServerConfig } from '../storage/settings';
 import { SseDecoder } from './sse';
-import { projectSessionTranscript, validTranscriptSessionId, type SessionTranscript } from './sessionTranscript';
+import { historyRequiresCloudConsent, projectSessionTranscript, validTranscriptSessionId, validHistoryReference, type HistoryReference,
+  type SessionTranscript, type SessionMessageSearch } from './sessionTranscript';
+import { modelCalls, type ModelCall } from './modelCallProvenance';
 export type { SessionTranscript } from './sessionTranscript';
+export type { SessionMessageHit, SessionMessageSearch } from './sessionTranscript';
+export { verifiedSessionTurn } from './sessionTranscript';
 import { normalizeTurnOutcome, type TurnOutcome } from '../chat/turnOutcome';
 
 /**
@@ -43,11 +47,20 @@ function isRetryable(err: unknown): boolean {
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-type RequestOpts = { timeoutMs?: number; retries?: number; admin?: boolean };
+const FACT_REFUSALS: Record<string, string> = {
+  memory_disabled: 'Automatic memory is off on this hub.',
+  memory_full: 'Saved facts are full. Remove a fact before saving another.',
+  memory_over_budget: 'Saved facts are over the space limit. Shorten or remove a fact.',
+  memory_no_match: 'This saved fact changed or is no longer available. Review it before correcting.',
+  memory_duplicate: 'That fact is already saved.',
+  memory_changed_meanwhile: 'Saved facts changed while saving. Review them and try again.',
+};
+
+type RequestOpts = { timeoutMs?: number; retries?: number; admin?: boolean; factWrite?: boolean; factRead?: boolean };
 
 async function request<T>(
   config: ServerConfig,
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   opts: RequestOpts = {},
@@ -69,9 +82,19 @@ async function request<T>(
         headers: authHeaders(config, body !== undefined, opts.admin === true),
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
+        ...(opts.factWrite || opts.factRead ? { redirect: 'error' as const, credentials: 'omit' as const } : {}),
+        ...(opts.factRead ? { cache: 'no-store' as const } : {}),
       });
       if (!res.ok) {
         if (res.status === 401) throw new ApiError('Unauthorized — check your user token', 401);
+        if (opts.factWrite && res.status !== 403) {
+          let refusal: unknown;
+          try { refusal = await res.json(); } catch { /* Keep the HTTP status as the fallback. */ }
+          const reason = isRecord(refusal) && typeof refusal.reason === 'string' ? refusal.reason : '';
+          if (Object.prototype.hasOwnProperty.call(FACT_REFUSALS, reason)) {
+            throw new ApiError(FACT_REFUSALS[reason], res.status);
+          }
+        }
         throw new ApiError(`Server returned HTTP ${res.status}`, res.status);
       }
       return (await res.json()) as T;
@@ -895,6 +918,144 @@ export async function fetchMemory(config: ServerConfig): Promise<MemoryResponse>
 export async function fetchNotes(config: ServerConfig): Promise<NotesResponse> {
   const res = await request<Record<string, unknown>>(config, 'GET', '/api/notes', undefined, { retries: 2 });
   return normalizeNotes(res || {});
+}
+
+export type VaultExcerpt = { name: string; text: string };
+
+/** Project only the fields the user selected; never carry source metadata into chat. */
+export function validVaultExcerpts(value: unknown): VaultExcerpt[] | null {
+  if (!Array.isArray(value) || value.length > 4) return null;
+  const names = new Set<string>();
+  const excerpts: VaultExcerpt[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.name !== 'string' || !item.name.trim()
+      || Array.from(item.name).length > 200 || names.has(item.name)
+      || typeof item.text !== 'string' || !item.text.trim()
+      || Array.from(item.text).length > 1500) return null;
+    names.add(item.name);
+    excerpts.push({ name: item.name, text: item.text });
+  }
+  return excerpts;
+}
+
+export async function fetchVaultExcerpts(
+  config: ServerConfig, question: string, signal: AbortSignal,
+): Promise<VaultExcerpt[]> {
+  if (typeof question !== 'string' || !question.trim() || Array.from(question).length > 4096) {
+    throw new ApiError('Invalid vault question');
+  }
+  const base = normalizeBaseUrl(config.baseUrl);
+  if (!base) throw new ApiError('No server URL configured');
+  if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  signal.addEventListener('abort', onAbort, { once: true });
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(base + '/api/os/brain/retrieve?q=' + encodeURIComponent(question), {
+      method: 'GET', headers: authHeaders(config, false, true), signal: controller.signal,
+      redirect: 'error', credentials: 'omit', cache: 'no-store',
+    });
+    if (!response.ok) throw new ApiError(response.status === 401
+      ? 'Unauthorized — check your user token' : `Server returned HTTP ${response.status}`, response.status);
+    let raw: unknown;
+    try { raw = await response.json(); } catch { throw new ApiError('Invalid vault response'); }
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (controller.signal.aborted) throw new ApiError('Vault lookup timed out');
+    const excerpts = isRecord(raw) && raw.ok === true ? validVaultExcerpts(raw.attachments) : null;
+    if (!excerpts) throw new ApiError('Invalid vault response');
+    return excerpts;
+  } catch (error) {
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (controller.signal.aborted) throw new ApiError('Vault lookup timed out');
+    if (error instanceof ApiError) throw error;
+    throw new ApiError('Vault lookup unavailable');
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
+export type FactStore = 'memory' | 'user';
+export type CuratedFact = { entry_id: string; store: FactStore; value: string };
+
+export async function listChatFacts(config: ServerConfig, store: FactStore): Promise<CuratedFact[]> {
+  if (store !== 'memory' && store !== 'user') throw new ApiError('Invalid fact store');
+  const raw = await request<unknown>(config, 'GET', `/api/memory/core/facts?store=${store}`, undefined,
+    { admin: true, factRead: true });
+  if (!isRecord(raw) || !Array.isArray(raw.entries)) {
+    throw new ApiError('Invalid saved facts response');
+  }
+  const ids = new Set<string>();
+  const entries: CuratedFact[] = [];
+  for (const item of raw.entries) {
+    if (!isRecord(item) || item.store !== store || typeof item.entry_id !== 'string'
+      || !new RegExp(`^memory:${store}:[0-9a-f]{16}$`).test(item.entry_id)
+      || ids.has(item.entry_id) || typeof item.value !== 'string' || !item.value.trim()) {
+      throw new ApiError('Invalid saved facts response');
+    }
+    ids.add(item.entry_id);
+    entries.push({ entry_id: item.entry_id, store, value: item.value });
+  }
+  return entries;
+}
+
+export async function saveChatFact(
+  config: ServerConfig,
+  store: FactStore,
+  value: string,
+  entryId?: string,
+): Promise<{ changed: boolean; entry: { entry_id: string; store: FactStore; value: string } }> {
+  if (store !== 'memory' && store !== 'user') throw new ApiError('Invalid fact store');
+  if (typeof value !== 'string') throw new ApiError('Invalid fact value');
+  const text = value.trim();
+  if (!text || Array.from(text).length > 300) throw new ApiError('Fact must be 1–300 characters');
+  const ringId = new RegExp(`^memory:${store}:[0-9a-f]{16}$`);
+  if (entryId !== undefined && (typeof entryId !== 'string' || !ringId.test(entryId))) {
+    throw new ApiError('Invalid fact entry ID');
+  }
+  const raw = await request<unknown>(config, entryId === undefined ? 'POST' : 'PATCH',
+    `/api/dashboard/today/entries${entryId === undefined ? '' : `/${entryId}`}`,
+    entryId === undefined ? { store, value: text } : { value: text },
+    { admin: true, factWrite: true });
+  if (!isRecord(raw) || raw.ok !== true || typeof raw.changed !== 'boolean' || !isRecord(raw.entry)
+    || typeof raw.entry.entry_id !== 'string' || !ringId.test(raw.entry.entry_id)
+    || raw.entry.store !== store || typeof raw.entry.value !== 'string'
+    || !raw.entry.value.trim() || Array.from(raw.entry.value).length > 300
+    || (entryId !== undefined && (raw.changed
+      ? raw.entry.entry_id === entryId || raw.entry.value !== text.replace(/[\s\u0085\u001c-\u001f]+/gu, ' ').trim()
+        || raw.previous_id !== entryId
+      : raw.entry.entry_id !== entryId))) {
+    throw new ApiError('Invalid saved fact response');
+  }
+  return { changed: raw.changed, entry: {
+    entry_id: raw.entry.entry_id, store, value: raw.entry.value,
+  } };
+}
+
+export async function forgetChatFact(
+  config: ServerConfig, store: FactStore, entryId: string,
+): Promise<{ undoRef: string | null }> {
+  if (store !== 'memory' && store !== 'user'
+    || typeof entryId !== 'string' || !new RegExp(`^memory:${store}:[0-9a-f]{16}$`).test(entryId)) {
+    throw new ApiError('Invalid fact entry ID');
+  }
+  const raw = await request<unknown>(config, 'DELETE',
+    `/api/dashboard/today/entries/${entryId}`, undefined, { admin: true, factWrite: true });
+  if (!isRecord(raw) || raw.ok !== true || raw.deleted !== entryId || raw.store !== store) {
+    throw new ApiError('Invalid forget fact response');
+  }
+  return { undoRef: typeof raw.undo_ref === 'string' && /^[0-9a-f]{16}$/.test(raw.undo_ref)
+    ? raw.undo_ref : null };
+}
+
+export async function undoChatFact(config: ServerConfig, ref: string): Promise<void> {
+  if (typeof ref !== 'string' || !/^[0-9a-f]{16}$/.test(ref)) throw new ApiError('Invalid undo ref');
+  const raw = await request<unknown>(config, 'POST', '/api/memory/core/undo', { ref },
+    { admin: true, factWrite: true });
+  if (!isRecord(raw) || raw.ok !== true || raw.ref !== ref) {
+    throw new ApiError('Invalid undo fact response');
+  }
 }
 
 // ── Knowledge Graph ──────────────────────────────────────────────
@@ -2476,13 +2637,30 @@ export type AgentInfo = {
   status?: string;
   enabled?: boolean;
   model?: string;
+  chat_routing?: 'orchestrated' | 'local' | 'cloud_only' | 'cloud_preferred' | 'claude_preferred' | 'auto' | null;
 };
+
+export function selectableChatAgents(agents: AgentInfo[]): AgentInfo[] {
+  return agents.filter(agent => agent && typeof agent.id === 'string' && !!agent.id && agent.enabled !== false);
+}
+
+export function chatRoutingLabel(policy: AgentInfo['chat_routing']): string {
+  switch (policy) {
+    case 'orchestrated': return 'Orchestrated';
+    case 'local': return 'Local preference (hub setting)';
+    case 'cloud_only': return 'Cloud only';
+    case 'cloud_preferred': return 'Cloud preferred';
+    case 'claude_preferred': return 'Claude preferred';
+    case 'auto': return 'Auto';
+    default: return 'Unknown';
+  }
+}
 
 export async function fetchAgents(config: ServerConfig): Promise<AgentInfo[]> {
   const res = await request<{ agents: AgentInfo[] }>(config, 'GET', '/api/agents', undefined, {
     retries: 2,
   });
-  return res.agents ?? [];
+  return Array.isArray(res.agents) ? res.agents : [];
 }
 
 // ── Sessions ──────────────────────────────────────────────────────
@@ -2513,6 +2691,11 @@ export type HistoryTurn = {
   content: string;
   agent_id?: string | null;
   timestamp?: string;
+  model_calls?: unknown;
+  tool_activity?: unknown;
+  foreign_origin?: unknown;
+  tainted?: unknown;
+  history_source?: unknown;
 };
 
 export async function fetchSessions(config: ServerConfig): Promise<SessionInfo[]> {
@@ -2562,15 +2745,49 @@ export async function fetchSessionsPage(config: ServerConfig, cursor?: string | 
 }
 
 /** Read only the selected session's redacted retained text; never resumes or falls back. */
-export async function fetchSessionTranscript(config: ServerConfig, sessionId: string): Promise<SessionTranscript> {
+export async function fetchSessionTranscript(config: ServerConfig, sessionId: string,
+  references = false): Promise<SessionTranscript> {
   if (!validTranscriptSessionId(sessionId)) throw new ApiError('Invalid session ID');
-  const raw = await request<unknown>(config, 'GET', `/sessions/${encodeURIComponent(sessionId)}/transcript`,
+  const raw = await request<unknown>(config, 'GET', `/sessions/${encodeURIComponent(sessionId)}/transcript${references ? '?references=true' : ''}`,
     undefined, { admin: true });
   try {
-    return projectSessionTranscript(raw, sessionId);
+    return projectSessionTranscript(raw, sessionId, references);
   } catch {
     throw new ApiError('Invalid retained session transcript received from the hub');
   }
+}
+
+/** Search retained owner-readable messages without exposing unlisted response fields. */
+export async function searchSessionMessages(config: ServerConfig, query: string): Promise<SessionMessageSearch> {
+  const text = typeof query === 'string' ? query.trim() : '';
+  if (!text || Array.from(text).length > 256 || text.includes('\0')) throw new ApiError('Invalid search query');
+  let raw: unknown;
+  try {
+    raw = await request<unknown>(config, 'POST', '/sessions/search', { query: text, limit: 20 }, { admin: true });
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      throw new ApiError('Owner sign-in required to search saved messages', error.status);
+    }
+    if (error instanceof ApiError && error.status === 400) throw new ApiError('Search with one to eight terms.', 400);
+    throw new ApiError('Could not search saved messages', error instanceof ApiError ? error.status : undefined);
+  }
+  const invalid = () => new ApiError('Invalid search response');
+  if (!isRecord(raw) || !Array.isArray(raw.hits) || raw.hits.length > 20
+    || typeof raw.truncated !== 'boolean'
+    || !(raw.stopped_by === null || (typeof raw.stopped_by === 'string' && raw.stopped_by.length <= 64))
+    || raw.truncated !== (raw.stopped_by !== null)) throw invalid();
+  const hits = raw.hits.map((hit) => {
+    if (!isRecord(hit) || !validTranscriptSessionId(hit.session_id)
+      || !Number.isSafeInteger(hit.turn) || (hit.turn as number) < 0
+      || (hit.role !== 'user' && hit.role !== 'assistant')
+      || !(hit.timestamp === null || (typeof hit.timestamp === 'string' && hit.timestamp.length <= 1024))
+      || !(hit.agent_id === null || (typeof hit.agent_id === 'string' && hit.agent_id.length <= 1024))
+      || typeof hit.snippet !== 'string' || !hit.snippet
+      || hit.snippet.length > 484 || Array.from(hit.snippet).length > 242) throw invalid();
+    return { session_id: hit.session_id, turn: hit.turn as number, role: hit.role,
+      timestamp: hit.timestamp, agent_id: hit.agent_id, snippet: hit.snippet };
+  });
+  return { hits, truncated: raw.truncated, stopped_by: raw.stopped_by } as SessionMessageSearch;
 }
 
 export async function resumeSession(
@@ -2640,7 +2857,7 @@ export type StreamHandlers = {
   onStart?: (agent: string) => void;
   onToken: (text: string) => void;
   onDone: (full: string, sessionId?: string | null, outcome?: TurnOutcome,
-    transition?: SessionTransition) => void;
+    transition?: SessionTransition, modelCalls?: ModelCall[], historySourceUsed?: boolean) => void;
   onError: (message: string, detail?: StreamErrorDetail) => void;
 };
 
@@ -2683,6 +2900,9 @@ export function streamChat(
   agent: string,
   handlers: StreamHandlers,
   sessionId?: string | null,
+  reasoning?: 'none',
+  excerpts?: VaultExcerpt[],
+  history?: HistoryReference,
 ): () => void {
   const base = normalizeBaseUrl(config.baseUrl);
   if (!base) {
@@ -2691,6 +2911,17 @@ export function streamChat(
   }
   if (sessionId != null && !validSessionId(sessionId)) {
     handlers.onError('Invalid session ID');
+    return () => {};
+  }
+  const attachments = excerpts === undefined ? undefined : validVaultExcerpts(excerpts);
+  if (excerpts !== undefined && (!attachments?.length || message.trimStart().startsWith('/'))) {
+    handlers.onError('Invalid selected vault excerpts');
+    return () => {};
+  }
+  if (history !== undefined && (!validHistoryReference(history) || excerpts !== undefined
+    || message.trimStart().startsWith('/') || !config.adminToken.trim()
+    || (historyRequiresCloudConsent(agent) && !history.allow_cloud))) {
+    handlers.onError('Invalid selected chat source or owner authorization');
     return () => {};
   }
 
@@ -2737,8 +2968,12 @@ export function streamChat(
         const endSessionId = evt.session_id === null ? null : validSessionId(evt.session_id) ? evt.session_id : undefined;
         const outcome = normalizeTurnOutcome(evt.outcome);
         const transition = sessionTransition(evt.session_transition, endSessionId);
+        const calls = modelCalls(evt.model_calls);
         finish(() => {
-          if (transition && outcome) handlers.onDone(evt.text || '', endSessionId, outcome, transition);
+          if (history !== undefined) handlers.onDone(evt.text || '', endSessionId, outcome ?? undefined,
+            transition, calls, 'history_source_used' in evt && evt.history_source_used === true ? true : undefined);
+          else if (calls.length) handlers.onDone(evt.text || '', endSessionId, outcome ?? undefined, transition, calls);
+          else if (transition && outcome) handlers.onDone(evt.text || '', endSessionId, outcome, transition);
           else if (transition) handlers.onDone(evt.text || '', endSessionId, undefined, transition);
           else if (outcome) handlers.onDone(evt.text || '', endSessionId, outcome);
           else handlers.onDone(evt.text || '', endSessionId);
@@ -2756,9 +2991,9 @@ export function streamChat(
   xhr.onreadystatechange = () => {
     if (settled) return;
     if (xhr.readyState >= 3 && xhr.status === 200) {
-      armIdle();
       const text = xhr.responseText;
       if (text.length > consumed) {
+        armIdle();
         handleEvents(text.slice(consumed));
         consumed = text.length;
       }
@@ -2783,7 +3018,17 @@ export function streamChat(
   xhr.onerror = () => finish(() => handlers.onError(`Could not reach ${base} — check the URL and network`));
 
   armIdle();
-  xhr.send(JSON.stringify({ message, agent, ...(validSessionId(sessionId) ? { session_id: sessionId } : {}) }));
+  try {
+    xhr.send(JSON.stringify({ message, agent,
+      ...(validSessionId(sessionId) ? { session_id: sessionId } : {}),
+      ...(reasoning === 'none' && !message.trimStart().startsWith('/') ? { reasoning } : {}),
+      ...(attachments?.length ? { attachments } : {}),
+      ...(history ? { history_reference: { session_id: history.session_id, turn: history.turn,
+        revision: history.revision, excerpt: history.excerpt, allow_cloud: history.allow_cloud } } : {}),
+    }));
+  } catch {
+    finish(() => handlers.onError('Could not start the chat stream'));
+  }
 
   return () => {
     if (settled) return;

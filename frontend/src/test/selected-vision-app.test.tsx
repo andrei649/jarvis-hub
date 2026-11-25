@@ -2,10 +2,19 @@ import React from 'react';
 import {act, cleanup, fireEvent, render, screen, waitFor} from '@testing-library/react';
 import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import App from '../app';
+import {V2} from '../data';
 
 vi.mock('../voice',()=>({useVoice:()=>({active:false,toggle:()=>{}})}));
-vi.mock('../mesh',()=>({NeuralMesh:({onSelect}:any)=><><button onClick={()=>onSelect('frigga')}>Select Frigga</button><button onClick={()=>onSelect('jarvis')}>Select Jarvis</button></>,isExecutingAgent:()=>false}));
-vi.mock('../api/loaders',()=>({loadJarvisData:async()=>({}),createLatestRefreshRunner:()=>({refresh:()=>{},stop:()=>{}})}));
+vi.mock('../mesh',()=>({NeuralMesh:()=>null,isExecutingAgent:()=>false}));
+vi.mock('../api/loaders',()=>({
+  loadJarvisData:async()=>({agents:[
+    {id:'jarvis',name:'Jarvis',rosterSource:'api',enabled:true},
+    {id:'frigga',name:'Frigga',rosterSource:'api',enabled:true},
+  ],ticker:[],tasks:[],calendar:[],heartbeat:[],decisions:[],weather:null,
+    sys:null,live:true,serverUp:true,sources:{agents:true,tasks:false,trust:false},
+    llm:{state:'unknown',model:null,residents:[]},trust:{mic:'on',strict_local:false}}),
+  createLatestRefreshRunner:({loadData,commitData}:any)=>({refresh:async()=>commitData(await loadData()),stop:()=>{}}),
+}));
 vi.mock('../api/live',()=>({PREVIEW_MODE_LIVE_KEYS:{},useLiveModes:()=>({live:{}})}));
 vi.mock('../analytics',()=>({initAnalytics:()=>{},trackPageview:()=>{}}));
 vi.mock('../gap',()=>({FirstRunGate:()=>null}));
@@ -48,8 +57,8 @@ it('rehydrates an empty selected session and sends through its reviewed Ollama r
   await waitFor(()=>expect(requests.some(row=>row.path.endsWith('/selected-prepare'))).toBe(true));
   const prepare=requests.find(row=>row.path.endsWith('/selected-prepare'))!;
   expect(JSON.parse(prepare.body!)).toMatchObject({agent:'jarvis',session_id:'empty_session',image_digests:['00'.repeat(32)]});
-  await waitFor(()=>expect(screen.getByRole('button',{name:/TRANSMIT/}).hasAttribute('disabled')).toBe(false));
-  fireEvent.click(screen.getByRole('button',{name:/TRANSMIT/}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:V2.I18N.en.transmit}).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:V2.I18N.en.transmit}));
   await screen.findByText('Selected image answer');
   expect(JSON.parse(requests.find(row=>row.path.endsWith('/selected-chat'))!.body!)).toMatchObject({agent:'jarvis',session_id:'empty_session',review_token:token});
   expect(requests.some(row=>row.path.endsWith('/composer/describe'))).toBe(false);
@@ -90,16 +99,25 @@ it('uses the selected agent and aborts its image answer when the agent changes',
     return new Response(JSON.stringify({configured:false,revision:'0',preferences:{}}));
   }));
   render(<App/>);
-  fireEvent.click(await screen.findByRole('button',{name:'Select Frigga'}));
+  // the recipient is the composer's To on Home (RecipientPicker, PHASE_B_PLAN.md §5.3)
+  const to=await screen.findByRole('combobox',{name:'To'}) as HTMLSelectElement;
+  fireEvent.change(to,{target:{value:'frigga'}});
+  expect(to.value).toBe('frigga');
   await attach();
   await waitFor(()=>expect(requests.some(row=>row.path.endsWith('/selected-prepare'))).toBe(true));
   expect(JSON.parse(requests.find(row=>row.path.endsWith('/selected-prepare'))!.body!)).toMatchObject({agent:'frigga',session_id:'current_session'});
-  await waitFor(()=>expect(screen.getByRole('button',{name:/TRANSMIT/}).hasAttribute('disabled')).toBe(false));
-  fireEvent.click(screen.getByRole('button',{name:/TRANSMIT/}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:V2.I18N.en.transmit}).hasAttribute('disabled')).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:V2.I18N.en.transmit}));
   await waitFor(()=>expect(releaseChat).toBeTruthy());
-  expect(JSON.parse(requests.find(row=>row.path.endsWith('/selected-chat'))!.body!)).toMatchObject({agent:'frigga',session_id:'current_session'});
-  fireEvent.click(screen.getByRole('button',{name:'Select Jarvis'}));
-  expect(requests.find(row=>row.path.endsWith('/selected-chat'))?.signal?.aborted).toBe(true);
+  const chat=requests.find(row=>row.path.endsWith('/selected-chat'))!;
+  expect(JSON.parse(chat.body!)).toMatchObject({agent:'frigga',session_id:'current_session'});
+  // changing who the owner writes to would stop the image answer, so the picker asks first
+  fireEvent.change(to,{target:{value:'jarvis'}});
+  expect(chat.signal?.aborted).toBe(false);
+  expect(screen.getByRole('alert').textContent).toContain('Writing to Jarvis stops the reply in progress.');
+  fireEvent.click(screen.getByRole('button',{name:'Stop it and write to Jarvis'}));
+  expect(chat.signal?.aborted).toBe(true);
+  expect(to.value).toBe('jarvis');
   await act(async()=>releaseChat(selectedAnswer()));
   expect(screen.queryByText('Selected image answer')).toBeNull();
 });

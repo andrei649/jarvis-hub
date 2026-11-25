@@ -4,17 +4,19 @@ import { Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { useThemeStyles, type Theme } from '../theme';
 import { parseMarkdown, type Block, type Inline } from './parse';
 
+const LinksEnabled = React.createContext(true);
+
 /** Render assistant Markdown to React Native nodes. */
-export function Markdown({ text, color }: { text: string; color?: string }) {
-  const { theme, styles } = useThemeStyles(makeStyles);
+export function Markdown({ text, color, interactiveLinks = true }: { text: string; color?: string; interactiveLinks?: boolean }) {
+  const { theme } = useThemeStyles(makeStyles);
   const blocks = React.useMemo(() => parseMarkdown(text), [text]);
   const base = color ?? theme.text;
   return (
-    <View>
+    <LinksEnabled.Provider value={interactiveLinks}><View>
       {blocks.map((block, i) => (
         <BlockView key={i} block={block} color={base} />
       ))}
-    </View>
+    </View></LinksEnabled.Provider>
   );
 }
 
@@ -85,6 +87,7 @@ function InlineRun({ nodes, color }: { nodes: Inline[]; color: string }) {
 
 function InlineNode({ node, color }: { node: Inline; color: string }) {
   const { theme, styles } = useThemeStyles(makeStyles);
+  const linksEnabled = React.useContext(LinksEnabled);
   switch (node.type) {
     case 'text':
       return <Text style={{ color }}>{node.text}</Text>;
@@ -103,6 +106,7 @@ function InlineNode({ node, color }: { node: Inline; color: string }) {
     case 'code':
       return <Text style={styles.inlineCode}>{node.text}</Text>;
     case 'link':
+      if (!linksEnabled) return <Text style={{ color }}>{node.text}</Text>;
       return (
         <Text style={styles.link} onPress={() => void Linking.openURL(node.href).catch(() => {})}>
           {node.text}

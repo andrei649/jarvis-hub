@@ -1,0 +1,161 @@
+/* ==========================================================================
+   Nerva · "Briefing" direction · tokens
+   One token set, two editions. Day (light) is the default; Night (dark) is designed,
+   not inverted: the paper goes near-neutral dark, the ink becomes warm paper-white,
+   and the marker stops being a wash behind words and becomes a lamp-lit accent.
+
+   Selection:  <html data-theme="light|dark">  (set before first paint by each page).
+   Colour is authored in OKLCH. Every text pair below clears WCAG AA (4.5:1) on every
+   surface it is allowed on. Ratios in the comments were measured in the browser (the token
+   painted to a canvas, read back as sRGB) against --nv-paper; the table is in README §2.
+
+   Naming is role-first so the HUD (styles.css, 29 flat tokens) and the Workspace kit
+   (50 --ws-* tokens) can both converge on it:
+     --nv-paper* = --ws-bg / --ws-surface / --ws-surface-2      --nv-ink*  = --ws-text*
+     --nv-rule*  = --ws-border / --ws-border-strong / --ws-input-border
+     --nv-mark*  = --ws-accent / --ws-accent-soft               --nv-problem* = --ws-danger*
+     --nv-s-*    = --ws-s1..s12 (same 4/8px grid)               --nv-r-*   = --ws radii
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Surfaces: paper. Opaque, always. ------------------------------------------- */
+  --nv-paper:    oklch(0.985 0.003 95);   /* the sheet                                  */
+  --nv-paper-2:  oklch(0.965 0.004 95);   /* quiet fill: inputs, table bands, kbd       */
+  --nv-paper-3:  oklch(0.940 0.005 95);   /* hover / pressed                            */
+  --nv-raised:   oklch(1 0 0);            /* transient layers only: palette, popover    */
+
+  /* ---- Ink: text and structure -------------------------------------------------------- */
+  --nv-ink:      oklch(0.210 0.012 265);  /* #16181E text, heavy rules, primary 17.0:1  */
+  --nv-ink-2:    oklch(0.400 0.012 265);  /* #44484E secondary text              8.8:1  */
+  --nv-ink-3:    oklch(0.500 0.010 265);  /* #606369 meta, the dimmest text      5.8:1  */
+  --nv-on-ink:   oklch(0.985 0.003 95);   /* text on an ink fill                        */
+  --nv-fill:     var(--nv-ink);           /* solid fill: primary action, top-tier chip  */
+  --nv-rule-heavy: var(--nv-ink);         /* the 3px rule that opens a section          */
+
+  /* ---- Rules: structure is drawn with lines, not boxes --------------------------------- */
+  --nv-rule:     oklch(0.885 0.004 265);  /* hairline between items                     */
+  --nv-rule-2:   oklch(0.780 0.006 265);  /* column rule, stronger hairline             */
+  --nv-rule-3:   oklch(0.600 0.008 265);  /* control border (3.8:1 — a UI boundary)     */
+
+  /* ---- The marker: the one accent. Meaning: "this is yours" / attention ---------------- */
+  --nv-mark:       oklch(0.905 0.170 98);   /* fill behind ink: numerals, flags          */
+  --nv-mark-wash:  oklch(0.955 0.085 98);   /* highlighter behind a phrase or a live row */
+  --nv-on-mark:    oklch(0.210 0.012 265);  /* ink on the marker                 13.5:1  */
+  --nv-mark-text:  oklch(0.470 0.100 85);   /* marker as a text colour (rare)     6.6:1  */
+  /* a highlighted phrase: by day a wash behind ink; by night gold words on a gold line */
+  --nv-hl-bg:      var(--nv-mark-wash);
+  --nv-hl-ink:     inherit;
+  --nv-hl-line:    transparent;
+  --nv-sign-edge:  var(--nv-ink);           /* the edge of the field you sign in         */
+  /* the flag: a numeral or word marked "yours" (decision numbers, refs, the Work badge,
+     the verdict word). By day a solid marker; by night a lit outline that emits less light. */
+  --nv-flag-bg:    var(--nv-mark);
+  --nv-flag-ink:   var(--nv-on-mark);
+  --nv-flag-edge:  transparent;
+
+  /* ---- Problem: red is not an ink, it is an alarm --------------------------------------- */
+  --nv-problem:      oklch(0.520 0.200 27);  /* text, icon, stop border            5.9:1  */
+  --nv-problem-wash: oklch(0.955 0.030 27);
+  --nv-on-problem:   oklch(0.985 0.003 95);
+
+  /* ---- Status roles (always paired with a shape and a word) ---------------------------- */
+  --nv-ok:        var(--nv-ink);        /* ok is quiet: ink and a check, never green     */
+  --nv-attention: var(--nv-mark);       /* triangle                                      */
+  --nv-unknown:   var(--nv-ink-3);      /* dashed ring — never drawn as a reading        */
+  --nv-stale:     var(--nv-ink-3);      /* clock, struck value                           */
+
+  --nv-focus:     var(--nv-ink);        /* 2px ring, 2px offset, on every control        */
+  --nv-shadow-pop: 0 1px 0 oklch(0.21 0.012 265 / 0.06), 0 14px 36px -10px oklch(0.21 0.012 265 / 0.22);
+
+  /* ---- Type ---------------------------------------------------------------------------- */
+  /* Voice — a screen serif with optical sizes. Rendered with Sitka; production: Literata.   */
+  --nv-font-display: "Sitka Banner", "Sitka Display", "Literata", Georgia, serif;
+  --nv-font-deck:    "Sitka Display", "Sitka Heading", "Literata", Georgia, serif;
+  --nv-font-heading: "Sitka Heading", "Sitka Subheading", "Literata", Georgia, serif;
+  --nv-font-title:   "Sitka Subheading", "Sitka Heading", "Literata", Georgia, serif;
+  --nv-font-text:    "Sitka Text", "Literata", Georgia, serif;
+  /* Instrument — a humanist sans. Rendered with Segoe UI Variable; production: Source Sans 3. */
+  --nv-font-ui:      "Segoe UI Variable Text", "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --nv-font-ui-sm:   "Segoe UI Variable Small", "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  /* Machine — identifiers, addresses, hashes, code. Nothing else.                            */
+  --nv-font-mono:    "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+
+  --nv-t-headline: 46px;   /* the day in one sentence            display 700, lh 1.06 */
+  --nv-t-deck:     22px;   /* the sentence after it              deck italic 400      */
+  --nv-t-lead:     27px;   /* the lead item                      heading 700          */
+  --nv-t-section:  20px;   /* section heads                      heading 600          */
+  --nv-t-title:    18px;   /* an item                            title 600            */
+  --nv-t-read:     16px;   /* replies — the longest reading      text 400, lh 1.5     */
+  --nv-t-body:     14.5px; /* brief sentences                    text 400, lh 1.45    */
+  --nv-t-ui:       13.5px; /* controls, table cells              ui 400/600           */
+  --nv-t-meta:     12.5px; /* bylines, times, captions           ui-sm 400/600        */
+  --nv-t-mono:     12.5px; /* identifiers                        mono 400             */
+  --nv-t-floor:    12px;   /* nothing on any screen is smaller                        */
+
+  --nv-lh-tight: 1.08;
+  --nv-lh-snug:  1.25;
+  --nv-lh-body:  1.45;
+  --nv-lh-read:  1.5;
+
+  /* ---- Space: 4px base, 8px rhythm ------------------------------------------------------ */
+  --nv-s-1: 4px;   --nv-s-2: 8px;   --nv-s-3: 12px;  --nv-s-4: 16px;
+  --nv-s-5: 20px;  --nv-s-6: 24px;  --nv-s-8: 32px;  --nv-s-10: 40px;  --nv-s-12: 48px;
+
+  /* ---- Shape ---------------------------------------------------------------------------- */
+  --nv-r-1: 2px;   /* marks, chips, kbd            */
+  --nv-r-2: 4px;   /* buttons, inputs              */
+  --nv-r-3: 8px;   /* composer, popovers, palette  */
+  --nv-rule-hair: 1px;
+  --nv-rule-bold: 3px;  /* opens a section; also the weight of the top risk tier */
+  --nv-control-h: 30px;
+  --nv-control-h-lg: 34px;
+
+  /* ---- Motion: still by default --------------------------------------------------------- */
+  --nv-dur: 160ms;
+  --nv-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ---- Night edition ------------------------------------------------------------------------ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --nv-paper:    oklch(0.190 0.006 265);
+  --nv-paper-2:  oklch(0.225 0.007 265);
+  --nv-paper-3:  oklch(0.265 0.008 265);
+  --nv-raised:   oklch(0.245 0.008 265);
+
+  --nv-ink:      oklch(0.935 0.008 95);   /* #EBE9E4  15.2:1 (measured on paper) */
+  --nv-ink-2:    oklch(0.790 0.008 95);   /* #BCBBB5   9.6:1 */
+  --nv-ink-3:    oklch(0.690 0.008 95);   /* #9D9B96   6.6:1 */
+  --nv-on-ink:   oklch(0.190 0.006 265);
+  --nv-fill:     oklch(0.870 0.008 95);   /* a touch under the text white: buttons must not out-glare the headline */
+  --nv-rule-heavy: oklch(0.800 0.008 95); /* structure a step quieter than the words    */
+
+  --nv-rule:     oklch(0.295 0.007 265);
+  --nv-rule-2:   oklch(0.375 0.008 265);
+  --nv-rule-3:   oklch(0.530 0.008 265);
+
+  --nv-mark:       oklch(0.860 0.155 95);
+  --nv-mark-wash:  oklch(0.330 0.055 95);
+  --nv-on-mark:    oklch(0.190 0.006 265);
+  --nv-mark-text:  oklch(0.860 0.155 95);
+  --nv-hl-bg:      transparent;
+  --nv-hl-ink:     var(--nv-mark-text);
+  --nv-hl-line:    var(--nv-mark);
+  --nv-sign-edge:  var(--nv-mark);
+  --nv-flag-bg:    oklch(0.300 0.050 95);   /* a dark gold ground: the lamp, not the bulb */
+  --nv-flag-ink:   var(--nv-mark);          /* 8:1 on the ground                         */
+  --nv-flag-edge:  oklch(0.700 0.120 95);
+
+  --nv-problem:      oklch(0.740 0.155 27);
+  --nv-problem-wash: oklch(0.290 0.060 27);
+  --nv-on-problem:   oklch(0.190 0.006 265);
+
+  --nv-shadow-pop: 0 0 0 1px oklch(0.37 0.008 265), 0 18px 40px -12px oklch(0 0 0 / 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --nv-dur: 0ms; }
+}

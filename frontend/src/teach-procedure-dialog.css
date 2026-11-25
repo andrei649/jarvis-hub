@@ -1,0 +1,2 @@
+.teach-procedure-dialog :is(input, textarea) { box-sizing: border-box; }
+.teach-procedure-dialog a { color: var(--accent-light); overflow-wrap: anywhere; }

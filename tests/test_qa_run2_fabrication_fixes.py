@@ -167,3 +167,14 @@ def test_language_mirroring_is_a_shared_rail_not_a_persona_line():
     assert src.count("self._language_block()") >= 2, (
         "the language rail is defined but not wired into every runtime_block assembly"
     )
+
+
+def test_ordinary_language_rail_follows_explicit_output_requests_before_mirroring():
+    """A quoted passage or attachment cannot select the reply's language."""
+    from agents.core.orchestrator import Orchestrator
+
+    rail = Orchestrator.__new__(Orchestrator)._language_block().lower()
+    for term in ("explicit", "reply", "draft", "current", "quoted", "attachment"):
+        assert term in rail, f"ordinary-turn language rail lacks {term!r}"
+    assert "persona" in rail, "a persona's default language cannot override the owner's named target"
+    assert "otherwise" in rail, "mirroring must be the fallback after an explicit request"

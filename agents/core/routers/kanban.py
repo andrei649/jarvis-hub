@@ -6,6 +6,7 @@ import asyncio
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.websockets import WebSocketDisconnect
 
@@ -14,13 +15,14 @@ from agents.core.commands import Principal
 from agents.core.env_config import env_str
 from agents.core.host_policy import allowed_hosts, host_accepted
 from agents.core.kanban import dashboard_api
+from agents.core.kanban.chat_sources import BoardReference
 from agents.core.kanban.cli import execute_command
 from agents.core.kanban.cli_upstream.board_selection import selected_board
 from agents.core.kanban.context import KanbanContext, kanban_scope
 from agents.core.kanban.projects_cli import execute_command as execute_project_command
 from agents.core.paths import data_path
 
-from ._deps import admin_guard
+from ._deps import admin_guard, owner_web_principal
 
 router = APIRouter(tags=["kanban"])
 
@@ -30,12 +32,21 @@ def _enabled():
     return orch is not None and orch.get_setting("llm.kanban", False) is True
 
 
-async def owner_scope():
+def _owner_context(*, mutate: bool):
     if not _enabled():
         raise HTTPException(503, "Kanban is disabled (llm.kanban)")
     home = data_path("kanban")
-    with kanban_scope(KanbanContext(home, "owner", board=selected_board(home), can_mutate=True)):
+    return KanbanContext(home, "owner", board=selected_board(home), can_mutate=mutate)
+
+
+async def owner_scope():
+    with kanban_scope(_owner_context(mutate=True)):
         yield
+
+
+def reviewed_chat_sources(references):
+    with kanban_scope(_owner_context(mutate=False)):
+        return dashboard_api.verify_chat_sources(references)
 
 
 http_router = APIRouter(prefix="/api/kanban", dependencies=[Depends(admin_guard), Depends(owner_scope)])
@@ -66,6 +77,32 @@ async def project_command(body: CommandBody):
 
 
 router.include_router(http_router)
+
+
+class BoardNotePreviewBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    references: list[BoardReference] = Field(min_length=1, max_length=8)
+
+
+def _board_note_preview(references: list[BoardReference]):
+    with kanban_scope(_owner_context(mutate=False)):
+        return dashboard_api.preview_board_note(references)
+
+
+@router.post("/api/kanban/board-note/preview", dependencies=[Depends(owner_web_principal)])
+async def board_note_preview(body: BoardNotePreviewBody):
+    from agents.core import context_refs
+
+    if len({(ref.board, ref.task_id) for ref in body.references}) != len(body.references):
+        raise HTTPException(422, "duplicate_board_reference")
+    try:
+        sizes = [len(ref.excerpt.encode("utf-8")) for ref in body.references]
+    except UnicodeEncodeError as exc:
+        raise HTTPException(422, "invalid_board_reference") from exc
+    if max(sizes) > context_refs.MAX_REF_BYTES or sum(sizes) > context_refs.MAX_TOTAL_BYTES:
+        raise HTTPException(413, "board_reference_attachment_limit")
+    draft = await asyncio.to_thread(_board_note_preview, body.references)
+    return JSONResponse(draft, headers={"Cache-Control": "no-store"})
 
 
 def _upgrade_request(ws: WebSocket) -> tuple[Request, str | None]:

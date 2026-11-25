@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPost } from '../api/client';
 import { Card } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 type BrokerSession = {
   session_id: string;
@@ -155,7 +156,7 @@ export function BrowserBrokerPanel() {
       sub={sessions.length}
       onReload={refresh}
     >
-      <div style={{ fontSize: 11, color: 'var(--ink-2)', marginBottom: 8 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 8 }}>
         principal: <code>{snap?.principal_id || 'owner'}</code> · sessions: {sessions.length} · artifacts: {artifacts.length}
       </div>
 
@@ -181,7 +182,7 @@ export function BrowserBrokerPanel() {
             gap: 8,
             padding: '4px 0',
             borderBottom: '1px solid var(--panel-line)',
-            fontSize: 11,
+            fontSize: 'var(--n-fs-meta)',
           }}
         >
           <button
@@ -253,9 +254,9 @@ export function BrowserBrokerPanel() {
 
       {commands.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 4 }}>RECENT COMMANDS</div>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>RECENT COMMANDS</div>
           {commands.map((c) => (
-            <div key={c.command_id} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, marginBottom: 3 }}>
+            <div key={c.command_id} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--n-fs-meta)', marginBottom: 3 }}>
               <code>{c.command_id}</code>
               <span>{c.action} · {c.status}</span>
               <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => inspectCommand(c.command_id)}>
@@ -268,9 +269,9 @@ export function BrowserBrokerPanel() {
 
       {artifacts.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 4 }}>ARTIFACTS</div>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>ARTIFACTS</div>
           {artifacts.map((a) => (
-            <div key={a.artifact_id} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, marginBottom: 3 }}>
+            <div key={a.artifact_id} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--n-fs-meta)', marginBottom: 3 }}>
               <code>{a.filename}</code>
               <span>{a.uploaded ? `${a.size_bytes} B` : 'awaiting upload'}</span>
               {a.uploaded && (
@@ -284,13 +285,13 @@ export function BrowserBrokerPanel() {
       )}
 
       {issuedSecret && (
-        <pre style={{ fontSize: 10, padding: 6, marginTop: 8, overflowX: 'auto' }}>{issuedSecret}</pre>
+        <pre style={{ fontSize: 'var(--n-fs-meta)', padding: 6, marginTop: 8, overflowX: 'auto' }}>{issuedSecret}</pre>
       )}
       {commandDetail && (
-        <pre style={{ fontSize: 10, padding: 6, marginTop: 6, overflowX: 'auto' }}>{commandDetail}</pre>
+        <pre style={{ fontSize: 'var(--n-fs-meta)', padding: 6, marginTop: 6, overflowX: 'auto' }}>{commandDetail}</pre>
       )}
       {statusNote && (
-        <div style={{ fontSize: 11, color: 'var(--accent-light)', marginTop: 6 }}>{statusNote}</div>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{statusNote}</div>
       )}
     </Card>
   );

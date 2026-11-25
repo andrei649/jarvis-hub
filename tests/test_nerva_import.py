@@ -28,6 +28,7 @@ from agents.core.skills.importer import (  # noqa: E402
     SkillImporter,
     detect_sources,
 )
+from tests.private_file_permissions import assert_private_file  # noqa: E402
 
 
 def _load_script():
@@ -203,6 +204,117 @@ class FakeSecretStore:
 
 def _hermes(home) -> DetectedSource:
     return detect_sources(home, only="hermes")[0]
+
+
+def test_cleanup_archives_exact_private_bytes_and_keeps_unrelated_files(home, tmp_path):
+    source = _hermes(home)
+    skill = source.skill_dirs[0]
+    (skill / "assets").mkdir()
+    (skill / "assets" / "model.bin").write_bytes(b"\x00\xff\x80payload")
+    (skill / "unused").mkdir()
+    unrelated = source.root / "sessions.json"
+    unrelated.write_bytes(b'{"keep":true}\n')
+    originals = {
+        path.relative_to(source.root): path.read_bytes()
+        for path in (*source.persona_files, *source.memory_files, *source.token_files, *skill.rglob("*"))
+        if path.is_file()
+    }
+
+    report = ni.cleanup_source(source, dry_run=False, confirm=True, archive_dir=tmp_path / "backups")
+
+    assert report["ok"] is True
+    archive = Path(report["archive_dir"])
+    assert (archive / skill.relative_to(source.root) / "unused").is_dir()
+    for relative, content in originals.items():
+        archived = archive / relative
+        assert archived.read_bytes() == content
+        assert_private_file(archived)
+        assert not (source.root / relative).exists()
+    assert unrelated.read_bytes() == b'{"keep":true}\n'
+
+
+def test_cleanup_failed_backup_preserves_every_original_and_retry_succeeds(home, tmp_path, monkeypatch):
+    source = _hermes(home)
+    original = _snapshot(source.root)
+    copy = ni._copy_file_restricted
+    calls = 0
+
+    def fail_second_copy(src, dst):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("simulated backup write failure")
+        copy(src, dst)
+
+    monkeypatch.setattr(ni, "_copy_file_restricted", fail_second_copy)
+    failed = ni.cleanup_source(source, dry_run=False, confirm=True, archive_dir=tmp_path / "backups")
+    assert failed["ok"] is False and failed["reason"] == "archive_failed"
+    assert _snapshot(source.root) == original
+
+    monkeypatch.setattr(ni, "_copy_file_restricted", copy)
+    retried = ni.cleanup_source(source, dry_run=False, confirm=True, archive_dir=tmp_path / "backups")
+    assert retried["ok"] is True
+    archive = Path(retried["archive_dir"])
+    for relative, content in original.items():
+        assert (archive / relative).read_bytes() == content
+        assert not (source.root / relative).exists()
+
+
+def test_cleanup_preserves_an_edit_made_while_archiving(home, tmp_path, monkeypatch):
+    source = _hermes(home)
+    expected = _snapshot(source.root)
+    edited = source.persona_files[0]
+    copy = ni._copy_file_restricted
+
+    def copy_then_edit(src, dst):
+        copy(src, dst)
+        if src == edited:
+            edited.write_bytes(b"owner edit while archiving")
+
+    monkeypatch.setattr(ni, "_copy_file_restricted", copy_then_edit)
+    report = ni.cleanup_source(source, dry_run=False, confirm=True, archive_dir=tmp_path / "backups")
+    assert report["ok"] is False and report["reason"] == "source_changed"
+    expected[str(edited.relative_to(source.root))] = edited.read_bytes()
+    assert _snapshot(source.root) == expected
+
+
+def test_cleanup_preview_refuses_archive_inside_selected_skill(home):
+    source = _hermes(home)
+    archive = source.skill_dirs[0] / "backup"
+    before = _snapshot(source.root)
+    for dry in (True, False):
+        report = ni.cleanup_source(source, dry_run=dry, confirm=True, archive_dir=archive)
+        assert report["ok"] is False
+        assert any(item.get("reason") == "archive_inside_source" for item in report["items"])
+    assert not archive.exists()
+    assert _snapshot(source.root) == before
+
+
+def test_cleanup_same_process_and_clock_never_overwrites_previous_archive(tmp_path, monkeypatch):
+    root = tmp_path / ".hermes"
+    root.mkdir()
+    persona = root / "SOUL.md"
+    source = DetectedSource(source="hermes", root=root, persona_files=(persona,))
+    fixed = ni.datetime.now(ni.UTC)
+
+    class FrozenClock:
+        @staticmethod
+        def now(_tz):
+            return fixed
+
+    monkeypatch.setattr(ni, "datetime", FrozenClock)
+    persona.write_bytes(b"first version")
+    first = ni.cleanup_source(source, dry_run=False, confirm=True, archive_dir=tmp_path / "backups")
+    first_archive = Path(first["archive_dir"])
+    assert (first_archive / "SOUL.md").read_bytes() == b"first version"
+
+    persona.write_bytes(b"second version")
+    second = ni.cleanup_source(source, dry_run=False, confirm=True, archive_dir=tmp_path / "backups")
+    second_archive = Path(second["archive_dir"])
+    assert first["ok"] is True and second["ok"] is True
+    assert first_archive != second_archive
+    assert (first_archive / "SOUL.md").read_bytes() == b"first version"
+    assert (second_archive / "SOUL.md").read_bytes() == b"second version"
 
 
 # ── detection ─────────────────────────────────────────────────────

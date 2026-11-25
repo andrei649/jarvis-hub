@@ -208,8 +208,16 @@ def browser_rig(tmp_path, monkeypatch, local_page):
         queue.close()
 
 
-async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(browser_rig):
+async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(browser_rig, monkeypatch):
     rig = browser_rig
+    records = []
+    write = rig.runtime.journal.write
+
+    def record_write(sid, record):
+        write(sid, record)
+        records.append(rig.runtime.journal.read(rig.runtime.journal._file(sid)))
+
+    monkeypatch.setattr(rig.runtime.journal, 'write', record_write)
     assert rig.orch.tool_rpc.allows('browser_run')
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=rig.web.app),
                                  base_url='http://testserver',
@@ -246,6 +254,10 @@ async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(brows
     assert rig.runtime.last_profile.name.startswith('nerva-browser-')
     assert not rig.runtime.last_profile.exists()
     assert rig.runtime.last_browser_identity is not None
+    assert len(records) == 2 and records[0]['native'] is None
+    assert records[0]['profile_identity'] == records[1]['profile_identity']
+    assert records[0]['profile_identity'] and records[1]['native'] == list(rig.runtime.last_browser_identity)
+    assert rig.runtime.journal.entries() == []
     assert not browser_identity_alive(rig.runtime.last_browser_identity)
     assert browser_processes_for_profile(rig.runtime.last_profile) == []
 
@@ -859,11 +871,13 @@ async def test_orphan_journal_reaps_only_exact_native_chrome_after_controller_ex
 import json, os, psutil, subprocess, sys, tempfile
 from pathlib import Path
 from agents.core.browser_session import BrowserOwnershipJournal
+from agents.core.browser_profile import create_owned_profile
 chrome, root, sid = sys.argv[1:]
-profile = Path(tempfile.mkdtemp(prefix='nerva-browser-orphan-'))
+profile, profile_identity = create_owned_profile()
 journal = BrowserOwnershipJournal(Path(root))
 controller = psutil.Process(os.getpid())
-record = {'profile': str(profile), 'controller': [controller.pid, controller.create_time()],
+record = {'profile': str(profile), 'profile_identity': profile_identity,
+    'controller': [controller.pid, controller.create_time()],
     'owner_process': [controller.pid, controller.create_time()], 'native': None}
 journal.write(sid, record)
 proc = subprocess.Popen([chrome, '--headless=new', '--no-sandbox', '--no-first-run',
@@ -919,11 +933,12 @@ async def test_orphan_reap_sweeps_a_detached_helper_still_writing_under_the_prof
     if not chrome:
         pytest.skip('installed local Chrome required')
 
+    from agents.core.browser_profile import create_owned_profile
     from agents.core.browser_session import BrowserOwnershipJournal
 
     journal = BrowserOwnershipJournal(tmp_path / 'journal')
     sid = 'e' * 32
-    profile = Path(tempfile.mkdtemp(prefix='nerva-browser-orphan-'))
+    profile, profile_identity = create_owned_profile()
     native_proc = subprocess.Popen([chrome, '--headless=new', '--no-sandbox', '--no-first-run',
         '--no-default-browser-check', '--disable-background-networking', '--no-proxy-server',
         '--host-resolver-rules=MAP * ~NOTFOUND', '--remote-debugging-port=0',
@@ -939,11 +954,16 @@ async def test_orphan_reap_sweeps_a_detached_helper_still_writing_under_the_prof
                   for n in ('chrome', 'chromium')):
         assert asyncio.get_running_loop().time() < deadline, 'chrome never exec()ed'
         await asyncio.sleep(0.05)
-    journal.write(sid, {'profile': str(profile),
+    journal.write(sid, {'profile': str(profile), 'profile_identity': profile_identity,
         'controller': [gone.pid, gone.create_time() - 1000.0],
         'owner_process': [gone.pid, gone.create_time() - 1000.0],
         'native': [native.pid, native.create_time()]})
     try:
+        if os.name == 'nt':
+            assert await journal.reap_entry(journal._file(sid)) is False
+            assert helper.poll() is None and journal._file(sid).exists()
+            helper.terminate()
+            helper.wait(timeout=10)
         assert await journal.reap_entry(journal._file(sid)) is True
         assert helper.wait(timeout=10) is not None
         assert not Path(profile).exists()

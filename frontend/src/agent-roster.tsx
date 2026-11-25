@@ -19,9 +19,12 @@ import React, { useEffect, useState } from 'react';
 import { apiGet, apiPost, getAdminToken } from './api/client';
 import { ConfirmAction, RISK_TIER } from './confirm';
 import { refusalText } from './soul-edit';
+import { LABEL, MONO } from './theme/type';
 
 const TIERS = ['command', 'business', 'tech', 'foundation'];
-const field = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, fontFamily: 'var(--font-mono)', fontSize: 11 };
+/* A name, a template, a tier: words, in the interface face (named, because a select does not
+   inherit its font in Classic). The agent id field adds MONO: an id is an identifier. */
+const field = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, fontFamily: 'var(--n-font-ui)', fontSize: 'var(--n-fs-meta)' };
 
 /** The hub's refusal of a roster change, in words. */
 export function rosterRefusal(err: any): string {
@@ -75,13 +78,13 @@ export function NewAgentDialog({ onCreated, onCancel }: { onCreated: (agent: any
   };
   return (
     <div role="dialog" aria-label="New agent" className="agent-dialog" style={{ border: '1px solid var(--panel-line)', borderRadius: 4, padding: 8, margin: '8px 0', display: 'grid', gap: 6 }}>
-      <div style={{ fontSize: 10, letterSpacing: '.14em', color: 'var(--ink-2)' }}>NEW AGENT · kept across restarts · no plugins or schedule granted</div>
+      <div style={{ ...LABEL, textTransform: 'none', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>NEW AGENT · kept across restarts · no plugins or schedule granted</div>
       <input aria-label="Agent name" value={name} onChange={(ev) => setName(ev.target.value)} placeholder="name" maxLength={64} style={field} />
       <select aria-label="Template" value={template} onChange={(ev) => setTemplate(ev.target.value)} style={field}>
         <option value="blank">blank — an empty persona to fill in</option>
         {templates.map((tp) => <option key={tp.key} value={tp.key}>{tp.key} — {tp.role}</option>)}
       </select>
-      <input aria-label="Agent id" value={agentId} onChange={(ev) => setAgentId(ev.target.value)} placeholder="id (optional; from the name)" maxLength={64} style={field} />
+      <input aria-label="Agent id" value={agentId} onChange={(ev) => setAgentId(ev.target.value)} placeholder="id (optional; from the name)" maxLength={64} style={{ ...field, ...MONO }} />
       <select aria-label="Tier" value={tier} onChange={(ev) => setTier(ev.target.value)} style={field}>
         <option value="">tier: the template's</option>
         {TIERS.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -90,7 +93,7 @@ export function NewAgentDialog({ onCreated, onCancel }: { onCreated: (agent: any
         <button className="tool-btn" onClick={create} disabled={busy || !name.trim()}>Create</button>
         <button className="tool-btn" onClick={onCancel}>Cancel</button>
       </div>
-      {error && <div role="alert" style={{ fontSize: 10, color: 'var(--amber)' }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>{error}</div>}
     </div>
   );
 }
@@ -139,8 +142,8 @@ export function AgentProfileControls({ id, name, onRenamed, onRetired }: {
         <button className="tool-btn" onClick={rename} disabled={busy || !draft.trim()}>Save name</button>
         <button className="tool-btn" onClick={() => setRenaming(false)}>Cancel</button>
       </div>}
-      {note && <div role="status" style={{ fontSize: 10, color: 'var(--green)', marginTop: 4 }}>{note}</div>}
-      {error && <div role="alert" style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>{error}</div>}
+      {note && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)', marginTop: 4 }}>{note}</div>}
+      {error && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>{error}</div>}
     </div>
   );
 }
@@ -175,9 +178,9 @@ export function RetiredAgents({ refresh = 0, onRestored }: { refresh?: number; o
   return (
     <div className="tier-group" aria-label="Retired agents">
       <div className="tier-head"><span className="tier-tag">RET</span><span className="tier-lab">Retired · nothing deleted</span></div>
-      {error && <div role="alert" style={{ fontSize: 10, color: 'var(--amber)' }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>{error}</div>}
       {(rows || []).map((a) => (
-        <div key={a.id} className="retired-row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+        <div key={a.id} className="retired-row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 'var(--n-fs-meta)' }}>
           <span>{a.name}</span><span style={{ color: 'var(--ink-2)' }}>{a.id}{a.reason ? ' · ' + a.reason : ''}</span>
           <button className="tool-btn" style={{ marginLeft: 'auto' }} aria-label={`Restore ${a.name}`} onClick={() => restore(a.id)}>Restore</button>
         </div>

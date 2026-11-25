@@ -1,11 +1,15 @@
 import React, { useState as uS3, useEffect as uE3 } from 'react';
-import { V2, Conversation, InputBar } from './ui';
+import { V2 } from './ui';
 import { Icon as Ic3, ICONS as IK3, Glyph as Gl3, statusClass as sc3 } from './ui';
 import { queueChannelReply, togglePlugin, getEstopStatus, engageEstop, resumeEstop } from './api/actions';
 import { RoomsPanel } from './gap';
 import { ConfirmAction, RISK_TIER } from './confirm';
 import { HermesRuntimePanel } from './hermes-runtime-panel';
-/* HUD v2 · MODES III — Chat (focus), Comms, Admin */
+import { LABEL } from './theme/type';
+import { PageSection } from './pages/PageSection';
+
+/* HUD v2 · MODES III — Comms, Admin. (Chat · distraction-free, ChatMode, was deleted at the Phase B
+   cleanup: /v2/chat is home/ChatPage.tsx, the conversation register at full width.) */
 
 function SubH3({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
 
@@ -13,30 +17,18 @@ function SubH3({ children, style }: { children?: any; style?: any }){ return <di
  * this cycle (keys/backups/channels/host have no seed fallback any more). */
 function NotConnected({ what }: { what?: string }){
   return (
-    <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-2)', padding:'3px 0' }}>
+    <div style={{ fontSize:'var(--n-fs-meta)', color:'var(--ink-2)', padding:'3px 0' }}>
       not connected{what ? ` · ${what}` : ''}
     </div>
   );
 }
 
-/* ============ CHAT · distraction-free ============ */
-function ChatMode({ messages, thinking, onStop, onSubmit, onProv, mic, setMic, lang, t, agent, sessionId, selectedTurn, outcome, power }: any){
-  return (
-    <div className="chat-wrap" style={{ height:'100%', maxHeight:'100%', minHeight:0 }}>
-      <div className="chat-col" style={{ height:'100%', maxHeight:'100%', minHeight:0 }}>
-        <div className="chat-head">
-          <span className="chat-glyph"><Gl3 id="jarvis" size={20}/></span>
-          <div><div className="chat-title">{t.directLine} · NERVA</div><div className="chat-sub">{t.focusHintChat}</div></div>
-          <span className="chat-live"><span className="sdot active"></span>local</span>
-        </div>
-        <Conversation messages={messages} thinking={thinking} onStop={onStop} onProv={onProv} lang={lang} t={t}/>
-        <InputBar onSubmit={onSubmit} mic={mic} setMic={setMic} t={t} agent={agent} sessionId={sessionId} selectedTurn={selectedTurn} outcome={outcome} power={power}/>
-      </div>
-    </div>
-  );
+/* ============ COMMS · unified inbox ============ */
+/** The section body is a plain scroller, so the list and the reader get their own grid. */
+function CommsGrid({ children }: { children: React.ReactNode }) {
+  return <div className="comms-body">{children}</div>;
 }
 
-/* ============ COMMS · unified inbox ============ */
 function CommsMode({ t }){
   const C = V2.COMMS;
   const [filter,setFilter]=uS3('all');
@@ -62,10 +54,8 @@ function CommsMode({ t }){
       .catch(() => setReplyState('queue failed'));
   };
   return (
-    <div className="panel scroll" style={{flex:1}}>
-      <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Ic3 d={IK3.comms} size={14}/><span className="ttl">{t.inbox}</span><span className="st">{C.threads.filter(x=>x.unread).length} unread</span></div>
-      <div className="comms-body">
+    <PageSection title={t.inbox} meta={<>{C.threads.filter(x=>x.unread).length} unread</>}>
+      <CommsGrid>
         <div className="comms-list">
           <div className="comms-filters">
             <button className={'cf'+(filter==='all'?' on':'')} onClick={()=>setFilter('all')}>{t.allChannels}</button>
@@ -99,7 +89,7 @@ function CommsMode({ t }){
                   onChange={e=>setReply(e.target.value)}
                   placeholder="Write a governed reply"
                   rows={3}
-                  style={{width:'100%', resize:'vertical', background:'var(--surface)', color:'var(--ink)', border:'1px solid var(--panel-line)', borderRadius:4, padding:8, fontFamily:'var(--font-ui)', fontSize:12}}
+                  style={{width:'100%', resize:'vertical', background:'var(--surface)', color:'var(--ink)', border:'1px solid var(--panel-line)', borderRadius:4, padding:8, fontFamily:'var(--font-ui)', fontSize:'var(--n-fs-label)'}}
                 />
                 <div style={{display:'flex', gap:8, alignItems:'center'}}>
                   <button className="cr-btn primary" disabled={!reply.trim()} onClick={queueReply}>Queue reply</button>
@@ -121,8 +111,8 @@ function CommsMode({ t }){
             </div>
           </>) : <div className="empty-note" style={{padding:16}}>No live comms threads yet</div>}
         </div>
-      </div>
-    </div>
+      </CommsGrid>
+    </PageSection>
   );
 }
 
@@ -139,7 +129,7 @@ const HONESTY_CHIP: Record<string, { label: string; colour: string }> = {
   // A plugin that exposes no configuration contract and declares no required config.
   // Deliberately NOT green: "I don't know" and "this returns real data" are different
   // claims, and the adversarial audit found the second being made on behalf of the first.
-  unknown:      { label: 'UNKNOWN',     colour: 'var(--muted, #888)' },
+  unknown:      { label: 'UNKNOWN',     colour: 'var(--ink-2)' },
 };
 function HonestyBadge({ h }: { h?: Honesty }){
   const status = (h && h.status) || '';
@@ -152,8 +142,8 @@ function HonestyBadge({ h }: { h?: Honesty }){
   return (
     <span
       title={title}
-      style={{ display:'inline-flex', alignItems:'center', gap:4, marginLeft:6,
-        fontFamily:'var(--font-mono)', fontSize:8.5, letterSpacing:'.08em', color:chip.colour,
+      style={{ ...LABEL, display:'inline-flex', alignItems:'center', gap:4, marginLeft:6,
+        fontSize:'var(--n-fs-meta)', color:chip.colour,
         border:`1px solid ${chip.colour}`, borderRadius:3, padding:'0 4px', verticalAlign:'middle' }}
     >
       <span style={{ width:5, height:5, borderRadius:'50%', background:chip.colour }} />
@@ -204,20 +194,20 @@ function EstopCard(){
   return (
     <div data-testid="estop-card" data-estop-readiness={readiness} aria-busy={readiness==='pending'} style={{border:'1px solid '+(engaged?'var(--red)':'var(--panel-line)'),borderRadius:4,padding:10,marginTop:8,background:'var(--surface-2)'}}>
       {err ? <NotConnected what="estop state unavailable"/> : st==null ? <NotConnected what="checking estop…"/> : engaged ? (<>
-        <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--red)'}}>PAUSED · new autonomous work held</div>
+        <div style={{...LABEL,textTransform:'none',fontSize:'var(--n-fs-meta)',color:'var(--red)'}}>PAUSED · new autonomous work held</div>
         <div className="mdl-meta" style={{margin:'6px 0'}}>
           {st.state?.reason ? `reason: ${st.state.reason}` : 'no reason recorded'}
           {st.state?.engaged_at ? ` · since ${st.state.engaged_at}` : ''}
         </div>
         <button className="cr-btn primary" disabled={busy} onClick={doResume} title="lift the pause — autonomous dispatch resumes on the next tick">{busy?'resuming…':'Resume autonomy'}</button>
       </>) : (<>
-        <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--green)'}}>RELEASED · autonomy running</div>
+        <div style={{...LABEL,textTransform:'none',fontSize:'var(--n-fs-meta)',color:'var(--green)'}}>RELEASED · autonomy running</div>
         <div className="mdl-meta" style={{margin:'6px 0'}}>pauses NEW heartbeats + autonomy ticks (resumable)</div>
         <ConfirmAction tier={RISK_TIER.REVERSIBLE} block className="cr-btn" confirmClassName="cr-btn primary"
           label="Pause new autonomous work…" title="two-step: confirm on the next click"
-          prompt={<div style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.1em',color:'var(--amber)'}}>CONFIRM PAUSE — owner chat keeps working; in-flight work is not killed</div>}
+          prompt={<div style={{...LABEL,textTransform:'none',fontSize:'var(--n-fs-meta)',color:'var(--amber)'}}>CONFIRM PAUSE — owner chat keeps working; in-flight work is not killed</div>}
           extra={<input value={reason} onChange={e=>setReason(e.target.value)} placeholder="reason (optional)"
-            style={{width:'100%',margin:'6px 0',background:'var(--surface)',color:'var(--ink)',border:'1px solid var(--panel-line)',borderRadius:4,padding:6,fontFamily:'var(--font-ui)',fontSize:11}}/>}
+            style={{width:'100%',margin:'6px 0',background:'var(--surface)',color:'var(--ink)',border:'1px solid var(--panel-line)',borderRadius:4,padding:6,fontFamily:'var(--font-ui)',fontSize:'var(--n-fs-meta)'}}/>}
           armedLabel={busy?'engaging…':'Confirm pause'} cancelLabel="Cancel" busy={busy} onConfirm={doEngage}/>
       </>)}
     </div>
@@ -242,10 +232,8 @@ function AdminMode({ t }){
       .catch(() => setPlugins(ps=>ps.map((x,j)=>j===i?{...x,on:!next}:x))); // revert on failure
   };
   return (
-    <div className="panel scroll" style={{flex:1}}>
-      <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Ic3 d={IK3.admin} size={14}/><span className="ttl">{t.admin} · Settings</span><span className="st">{A.system ? `${A.system.host} · up ${A.system.uptime}` : 'not connected'}</span></div>
-      <div className="panel-body">
+    <PageSection title={<>{t.admin} · Settings</>} meta={A.system ? `${A.system.host} · up ${A.system.uptime}` : 'not connected'}>
+      <>
         <div className="admin-grid">
           <div>
             <SubH3>MODELS &amp; BACKENDS</SubH3>
@@ -295,9 +283,9 @@ function AdminMode({ t }){
             ) : <NotConnected what="host telemetry"/>}
           </div>
         </div>
-      </div>
-    </div>
+      </>
+    </PageSection>
   );
 }
 
-export { ChatMode, CommsMode, AdminMode };
+export { CommsMode, AdminMode };

@@ -11,8 +11,10 @@
    its code files and no install button, an `excluded` row with its reason. A response without
    the key (an older hub) shows no catalog section at all — never an empty catalog. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, Btn, actA, inpS, Json } from '../panel-kit';
+// The panels keep their last answer in a `note` state, so the kit's note style is noteS here.
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, Btn, actA, inpS, Json } from '../panel-kit';
 import { apiDelete, apiGet, apiPost, apiPut } from '../api/client';
+import { LABEL, MONO, IDENT } from '../theme/type';
 
 const IMPORTED_PATH = '/skills/imported';
 const IMPORT_PATH = '/skills/import';
@@ -59,20 +61,25 @@ const refusal = (err: any): { status: number; kind: 'route' | 'guard' | 'none'; 
   return { status: Number(err && err.status) || 0, kind, text };
 };
 
+/* A section head. A route inside it is an IDENT span (theme/type.ts): the mono face in its
+   own case and spacing (contract §5). */
 const H = ({ children }) => (
-  <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', margin: '10px 0 5px' }}>{children}</div>
+  <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '10px 0 5px' }}>{children}</div>
 );
+/* A head that ends in a commit hash is set whole in the identifier voice, so the hash keeps
+   its case in every theme. */
+const H_IDENT: React.CSSProperties = { ...MONO, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '10px 0 5px' };
 const Note = ({ children }) => (
-  <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4, lineHeight: 1.5 }}>{children}</div>
+  <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4, lineHeight: 1.5 }}>{children}</div>
 );
 const Fail = ({ children }) => (
-  <div role="alert" style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--red)' }}>{children}</div>
+  <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6, color: 'var(--red)' }}>{children}</div>
 );
 const Good = ({ children }) => (
-  <div style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--green)' }}>{children}</div>
+  <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6, color: 'var(--green)' }}>{children}</div>
 );
 const Amber = ({ children }) => (
-  <div role="status" style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--amber)' }}>{children}</div>
+  <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6, color: 'var(--amber)' }}>{children}</div>
 );
 
 /* H342 — which environment variables a skill declares, which are set (stored for this skill,
@@ -131,7 +138,7 @@ export function SkillSetup({ initial = '' }: { initial?: string }) {
                     : <Tag c={r.optional ? 'var(--ink-2)' : 'var(--amber)'}>{r.optional ? 'optional' : 'missing'}</Tag>}
                   {r.stale ? <Tag c="var(--amber)">set for an earlier install · set it again</Tag> : null}
                 </div>
-                <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{String(r.prompt || '')}{r.help ? ` · ${String(r.help)}` : ''}</div>
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>{String(r.prompt || '')}{r.help ? ` · ${String(r.help)}` : ''}</div>
               </div>
               {r.settable && (
                 <>
@@ -247,7 +254,7 @@ export function SkillTaps({ onInstalled }: { onInstalled?: (skill: string) => vo
               {t.skills != null ? <Tag>{Number(t.skills) || 0} skills</Tag> : null}
               {t.refused ? <Tag c="var(--red)">{Number(t.refused)} refused</Tag> : null}
             </div>
-            <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>
+            <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>
               {String(t.repo || '')}{t.path ? `/${String(t.path)}` : ''}{t.note ? ` · ${String(t.note)}` : ''}
             </div>
           </div>
@@ -301,7 +308,7 @@ export function SkillTaps({ onInstalled }: { onInstalled?: (skill: string) => vo
               {arr(r, 'injection_flags').length ? <Tag c="var(--red)">injection-like text</Tag> : null}
               {r.carries_code ? <Tag c="var(--amber)">has code (not copied)</Tag> : null}
             </div>
-            {r.description ? <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{String(r.description)}</div> : null}
+            {r.description ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>{String(r.description)}</div> : null}
             {!r.installable && r.reason ? <Note>not installable: {String(r.reason)}</Note> : null}
           </div>
           {r.installable && (
@@ -452,7 +459,7 @@ export function SkillsImportPanel() {
       onReload={reload}
     >
       {/* ── 1 · IMPORTED SIDECARS ─────────────────────────────────────── */}
-      <H>IMPORTED ON DISK · GET {IMPORTED_PATH}</H>
+      <H>IMPORTED ON DISK · <span style={IDENT}>GET {IMPORTED_PATH}</span></H>
       {loading ? <State e={null} loading={true} n={null} />
         : e ? (readStatus === 503
           ? <Amber>
@@ -461,7 +468,7 @@ export function SkillsImportPanel() {
             </Amber>
           : <State e={e} loading={false} n={null} />)
         : rows.length === 0
-          ? <div style={{ color: 'var(--ink-2)', fontSize: 12 }}>
+          ? <div style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-label)' }}>
               no imported skills on disk yet — skills/&lt;slug&gt;/manifest.json is written only by an import
             </div>
           : rows.map((row, i) => {
@@ -472,7 +479,8 @@ export function SkillsImportPanel() {
               <Row key={`${r.name || r.source_path || 'row'}-${i}`}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ ...mono, color: 'var(--accent-light)' }}>
+                    {/* A skill name is an identifier; a manifest without one is said in words. */}
+                    <span style={{ ...(r.name || r.slug ? mono : noteS), color: 'var(--accent-light)' }}>
                       {r.name || r.slug || '(unnamed manifest)'}
                     </span>
                     {r.version != null && <Tag>v{String(r.version)}</Tag>}
@@ -483,7 +491,7 @@ export function SkillsImportPanel() {
                     {digest && <Tag><span title={digest}>sha256 {digest.slice(0, 12)}…</span></Tag>}
                   </div>
                   {r.description ? (
-                    <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{String(r.description)}</div>
+                    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>{String(r.description)}</div>
                   ) : null}
                   {open === i && <Json v={r} />}
                 </div>
@@ -578,7 +586,7 @@ export function SkillsImportPanel() {
         </Note>
       )}
 
-      <H>PINNED HERMES CATALOG · GET {HERMES_CATALOG_PATH}</H>
+      <H>PINNED HERMES CATALOG · <span style={IDENT}>GET {HERMES_CATALOG_PATH}</span></H>
       {hermesError ? <Amber>pinned catalog unavailable · HTTP {statusOf(hermesError) || '?'}</Amber>
         : <>
             <Note>{hermesRows.length} pinned skills · {String((hermesData as any)?.release_tag || 'release unknown')} · listing the local pin does not fetch upstream bytes</Note>
@@ -596,7 +604,7 @@ export function SkillsImportPanel() {
             {hermesRows.length > visibleHermes.length && <Note>Showing up to 24 matches; filter by name to find another skill.</Note>}
           </>}
 
-      <H>SHIPPED OPTIONAL SKILLS · GET {OPTIONAL_CATALOG_PATH}</H>
+      <H>SHIPPED OPTIONAL SKILLS · <span style={IDENT}>GET {OPTIONAL_CATALOG_PATH}</span></H>
       <Note>These Nerva skills stay outside the default prompt index. An admin install copies the selected
         product skill to your writable skills root under pending review. A kernel grant or queue permits only
         that quarantined copy; owner approval is still required before executable use.</Note>
@@ -625,7 +633,7 @@ export function SkillsImportPanel() {
       {/* ── 4 · THE VENDORED HERMES CATALOG (slice 3) ─────────────────── */}
       {catalog && (
         <>
-          <H>HERMES CATALOG · vendored{catalog.commit ? ` @${String(catalog.commit).slice(0, 8)}` : ''}</H>
+          <div style={H_IDENT}>HERMES CATALOG · vendored{catalog.commit ? ` @${String(catalog.commit).slice(0, 8)}` : ''}</div>
           {catalog.available === false
             ? <Fail>catalog unavailable · {String(catalog.error || 'not reported')}</Fail>
             : (
@@ -649,7 +657,7 @@ export function SkillsImportPanel() {
                         {arr(r, 'required_env').map((k) => <Tag key={`env-${k}`} c="var(--amber)">needs {String(k)}</Tag>)}
                         {arr(r, 'injection_flags').length ? <Tag c="var(--red)">injection-like text</Tag> : null}
                       </div>
-                      {r.description ? <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{String(r.description)}</div> : null}
+                      {r.description ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>{String(r.description)}</div> : null}
                       {r.kind === 'upstream_only' && arr(r, 'code_files').length
                         ? <Note>code it carries: {arr(r, 'code_files').map(String).join(', ')}</Note> : null}
                       {r.kind === 'excluded' && r.reason ? <Note>excluded: {String(r.reason)}</Note> : null}
@@ -701,14 +709,14 @@ export function SkillsImportPanel() {
       )}
 
       {/* ── 4b · SKILL TAPS (H025/H335) ──────────────────────────────── */}
-      <H>SKILL SOURCES (TAPS) · GET {TAPS_PATH}</H>
+      <H>SKILL SOURCES (TAPS) · <span style={IDENT}>GET {TAPS_PATH}</span></H>
       <SkillTaps onInstalled={() => reload()} />
 
       {/* ── 5 · SKILL SETUP (H342) ────────────────────────────────────── */}
-      <H>SKILL SETUP · GET {SETUP_PATH}/&lt;skill&gt;</H>
+      <H>SKILL SETUP · <span style={IDENT}>GET {SETUP_PATH}/&lt;skill&gt;</span></H>
       <SkillSetup />
 
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         GET {IMPORTED_PATH} is <b>user tier</b> and reads skills/&lt;slug&gt;/manifest.json sidecars ·
         POST {IMPORT_PATH} is <b>admin tier</b> (X-Admin-Token); it crosses skill.install and lands pending review · optional install and the vendored catalog’s install/repair are <b>admin tier</b> · a real remote import makes
         outbound requests to raw.githubusercontent.com. Marketplace registry rows, review status

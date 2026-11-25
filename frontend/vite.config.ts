@@ -21,6 +21,8 @@ const PROXY = [
 
 export default defineConfig({
   base: './',
+  // Shared mobile sources use the HUD compiler options when bundled for the browser.
+  tsconfig: './tsconfig.json',
   plugins: [react()],
   build: {
     outDir: fileURLToPath(new URL('../agents/web/v2', import.meta.url)),

@@ -30,12 +30,18 @@ function summarise(violations: { id: string; impact?: Impact; nodes: unknown[] }
   return violations.map((v) => `${v.impact ?? 'n/a'} · ${v.id} (${v.nodes.length} node${v.nodes.length === 1 ? '' : 's'})`);
 }
 
+// Since the cutover (PHASE_B_PLAN.md §8.2 row 31) /v2 is Home in the Ledger frame; the Neural Mesh
+// is Cinema's only, so the scans wait for the frame and Home's registers instead of the mesh.
 test('HUD v2 cockpit has no critical/serious accessibility violations', async ({ page }) => {
   await page.goto('/v2', { waitUntil: 'domcontentloaded' });
-  // wait for the React app + mesh to actually mount before scanning the DOM
+  // wait for the React app, the frame and Home's registers to mount before scanning the DOM
   await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
-  await expect(page.locator('.nmesh canvas').first()).toBeVisible({ timeout: 20_000 });
-  await page.waitForTimeout(800); // let panels settle / async data degrade-or-fill
+  await expect(page.locator('[data-frame="masthead"]')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-home] [data-register="talk"] [data-composer]')).toBeVisible();
+  await expect(page.locator('[data-home] [data-register="docket"]')).toBeVisible();
+  // the day: its register from 1680px, folded into the band below
+  await expect(page.locator('[data-home] [data-register="day"]:visible, [data-home] [data-frame="dayband"]:visible').first()).toBeVisible();
+  await page.waitForTimeout(800); // let the registers settle / async data degrade-or-fill
 
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -56,10 +62,11 @@ test('HUD v2 cockpit has no critical/serious accessibility violations', async ({
 
 test('Cinema mode overlay has no critical/serious accessibility violations', async ({ page }) => {
   await page.goto('/v2', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('.nmesh canvas').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-frame="masthead"]')).toBeVisible({ timeout: 20_000 });
 
   await page.keyboard.press('m');
   await expect(page.locator('.cinema')).toBeVisible();
+  await expect(page.locator('.cinema .nmesh canvas').first()).toBeVisible();
   await page.waitForTimeout(500);
 
   const results = await new AxeBuilder({ page })
@@ -106,10 +113,22 @@ test('Cinema mode overlay has no critical/serious accessibility violations', asy
 
    Scope, so a green run is not read as more than it is: this scans the cockpit route,
    like the two above it. Other HUD surfaces have their own scrollable regions and are
-   not covered — see BACKLOG.md for the ones already measured and still open. */
+   not covered — see BACKLOG.md for the ones already measured and still open.
+
+   Since the cutover (PHASE_B_PLAN.md §5.3, §8.2 row 32) the transcript is the Ledger's: one
+   `[data-transcript]` region with role `log`, its turns `[data-turn]`. Two facts changed with
+   it, and the pins below follow them rather than the classic markup:
+   - An owner turn now carries its own actions (More: Remember message, Create task) whenever
+     actions are allowed, so a user-only transcript is no longer a region with no focusable
+     child: each owner turn holds exactly one control (its More button). The classic premise
+     "no focusable child" cannot be seeded from user turns any more, so the axe rule cannot be
+     the one that names a missing tabindex here; the tabIndex pin below is, and it stays.
+   - The Ledger chrome around Home is taller than the classic cockpit's, so more turns are
+     seeded to make the region overflow; the overflow pin still guards that premise. */
 test('the chat transcript stays keyboard-reachable when it holds only user turns', async ({ page }) => {
-  await page.addInitScript(() => {
-    const turns = Array.from({ length: 6 }, (_, i) => ({
+  const SEEDED = 14;
+  await page.addInitScript((seeded: number) => {
+    const turns = Array.from({ length: seeded }, (_, i) => ({
       role: 'user',
       content: `user turn ${i + 1} — long enough to wrap and take vertical room in the column`,
       timestamp: new Date(1700000000000 + i * 60000).toISOString(),
@@ -130,23 +149,29 @@ test('the chat transcript stays keyboard-reachable when it holds only user turns
       }
       return orig(input, init);
     };
-  });
+  }, SEEDED);
 
   await page.goto('/v2', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
-  await expect(page.locator('.convo .msg.user')).toHaveCount(6, { timeout: 20_000 });
+  await expect(page.locator('[data-transcript] [data-turn="owner"]')).toHaveCount(SEEDED, { timeout: 20_000 });
   await page.waitForTimeout(600);
 
   const state = await page.evaluate(() => {
-    const c = document.querySelector('.convo') as HTMLElement | null;
+    const c = document.querySelector('[data-transcript]') as HTMLElement | null;
     if (!c) return null;
+    // what the keyboard can reach: not inside a closed menu panel (`hidden`), not disabled, not tabindex -1
+    const focusables = Array.from(c.querySelectorAll<HTMLElement>('[tabindex], button, a[href], input, select, textarea'))
+      .filter((el) => !el.closest('[hidden]') && !el.hasAttribute('disabled') && el.tabIndex >= 0);
     return {
       overflowY: getComputedStyle(c).overflowY,
       scrollHeight: c.scrollHeight,
       clientHeight: c.clientHeight,
-      // `.convo` itself is not a descendant of `.convo`, so this counts children only.
-      focusables: c.querySelectorAll('[tabindex], button, a[href], input, select, textarea').length,
-      agentMsgs: c.querySelectorAll('.msg.agent').length,
+      // the region itself is not its own descendant, so this counts children only
+      focusables: focusables.length,
+      // …and every one of them is an owner turn's own More button (the turn's actions)
+      ownerControls: focusables.filter((el) => el.closest('[data-turn="owner"] [data-acts="owner"]')).length,
+      ownerTurns: c.querySelectorAll('[data-turn="owner"]').length,
+      replies: c.querySelectorAll('[data-turn="reply"], [data-turn="vision"]').length,
       tabIndex: c.tabIndex,
       role: c.getAttribute('role'),
       name: c.getAttribute('aria-label'),
@@ -154,23 +179,19 @@ test('the chat transcript stays keyboard-reachable when it holds only user turns
   });
 
   expect(state, 'the transcript region should exist').not.toBeNull();
-  // Non-vacuity pins. If either premise stops holding, there is no scrollable region
-  // with no way in, the axe rule below cannot fire, and this test would self-pass.
-  expect(state!.agentMsgs, 'the seeded transcript must contain no agent turns').toBe(0);
-  expect(
-    state!.focusables,
-    'the seeded transcript must contain no focusable child — that is the whole premise: ' +
-    'a scrollable region whose only keyboard route would be a control inside it',
-  ).toBe(0);
+  // Premise pins: a user-only transcript (no reply of any kind) that actually overflows, whose
+  // only focusable children are the owner turns' own controls — one per turn.
+  expect(state!.replies, 'the seeded transcript must contain no reply').toBe(0);
+  expect(state!.ownerTurns, 'every seeded user turn is drawn').toBe(SEEDED);
+  expect(state!.ownerControls, 'each owner turn carries its one action control').toBe(SEEDED);
+  expect(state!.focusables, 'nothing but the owner turns\' controls is focusable inside the transcript').toBe(SEEDED);
   expect(
     state!.scrollHeight,
     `the transcript must actually overflow to be a scrollable region ` +
     `(overflow-y: ${state!.overflowY}, ${state!.scrollHeight}px of content in ${state!.clientHeight}px)`,
   ).toBeGreaterThan(state!.clientHeight + 1);
 
-  // The WCAG assertion comes FIRST on purpose: it is the one that names the defect. With
-  // the DOM-contract checks ahead of it, removing the fix failed on "tabIndex must be 0"
-  // and the violation was never reported, so a red run said less than it knew.
+  // The whole page, as before: no critical or serious violation with a user-only transcript.
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
@@ -189,9 +210,10 @@ test('the chat transcript stays keyboard-reachable when it holds only user turns
 
   expect(
     state!.tabIndex,
-    'the transcript is a scrollable region with no focusable content, so it must itself be ' +
-    'in the sequential focus order (tabindex="0") — otherwise a keyboard user cannot read ' +
-    'past the fold. Chromium focuses overflow scrollers implicitly; webkit and firefox do not.',
+    'the transcript is a scrollable region, so it must itself be in the sequential focus order ' +
+    '(tabindex="0") — a keyboard user reads past the fold from the region, not only by tabbing ' +
+    'through the turns\' own controls. Chromium focuses overflow scrollers implicitly; webkit and ' +
+    'firefox do not.',
   ).toBe(0);
   expect(state!.role, 'the transcript should carry the chat-log role').toBe('log');
   expect(state!.name, 'a focusable region needs an accessible name').toBeTruthy();

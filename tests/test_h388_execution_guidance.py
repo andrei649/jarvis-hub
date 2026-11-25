@@ -76,6 +76,8 @@ def test_obvious_defaults_and_live_environment_are_not_inferred_from_user_memory
 def test_execution_names_a_tool_only_when_exact_capability_is_offered(capability, named):
     text = guide(tools={capability})
     assert named in text
+    if named == "file_read":
+        assert "requested by path" in text and "Read attached excerpts directly" in text
     for other in {"terminal_run", "execute_code", "file_read", "file_search", "web_search", "web_extract"} - {named}:
         assert other not in text
 
@@ -94,7 +96,7 @@ def test_google_guidance_keeps_substantive_operational_rules():
     assert "# Execution discipline" not in text
     assert "absolute file paths" in text
     assert "file_read" in text and "file_search" in text
-    assert "Never guess at file contents" in text
+    assert "file contents requested by path" in text and "Never guess at file contents" in text
     assert "Never assume a library is available" in text
     assert "package.json" in text and "requirements.txt" in text
     assert "Non-interactive commands" in text and "--non-interactive" in text

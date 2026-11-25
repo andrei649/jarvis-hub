@@ -90,12 +90,12 @@ def resolve(text: Any, loader: Any, *, taken: Callable[[str], bool] | None = Non
 
 
 def begin_load(inv: Invocation, loader: Any, *, owner: bool, session: str,
-               template_vars: Any = None) -> str | None:
+               template_vars: Any = None, agent: str = "") -> str | None:
     """Bind one owner-requested skill, or return a no-model refusal."""
     if owner is not True or inv.problem or not inv.skill_names:
         return _REFUSAL
     if len(inv.skill_names) == 1:
         return bundles.begin_skill_load(inv.skill_name, inv.instruction, loader,
-                                        session=session, template_vars=template_vars)
+                                        session=session, template_vars=template_vars, agent=agent)
     return bundles.begin_skill_stack_load(inv.skill_names, inv.instruction, loader,
-                                          session=session, template_vars=template_vars)
+                                          session=session, template_vars=template_vars, agent=agent)

@@ -841,7 +841,7 @@ def test_a_pinned_archived_chat_can_be_unarchived_and_resume_keeps_the_pin(env, 
     async def resume(sid):
         return True
 
-    async def history(sid):
+    async def history(sid, *, include_board_sources=False):
         return []
     client = _client(monkeypatch, SimpleNamespace(checkpoints=env.cp, memory=SimpleNamespace(
         resume_session=resume, get_history=history)))
@@ -883,7 +883,7 @@ def _resume_client(env, monkeypatch):
     async def resume(sid):
         return True
 
-    async def history(sid):
+    async def history(sid, *, include_board_sources=False):
         return []
     orch = SimpleNamespace(checkpoints=env.cp, session_id=None,
                            memory=SimpleNamespace(resume_session=resume, get_history=history))

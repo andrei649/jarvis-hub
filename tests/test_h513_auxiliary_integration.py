@@ -58,7 +58,8 @@ async def test_copied_owner_context_cannot_authorize_offloopback_auxiliary(auxil
     principal = bind_turn_principal(Principal(channel="web", admin=True))
     origin = bind_action_origin("inbound")
     try:
-        with pytest.raises(data_handling.DataHandlingRefused, match="acknowledg"):
+        with pytest.raises(data_handling.DataHandlingRefused,
+                           match="unsupported" if role == "review" else "acknowledg"):
             await asyncio.create_task(invoke(auxiliary.orch, role))
         assert auxiliary.calls == []
     finally:
@@ -67,7 +68,7 @@ async def test_copied_owner_context_cannot_authorize_offloopback_auxiliary(auxil
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ROLES)
+@pytest.mark.parametrize("role", [role for role in ROLES if role != "review"])
 async def test_loopback_auxiliary_preserves_generation_contract(auxiliary, role):
     assert await invoke(auxiliary.orch, role) == "auxiliary answer"
     assert len(auxiliary.calls) == 1
@@ -77,6 +78,13 @@ async def test_loopback_auxiliary_preserves_generation_contract(auxiliary, role)
     assert request["temperature"] == {"session_title": 0.0, "query_rewrite": 0.0, "review": .2, "compression": .2}[role]
     assert method == ("stream" if role == "compression" else "generate")
     assert request["prompt"].endswith("/no_think") is (role in {"session_title", "query_rewrite"})
+
+
+@pytest.mark.asyncio
+async def test_review_refuses_unproven_loopback_backend(auxiliary):
+    with pytest.raises(data_handling.DataHandlingRefused, match="unsupported"):
+        await invoke(auxiliary.orch, "review")
+    assert auxiliary.calls == []
 
 
 @pytest.mark.asyncio

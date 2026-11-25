@@ -129,6 +129,8 @@ async def test_router_refreshes_owner_choice_without_network_detection(
     router._compatible_backend = baseline
     router._compatible_model = 'builtin-model'
     router._compatible_provider_id = 'openrouter'
+    assert router._known_local_compatible(baseline, 'cloud-compatible')
+    baseline.base_url = 'https://openrouter.ai/api/v1'
     router._cloud_available = False
     local = Builtin()
     monkeypatch.setattr(router, '_select_backend_inner',

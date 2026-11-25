@@ -534,7 +534,7 @@ def _resume_orch(cp):
     async def resume(sid):
         return cp.session_row(sid) is not None
 
-    async def history(sid):
+    async def history(sid, *, include_board_sources=False):
         return []
 
     return SimpleNamespace(checkpoints=cp, session_id=None,

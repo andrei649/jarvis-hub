@@ -312,6 +312,9 @@ async def test_approved_tick_bounds_settings_and_calls_real_worker_tick(
     dispatcher = KanbanDispatcher(orch, home=tmp_path)
     monkeypatch.setattr(dispatcher, "_runtime", lambda: (worker, object()))
     assert await dispatcher.approved_tick(max_tier=1) == {"done": 0}
+    callback = calls[0].pop("parallel_admission")
+    assert callable(callback)
+    assert callback() == (*expected, 1)
     assert calls == [
         {
             "max_tier": 1,
@@ -334,6 +337,9 @@ async def test_approved_tick_holds_board_when_runtime_unavailable(tmp_path, monk
     dispatcher = KanbanDispatcher(SimpleNamespace(autonomy=worker), home=tmp_path)
     monkeypatch.setattr(dispatcher, "_runtime", lambda: (None, None))
     assert await dispatcher.approved_tick() == {"done": 1}
+    callback = calls[0].pop("parallel_admission")
+    assert callable(callback)
+    assert callback() == (0, 0, None)
     assert calls == [
         {
             "max_tier": None,

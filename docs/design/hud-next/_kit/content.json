@@ -1,0 +1,313 @@
+{
+  "_about": "One shared moment of the product. Every design direction draws exactly this moment so the directions can be compared side by side. Names, labels and field shapes come from the product's own demo seeds (frontend/src/data.ts) and from the real API shapes; nothing here is live personal data. Keys starting with _ are notes for designers, not content.",
+
+  "now": {
+    "time": "10:51",
+    "weekday_en": "Monday",
+    "date_en": "23 November 2026",
+    "date_ro": "luni, 23 noiembrie 2026",
+    "owner_first_name": "Andrei",
+    "city": "București",
+    "languages": ["en", "ro"],
+    "_note": "The interface ships in English and Romanian. Draw it in English, but the owner writes to it in either language (see the conversation) and Romanian diacritics (ă â î ș ț) must render in your fonts."
+  },
+
+  "product": {
+    "name": "Nerva",
+    "descriptor": "Personal intelligence OS",
+    "version": "1.0.0",
+    "one_sentence": "A private AI that works while you sleep and is owned by the person it serves.",
+    "what_it_is": "A local-first personal assistant: one orchestrator (Jarvis) and 17 specialist agents running on the owner's own workstation and GPU. It works proactively, and anything risky waits for the owner's decision."
+  },
+
+  "navigation": {
+    "_note": "Today: 16 rail modes + a hidden 'Console' overlay with 137 panels + three loose buttons. The code's own structure supports nine areas; the 137 panels become second-level pages of these areas and must all be reachable by search. You may rename or reorder, but every area needs a home.",
+    "areas": [
+      { "id": "home", "label": "Home", "holds": "conversation with the orchestrator, what needs you, what happened, today" },
+      { "id": "work", "label": "Work", "holds": "decisions, missions, projects board, scheduled jobs, sessions, activity", "panels": 14, "badge": "9 need you" },
+      { "id": "agents", "label": "Agents", "holds": "the 18 agents, their homes (finance, health, family, knowledge), personas", "panels": 9 },
+      { "id": "memory", "label": "Memory", "holds": "saved facts, knowledge graph, vault, recall, hygiene", "panels": 14 },
+      { "id": "trust", "label": "Trust", "holds": "audit chain, emergency stop, capabilities, permissions, payments, secrets", "panels": 21 },
+      { "id": "build", "label": "Build", "holds": "skills, workflows, sandbox, images, creative tools", "panels": 22 },
+      { "id": "connect", "label": "Connect", "holds": "channels, integrations, MCP servers, webhooks, rooms", "panels": 17 },
+      { "id": "observe", "label": "Observe", "holds": "health, logs, metrics, traces, world signals", "panels": 16, "badge": "4 services down" },
+      { "id": "settings", "label": "Settings", "holds": "models and backends, appearance, backup, updates", "panels": 16 }
+    ],
+    "global": ["Search and command (Ctrl+K) — finds every area, panel, agent and action", "Language EN / RO", "Theme dark / light", "Glance mode (idle or second screen)"]
+  },
+
+  "health": {
+    "_note": "Today the product has no single verdict: it shows seven badges, a marquee and five meter rows, plus a hard-coded 'ALL NOMINAL'. Design ONE honest verdict with its causes. 'Unknown' and 'stale' are real states and must look different from 'ok'.",
+    "verdict": "degraded",
+    "headline": "Working, with 4 local services down",
+    "since": "08:14",
+    "last_checked": "10:50",
+    "causes": [
+      { "service": "lmstudio", "address": "127.0.0.1:1234", "state": "not responding", "since": "08:14", "impact": "Not blocking: the model is being served by Ollama instead.", "remedy": "Restart lmstudio (waits for your approval)" },
+      { "service": "qdrant", "address": "127.0.0.1:6333", "state": "not responding", "since": "08:14", "impact": "Long-term recall is using the built-in vector store.", "remedy": "Restart qdrant (waits for your approval)" },
+      { "service": "neo4j", "address": "127.0.0.1:7474", "state": "not responding", "since": "08:14", "impact": "The knowledge graph is running in memory only.", "remedy": "Restart neo4j (waits for your approval)" },
+      { "service": "n8n", "address": "127.0.0.1:5678", "state": "not responding", "since": "08:14", "impact": "Oracle's workflows cannot run.", "remedy": "Restart n8n (waits for your approval)" }
+    ],
+    "facts": [
+      { "key": "Model", "value": "gemma-4-31b · loaded on Ollama", "state": "ok" },
+      { "key": "Runs on this machine", "value": "100% · 41 of 41 runs today", "basis": "by route", "state": "ok", "other_bases": ["derived from the local-only switch", "unknown"], "_note": "The hub counts which route each run used; it is not a verified network measurement. Show the basis next to the number. When it is only derived from the strict-local switch say 'derived'; when unknown say 'unknown'." },
+      { "key": "Egress", "value": "Sealed — nothing can leave this machine", "state": "ok", "other_values": ["Hybrid — a cloud route is reachable", "Unknown"] },
+      { "key": "Microphone", "value": "On", "state": "neutral", "other_values": ["Muted", "Unknown"] },
+      { "key": "Channels", "value": "2 of 2 running · 1 session in the last 15 min", "state": "ok" },
+      { "key": "Data on screen", "value": "Live", "state": "ok", "other_values": ["Demo sample", "Offline", "Empty"] },
+      { "key": "Latency p50", "value": "—", "state": "unknown", "_note": "Not measured by the hub yet. Show unknown as unknown, never as 0." }
+    ],
+    "meters": [
+      { "label": "RAM", "value_pct": 19, "detail": "36 of 192 GB" },
+      { "label": "VRAM", "value_pct": 96, "detail": "23.0 of 24 GB", "_note": "Expected while a 31B model is loaded; high VRAM is why the interface must stay light on the GPU." },
+      { "label": "GPU load", "value_pct": 3 }
+    ]
+  },
+
+  "autonomy": {
+    "_note": "The approval mode is global, with per-agent overrides. It is one of three values and should be visible wherever decisions or the composer are.",
+    "mode": "ask",
+    "modes": [
+      { "id": "auto", "label": "Auto", "meaning": "Safe and reversible actions run on their own; risky ones wait." },
+      { "id": "ask", "label": "Ask", "meaning": "Anything with a side effect waits for you." },
+      { "id": "off", "label": "Off", "meaning": "Agents may read and think, nothing acts." }
+    ],
+    "interrupts_today": "3 of 4",
+    "_interrupts_note": "The product budgets how often it may interrupt the owner (4 a day)."
+  },
+
+  "risk_tiers": {
+    "_note": "Four tiers decided by the hub in code. Friction must follow the tier. Today the interface collapses them into 'reversible / irreversible' and shows the same small red pill on every card.",
+    "tiers": [
+      { "tier": 0, "name": "Read only", "friction": "none — recorded in the audit chain" },
+      { "tier": 1, "name": "Reversible", "friction": "one click, undo available" },
+      { "tier": 2, "name": "External — reaches someone or something outside", "friction": "two steps: review what will be sent, then confirm" },
+      { "tier": 3, "name": "Irreversible or money", "friction": "typed confirmation; cannot be bulk-approved" }
+    ],
+    "rules": [
+      "No keyboard shortcut may approve or reject. This is a deliberate safety rule of the product; search and navigation may be keyboard-first, verdicts are not.",
+      "A control on the main screen must never pretend to decide. Approve / Reject / Defer must be the real thing or absent.",
+      "The emergency stop is deliberately one click and must be reachable from the home screen."
+    ]
+  },
+
+  "decisions": {
+    "_note": "This is the queue the owner acts on. 18 raw requests are waiting; many are repeats raised by the health observer, and the hub already groups them. Draw the grouped view: 9 actions in 6 groups. Actions available on every request: Approve, Edit then approve, Reject (optional reason), Defer, and Preview (a dry run of what would execute).",
+    "summary": { "raw_requests": 18, "actions": 9, "groups": 6, "by_tier": { "tier3": 3, "tier2": 1, "tier1": 2 } },
+    "groups": [
+      {
+        "id": "g1",
+        "agent": "Steve",
+        "agent_role": "CTO / Builds",
+        "title": "Restart 4 local services that stopped responding",
+        "tier": 3,
+        "tier_label": "Irreversible",
+        "why_waiting": "Held because the approval mode is Ask.",
+        "raised": "08:14, repeated 3 times",
+        "deadline": "tomorrow 08:14 — then it is blocked, never auto-approved",
+        "requests": 12,
+        "members": [
+          { "id": 402, "title": "lmstudio not responding on 127.0.0.1:1234. Restart lmstudio?" },
+          { "id": 409, "title": "qdrant not responding on 127.0.0.1:6333. Restart qdrant?" },
+          { "id": 410, "title": "neo4j not responding on 127.0.0.1:7474. Restart neo4j?" },
+          { "id": 411, "title": "n8n not responding on 127.0.0.1:5678. Restart n8n?" }
+        ],
+        "preview": "Would run the configured restart command for each service on this machine.",
+        "rollback": "None — a restart interrupts anything the service is doing.",
+        "group_actions": ["Approve once for all 4", "Reject group"]
+      },
+      {
+        "id": "g2",
+        "agent": "Gecko",
+        "agent_role": "Markets & Capital",
+        "title": "Sweep €4,200 of idle cash to the savings ladder",
+        "tier": 3,
+        "tier_label": "Money",
+        "why_waiting": "Money always waits for you.",
+        "raised": "08:07, from your conversation",
+        "context": "Idle cash in the current account is €4.2k over your target buffer.",
+        "preview": "Would move €4,200 from the current account to the savings ladder.",
+        "rollback": "A transfer back takes 1–2 working days.",
+        "requests": 1,
+        "card_id": 408
+      },
+      {
+        "id": "g3",
+        "agent": "Jarvis",
+        "agent_role": "Prime Orchestrator",
+        "title": "Delete logs older than 14 days",
+        "tier": 3,
+        "tier_label": "Irreversible",
+        "why_waiting": "Held because the approval mode is Ask.",
+        "raised": "07:30, repeated once",
+        "preview": "Would delete 312 files, 2.1 GB.",
+        "rollback": "None.",
+        "requests": 2
+      },
+      {
+        "id": "g4",
+        "agent": "Ultron",
+        "agent_role": "Security & Automation",
+        "title": "Veronica's LinkedIn draft names a client flagged as sensitive",
+        "tier": 2,
+        "tier_label": "External",
+        "why_waiting": "Outbound is held until you clear it.",
+        "raised": "07:48",
+        "options": ["Review the draft", "Redact and send", "Reject"],
+        "requests": 1
+      },
+      {
+        "id": "g5",
+        "agent": "Stark",
+        "agent_role": "Biz Intel",
+        "title": "Draft a reply to Raiffeisen with the QBR agenda",
+        "tier": 1,
+        "tier_label": "Reversible",
+        "why_waiting": "Held because the approval mode is Ask.",
+        "raised": "08:05",
+        "preview": "Would save a draft in your mailbox. Nothing is sent.",
+        "rollback": "Delete the draft.",
+        "requests": 1
+      },
+      {
+        "id": "g6",
+        "agent": "Pepper",
+        "agent_role": "Chief of Staff",
+        "title": "Move the research sync from 16:30 to 17:15",
+        "tier": 1,
+        "tier_label": "Reversible",
+        "why_waiting": "Held because the approval mode is Ask.",
+        "raised": "07:14",
+        "context": "Your 14:00 and 16:30 leave no lunch gap; Vision is async anyway.",
+        "rollback": "Move it back.",
+        "requests": 1
+      }
+    ],
+    "empty_states": [
+      "Nothing is waiting for you.",
+      "Unknown — sign in as the owner to see what is waiting. (Never show 'all clear' when the feed did not answer.)"
+    ]
+  },
+
+  "conversation": {
+    "_note": "The owner talks to Jarvis; Jarvis routes to specialists. Replies render Markdown. Draw the thread below, ending with a reply that is still streaming. Each reply carries provenance (which model, where it ran).",
+    "with": { "agent": "Jarvis", "role": "Prime Orchestrator", "routing": "Orchestrated" },
+    "turns": [
+      { "who": "owner", "time": "08:02", "text": "Morning Jarvis — what does my day look like?" },
+      { "who": "Jarvis", "time": "08:02", "text": "Good morning, Andrei. Three meetings today; the Raiffeisen review at 14:00 is the one that matters. Pepper holds your calendar, Stark prepped the KPI deltas. Weather is clear — good day to cycle in.", "ran": "on this machine · gemma-4-31b" },
+      { "who": "owner", "time": "08:05", "text": "draft the churn slide", "attachment": "QBR-deck.docx" },
+      { "who": "Stark", "time": "08:05", "text": "Stark pulled the numbers — **Digitaholic MRR is +6.2% WoW**; I flagged the missing churn-cohort slide for the review.", "activity": { "summary": "2 tool calls", "items": [ { "tool": "web_search", "state": "done" }, { "tool": "file_write", "state": "failed" } ] }, "ran": "on this machine · gemma-4-31b" },
+      { "who": "owner", "time": "08:07", "text": "sweep idle cash" },
+      { "who": "Gecko", "time": "08:07", "text": "Gecko's watching the markets — EUR/RON steady at 4.97; idle cash is **€4.2k over buffer**, sweep available.", "waits_for_you": "1 action waits for your decision — Sweep €4,200 to the savings ladder", "ran": "on this machine · gemma-4-31b" },
+      { "who": "owner", "time": "10:48", "text": "Ce proiecte sunt de terminat acum?" },
+      { "who": "Jarvis", "time": "10:51", "state": "streaming", "status_line": "Gathering — asking Pepper and Stark", "steps": ["Classify", "Route", "Gather", "Synthesize"], "current_step": "Gather", "text_so_far": "Trei proiecte au termene săptămâna aceasta: prezentarea pentru Raiffeisen (azi, 14:00), raportul lunar Digitaholic și", "can_stop": true }
+    ],
+    "per_message_actions": { "owner": ["Remember", "Create task"], "reply": ["Copy", "Save", "Read aloud", "Create task", "More"] },
+    "_actions_note": "Today each reply shows up to eight always-visible buttons (Photoshop, Save to Obsidian, Create task, Teach skill, Download Word …). Decide what is always visible and what lives behind 'More'."
+  },
+
+  "composer": {
+    "_note": "Today: a single-line input wrapped in four always-visible rows with about 14 controls and two help sentences. It should be a multi-line box with progressive disclosure. It must show who will receive the message and the autonomy mode.",
+    "placeholder": "Message Jarvis…",
+    "to": "Jarvis · orchestrated",
+    "attach": ["Images", "Files", "Vault note", "Board result", "Skill"],
+    "options": ["Direct reply (skip extended thinking)", "Search chat history", "Compare agents", "Use previous image"],
+    "voice": { "state": "ready", "runs": "locally", "states": ["Voice ready", "Listening…", "Transcribing…", "Speaking…"] },
+    "typed_shortcuts": ["/new", "/undo", "/refine", "/<skill>", "@file:path"],
+    "send_label": "Send"
+  },
+
+  "agents": {
+    "_note": "18 agents in four tiers. The current screen lists all 18 twice (a roster column and a decorative node graph). Research says: show agents by exception — working, waiting on you, just finished — and collapse the rest into a count. Today's hub only reports 'ready' or 'idle'; richer states are the design intent, and 'idle' must still look right.",
+    "counts": { "total": 18, "working": 3, "waiting_on_you": 3, "finished_recently": 2, "idle": 9, "unavailable": 1 },
+    "tiers": [
+      { "id": "CNS", "label": "Core" },
+      { "id": "BIZ", "label": "Business" },
+      { "id": "SEC", "label": "Systems" },
+      { "id": "FND", "label": "Foundation" }
+    ],
+    "list": [
+      { "name": "Jarvis", "role": "Prime Orchestrator", "tier": "CNS", "runs": "auto", "state": "working", "doing": "Answering you — gathering from Pepper and Stark" },
+      { "name": "Friday", "role": "Daily Intel", "tier": "CNS", "runs": "auto", "state": "finished", "doing": "Morning brief ready · 6 items · 06:00" },
+      { "name": "Pepper", "role": "Chief of Staff", "tier": "CNS", "runs": "auto", "state": "working", "doing": "Checking this week's deadlines" },
+      { "name": "Jerome", "role": "Leisure & Soundtrack", "tier": "CNS", "runs": "auto", "state": "idle" },
+      { "name": "Athena", "role": "External Strategist", "tier": "BIZ", "runs": "cloud only", "state": "unavailable", "doing": "Cloud only — unavailable while egress is sealed" },
+      { "name": "Stark", "role": "Biz Intel", "tier": "BIZ", "runs": "auto", "state": "working", "doing": "Pulling project status for Digitaholic" },
+      { "name": "Veronica", "role": "Content & Comms", "tier": "BIZ", "runs": "auto", "state": "idle" },
+      { "name": "Vision", "role": "Deep Research", "tier": "BIZ", "runs": "cloud preferred", "state": "finished", "doing": "Indexed 17 sources on competitor pricing · 09:40" },
+      { "name": "Argus", "role": "Geospatial Intel", "tier": "BIZ", "runs": "cloud preferred", "state": "idle" },
+      { "name": "Steve", "role": "CTO / Builds", "tier": "SEC", "runs": "cloud preferred", "state": "waiting", "doing": "4 restarts wait for your decision" },
+      { "name": "Oracle", "role": "Workflows", "tier": "SEC", "runs": "auto", "state": "idle", "doing": "n8n is down — workflows cannot run" },
+      { "name": "Ultron", "role": "Security & Automation", "tier": "SEC", "runs": "local only", "state": "waiting", "doing": "Holding an outbound draft for your review" },
+      { "name": "Gecko", "role": "Markets & Capital", "tier": "FND", "runs": "auto", "state": "waiting", "doing": "Sweep of €4,200 waits for your decision" },
+      { "name": "Hercules", "role": "Fitness & Nutrition", "tier": "FND", "runs": "auto", "state": "idle" },
+      { "name": "Hephaestus", "role": "Builder & Mechanic", "tier": "FND", "runs": "auto", "state": "idle" },
+      { "name": "Frigga", "role": "Family", "tier": "FND", "runs": "local only", "state": "idle" },
+      { "name": "Hestia", "role": "House Brain", "tier": "FND", "runs": "local only", "state": "idle" },
+      { "name": "Howard", "role": "Digital Twin / Archive", "tier": "FND", "runs": "local only", "state": "idle" }
+    ],
+    "states": ["working", "waiting on you", "finished", "idle", "unavailable", "unknown"]
+  },
+
+  "today": {
+    "schedule": [
+      { "time": "09:30", "title": "Standup — Digitaholic", "where": "Google Meet", "state": "past" },
+      { "time": "11:00", "title": "1:1 with Cosmina", "where": "Office", "state": "next", "in": "in 9 min" },
+      { "time": "14:00", "title": "Raiffeisen quarterly review", "where": "Conf Room A · prep 13:15", "state": "upcoming", "important": true },
+      { "time": "16:30", "title": "Vision research sync", "where": "Async", "state": "upcoming" },
+      { "time": "19:00", "title": "Gym — Hercules plan", "where": "Personal", "state": "upcoming" }
+    ],
+    "weather": { "city": "București", "temp_c": 9, "desc": "Mist", "_note": "Minor. One line at most." }
+  },
+
+  "while_you_were_away": {
+    "_note": "What the agents did on their own since last night. This replaces the scrolling ticker. Every line has a time, an agent and a result; nothing scrolls by itself.",
+    "items": [
+      { "time": "06:00", "agent": "Friday", "text": "Morning brief generated — 6 items ranked", "kind": "done" },
+      { "time": "07:14", "agent": "Pepper", "text": "Calendar synced · 1 conflict auto-resolved", "kind": "done" },
+      { "time": "07:48", "agent": "Ultron", "text": "2 PII findings redacted, outbound held", "kind": "held" },
+      { "time": "08:00", "agent": "Stark", "text": "KPI snapshot cached for the Raiffeisen review", "kind": "done" },
+      { "time": "08:01", "agent": "Ultron", "text": "SSRF attempt blocked · 1 request denied", "kind": "blocked" },
+      { "time": "08:14", "agent": "Steve", "text": "lmstudio, qdrant, neo4j and n8n stopped responding", "kind": "problem" },
+      { "time": "09:40", "agent": "Vision", "text": "Indexed 17 sources on competitor pricing", "kind": "done" }
+    ],
+    "counts": { "done": 4, "held_or_blocked": 2, "problems": 1 }
+  },
+
+  "trust_center": {
+    "_note": "Content for secondary.html. Trust is the product's differentiator: governed, provable, local. It is also one of the nine areas, so show how its 21 second-level panels are reached.",
+    "summary": "Chain intact · 921 sealed entries · verified 10:50",
+    "panels": ["Overview", "Audit chain", "Emergency stop", "Capabilities", "Permissions", "Payments", "Posture", "Secrets", "Skill switches", "Pairing", "Audit anchors", "Retention", "Data handling", "Credential shares", "Desktop allowlist", "Security skills", "Signal governance", "Trust ops", "and 3 more"],
+    "emergency_stop": { "label": "Stop all agents", "state": "armed", "detail": "One click. Halts every agent and the job queue until you resume." },
+    "locality": { "on_device_pct": 100, "cloud_pct": 0, "basis": "41 of 41 runs today", "egress": "Sealed" },
+    "audit_chain": [
+      { "time": "10:49", "agent": "Jarvis", "action": "Routed your question to Pepper and Stark", "tier": 0, "hash": "9f2c…a41b", "sealed": true },
+      { "time": "09:40", "agent": "Vision", "action": "Indexed 17 sources into memory", "tier": 0, "hash": "5ad1…77e0", "sealed": true },
+      { "time": "08:14", "agent": "Steve", "action": "Proposed restart of 4 services — waiting for approval", "tier": 3, "hash": "c03e…1d9f", "sealed": true },
+      { "time": "08:07", "agent": "Gecko", "action": "Proposed transfer of €4,200 — waiting for approval", "tier": 3, "hash": "71bb…e2c4", "sealed": true },
+      { "time": "08:05", "agent": "Stark", "action": "file_write failed — nothing was changed", "tier": 1, "hash": "2e90…0b6a", "sealed": true },
+      { "time": "08:01", "agent": "Ultron", "action": "Blocked an outbound request to 10.0.0.x (SSRF rule)", "tier": 2, "hash": "aa47…93f1", "sealed": true },
+      { "time": "07:48", "agent": "Ultron", "action": "Redacted 2 PII spans in an outbound draft and held it", "tier": 2, "hash": "0d3f…5c82", "sealed": true },
+      { "time": "07:14", "agent": "Pepper", "action": "Resolved 1 calendar conflict", "tier": 1, "hash": "b6e2…4a10", "sealed": true }
+    ],
+    "capabilities": [
+      { "id": "fs.read", "what": "Read workspace files", "grant": "Allow" },
+      { "id": "fs.write", "what": "Modify files in /work", "grant": "Scoped" },
+      { "id": "net.outbound", "what": "External HTTP via plugins", "grant": "Gated" },
+      { "id": "payments.execute", "what": "Move money", "grant": "Approval" },
+      { "id": "shell.exec", "what": "Run shell commands", "grant": "Approval" },
+      { "id": "memory.write", "what": "Persist facts to the knowledge graph", "grant": "Allow" }
+    ],
+    "payments": [
+      { "agent": "Gecko", "what": "Savings ladder sweep", "amount": "€4,200", "state": "Waiting for approval" },
+      { "agent": "Pepper", "what": "Conf Room A booking", "amount": "€35", "state": "Settled 07:20" }
+    ],
+    "strict_local_agents": ["Frigga", "Ultron", "Howard", "Hestia"],
+    "honesty_note": "Every section must say whether it shows live data, a demo sample, or nothing yet. Today one green LIVE chip covers a page that mixes live rows and seed rows."
+  },
+
+  "glance_mode": {
+    "_note": "Optional third frame if your concept has one: what the screen shows when idle or on a second monitor. A few large values, strict hierarchy, no ornament, no scrolling text.",
+    "values": [ { "v": "10:51" }, { "v": "9", "l": "need you" }, { "v": "Degraded", "l": "4 services down" }, { "v": "100%", "l": "on this machine" }, { "v": "11:00", "l": "1:1 with Cosmina" } ]
+  }
+}

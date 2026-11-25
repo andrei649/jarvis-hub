@@ -50,7 +50,10 @@ function Card({ task, selected, onOpen, onSelect, onDelete, onMove, columns, fal
   const [dragging, setDragging] = useState(false);
   const arc = arcState(task, fallbackAssignee);
   const attached = task.assignee || (task.status === 'ready' ? fallbackAssignee : '');
-  const summary = task.latest_summary || task.body;
+  const result = task.result?.trim();
+  const latestSummary = task.latest_summary?.trim();
+  const summary = task.status === 'done' ? result || latestSummary : task.latest_summary || task.body;
+  const snippet = task.status === 'done' && summary && summary.length > 200 ? `${summary.slice(0, 200)}…` : summary;
   return <article className={`kb-card${selected ? ' kb-card--selected' : ''}${dragging ? ' kb-card--dragging' : ''}`} style={{ borderLeftColor: columnMeta(task.status).tone }} draggable
     onDragStart={e => { e.dataTransfer.setData('text/plain', task.id); e.dataTransfer.effectAllowed = 'move'; setDragging(true); }} onDragEnd={() => setDragging(false)}
     onClick={e => (e.metaKey || e.ctrlKey) ? onSelect(task.id) : onOpen(task.id)}
@@ -58,9 +61,11 @@ function Card({ task, selected, onOpen, onSelect, onDelete, onMove, columns, fal
     onKeyDown={e => { if (e.key === 'Enter') onOpen(task.id); if (e.key === ' ') { e.preventDefault(); onSelect(task.id); } }}>
     {arc === 'running' || arc === 'stale' ? <span className={`kb-arc kb-arc--${arc}`} aria-label={arc === 'stale' ? k.noHeartbeat : k.arcRunning} /> : null}
     <div className="kb-card-title">{task.title || task.id}</div>
-    {summary && <div className="kb-card-summary">{summary}</div>}
+    {task.status === 'done' && <div className="kb-card-source">{result ? k.result : latestSummary ? k.latestSummary : k.noRecordedResult}</div>}
+    {snippet && <div className="kb-card-summary">{snippet}</div>}
     <div className="kb-card-meta">
       {task.assignee && <span className="kb-avatar" title={task.assignee}>{task.assignee.slice(0, 1).toUpperCase()}</span>}
+      {task.status === 'done' && task.assignee && <span aria-label={`${k.assignee}: ${task.assignee}`}>{task.assignee}</span>}
       {arc === 'queued' && attached && <span title={k.attachedTip(attached)}>{task.assignee ? attached : `→ ${attached}`}</span>}
       {arc === 'running' && <RunClock task={task} />}
       {task.status === 'ready' && !attached && <span className="kb-warning">{k.wontRun}</span>}
@@ -96,10 +101,10 @@ function Column({ name, tasks, columns, selected, collapsed, onToggle, onAdd, on
   </section>;
 }
 export function BoardCanvas({
-  board, meta, profiles, knownAssignees = [], orchestration, config = null, configError = '', auxiliaryError,
+  board, meta, profiles, profilesEditable = true, profilesError = '', knownAssignees = [], orchestration, config = null, configError = '', auxiliaryError,
   selected, onSelect, onOpen, onAdd, onMove, onDelete, onBulk, onBulkDelete, onDispatch, archived, onArchived, onRefreshProfiles,
 }: {
-  board: KanbanBoard | null; meta?: BoardMeta; profiles: KanbanProfile[]; knownAssignees?: KanbanAssignee[];
+  board: KanbanBoard | null; meta?: BoardMeta; profiles: KanbanProfile[]; profilesEditable?: boolean; profilesError?: string; knownAssignees?: KanbanAssignee[];
   orchestration: OrchestrationSettings | null; config?: KanbanConfig | null; configError?: string; auxiliaryError: string;
   selected: Set<string>; onSelect: (ids: Set<string>) => void; onOpen: (id: string) => void; onAdd: (status: string) => void;
   onMove: (id: string, status: string) => void; onDelete: (id: string) => void; onBulk: (patch: Record<string, unknown>) => void;
@@ -200,9 +205,11 @@ export function BoardCanvas({
       <label>Orchestrator profile<select disabled value={orchestration?.orchestrator_profile || ''} onChange={() => {}}><option value={orchestration?.orchestrator_profile || ''}>{orchestration?.resolved_orchestrator_profile || 'Unavailable'}</option></select></label>
       <label>Default assignee<select disabled value={orchestration?.default_assignee || ''} onChange={() => {}}><option value={orchestration?.default_assignee || ''}>{orchestration?.resolved_default_assignee || 'Unavailable'}</option></select></label>
       <label><input type="checkbox" aria-label="Auto decompose" checked={Boolean(orchestration?.auto_decompose)} disabled />Auto decompose</label>
-      <h4>Profile descriptions</h4>
-      {!profiles.length && !knownAssignees.length && <label>Target profile<input aria-label="Target profile" value={customProfile} onChange={e => setCustomProfile(e.target.value)} /></label>}
-      {editableProfiles.map(p => <div className="kb-profile-row" key={p.name}>
+      <h4>{profilesEditable ? 'Profile descriptions' : 'Registered profiles'}</h4>
+      {!profilesEditable && <p className="kb-muted">Registered profiles are read-only here. You can assign them to tasks.</p>}
+      {!profilesEditable && profiles.map(p => <div className="kb-profile-row" key={p.name}><strong>{p.name}</strong>{p.description && <span className="kb-muted">{p.description}</span>}</div>)}
+      {profilesEditable && !profiles.length && !knownAssignees.length && <label>Target profile<input aria-label="Target profile" value={customProfile} onChange={e => setCustomProfile(e.target.value)} /></label>}
+      {profilesEditable && editableProfiles.map(p => <div className="kb-profile-row" key={p.name}>
         <label>{p.name}<input aria-label={`Profile description ${p.name}`} value={profileDrafts[p.name] ?? p.description} onChange={e => setProfileDrafts(prev => ({ ...prev, [p.name]: e.target.value }))} placeholder={k.profileGoodAt} /></label>
         <div className="kb-inline-actions">
           <button type="button" aria-label={`Save profile ${p.name}`} disabled={profileBusy === p.name} onClick={() => void saveProfile(p.name)}>{k.save}</button>
@@ -212,7 +219,8 @@ export function BoardCanvas({
       {profileError && <div role="alert" className="kb-alert kb-span-full">{profileError}</div>}
       {profileNotice && <div role="status" className="kb-notice kb-span-full">{profileNotice}</div>}
     </div>}
-    {auxiliaryError && !showOrchestration && <div className="kb-muted" role="status">Orchestration/profile options unavailable: {auxiliaryError}</div>}
+    {profilesError && <div className="kb-muted" role="status">Agent profiles unavailable: {profilesError}. Existing task assignees remain selectable.</div>}
+    {auxiliaryError && !showOrchestration && <div className="kb-muted" role="status">Additional Kanban options unavailable: {auxiliaryError}</div>}
     {board && !introDismissed && <div className="kb-intro"><p>{k.introBody}</p><button type="button" onClick={() => { setIntroDismissed(true); try { localStorage.setItem('nerva.kanban.intro', 'dismissed'); } catch { /* storage disabled */ } }}>{k.introGotIt}</button></div>}
     {!board ? <div className="kb-loading" role="status">Loading Kanban board…</div> : <div className="kb-lanes" aria-label="Kanban board">
       {filtered.map(c => groupRunning && c.name === 'running' && c.tasks.length ? <div className="kb-running-groups" key={c.name}>{[...new Set(c.tasks.map(t => t.assignee || k.unassigned))].sort().map(name => <div key={name}><h4 className="kb-profile-heading">{name}</h4><Column name={c.name} tasks={c.tasks.filter(t => (t.assignee || k.unassigned) === name)} columns={names} selected={selected} collapsed={false} onToggle={() => setGroupRunning(false)} onAdd={onAdd} onOpen={onOpen} onSelect={select} onMove={onMove} onDelete={onDelete} fallbackAssignee={orchestration?.resolved_default_assignee || ''} /></div>)}</div> :
@@ -229,9 +237,9 @@ export function BoardCanvas({
 }
 
 export function NewTaskDialog({
-  target, board, slug, profiles, knownAssignees = [], orchestration, modelOptions = null, modelOptionsError = '', parents, onClose, onCreated,
+  target, board, slug, profiles, knownAssignees = [], existingAssignees = [], orchestration, modelOptions = null, modelOptionsError = '', parents, onClose, onCreated,
 }: {
-  target: string; board?: BoardMeta; slug: string; profiles: KanbanProfile[]; knownAssignees?: KanbanAssignee[];
+  target: string; board?: BoardMeta; slug: string; profiles: KanbanProfile[]; knownAssignees?: KanbanAssignee[]; existingAssignees?: string[];
   orchestration: OrchestrationSettings | null; modelOptions?: KanbanModelOptionsResponse | null; modelOptionsError?: string;
   parents: KanbanTask[]; onClose: () => void; onCreated: () => void;
 }) {
@@ -246,8 +254,9 @@ export function NewTaskDialog({
     const seen = new Set<string>();
     for (const p of profiles) if (p.name) seen.add(p.name);
     for (const a of knownAssignees) if (a.name) seen.add(a.name);
+    for (const name of existingAssignees) if (name) seen.add(name);
     return [...seen].sort();
-  }, [profiles, knownAssignees]);
+  }, [profiles, knownAssignees, existingAssignees]);
   const runDraftEstimate = async () => {
     if (!title.trim() || estimating) return;
     setEstimating(true); setError(''); setDraftEstimate(null);
@@ -281,7 +290,9 @@ export function NewTaskDialog({
       <div className="kb-grid-two"><label>Priority<input type="number" value={priority} onChange={e => setPriority(e.target.value)} /></label>
       <label>Workspace<select value={workspaceKind} onChange={e => setWorkspaceKind(e.target.value)}><option value="scratch">scratch</option><option value="dir">dir</option><option value="worktree">worktree</option></select></label></div>
       {workspaceKind !== 'scratch' && <label>Workspace override<input value={workspacePath} onChange={e => setWorkspacePath(e.target.value)} placeholder={board?.default_workdir || k.workspaceInherit} /></label>}
-      <label>Assignee<select value={assignee} onChange={e => setAssignee(e.target.value)}><option value="">Default {orchestration?.resolved_default_assignee || 'assignee'}</option>{assigneeOptions.map(name => <option key={name} value={name}>{name}</option>)}<option value="__parked__">Park unassigned</option></select></label>
+      <label>Assignee<select value={assignee} onChange={e => setAssignee(e.target.value)}><option value="">{orchestration?.resolved_default_assignee ? `Default: ${orchestration.resolved_default_assignee}` : 'Unassigned'}</option>
+        {assigneeOptions.map(name => <option key={name} value={name}>{name}</option>)}
+        {orchestration?.resolved_default_assignee && <option value="__parked__">Park unassigned</option>}</select></label>
       <label>Skills<input value={skills} onChange={e => setSkills(e.target.value)} placeholder={k.skillsPlaceholder} /></label>
       {parents.length > 0 && <label>Parent<select value={parent} onChange={e => setParent(e.target.value)}><option value="">{k.noParent}</option>{parents.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}</select></label>}
       <div className="kb-inline-actions">

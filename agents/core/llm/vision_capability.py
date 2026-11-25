@@ -129,13 +129,8 @@ def _ollama_verdict(payload: object) -> bool | None:
     return "vision" in capabilities
 
 
-async def prepare_local_model_vision(backend: object, model: str) -> bool | None:
-    """Refresh one selected local model's explicit vision verdict before review.
-
-    Metadata is best effort. A failed or unsupported probe clears a prior
-    verdict so a stale text-only result cannot silently govern a later turn.
-    Cancellation remains visible to the caller.
-    """
+async def read_local_model_metadata(backend: object, model: str, *, check=None) -> object | None:
+    """Read bounded metadata from one exact, directly connected local model."""
     from .base import LMStudioBackend, OllamaBackend
     from .data_handling import DataHandlingRefused, physical_request_scope
     from .direct_transport import require_direct_async_transport
@@ -143,7 +138,6 @@ async def prepare_local_model_vision(backend: object, model: str) -> bool | None
 
     if not _valid_model(model) or type(backend) not in (LMStudioBackend, OllamaBackend):
         return None
-    _publish(backend, model, None)
     endpoint = str(backend.base_url)
     if not public_local_origin(endpoint):
         return None
@@ -170,7 +164,7 @@ async def prepare_local_model_vision(backend: object, model: str) -> bool | None
                 raise DataHandlingRefused("local model metadata request changed")
             require_direct_async_transport(client, request.url)
 
-        with physical_request_scope(None, request_check=request_check):
+        with physical_request_scope(check, request_check=request_check):
             async with client.stream(
                 method, path, json=request_json,
                 timeout=3.0, follow_redirects=False,
@@ -182,10 +176,25 @@ async def prepare_local_model_vision(backend: object, model: str) -> bool | None
                     body.extend(chunk)
                     if len(body) > _MAX_METADATA_BYTES:
                         return None
-        payload = json.loads(body)
-        verdict = (_lm_studio_verdict(payload, model) if lm_studio
-                   else _ollama_verdict(payload))
-        _publish(backend, model, verdict)
-        return verdict
+        return json.loads(body)
     except (DataHandlingRefused, httpx.HTTPError, RuntimeError, ValueError, TypeError):
         return None
+
+
+async def prepare_local_model_vision(backend: object, model: str) -> bool | None:
+    """Refresh one selected local model's explicit vision verdict before review.
+
+    Metadata is best effort. A failed or unsupported probe clears a prior
+    verdict so a stale text-only result cannot silently govern a later turn.
+    Cancellation remains visible to the caller.
+    """
+    from .base import LMStudioBackend, OllamaBackend
+
+    if not _valid_model(model) or type(backend) not in (LMStudioBackend, OllamaBackend):
+        return None
+    _publish(backend, model, None)
+    payload = await read_local_model_metadata(backend, model)
+    verdict = (_lm_studio_verdict(payload, model) if type(backend) is LMStudioBackend
+               else _ollama_verdict(payload))
+    _publish(backend, model, verdict)
+    return verdict

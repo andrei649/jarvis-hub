@@ -67,6 +67,22 @@ it('rehydrates the mounted screen and continues the same ID after an app restart
   expect(send('Continue after restart').body.session_id).toBe('saved-session');
 });
 
+it('sends a direct reply request once and keeps the typed message intact', async () => {
+  seedChat(); mount();
+  await screen.findByText('Saved topic');
+  const input = screen.getByPlaceholderText('Message Jarvis…');
+  const direct = () => screen.queryByText('Send direct reply');
+  expect(direct()).toBeNull();
+  fireEvent.change(input, { target: { value: '/help' } });
+  expect(direct()).toBeNull();
+  fireEvent.change(input, { target: { value: 'Quick question' } });
+  fireEvent.click(screen.getByText('Send direct reply'));
+  const xhr = ChatXHR.latest;
+  expect(xhr.body).toEqual({ message: 'Quick question', agent: 'jarvis', session_id: 'saved-session', reasoning: 'none' });
+  await act(async () => xhr.emit({ type: 'end', text: 'Answer', session_id: 'saved-session' }));
+  expect(send('Another question').body).not.toHaveProperty('reasoning');
+});
+
 it('New keeps the old transcript until the server acknowledges a distinct session', async () => {
   seedChat(); mount();
   await screen.findByText('Saved topic');

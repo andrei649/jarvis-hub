@@ -45,6 +45,7 @@ from agents.core.learning import review_policy as rp  # noqa: E402
 from agents.core.learning.memory_proposals import MemoryProposalStore  # noqa: E402
 from agents.core.learning.review_policy import ReviewScope  # noqa: E402
 from agents.core.llm import data_handling  # noqa: E402
+from agents.core.llm.base import LMStudioBackend  # noqa: E402
 from agents.core.llm.egress import llm_async_client  # noqa: E402
 from agents.core.llm.providers import get_profile  # noqa: E402
 from agents.core.llm.tool_protocol import TokenUsage  # noqa: E402
@@ -68,36 +69,37 @@ def _reply(user=(), agent=(), corrections=(), skills=()):
                        "corrections": list(corrections), "skill_updates": list(skills)})
 
 
-class _Model:
-    """The local model's transport: the one double. It answers with the queued reply (or
-    "nothing"), records each prompt, and reports provider-certified usage the way a real
-    local dispatch does. ``gate`` holds a call open so a test can cancel it mid-flight."""
+def _Model():
+    """An exact local backend with a direct, correctly shaped in-memory HTTP route."""
+    model = LMStudioBackend("http://127.0.0.1:1234", trust_env=False)
+    old_client = model.client
+    model.client = llm_async_client("lm-studio", base_url=model.base_url, transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"ok": True})))
+    asyncio.run(old_client.aclose())
+    model.prompts = []
+    model.models = []
+    model.replies = []
+    model.gate = None
+    model.window = 16_384
+    model.profile = get_profile("lm-studio")
+    model.context_window = lambda _model: model.window
 
-    def __init__(self):
-        self.prompts: list[str] = []
-        self.models: list[str] = []
-        self.replies: list[str] = []
-        self.gate: asyncio.Event | None = None
-        self.profile = get_profile("lm-studio")
-        self.base_url = "http://127.0.0.1:1234"
-        self.window: int | None = 16_384          # what the backend says its context window is
+    async def generate(**kwargs):
+        model.prompts.append(kwargs["prompt"])
+        model.models.append(kwargs["model"])
+        await model.client.post("/v1/chat/completions", json={
+            "model": kwargs["model"], "messages": [
+                {"role": "system", "content": kwargs["system"]},
+                {"role": "user", "content": kwargs["prompt"]}],
+            "stream": False, "max_tokens": kwargs["max_tokens"],
+            "temperature": kwargs["temperature"]})
+        if model.gate is not None:
+            await model.gate.wait()
+        report_text_usage(TokenUsage(input_tokens=200, output_tokens=40, counts_complete=True))
+        return model.replies.pop(0) if model.replies else '{"nothing": true}'
 
-    def context_window(self, model):
-        return self.window
-
-    async def generate(self, **kwargs):
-        self.prompts.append(kwargs["prompt"])
-        self.models.append(kwargs.get("model"))
-        client = llm_async_client("lm-studio", transport=httpx.MockTransport(
-            lambda request: httpx.Response(200, json={"ok": True})))
-        try:
-            await client.post("http://127.0.0.1:1234/v1/chat/completions", json={"model": kwargs.get("model")})
-            if self.gate is not None:
-                await self.gate.wait()
-            report_text_usage(TokenUsage(input_tokens=200, output_tokens=40, counts_complete=True))
-        finally:
-            await client.aclose()
-        return self.replies.pop(0) if self.replies else '{"nothing": true}'
+    model.generate = generate
+    return model
 
 
 @pytest.fixture
@@ -143,6 +145,7 @@ def hub(tmp_path, monkeypatch):
     orch.llm_router = SimpleNamespace(local_backend=model, active_model=CHAT_MODEL, _backend=model,
                                       _local_model=CHAT_MODEL)
     orch.load_runtime_settings()
+    orch._runtime_settings["learning.review_max_tokens"] = 512  # Existing owner budget for replay cases.
     orch.reviewer = orch._build_background_reviewer()
     orch.install_history_guards()                     # as load_agents does
     monkeypatch.setattr(web, "orch", orch)
@@ -151,6 +154,7 @@ def hub(tmp_path, monkeypatch):
                           client=TestClient(web.app), queue=orch.action_approvals,
                           store=orch.memory_proposals, settings=settings_db)
     cost_tracker.reset()
+    asyncio.run(model.aclose())
 
 
 @contextlib.contextmanager
@@ -819,7 +823,8 @@ async def test_the_skill_leg_is_withheld_when_the_turns_posture_is_not_offered_t
     update = [{"kind": "new", "task": "deploy a static site", "steps": ["build", "ship"]}]
     hub.model.replies.append(_reply(skills=update))
     await _end_turn(hub, "how do I deploy", "like this")
-    assert len(made) == 1 and made[0][1] == {"write_origin": "background_review"}
+    assert len(made) == 1 and made[0][1] == {"write_origin": "background_review",
+                                           "procedure_agents": ["all"]}
 
     from agents.core.job_toolsets import toolset_scope
 

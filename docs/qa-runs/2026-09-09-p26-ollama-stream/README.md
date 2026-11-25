@@ -43,7 +43,7 @@ or a complete running-hub turn.
 To replay the exact saved bytes offline through the current backend reader:
 
 ```powershell
-python docs/qa-runs/2026-09-09-p26-ollama-stream/capture.py
+python docs/archive/qa-runs/2026-09-09-p26-ollama-stream/capture.py
 ```
 
 An explicit `--live` captures one new bounded generation using the already

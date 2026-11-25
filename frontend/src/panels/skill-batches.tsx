@@ -13,8 +13,10 @@
    to that skill (other skills' related_skills, bundle members) and what still names the
    deleted skill (prose, jobs, the load set, the switches, pending proposals and batches). */
 import React, { useState } from 'react';
-import { Row, Tag, actA, arr, inpS, mono, refusalReason } from '../panel-kit';
+/* The kit's words style is imported as noteS: BatchFileDiff has its own `note`. */
+import { Row, Tag, actA, arr, codeS, mono, note as noteS, refusalReason } from '../panel-kit';
 import { ChangeDiff, originLabel } from './skill-changes';
+import { LABEL } from '../theme/type';
 
 export const SKILL_BATCHES_PATH = '/api/skills/batches';
 export const SKILL_BATCH_PATH = '/api/skills/batch';
@@ -50,7 +52,7 @@ export function BatchLesson({ body }: { body: any }) {
   const op = body.failed_op;
   const preview = body.file_preview;
   return (
-    <div data-testid="skill-batch-lesson" style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--amber)' }}>
+    <div data-testid="skill-batch-lesson" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6, color: 'var(--amber)' }}>
       <div>{body.detail || body.reason}</div>
       {op && <div style={{ color: 'var(--ink-2)' }}>
         operation {op.index} · {op.action} · {op.name}{op.file_path ? ` · ${op.file_path}` : ''}
@@ -59,7 +61,7 @@ export function BatchLesson({ body }: { body: any }) {
       {arr(body, 'rolled_back').length > 0 && <div style={{ color: 'var(--ink-2)' }}>
         put back as they were: {arr(body, 'rolled_back').join(', ')}
       </div>}
-      {preview && <pre style={{ ...mono, fontSize: 10.5, whiteSpace: 'pre-wrap', margin: '4px 0 0', padding: 6,
+      {preview && <pre style={{ ...mono, fontSize: 'var(--n-fs-meta)', whiteSpace: 'pre-wrap', margin: '4px 0 0', padding: 6,
         maxHeight: 240, overflow: 'auto', color: 'var(--ink-2)', background: 'var(--surface)',
         border: '1px solid var(--panel-line)', borderRadius: 4 }}>
         {`${preview.skill}/${preview.path}\n${preview.content}`}
@@ -77,14 +79,14 @@ export function BatchFileDiff({ f }: { f: FileChange }) {
   // review-H665 r4: a folded diff (up to MBs) builds its lines only once the owner opens it.
   const [opened, setOpened] = useState(false);
   const text = f.diff || `${f.change} ${f.file}`;
-  const note = f.diff_truncated && <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 2 }}>
+  const note = f.diff_truncated && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 2 }}>
     {f.added_truncated ? 'cut short · text this change adds is not all shown' : 'cut short · only removed or unchanged lines omitted'}
   </div>;
   if (text.length <= LONG_DIFF_CHARS) return <><ChangeDiff text={text} />{note}</>;
   return (
     <details data-testid="skill-batch-long-diff" style={{ marginTop: 6 }}
       onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) setOpened(true); }}>
-      <summary style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', cursor: 'pointer' }}>
+      <summary style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', cursor: 'pointer' }}>
         {f.change} {f.file} · {text.split('\n').length.toLocaleString()} lines · show the whole diff
       </summary>
       {opened && <ChangeDiff text={text} />}
@@ -118,7 +120,7 @@ export function BatchReferences({ refs }: { refs: any[] }) {
   if (!Array.isArray(refs) || !refs.length) return null;
   return <>{refs.map((r: any, i: number) => (
     <div key={`${r.skill}-${i}`} data-testid="skill-batch-references"
-      style={{ ...mono, fontSize: 10.5, marginTop: 4, color: 'var(--ink-2)' }}>
+      style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 4, color: 'var(--ink-2)' }}>
       <div>{r.skill} deleted · {r.absorbed_into ? `absorbed into ${r.absorbed_into}` : 'no absorbing skill'}</div>
       {arr(r, 'migrated').map((m: any, j: number) => <div key={`m${j}`}>
         → {m.holder === 'bundle'
@@ -139,24 +141,27 @@ export function BatchReferences({ refs }: { refs: any[] }) {
 function BatchDiffs({ skills }: { skills: SkillChange[] }) {
   return <>{skills.map((s, i) => (
     <div key={`${s.name}-${i}`} data-testid="skill-batch-skill" style={{ marginTop: 4 }}>
-      <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>{s.name} · {s.change}
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{s.name} · {s.change}
         {(s as any).pinned === true && <span style={{ color: 'var(--amber)' }}> · pinned by you</span>}</div>
       {(s.files || []).map((f, j) => <BatchFileDiff key={`${f.file}-${j}`} f={f} />)}
     </div>
   ))}</>;
 }
 
-export function SkillBatchesInbox({ reply, error, onDecided }:
-  { reply: any; error?: string | null; onDecided?: () => void }) {
+/* `demo` (PHASE_B_PLAN.md §1.4): while the demo sample is on, every decision control is disabled,
+   as the Decision Inbox's own requests are; the batches are still shown with their diffs. */
+export function SkillBatchesInbox({ reply, error, onDecided, demo = false }:
+  { reply: any; error?: string | null; onDecided?: () => void; demo?: boolean }) {
   const [outcome, setOutcome] = useState<Record<string, string>>({});
   if (error) {
-    return <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 8 }}>
+    return <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 8 }}>
       skill batches could not be read · {error}
     </div>;
   }
   const rows = arr(reply, 'batches');
   if (!rows.length) return null;
   const decide = (b: any, approved: boolean) => {
+    if (demo) return;
     const id = String(b.id || '');
     setOutcome((o) => ({ ...o, [id]: approved ? 'applying…' : 'rejecting…' }));
     actA(`/api/actions/${encodeURIComponent(String(b.card))}/decide`, { approved },
@@ -165,27 +170,30 @@ export function SkillBatchesInbox({ reply, error, onDecided }:
   };
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', letterSpacing: 1 }}>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
         SKILL BATCHES · {rows.length} awaiting you
       </div>
+      {demo && <p role="note" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '4px 0 0' }}>
+        The demo sample is on: these skill batches cannot be decided here. Exit the demo to decide them.
+      </p>}
       {rows.map((b: any, i: number) => (
         <div key={b.id || i} data-testid="skill-batch">
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>
+            <span style={{ ...noteS, color: 'var(--ink-2)' }}>
               {arr(b, 'operations').length} operation(s) on {arr(b, 'skills').join(', ')}
             </span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag>{originLabel(b.origin)}</Tag>
               <Tag>all or nothing</Tag>
-              <button className="tool-btn" title="approve skill batch" disabled={!b.card}
+              <button className="tool-btn" title="approve skill batch" disabled={demo || !b.card}
                 onClick={() => decide(b, true)}>✓</button>
-              <button className="tool-btn" title="reject skill batch" disabled={!b.card}
+              <button className="tool-btn" title="reject skill batch" disabled={demo || !b.card}
                 onClick={() => decide(b, false)}>✕</button>
             </span>
           </Row>
           <BatchDiffs skills={arr(b, 'preview')} />
           <BatchReferences refs={arr(b, 'references')} />
-          {outcome[String(b.id || '')] && <div role="status" style={{ ...mono, fontSize: 10, marginTop: 4 }}>
+          {outcome[String(b.id || '')] && <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>
             {outcome[String(b.id || '')]}
           </div>}
         </div>
@@ -221,22 +229,22 @@ export function SkillBatchEditor({ onApplied }: { onApplied?: () => void }) {
   };
   return (
     <details style={{ marginTop: 10 }}>
-      <summary style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', letterSpacing: 1, cursor: 'pointer' }}>
+      <summary style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', cursor: 'pointer' }}>
         EDIT SEVERAL SKILLS · one atomic batch
       </summary>
       <textarea aria-label="skill batch operations" value={text} rows={8}
         placeholder='[{"name": "my-skill", "action": "patch", "old_string": "…", "new_string": "…"}]'
         onChange={(ev) => { setText(ev.target.value); setChecked(null); }}
-        style={{ ...inpS, width: '100%', marginTop: 6, boxSizing: 'border-box' }} />
+        style={{ ...codeS, width: '100%', marginTop: 6, boxSizing: 'border-box' }} />
       <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
         <button className="tool-btn" disabled={!ops} onClick={() => send(true)}>check</button>
         <button className="tool-btn" title="apply exactly the checked batch"
           disabled={!checked || checked.text !== text} onClick={() => send(false)}>apply</button>
-        {!ops && text.trim() && <span style={{ ...mono, fontSize: 10, color: 'var(--amber)' }}>
+        {!ops && text.trim() && <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
           not a list of operations
         </span>}
       </div>
-      {status && <div role="status" style={{ ...mono, fontSize: 10, marginTop: 4 }}>{status}</div>}
+      {status && <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>{status}</div>}
       {checked && <BatchDiffs skills={arr(checked.reply, 'skills')} />}
       {checked && <BatchReferences refs={arr(checked.reply, 'references')} />}
       <BatchLesson body={refusal} />
@@ -266,15 +274,15 @@ export function SkillConsolidation({ onProposed }: { onProposed?: () => void }) 
   const groups = arr(reply, 'groups');
   return (
     <div style={{ marginTop: 10 }} data-testid="skill-consolidation">
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', letterSpacing: 1 }}>OVERLAPPING SKILLS</div>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>OVERLAPPING SKILLS</div>
       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
         <button className="tool-btn" disabled={busy} onClick={() => run(false)}>find overlaps</button>
         <button className="tool-btn" disabled={busy} onClick={() => run(true)}>draft umbrellas (local model)</button>
       </div>
-      {reply && groups.length === 0 && <div style={{ fontSize: 10, marginTop: 4 }}>no overlapping skills</div>}
+      {reply && groups.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>no overlapping skills</div>}
       {groups.map((g: any, i: number) => (
         <Row key={i}>
-          <span style={{ ...mono, fontSize: 10.5 }}>{arr(g, 'members').join(' + ')}{g.umbrella ? ` → ${g.umbrella}` : ''}</span>
+          <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{arr(g, 'members').join(' + ')}{g.umbrella ? ` → ${g.umbrella}` : ''}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
             <Tag>{Number(g.score || 0).toFixed(2)}</Tag>
             <Tag c={g.status === 'proposed' ? 'var(--green)' : 'var(--ink-2)'}>
@@ -283,7 +291,7 @@ export function SkillConsolidation({ onProposed }: { onProposed?: () => void }) 
           </span>
         </Row>
       ))}
-      {error && <div role="alert" style={{ color: 'var(--red)', fontSize: 10 }}>{error}</div>}
+      {error && <div role="alert" style={{ color: 'var(--red)', fontSize: 'var(--n-fs-meta)' }}>{error}</div>}
     </div>
   );
 }

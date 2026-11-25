@@ -1,0 +1,36 @@
+.composer-skills { position: relative; flex: none; }
+.composer-skills-panel {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 35;
+  box-sizing: border-box; width: min(360px, calc(100vw - 24px));
+  max-height: min(54vh, 26rem); overflow: auto; padding: 12px 14px;
+  background: var(--void-2); border: 1px solid var(--panel-line);
+  border-radius: var(--radius, 10px); color: var(--ink); font-size: var(--n-fs-ui);
+}
+.composer-skills-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.composer-skills-panel input.composer-skills-search { box-sizing:border-box; display:block; width:100%; margin:8px 0; padding:9px;
+  color:var(--ink); background:var(--n-field-bg); border:1px solid var(--field-line); border-radius:var(--radius); }
+@media (max-width:600px) {
+  .composer-skills-panel .tool-btn, .composer-skills-panel input.composer-skills-search, .composer-skills-list button { min-height:44px; }
+}
+.composer-skills-panel p { margin: 8px 0; line-height: 1.4; color: var(--ink-2); }
+.composer-skills-list { list-style: none; margin: 8px 0; padding: 0; }
+.composer-skills-list li { border-top: 1px solid var(--panel-line); }
+.composer-skills-list button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 9px 2px; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.composer-skills-list button:hover, .composer-skills-list button:focus-visible { color: var(--accent-light); }
+.composer-skills-list code { color: var(--accent-light); font: inherit; font-family: var(--font-mono); overflow-wrap: anywhere; }
+.composer-skills-list span { color: var(--ink-2); }
+.composer-skills-review { border-top: 1px solid var(--panel-line); padding-top: 10px; }
+.composer-skills-review a { color: var(--accent-light); }
+.composer-skills-panel > a { color: var(--accent-light); }
+.composer-skills-list .composer-skills-edit { width: auto; min-height: 32px; padding: 4px 8px; margin: 0 0 6px;
+  border: 1px solid var(--panel-line); border-radius: 4px; color: var(--accent-light); }
+.composer-skills-revision { border-top: 1px solid var(--panel-line); padding-top: 10px; }
+.composer-skills-revision-head { display: grid; gap: 3px; }
+.composer-skills-revision-head code { color: var(--accent-light); overflow-wrap: anywhere; }
+.composer-skills-step { display: grid; gap: 4px; margin: 8px 0; }
+.composer-skills-step textarea { box-sizing: border-box; width: 100%; padding: 8px; resize: vertical; overflow-wrap: anywhere;
+  color: var(--ink); background: var(--n-field-bg); border: 1px solid var(--field-line); border-radius: 4px; }
+.composer-skills-step .tool-btn { justify-self: start; }
+.composer-skills-revision-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.composer-skills-revision a { color: var(--accent-light); }

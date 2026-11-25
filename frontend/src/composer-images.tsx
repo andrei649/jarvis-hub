@@ -224,15 +224,15 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
     refresh:()=>{refreshCatalog.current=true;setConsents({});setRefreshId(id=>id+1);}};
 }
 
-export function ComposerImages({draft}:{draft:ReturnType<typeof useComposerImages>}){
+export function ComposerImages({draft,disabled=false}:{draft:ReturnType<typeof useComposerImages>;disabled?:boolean}){
   const d=draft.destination;
-  return <div style={{padding:'6px 8px',fontSize:11}}>
-    <button type="button" className="tool-btn" onClick={draft.loadActiveImages}>Use previous image</button>
+  return <div style={{padding:'6px 8px',fontSize:'var(--n-fs-meta)'}}>
+    <button type="button" className="tool-btn" disabled={disabled} onClick={draft.loadActiveImages}>Use previous image</button>
     {draft.activeState==='loading'&&<span role="status"> Checking earlier images…</span>}
     {draft.activeState==='unavailable'&&<span role="status"> Earlier images are unavailable in this session. Attach them again if needed.</span>}
     {draft.activeState==='ready'&&<div style={{display:'flex',gap:8,overflowX:'auto',marginTop:5}}>
       {draft.activeImages.map(image=><label key={image.handle} style={{flex:'0 0 150px',border:'1px solid var(--panel-line)',borderRadius:6,padding:5}}>
-        <input type="checkbox" checked={draft.selectedHandles.includes(image.handle)} onChange={()=>draft.toggleActive(image.handle)}/>
+        <input type="checkbox" disabled={disabled} checked={draft.selectedHandles.includes(image.handle)} onChange={()=>draft.toggleActive(image.handle)}/>
         {`Use previous image: ${image.question} (${image.count})`}
         {draft.selectedHandles.includes(image.handle)&&<span>{` · #${draft.selectedHandles.indexOf(image.handle)+1}`}</span>}
       </label>)}

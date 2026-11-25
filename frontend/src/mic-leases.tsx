@@ -5,14 +5,17 @@
    The kinds the owner allows to open a microphone are shown (voice.mic_surfaces). */
 import React, { useEffect, useState } from 'react';
 import { apiGet, apiPost } from './api/client';
+import { LABEL, MONO } from './theme/type';
 
 export const MIC_STATUS = '/api/voice/mic';
 const MIC_PAUSE = '/api/voice/mic/pause';
 const MIC_RESUME = '/api/voice/mic/resume';
 const MIC_STOP_ANY = '/api/voice/mic/stop';
 
-const small = { padding: '0 5px', fontSize: 9.5 };
-const line = { display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-2)', margin: '3px 0' };
+const small = { padding: '0 5px', fontSize: 'var(--n-fs-meta)' };
+/* Messages and status lines are words; a device and its holder (`default · hud:<tab>`) are
+   identifiers and take MONO on their own span. */
+const line = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '3px 0' };
 
 export function MicLeases() {
   const [st, setSt] = useState<any>(null);
@@ -28,11 +31,11 @@ export function MicLeases() {
   const paused = Array.isArray(st.paused) ? st.paused : [];
   return (
     <div aria-label="microphones" style={{ marginTop: 8 }}>
-      <div style={{ color: 'var(--accent-light)', fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.14em' }}>MICROPHONES</div>
+      <div style={{ ...LABEL, color: 'var(--accent-light)', fontSize: 'var(--n-fs-meta)' }}>MICROPHONES</div>
       {devices.length === 0 && paused.length === 0 && <div style={line}>no microphone is open</div>}
       {devices.map((d: any) => (
         <div key={d.device} style={line}>
-          <span>{d.device} · {d.holder.surface}</span>
+          <span style={MONO}>{d.device} · {d.holder.surface}</span>
           <button className="tool-btn" style={small} onClick={() => act(MIC_PAUSE, d.holder.surface)} aria-label={`pause ${d.holder.surface}`}>pause</button>
           <button className="tool-btn" style={small} onClick={() => act(MIC_STOP_ANY, d.holder.surface)} aria-label={`stop ${d.holder.surface}`}>stop</button>
         </div>

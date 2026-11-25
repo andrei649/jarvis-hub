@@ -1,8 +1,9 @@
 import React from 'react';
 import {webcrypto} from 'node:crypto';
-import {render,screen,fireEvent,waitFor,act,cleanup} from '@testing-library/react';
+import {render,screen,fireEvent,waitFor,act,cleanup,within} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import App from '../app';
+import {V2} from '../data';
 let submit:any;
 vi.mock('../voice',()=>({useVoice:()=>({active:false,toggle:()=>{}})}));
 vi.mock('../mesh',()=>({NeuralMesh:()=>null,isExecutingAgent:()=>false}));
@@ -10,7 +11,10 @@ vi.mock('../api/loaders',()=>({loadJarvisData:async()=>({}),createLatestRefreshR
 vi.mock('../api/live',()=>({PREVIEW_MODE_LIVE_KEYS:{},useLiveModes:()=>({live:{}})}));
 vi.mock('../analytics',()=>({initAnalytics:()=>{},trackPageview:()=>{}}));
 vi.mock('../gap',()=>({FirstRunGate:()=>null}));
-vi.mock('../modes3',async()=>{const {Conversation,InputBar}=await import('../cockpit');return {ChatMode:(props:any)=>{submit=props.onSubmit;return <><Conversation {...props}/><InputBar onSubmit={props.onSubmit} t={props.t}/></>;}};});
+// The Ledger conversation (PHASE_B_PLAN.md §5.3) renders as it is; the test only keeps a handle on
+// the submit App hands it, the same function its composer calls.
+vi.mock('../home/talk/TalkRegister',async(importOriginal)=>{const actual=await importOriginal<typeof import('../home/talk/TalkRegister')>();
+  return {...actual,TalkRegister:(props:any)=>{submit=props.onSubmit;return <actual.TalkRegister {...props}/>;}};});
 const status={configured:true,destination:'http://127.0.0.1:1234/v1',binding:'a'.repeat(64),review_token:'r'.repeat(43),model:'vision-test',backend:'custom',local:true,selected_turn:true,session_id:'image_session'};
 const draft={images:['data:image/png;base64,iVBORw0KGgo='],names:['shot.png'],expected_destination:status.destination,expected_binding:status.binding,review_token:status.review_token,agent:'jarvis',remote_ack:false,selected_turn:true,session_id:'image_session'};
 const answer=()=>new Response(JSON.stringify({ok:true,response:'A blue square.',model:'vision-test',backend:'custom',destination:status.destination,local:true}));
@@ -35,15 +39,19 @@ it('sends a vision turn from the actual shared input and labels actual provenanc
   // The transmit button starts enabled for an empty text draft. Wait until the
   // image has entered the composer before checking its ready state.
   await screen.findByRole('img',{name:'shot.png'});
-  const send=screen.getByRole('button',{name:/TRANSMIT/});
+  const send=screen.getByRole('button',{name:V2.I18N.en.transmit});
   await waitFor(()=>expect(send.hasAttribute('disabled')).toBe(false));fireEvent.click(send);
   await waitFor(()=>expect(requests.some(r=>r.path.endsWith('/composer/describe-prepared'))).toBe(true));
   const request=requests.find(r=>r.path.endsWith('/composer/describe-prepared'));
   expect(JSON.parse(request.body)).toMatchObject({prompt:'Describe these images.',expected_binding:status.binding,selected_turn:true,session_id:'image_session'});
   expect(JSON.parse(request.body)).not.toHaveProperty('names');
   await act(async()=>resolveVision(answer()));
-  await screen.findByText('A blue square.');await screen.findByText(/VISION ANALYSIS/);
-  expect(screen.getByText(/vision-test/)).toBeTruthy();
+  // the Ledger vision turn: who is "Vision" (titled "Vision analysis"), then where it actually ran
+  const turn=(await screen.findByText('A blue square.')).closest('[data-turn="vision"]') as HTMLElement;
+  expect(turn).toBeTruthy();
+  expect(within(turn).getByTitle('Vision analysis').textContent).toBe('Vision');
+  expect(Array.from(turn.querySelectorAll('code')).map(c=>c.textContent)).toEqual(['vision-test','custom',status.destination]);
+  expect(turn.textContent).toContain('loopback');
   expect(requests.some(r=>r.path==='/chat/stream')).toBe(false);
 });
 it('owns one turn synchronously across image and text submissions',async()=>{
@@ -103,7 +111,7 @@ it('discards a late streamed reply after selecting another topic',async()=>{
 it('stops a vision turn and ignores a late response even if transport ignores abort',async()=>{
   await mount();act(()=>submit('question',draft));
   await waitFor(()=>expect(resolveVision).toBeTruthy());
-  fireEvent.click(screen.getByRole('button',{name:'Stop generating'}));
+  fireEvent.click(screen.getByRole('button',{name:'Stop this reply'}));
   expect(requests.find(r=>r.path.endsWith('/composer/describe-prepared')).signal.aborted).toBe(true);
   await act(async()=>resolveVision(answer()));
   expect(screen.queryByText('A blue square.')).toBeNull();
@@ -111,7 +119,10 @@ it('stops a vision turn and ignores a late response even if transport ignores ab
 it('renders a structured vision failure without invented agent provenance',async()=>{
   await mount();act(()=>submit('question',draft));
   await act(async()=>resolveVision(new Response(JSON.stringify({error:'Vision destination changed; review it again',reason:'vlm_destination_changed'}),{status:409})));
-  await screen.findByText(/Vision destination changed/);
+  const failure=(await screen.findByText(/Vision destination changed/)).closest('[data-turn]') as HTMLElement;
+  // said by the System, not by an agent, and with no "where it ran" footnote
+  expect(failure.getAttribute('data-turn')).toBe('system');
+  expect(failure.querySelector('[data-footnote]')).toBeNull();
   expect(screen.queryByText('A blue square.')).toBeNull();
 });
 

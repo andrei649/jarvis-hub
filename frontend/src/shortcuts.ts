@@ -28,10 +28,14 @@ export const STORAGE_KEY = 'hud.shortcuts';
 /** An approval or decision is never a keyboard target. */
 export const FORBIDDEN_TARGET = /(approv|decision|decide|reject|deny|accept|consent)/i;
 
-const MODES: [string, string, string][] = [
-  ['1', 'cockpit', 'Cockpit'], ['2', 'agents', 'Agents'], ['3', 'trust', 'Trust'],
-  ['4', 'memory', 'Memory'], ['5', 'autonomy', 'Autonomy'], ['6', 'build', 'Build'],
-  ['7', 'observe', 'Observe'], ['8', 'interop', 'Interop'], ['9', 'chat', 'Chat'], ['0', 'comms', 'Comms'],
+// The number keys follow the masthead (PHASE_B_PLAN.md §3.6): the nine areas in order, then 0 for
+// the conversation. The HUD v2 rail's `mode.autonomy` and `mode.comms` are gone (readOverrides
+// drops a stored override for an id it no longer knows); both pages stay one click away in their
+// contents columns and in Ctrl K.
+const MODE_KEYS: [string, string, string][] = [
+  ['1', 'cockpit', 'Home'], ['2', 'work', 'Work'], ['3', 'agents', 'Agents'],
+  ['4', 'memory', 'Memory'], ['5', 'trust', 'Trust'], ['6', 'build', 'Build'],
+  ['7', 'interop', 'Connect'], ['8', 'observe', 'Observe'], ['9', 'admin', 'Settings'], ['0', 'chat', 'Conversation'],
 ];
 
 export function defineActions(actions: ShortcutAction[]): ShortcutAction[] {
@@ -48,13 +52,11 @@ export function defineActions(actions: ShortcutAction[]): ShortcutAction[] {
   return actions;
 }
 
-export const ACTIONS: ShortcutAction[] = defineActions([
-  ...MODES.map(([key, mode, label]) => ({
-    id: `mode.${mode}`, category: 'Navigation' as Category, label: `Go to ${label}`, chord: key, scope: 'global' as Scope,
-  })),
-  { id: 'view.world', category: 'Navigation', label: 'Open World Intelligence', chord: 'w', scope: 'global' },
-  { id: 'view.console', category: 'Navigation', label: 'Open or close the Console', chord: '`', scope: 'global' },
-  { id: 'view.ambient', category: 'View', label: 'Ambient mode', chord: 'a', scope: 'global' },
+const modeActions = (modes: [string, string, string][]): ShortcutAction[] => modes.map(([key, mode, label]) => ({
+  id: `mode.${mode}`, category: 'Navigation' as Category, label: `Go to ${label}`, chord: key, scope: 'global' as Scope,
+}));
+
+const SHARED_ACTIONS: ShortcutAction[] = [
   { id: 'view.cinema', category: 'View', label: 'Cinema mode', chord: 'm', scope: 'global' },
   { id: 'cinema.orb', category: 'View', label: 'Cinema: the voice orb', chord: 'o', scope: 'cinema' },
   { id: 'cinema.mesh', category: 'View', label: 'Cinema: the neural mesh', chord: 'n', scope: 'cinema' },
@@ -62,6 +64,17 @@ export const ACTIONS: ShortcutAction[] = defineActions([
   { id: 'composer.focus', category: 'Composer', label: 'Focus the message box', chord: '/', scope: 'global' },
   { id: 'session.palette', category: 'Session', label: 'Command palette', chord: 'mod+k', scope: 'global', inInputs: true },
   { id: 'session.shortcuts', category: 'Session', label: 'Keyboard shortcuts', chord: 'mod+/', scope: 'global', inInputs: true },
+];
+
+/** The registry (PHASE_B_PLAN.md §3.6): masthead order on 1–9, 0 the conversation; w goes to
+ *  Observe › World signals; the backtick opens the sheet filtered to panels; a goes to Glance.
+ *  No docket verb is ever registered here. */
+export const ACTIONS: ShortcutAction[] = defineActions([
+  ...modeActions(MODE_KEYS),
+  { id: 'view.world', category: 'Navigation', label: 'Open World signals', chord: 'w', scope: 'global' },
+  { id: 'view.console', category: 'Navigation', label: 'Find a panel', chord: '`', scope: 'global' },
+  { id: 'view.ambient', category: 'View', label: 'Glance', chord: 'a', scope: 'global' },
+  ...SHARED_ACTIONS,
 ]);
 
 // O(1) lookup index for shortcut actions to avoid O(N) array scans during hotkey handling and UI rendering

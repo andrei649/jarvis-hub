@@ -1,7 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { apiGet, apiPost } from './api/client';
+import { defineStrings, fmt, pick } from './frame/strings';
+import { TALK_STRINGS } from './home/talk/strings';
 import { fmtTimeShort } from './primitives';
+import { boardSources } from './board-sources';
 import type { SessionRecovery } from './session-recovery';
+import { useAppearanceContext } from './theme/appearance-context';
 
 type Action = 'show' | 'hide' | 'reset' | 'handoff' | 'drag' | 'resize';
 type Capabilities = { compositor: string; positioning: boolean; alwaysOnTop: boolean };
@@ -46,14 +50,15 @@ export function useDesktopConversation(setMessages: (messages: any[]) => void, b
       const request = ++sync.current.generation;
       const selected = selectedSessionId();
       const capturedActivity = activityGeneration?.();
-      const history = selected ? apiPost('/sessions/resume', { session_id: selected }) : apiGet('/memory');
+      const history = selected ? apiPost('/sessions/resume', { session_id: selected }, { admin: true }) : apiGet('/memory', { admin: true });
       history.then((r: any) => {
         if (!active || sync.current.busy || request !== sync.current.generation ||
             selected !== selectedSessionId() ||
             (capturedActivity !== undefined && capturedActivity !== activityGeneration?.()) ||
             !Array.isArray(r?.turns)) return;
         sync.current.pending = false;
-        setMessages(r.turns.map((tn: any) => ({ role: tn.role === 'user' ? 'user' : 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts: fmtTimeShort(new Date(tn.timestamp || Date.now())) })));
+        setMessages(r.turns.map((tn: any) => ({ role: tn.role === 'user' ? 'user' : 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts: fmtTimeShort(new Date(tn.timestamp || Date.now())),
+          ...(tn.role === 'user' && !('foreign_origin' in tn) && !('tainted' in tn) ? { boardSources: boardSources(tn.board_sources) } : {}) })));
       }).catch((error: unknown) => {
         if (!selected || !recovery) return;
         void recovery.recover(selected, error, () => active && !sync.current.busy &&
@@ -79,21 +84,57 @@ export function useDesktopConversation(setMessages: (messages: any[]) => void, b
   }, [setMessages, demo, selectedSessionId, recovery, activityGeneration]);
   useEffect(() => { if (!busy) resume.current?.(); }, [busy]);
 }
+/* The desktop controls' words, in the language the rest of their window speaks: the owner's, from
+   App's appearance, which App also hands the floating window's page and Glance as their `lang`. The
+   controls read it from App's AppearanceProvider (theme/CONTRACT.md §7), since neither the frame's
+   foot nor the floating page passes it to them. "Open in app" is the conversation's own phrase for
+   the same handoff (home/talk/strings.ts; the docket's line says it the same way), so one act reads
+   the same everywhere. A refused action is shown in the bridge's own words. */
+export const DESKTOP_STRINGS = defineStrings({
+  en: {
+    floatChat: 'Float chat',
+    handle: 'NERVA · CHAT',
+    move: 'Move floating chat',
+    openInApp: TALK_STRINGS.en.openInApp,
+    reset: 'Reset layout',
+    hide: 'Hide chat',
+    resize: 'Resize floating chat',
+    compositor: '{compositor}: placement and topmost are controlled by your compositor.',
+  },
+  ro: {
+    floatChat: 'Deschide conversația plutitoare',
+    handle: 'NERVA · CONVERSAȚIE',
+    move: 'Mută conversația plutitoare',
+    openInApp: TALK_STRINGS.ro.openInApp,
+    reset: 'Resetează poziția și mărimea',
+    hide: 'Ascunde conversația',
+    resize: 'Redimensionează conversația plutitoare',
+    compositor: '{compositor}: poziția și afișarea deasupra celorlalte ferestre sunt controlate de compozitorul tău.',
+  },
+});
+
 export function DesktopControls({ floating = false }: { floating?: boolean }) {
+  // outside App's provider (a test that draws the controls alone) the words are English
+  const appearance = useAppearanceContext();
+  const s = pick(DESKTOP_STRINGS, appearance?.preferences.lang);
   const [error, setError] = useState('');
   const [caps, setCaps] = useState<Capabilities | null>(null);
   useEffect(() => { if (bridge() && floating) bridge().invoke('desktop_capabilities').then(setCaps).catch((e: unknown) => setError(String(e))); }, [floating]);
   if (!bridge()) return null;
   const act = (action: Action) => { setError(''); bridge().invoke('desktop_action', { action }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e))); };
+  // The shell always names its compositor (Cocoa, Win32, Wayland or X11) and says placement and
+  // topmost are out of its hands only under Wayland (desktop/src-tauri/src/main.rs Capabilities);
+  // only a mock bridge that answers {} (the e2e specs' test bridge) leaves the name empty.
+  const compositor = typeof caps?.compositor === 'string' ? caps.compositor : '';
   return <div className={floating ? 'desktop-controls floating-controls' : 'desktop-controls'}>
     {floating ? <>
-      <button className="desktop-drag" aria-label="Move floating chat" onMouseDown={(e) => { if (e.button === 0) act('drag'); }}>NERVA · CHAT</button>
-      <button onClick={() => act('handoff')}>Open in app</button>
-      <button onClick={() => act('reset')}>Reset layout</button>
-      <button onClick={() => act('hide')}>Hide chat</button>
-      {caps && (!caps.positioning || !caps.alwaysOnTop) && <span role="status">{caps.compositor}: placement and topmost are controlled by your compositor.</span>}
-      <button className="desktop-resize" aria-label="Resize floating chat" onMouseDown={(e) => { if (e.button === 0) act('resize'); }}>◢</button>
-    </> : <button onClick={() => act('show')}>Float chat</button>}
+      <button className="desktop-drag" aria-label={s.move} onMouseDown={(e) => { if (e.button === 0) act('drag'); }}>{s.handle}</button>
+      <button onClick={() => act('handoff')}>{s.openInApp}</button>
+      <button onClick={() => act('reset')}>{s.reset}</button>
+      <button onClick={() => act('hide')}>{s.hide}</button>
+      {caps && (!caps.positioning || !caps.alwaysOnTop) && <span role="status">{fmt(s.compositor, { compositor })}</span>}
+      <button className="desktop-resize" aria-label={s.resize} onMouseDown={(e) => { if (e.button === 0) act('resize'); }}>◢</button>
+    </> : <button onClick={() => act('show')}>{s.floatChat}</button>}
     {error && <span role="alert">{error}</span>}
   </div>;
 }

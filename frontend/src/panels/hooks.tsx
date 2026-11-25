@@ -11,7 +11,9 @@
    - A tool.before hook may block a call; it can never allow one. A guard fails closed. */
 import React, { useState } from 'react';
 import { apiDelete, apiPost } from '../api/client';
-import { Card, Tag, inpS, mono, refusalReason, useApi } from '../panel-kit';
+// The panel keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { Card, Tag, inpS, mono, note as noteS, refusalReason, useApi } from '../panel-kit';
+import { LABEL, MONO } from '../theme/type';
 
 export const HOOKS_PATH = '/api/hooks';
 
@@ -90,18 +92,19 @@ export function HooksPanel() {
     <Card title="HOOKS" sub="programs that run on agent events, each behind an approval card"
       live={data ? 'live' : undefined} onReload={api.reload}>
       {blockers.length > 0 && (
-        <div role="alert" style={{ ...mono, color: 'var(--amber)', marginBottom: 6 }}>
+        <div role="alert" style={{ ...noteS, color: 'var(--amber)', marginBottom: 6 }}>
           hooks cannot run here: {blockers.map((b) => BLOCKERS[b] || b).join(' · ')}
         </div>
       )}
-      {err && <div role="alert" style={{ ...mono, color: 'var(--red)' }}>{err}</div>}
-      {note && <div style={{ ...mono, color: 'var(--ink-2)' }}>{note}</div>}
+      {err && <div role="alert" style={{ ...noteS, color: 'var(--red)' }}>{err}</div>}
+      {note && <div style={{ ...noteS, color: 'var(--ink-2)' }}>{note}</div>}
       <div style={{ display: 'grid', gap: 4, margin: '6px 0' }}>
-        {hooks.length === 0 && <div style={{ ...mono, color: 'var(--ink-2)' }}>no hooks</div>}
+        {hooks.length === 0 && <div style={{ ...noteS, color: 'var(--ink-2)' }}>no hooks</div>}
         {hooks.map((h) => (
-          <div key={h.id} style={{ ...mono, borderTop: '1px solid var(--panel-line)', paddingTop: 4 }}>
+          <div key={h.id} style={{ ...noteS, borderTop: '1px solid var(--panel-line)', paddingTop: 4 }}>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <b>{h.name || h.id}</b><Tag>{h.event}</Tag>
+              {/* A hook's name is words; without one it is named by its id. */}
+              <b style={h.name ? undefined : mono}>{h.name || h.id}</b><Tag>{h.event}</Tag>
               <Tag c={h.status === 'active' ? 'var(--green)' : 'var(--ink-2)'}>{h.status}</Tag>
               {h.guard && <Tag c="var(--amber)">guard · fails closed</Tag>}
               {h.matcher && <Tag>tools {h.matcher}</Tag>}
@@ -116,7 +119,7 @@ export function HooksPanel() {
                 <button className="tool-btn" onClick={() => remove(h)} aria-label={`remove ${h.id}`}>remove</button>
               </span>
             </div>
-            <div style={{ color: 'var(--ink-2)', wordBreak: 'break-all' }}>{h.command}</div>
+            <div style={{ ...mono, color: 'var(--ink-2)', wordBreak: 'break-all' }}>{h.command}</div>
             {h.last_run && <div style={{ color: 'var(--ink-2)' }}>last run: {h.last_run.outcome}{h.last_run.reason ? ` (${h.last_run.reason})` : ''}</div>}
           </div>
         ))}
@@ -127,21 +130,25 @@ export function HooksPanel() {
             {(events.length ? events : [{ event: 'tool.before' } as EventSpec]).map((e) => <option key={e.event} value={e.event}>{e.event}</option>)}
           </select>
           <input aria-label="name" placeholder="name" value={name} onChange={(e) => setName(e.target.value)} style={inpS} />
+          {/* The tool glob and the command are identifiers, as in the list above: one-line id
+              inputs take MONO (contract §5); the name stays in the interface face. */}
           {spec?.matcher && <input aria-label="tool matcher" placeholder="tools (glob, optional)" value={matcher}
-            onChange={(e) => setMatcher(e.target.value)} style={inpS} />}
-          <input aria-label="timeout seconds" value={timeout} onChange={(e) => setTimeoutS(e.target.value)} style={{ ...inpS, width: 50 }} />
-          {spec?.blocking && <label style={mono}><input type="checkbox" checked={guard} onChange={(e) => setGuard(e.target.checked)} /> guard (block if it fails)</label>}
+            onChange={(e) => setMatcher(e.target.value)} style={{ ...inpS, ...MONO }} />}
+          {/* 64, not 50: 50 left 32px of text width (28px at comfy), so the 3-digit ceiling (120)
+              had almost no room at the 2200px step or under a mono typeface override. */}
+          <input aria-label="timeout seconds" value={timeout} onChange={(e) => setTimeoutS(e.target.value)} style={{ ...inpS, width: 64 }} />
+          {spec?.blocking && <label style={noteS}><input type="checkbox" checked={guard} onChange={(e) => setGuard(e.target.checked)} /> guard (block if it fails)</label>}
         </div>
-        {spec && <div style={{ ...mono, color: 'var(--ink-2)' }}>{spec.doc} (Hermes: {spec.hermes})</div>}
+        {spec && <div style={{ ...noteS, color: 'var(--ink-2)' }}>{spec.doc} (Hermes: {spec.hermes})</div>}
         <div style={{ display: 'flex', gap: 4 }}>
           <input aria-label="command" placeholder="/usr/bin/python3 /home/me/hooks/guard.py" value={command}
-            onChange={(e) => setCommand(e.target.value)} style={{ ...inpS, flex: 1 }} />
+            onChange={(e) => setCommand(e.target.value)} style={{ ...inpS, ...MONO, flex: 1 }} />
           <button className="tool-btn" onClick={add} disabled={!command.trim()}>ask to add</button>
         </div>
       </div>
       {runs.length > 0 && (
         <div style={{ marginTop: 6 }}>
-          <div style={{ ...mono, color: 'var(--ink-2)' }}>recent runs</div>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>recent runs</div>
           {runs.slice(-10).reverse().map((r, i) => (
             <div key={i} style={{ ...mono, color: 'var(--ink-2)' }}>
               {new Date(r.at * 1000).toLocaleTimeString()} · {r.hook} · {r.event} · {r.outcome}

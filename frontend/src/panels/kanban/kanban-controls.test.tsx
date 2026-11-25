@@ -125,7 +125,7 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
     }));
 
     render(<KanbanView />);
-    await screen.findByText('Running job');
+    await screen.findByRole('button', { name: 'Running job' });
 
     // Mount-time 503s on /config and /model-options do not trigger a false top-level alert.
     expect(screen.queryByRole('alert')).toBeNull();
@@ -133,13 +133,17 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
     expect(calls.some(c => c.method === 'GET' && c.url === '/api/kanban/model-options')).toBe(true);
     expect(calls.some(c => c.method === 'GET' && c.url === '/api/kanban/assignees?board=alpha')).toBe(true);
 
-    // Open Workers & diagnostics panel and verify stats, active workers, and diagnostics filter.
-    await waitFor(() => expect(screen.getByRole('button', { name: /Workers & diagnostics · 1 · ⚠ 1/ })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /Workers & diagnostics/ }));
-    const opsPanel = screen.getByLabelText('Workers and diagnostics');
+    // Claimed worker is visible without opening diagnostics; the panel retains stats and filtering.
+    const workers = await screen.findByRole('region', { name: 'Active workers' });
+    expect(within(workers).getByText('coder')).toBeTruthy();
+    expect(within(workers).getByRole('button', { name: 'Running job' })).toBeTruthy();
+    expect(workers.textContent).not.toContain('pid');
+    await waitFor(() => expect(screen.getByRole('button', { name: /Stats & diagnostics · ⚠ 1/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Stats & diagnostics/ }));
+    const opsPanel = screen.getByLabelText('Stats and diagnostics');
     expect(within(opsPanel).getByText('triage: 1')).toBeTruthy();
     expect(within(opsPanel).getByText('Oldest ready wait: 42s')).toBeTruthy();
-    expect(within(opsPanel).getByText(/pid 9021/)).toBeTruthy();
+    expect(within(opsPanel).queryByText('coder')).toBeNull();
     expect(within(opsPanel).getByText(/warning: Heartbeat stale/)).toBeTruthy();
 
     fireEvent.change(within(opsPanel).getByLabelText('Diagnostic severity'), { target: { value: 'error' } });
@@ -245,7 +249,7 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
     expect(await within(createDialog).findByText(/medium · 1800 tok — UI and parity tests/)).toBeTruthy();
   });
 
-  it('wires drawer dependency links, run details/inspect/terminate, reassign, channel subscriptions, and worker controls with honest 409/503 refusals', async () => {
+  it('wires drawer dependency links, durable run details, reassign, and available worker controls', async () => {
     let reassignMode: '409' | '200' = '409';
     const calls: Array<{ method: string; url: string; body?: unknown }> = [];
     const runningDetail: KanbanTaskDetail = {
@@ -271,7 +275,6 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
       calls.push({ method, url, body });
 
       if (method === 'GET' && url === '/api/kanban/tasks/t_run?board=alpha') return jsonResponse(runningDetail);
-      if (method === 'GET' && url === '/api/kanban/tasks/t_run/log?board=alpha') return jsonResponse({ exists: false, content: '' });
       if (method === 'GET' && url === '/api/kanban/home-channels?board=alpha&task_id=t_run') {
         return jsonResponse({ detail: 'home channels requires a Nerva adapter' }, 503);
       }
@@ -290,12 +293,6 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
       if (method === 'GET' && url === '/api/kanban/runs/11?board=alpha') {
         return jsonResponse({ run: { id: 11, profile: 'coder', status: 'running', worker_pid: 9021, started_at: 1000 } });
       }
-      if (method === 'GET' && url === '/api/kanban/runs/11/inspect?board=alpha') {
-        return jsonResponse({ detail: 'run inspection requires a Nerva adapter' }, 503);
-      }
-      if (method === 'POST' && url === '/api/kanban/runs/11/terminate?board=alpha') {
-        return jsonResponse({ detail: 'run termination requires a Nerva adapter' }, 503);
-      }
       if (method === 'POST' && url === '/api/kanban/tasks/t_run/home-subscribe/telegram?board=alpha') {
         return jsonResponse({ detail: 'channel subscription requires a Nerva adapter' }, 503);
       }
@@ -304,9 +301,6 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
       }
       if (method === 'GET' && url === '/api/kanban/model-options') {
         return jsonResponse({ detail: 'model options requires a Nerva adapter' }, 503);
-      }
-      if (method === 'POST' && url === '/api/kanban/tasks/t_run/reclaim?board=alpha') {
-        return jsonResponse({ detail: 'task reclaim requires a Nerva adapter' }, 503);
       }
       if (method === 'POST' && url === '/api/kanban/tasks/t_run/estimate?board=alpha') {
         return jsonResponse({ detail: 'task estimate requires a Nerva adapter' }, 503);
@@ -356,37 +350,32 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Unlink t_parent' }));
     await waitFor(() => expect(calls.some(c => c.method === 'DELETE' && c.url === '/api/kanban/links?parent_id=t_parent&child_id=t_run&board=alpha')).toBe(true));
 
-    // Reassign: 409 conflict refusal when running without reclaim_first, then 200 with reclaim_first + reason
+    // Reassign: a running task refuses until the server permits reassignment.
     fireEvent.change(within(dialog).getByLabelText('Assign profile'), { target: { value: 'researcher' } });
     await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('Task is actively running; pass reclaim_first=true'));
     expect(within(dialog).queryByText(/Reassigned to/)).toBeNull();
 
     reassignMode = '200';
     fireEvent.change(within(dialog).getByLabelText('Worker action reason'), { target: { value: 'handoff' } });
-    fireEvent.click(within(dialog).getByLabelText('Reclaim before reassign'));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Reassign' }));
+    expect((within(dialog).getByLabelText('Assign profile') as HTMLSelectElement).value).toBe('coder');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retry assigning to researcher' }));
     await waitFor(() => expect(within(dialog).getByRole('status').textContent).toContain('Reassigned to researcher.'));
     expect(calls.filter(c => c.method === 'POST' && c.url === '/api/kanban/tasks/t_run/reassign?board=alpha').pop()?.body).toEqual({
       profile: 'researcher',
-      reclaim_first: true,
       reason: 'handoff',
     });
 
-    // Run history: GET /runs/{run_id} (200), GET /runs/{run_id}/inspect (503), POST /runs/{run_id}/terminate (503)
-    fireEvent.click(within(dialog).getByRole('tab', { name: 'Run history' }));
+    // The persisted run is readable; this legacy row has no native recovery marker.
+    fireEvent.click(within(dialog).getByRole('tab', { name: 'Worker history' }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Run details' }));
     const runDetail = await within(dialog).findByLabelText('Run 11 details');
     expect(runDetail.textContent).toContain('Run #11');
     expect(runDetail.textContent).toContain('pid 9021');
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Inspect process' }));
-    await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('run inspection requires a Nerva adapter'));
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Terminate run' }));
-    await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('run termination requires a Nerva adapter'));
-    expect(calls.find(c => c.method === 'POST' && c.url === '/api/kanban/runs/11/terminate?board=alpha')?.body).toEqual({
-      reason: 'handoff',
-    });
+    expect(within(dialog).queryByRole('button', { name: 'Inspect process' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Terminate run' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Check and recover interrupted run' })).toBeNull();
+    expect(calls.some(c => c.url.endsWith('/log?board=alpha'))).toBe(false);
 
     // Notifications subscribe / unsubscribe: honest 503 refusals
     fireEvent.click(within(dialog).getByRole('button', { name: 'Subscribe channel' }));
@@ -401,13 +390,7 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Load model options' }));
     await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('model options requires a Nerva adapter'));
 
-    // Worker controls: Reclaim, Estimate, Specify, Decompose surface honest 503 refusals
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Reclaim' }));
-    await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('task reclaim requires a Nerva adapter'));
-    expect(calls.find(c => c.method === 'POST' && c.url === '/api/kanban/tasks/t_run/reclaim?board=alpha')?.body).toEqual({
-      reason: 'handoff',
-    });
-
+    // Other unsupported worker actions still report honest 503 refusals.
     fireEvent.click(within(dialog).getByRole('button', { name: 'Estimate' }));
     await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('task estimate requires a Nerva adapter'));
 
@@ -416,5 +399,36 @@ describe('Kanban advanced HUD controls (all 23 routes)', () => {
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Decompose' }));
     await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('task decomposition requires a Nerva adapter'));
+  });
+
+  it('posts the displayed native run ID and shows the server held outcome', async () => {
+    const calls: Array<{ method: string; url: string; body?: unknown }> = [];
+    const running: KanbanTaskDetail = {
+      task: { id: 't_run', title: 'Recover me', status: 'running', current_run_id: 42, recoverable_run_id: 42 },
+      comments: [], events: [], links: { parents: [], children: [] }, runs: [
+        { id: 41, status: 'nerva_worker_interrupted', outcome: 'nerva_worker_interrupted', ended_at: 100 },
+        { id: 42, status: 'running', started_at: 200, ended_at: null },
+      ],
+    };
+    const held: KanbanTaskDetail = { ...running,
+      task: { ...running.task, status: 'blocked', current_run_id: null, recoverable_run_id: null },
+      runs: [running.runs[0], { id: 42, status: 'reclaimed', outcome: 'reclaimed', summary: 'Held for review', ended_at: 300 }],
+    };
+    let recovered = false;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input), method = init?.method || 'GET';
+      const body = typeof init?.body === 'string' && init.body ? JSON.parse(init.body) : undefined;
+      calls.push({ method, url, body });
+      if (method === 'GET' && url === '/api/kanban/tasks/t_run?board=alpha') return jsonResponse(recovered ? held : running);
+      if (method === 'POST' && url === '/api/kanban/tasks/t_run/reclaim?board=alpha') { recovered = true; return jsonResponse({ ok: true, status: 'recovered' }); }
+      if (method === 'GET' && url.startsWith('/api/kanban/home-channels?')) return jsonResponse({ detail: 'unavailable' }, 503);
+      return jsonResponse({ detail: `unhandled ${method} ${url}` }, 500);
+    }));
+    render(<TaskDrawer slug="alpha" id="t_run" columns={['running', 'blocked']} profiles={[]} onOpen={vi.fn()} onClose={vi.fn()} onChanged={vi.fn()}/>);
+    const button = await screen.findByRole('button', { name: 'Check and recover interrupted run' });
+    fireEvent.click(button);
+    await waitFor(() => expect(calls.find(c => c.method === 'POST' && c.url === '/api/kanban/tasks/t_run/reclaim?board=alpha')?.body).toEqual({ expected_run_id: 42 }));
+    expect(await screen.findByText('Held for review')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Check and recover interrupted run' })).toBeNull();
   });
 });

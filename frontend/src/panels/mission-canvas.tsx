@@ -79,8 +79,10 @@
 
    Both routes are USER tier (Depends(user_guard)) — act(), not actA(). */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, inpS } from '../panel-kit';
+/* The kit's words style is imported as noteS: `note` is this file's own line helper. */
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, act, inpS } from '../panel-kit';
 import { todoTree } from '../todo-tree';
+import { LABEL } from '../theme/type';
 
 /* The backend's own words, never ours. apiPost throws on 4xx/5xx and rides the parsed refusal
    body along on `err.body` (api/client.ts:104), so the real `error`/`detail` string is reachable
@@ -136,10 +138,10 @@ const notActiveHint = (raw: any): string => {
 };
 
 const note = (children: any, c = INK2) => (
-  <div style={{ ...mono, fontSize: 10, lineHeight: 1.5, color: c, padding: '4px 0' }}>{children}</div>
+  <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, color: c, padding: '4px 0' }}>{children}</div>
 );
 const foot = (children: any) => (
-  <div style={{ ...mono, fontSize: 9.5, color: INK2, marginTop: 8, lineHeight: 1.5 }}>{children}</div>
+  <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: INK2, marginTop: 8, lineHeight: 1.5 }}>{children}</div>
 );
 
 export function MissionCanvasPanel() {
@@ -225,7 +227,7 @@ export function MissionCanvasPanel() {
           return (
             <div key={m.id ?? i}>
               <Row>
-                <span style={{ ...mono, color: 'var(--ink-2)' }}>{m.title || '(untitled)'}</span>
+                <span style={{ ...noteS, color: 'var(--ink-2)' }}>{m.title || '(untitled)'}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                   <Tag c={missionColor(m.status)}>{m.status}</Tag>
                   <Tag>{m.steps_used ?? 0}/{m.max_steps ?? '—'} steps</Tag>
@@ -254,14 +256,14 @@ export function MissionCanvasPanel() {
                       <div key={si} data-depth={depth} style={depth ? { paddingLeft: depth * 14 } : undefined}>
                         <Row>
                           <span style={{ ...mono, color: INK2 }}>#{idx}</span>
-                          <span style={{ ...mono, color: 'var(--ink-2)' }}>{s.title || '(untitled step)'}</span>
+                          <span style={{ ...noteS, color: 'var(--ink-2)' }}>{s.title || '(untitled step)'}</span>
                           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                             <Tag c={stepColor(s.status)}>{s.status}</Tag>
                             {s.ended_at && <Tag>{String(s.ended_at)}</Tag>}
                           </span>
                         </Row>
                         {s.result != null && (
-                          <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', padding: '2px 0 4px 12px' }}>
+                          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', padding: '2px 0 4px 12px' }}>
                             result: {String(typeof s.result === 'string' ? s.result : JSON.stringify(s.result)).slice(0, 240)}
                           </div>
                         )}
@@ -289,7 +291,7 @@ export function MissionCanvasPanel() {
                   })}
 
                   {last && last.id === m.id && b && (
-                    <div style={{ ...mono, fontSize: 10, color: GREEN, padding: '4px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: GREEN, padding: '4px 0', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       <span>
                         step #{last.idx} → {finishedStep ? finishedStep.status : '(status not in response)'}
                         {' · '}budget {b.steps_used}/{b.max_steps} used, {b.steps_remaining} left
@@ -301,7 +303,7 @@ export function MissionCanvasPanel() {
 
                   {errFor && errFor.id === m.id && (
                     <div style={{ padding: '4px 0' }}>
-                      <div style={{ ...mono, fontSize: 10, color: RED, display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: RED, display: 'flex', gap: 6, alignItems: 'center' }}>
                         <Tag c={RED}>{errFor.status}</Tag>
                         <span>step #{errFor.idx} refused: {errFor.msg}</span>
                       </div>
@@ -339,7 +341,7 @@ export function MissionCanvasPanel() {
         {!cl && !ce && els.length > 0 && (
           <>
             <Row>
-              <span style={{ ...mono, color: 'var(--ink-2)' }}>all agents</span>
+              <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>all agents</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                 <Tag>{els.length} total</Tag>
                 <Tag c={pinnedTotal > 0 ? AMBER : INK2}>{pinnedTotal} pinned</Tag>
@@ -367,7 +369,7 @@ export function MissionCanvasPanel() {
             <option value="">all agents</option>
             {authors.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
-          <label style={{ ...mono, fontSize: 10, color: INK2, display: 'flex', gap: 4, alignItems: 'center' }}>
+          <label style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: INK2, display: 'flex', gap: 4, alignItems: 'center' }}>
             <input
               type="checkbox"
               aria-label="keep pinned elements"
@@ -391,7 +393,7 @@ export function MissionCanvasPanel() {
         {armed && note('irreversible — there is no undo route. Click again to send the sweep.', AMBER)}
 
         {removed != null && (
-          <div style={{ ...mono, fontSize: 10, color: GREEN, padding: '4px 0' }}>
+          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: GREEN, padding: '4px 0' }}>
             {removed === 0 ? 'removed 0 — nothing matched (a real 200, not an error)' : 'removed ' + removed + ' element(s)'}
           </div>
         )}
@@ -400,7 +402,7 @@ export function MissionCanvasPanel() {
         )}
 
         {cErr && (
-          <div style={{ ...mono, fontSize: 10, color: RED, display: 'flex', gap: 6, alignItems: 'center', padding: '4px 0' }}>
+          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: RED, display: 'flex', gap: 6, alignItems: 'center', padding: '4px 0' }}>
             <Tag c={RED}>{cErr.status}</Tag>
             <span>sweep refused: {cErr.msg}</span>
           </div>

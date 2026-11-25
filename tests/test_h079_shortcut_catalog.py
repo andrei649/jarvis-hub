@@ -20,7 +20,7 @@ class Loader:
         self.denied = set(denied)
         self.checked = []
 
-    def catalog_gate(self, skill):
+    def catalog_gate(self, skill, agent=None):
         self.checked.append(skill.name)
         return "disabled" if skill.name in self.denied else ""
 
@@ -41,6 +41,24 @@ def client(monkeypatch):
 
 def owner(client):
     return client.get("/api/commands", headers={"X-Admin-Token": "owner-token"})
+
+
+def test_owner_can_filter_skill_shortcuts_for_the_active_agent(client, monkeypatch):
+    http, orch = client
+    orch.skills = Loader("general-notes", "shop-procedure")
+    monkeypatch.setattr("agents.core.command_shortcuts._quick_inventory", lambda: {})
+    monkeypatch.setattr(bundles, "snapshot", lambda: ([], []))
+    def gate(skill, agent=None):
+        return "agent" if skill.name == "shop-procedure" and agent not in (None, "frigga") else ""
+    monkeypatch.setattr(orch.skills, "catalog_gate", gate)
+    for agent, owner_credential, names in [
+        ("frigga", True, ["general-notes", "shop-procedure"]),
+        ("howard", True, ["general-notes"]), ("frigga", False, []),
+    ]:
+        response = http.get("/api/commands", params={"agent": agent},
+                            headers={"X-Admin-Token": "owner-token"} if owner_credential else {})
+        assert response.status_code == 200
+        assert [s["name"] for s in response.json()["shortcuts"]] == names
 
 
 def test_owner_projects_fixed_metadata_without_reading_bodies_or_running_handlers(client, monkeypatch):

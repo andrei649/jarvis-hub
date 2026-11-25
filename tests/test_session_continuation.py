@@ -144,6 +144,30 @@ async def test_coordinator_carries_timestamps_without_switching_defaults_and_pre
 
 
 @pytest.mark.asyncio
+async def test_cold_explicit_native_resume_keeps_model_calls(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from agents.core.memory import persistence
+    from agents.core.memory.manager import MemoryManager
+    from agents.core.session_continuation import prepare_session
+
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    cp = manager(tmp_path / "cp.db")
+    cp.create_session_record("source")
+    calls = [{"provider": "lm-studio", "model": "qwen3:7b"}]
+    rows = [SEED[0], {**SEED[0], "role": "assistant", "content": "answer", "model_calls": calls}]
+    persistence.save_memory("source", rows, instance_id=cp.clock_snapshot("source").instance_id)
+    memory = MemoryManager()
+    memory.conversation.sessions.clear()
+    orch = SimpleNamespace(memory=memory, checkpoints=cp, session_id="default")
+
+    await prepare_session(orch, "source")
+
+    assert (await memory.get_history("source"))[1]["model_calls"] == calls
+    cp.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("restart", [False, True])
 @pytest.mark.parametrize("reasoning", [None, "low"])
@@ -635,6 +659,158 @@ async def test_legacy_history_requires_row_present_at_migration(
             await prepare_session(orch, "legacy")
         with pytest.raises(ContinuationRefused, match="history_identity_changed"):
             await create_continuation(orch, "legacy", "00000000-0000-4000-8000-000000000001")
+    cp.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("restart", [False, True])
+async def test_new_empty_conversation_accepts_explicit_first_turn(tmp_path, monkeypatch, restart):
+    from types import SimpleNamespace
+
+    from agents.core.memory import persistence
+    from agents.core.memory.manager import MemoryManager
+    from agents.core.session_continuation import prepare_session
+
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    cp = manager(tmp_path / "cp.db")
+    memory = MemoryManager()
+    memory.set_checkpoint_manager(cp)
+    sid = await memory.new_session("session_fresh")
+    memory.conversation._save_snapshot(sid)  # Orchestrator.new_session persists this before /new returns.
+    if restart:
+        memory = MemoryManager()
+        memory.set_checkpoint_manager(cp)
+    await prepare_session(SimpleNamespace(memory=memory, checkpoints=cp), sid)
+    await memory.add_turn(sid, "user", "first turn")
+    assert (await memory.get_history(sid))[0]["content"] == "first turn"
+    cp.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prior_turns,corrupt_snapshot", [(0, False), (1, False), (0, True)])
+async def test_startup_does_not_advertise_an_unresumable_empty_default(
+    tmp_path, monkeypatch, prior_turns, corrupt_snapshot
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from agents.core.memory import persistence
+    from agents.core.memory.manager import MemoryManager
+    from agents.core.orchestrator import Orchestrator
+    from agents.core.session_continuation import ContinuationRefused, prepare_session
+
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    cp = manager(tmp_path / "cp.db")
+    old = "session_empty_before_restart"
+    cp.create_session_record(old)
+    path = tmp_path / f"{old}.json"
+    if prior_turns:
+        cp.update_session(old, turn_count=prior_turns)
+    if corrupt_snapshot:
+        path.write_text("{broken")
+    orch = Orchestrator.__new__(Orchestrator)
+    orch._session_id_default = None
+    orch.memory = MemoryManager()
+    orch.memory.set_checkpoint_manager(cp)
+    orch.checkpoints = cp
+    orch._flush_checkpoint = AsyncMock()
+
+    def restore(selected):
+        selected.session_id = old
+        return True
+
+    monkeypatch.setattr(cp, "restore", restore)
+    await orch._select_startup_session()
+    if prior_turns or corrupt_snapshot:
+        assert orch.session_id == old
+        with pytest.raises(ContinuationRefused):
+            await prepare_session(SimpleNamespace(memory=orch.memory, checkpoints=cp), old)
+    else:
+        assert orch.session_id != old
+        snapshot = persistence.load_memory_snapshot(orch.session_id)
+        assert snapshot["session_id"] == orch.session_id and snapshot["turns"] == []
+        await prepare_session(SimpleNamespace(memory=orch.memory, checkpoints=cp), orch.session_id)
+        with pytest.raises(ContinuationRefused):
+            await prepare_session(SimpleNamespace(memory=orch.memory, checkpoints=cp), old)
+    orch._flush_checkpoint.assert_not_awaited()
+    cp.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("historical", [False, True])
+async def test_startup_without_checkpoint_keeps_addressable_history_or_creates_durable_empty(
+    tmp_path, monkeypatch, historical
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from agents.core.memory import persistence
+    from agents.core.memory.manager import MemoryManager
+    from agents.core.orchestrator import Orchestrator
+    from agents.core.session_continuation import prepare_session
+
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    cp = manager(tmp_path / "cp.db")
+    memory = MemoryManager()
+    memory.set_checkpoint_manager(cp)
+    if historical:
+        sid = await memory.new_session("session_historical")
+        await memory.add_turn(sid, "user", "keep this history")
+        memory = MemoryManager()
+        memory.set_checkpoint_manager(cp)
+    orch = Orchestrator.__new__(Orchestrator)
+    orch._session_id_default = None
+    orch.memory = memory
+    orch.checkpoints = cp
+    orch._flush_checkpoint = AsyncMock()
+    monkeypatch.setattr(cp, "restore", lambda _orch: False)
+    await orch._select_startup_session()
+    if historical:
+        assert orch.session_id == sid
+    else:
+        assert persistence.load_memory_snapshot(orch.session_id)["turns"] == []
+    await prepare_session(SimpleNamespace(memory=orch.memory, checkpoints=cp), orch.session_id)
+    history = await memory.get_history(orch.session_id)
+    assert [turn["content"] for turn in history] == (["keep this history"] if historical else [])
+    orch._flush_checkpoint.assert_not_awaited()
+    cp.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("restart", [False, True])
+@pytest.mark.parametrize("damage", ["missing", "wrong_instance", "nonzero_revision", "bool_revision", "float_revision", "prior_turns"])
+async def test_explicit_empty_conversation_requires_fresh_durable_evidence(
+    tmp_path, monkeypatch, restart, damage
+):
+    from types import SimpleNamespace
+
+    from agents.core.memory import persistence
+    from agents.core.memory.manager import MemoryManager
+    from agents.core.session_continuation import ContinuationRefused, prepare_session
+
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    cp = manager(tmp_path / "cp.db")
+    memory = MemoryManager()
+    memory.set_checkpoint_manager(cp)
+    sid = await memory.new_session("session_fresh")
+    memory.conversation._save_snapshot(sid)
+    path = tmp_path / f"{sid}.json"
+    if damage == "missing":
+        path.unlink()
+    elif damage == "prior_turns":
+        cp.update_session(sid, turn_count=2)
+    else:
+        document = json.loads(path.read_text())
+        document["instance_id" if damage == "wrong_instance" else "revision"] = (
+            "other" if damage == "wrong_instance" else False if damage == "bool_revision"
+            else 0.0 if damage == "float_revision" else 1
+        )
+        path.write_text(json.dumps(document))
+    if restart:
+        memory = MemoryManager()
+        memory.set_checkpoint_manager(cp)
+    with pytest.raises(ContinuationRefused):
+        await prepare_session(SimpleNamespace(memory=memory, checkpoints=cp), sid)
     cp.close()
 
 

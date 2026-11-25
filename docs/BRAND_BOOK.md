@@ -4,6 +4,12 @@
 > all downstream of [MOONSHOT.md](../MOONSHOT.md) (the *why*) and consistent with
 > [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) §3 (the launch brief).
 > Generated: 2026-07-04 · Owner: Andrei · Status: **v0.11.0** (feature-complete + refactor done; productionizing toward 1.0)
+>
+> **Visual identity rewritten 2026-11-23.** The owner replaced the HUD v2 "sci-fi cockpit" identity
+> (void black, signal cyan, Space Grotesk, letter-spaced mono micro-labels) with the **Ledger**
+> design and asked that this book follow it. Sections 2, 6, 7 and 9 below reflect that decision;
+> the design, the comparison of the seven candidate directions and the jury that chose between
+> them are in [`docs/design/hud-next/`](design/hud-next/).
 
 ---
 
@@ -33,7 +39,7 @@ is the intersection.
 |---|---|---|
 | Product | **Nerva** (published by **Digitaholic**) | The end-user product and primary identity ([NERVA_VISION.md](../NERVA_VISION.md) §2). Repo/engine codename stays `jarvis-hub` until the GitHub repo rename (owner task). |
 | The agent roster | **the Cabinet** | 17 specialists across 4 tiers (Command / Business / Tech / Foundation). "Andrei's Cabinet" is the founder-instance flavor name, not the product name. |
-| The UI | **the HUD** (V2 "cockpit") | Never "dashboard" in marketing copy — it's a cockpit you command, not a chart you watch. |
+| The UI | **Nerva** (the interface), drawn in the **Ledger** design | Home is **Today**: today's page. Since 2026-11-23 "HUD" and "cockpit" are retired from marketing copy; never "dashboard" either. It is a working book you keep and sign, not a chart you watch. The owner can switch the interface's look between installed themes (section 7.9); the brand is Ledger. |
 | Companion product | **WorldView** | The 4D OSINT globe (separate stack); **Argus** is its governed bridge agent. |
 | Individual agents | Jarvis, Friday, Pepper, Jerome · Athena, Stark, Veronica, Vision, Argus · Steve, Oracle, Ultron · Gecko, Hercules, Hephaestus, Frigga, Howard | Personalities are part of the brand; don't rename or flatten them. Frigga is the *proof* agent: strictly local, family data, zero network — lead with her in trust stories. |
 
@@ -105,37 +111,143 @@ active user. Counter-metrics: interrupt rate ≤4/day, reject rate, %-local, p95
 - **Bilingual reality:** product docs are RO/EN by context; **marketing surfaces are EN**, agent
   personalities keep their established voices (don't translate Frigga's warmth away).
 
-**Words we use:** own, govern, local, cabinet, cortex, approve, audit, compound, sir.
+**Words we use:** own, govern, local, cabinet, cortex, sign, the record, audit, compound, sir.
 **Words we avoid:** revolutionary, magic, superhuman, "AI employee", "set and forget".
+
+**The voice of the interface's own words (since 2026-11-23).** Plain, specific, sentence case.
+It names the thing and its consequence, and it says *unknown* when it does not know.
+
+| Before (HUD v2) | Now (Ledger) |
+|---|---|
+| ALL NOMINAL (a constant) beside a red pulsing dot | Working, with 4 local services down · since 08:14 · checked 10:50 |
+| DECISION QUEUE 36 · [Dismiss] | 9 await your signature · [Sign · restart all 4] [Defer] [Reject group] |
+| Needs approval · irreversible | Irreversible · To undo: none · typed: delete |
+| % LOCAL 100% | Runs on this machine 100% · 41 of 41 runs today · by route |
+| MIC ON (also shown when unknown) | Microphone On — or Microphone Unknown |
+| Speak or type a command… · [TRANSMIT] | Message Jarvis… · [Send] |
 
 ---
 
-## 7. Visual Identity (from the shipped HUD V2)
+## 7. Visual Identity — Ledger (since 2026-11-23)
 
-The product *is* the brand asset — screenshots and the 30–60s governed-autonomy demo GIF
-(README TODO) are the hero visuals.
+The product is still the brand asset: screenshots of the interface and the governed-autonomy demo
+are the hero visuals. What changed is the interface. The source of truth for values is the
+design system in code, [`frontend/src/theme/`](../frontend/src/theme/) (`tokens.css`,
+`themes/ledger.css`, `CONTRACT.md`); the designer's identity sheet is
+[`docs/design/hud-next/ledger/README.md`](design/hud-next/ledger/README.md) §2.
 
-**Palette (HUD V2 tokens, `frontend/src/styles.css`):**
+### 7.1 The idea
 
-| Role | Token | Hex |
+Nerva keeps books. Everything it says, does and proposes is an entry in a sealed chain, and
+nothing risky happens without the owner's signature. So the interface is the book: a typeset
+working page of ruled registers where type and rules carry the structure and colour is ink on
+paper, or its carbon. One colour, vermilion, is reserved for the owner's hand.
+
+**Promise:** nothing happens off the books, and nothing risky happens without your signature.
+
+### 7.2 Logo and the seal
+
+The neural N (three strokes, four nodes) inside a ring, drawn in ink, beside the wordmark
+**Nerva** set in the serif, bold, sentence case. The void-black tile and the signal blue are
+retired. The same ring is the product's seal, in three states of authority, and nowhere else:
+
+| Mark | Meaning |
+|---|---|
+| ring and N in vermilion outline | awaits your signature |
+| solid vermilion disc, N knocked out | signed by you |
+| solid ink disc, N knocked out | sealed in the record |
+
+### 7.3 Palette
+
+Authored in OKLCH, one token per role, two schemes. Neutrals share one hue family ("ledger
+green", hue 140–165) at chroma ≤ 0.022. **Carbon** (dark) is the default: the copy you work from
+all day, with no bright fill at rest, kind to an always-on OLED panel. **Paper** (light) is the
+original: daylight, long reading, anything printed or exported. Paper is designed, not inverted.
+
+| Role | Carbon (dark, default) | Paper (light) |
 |---|---|---|
-| Background ("void") | `--void` | `#04070E` |
-| Text ("ink") | `--ink` | `#EEF1F5` |
-| Primary accent — signal cyan | `--accent` | `#2BB8F0` (light `#8FE0FF`) |
-| Status green | `--green` / accent variant | `#41F59B` |
-| Status amber | `--amber` / accent variant | `#FFB23F` |
-| Alert red | `--red` | `#FF5A52` |
-| Violet (alt accent) | `--violet` | `#A78BFA` |
+| The page | `oklch(0.176 0.008 165)` ≈ #0e1210 | `oklch(0.979 0.006 150)` ≈ #f5f9f6 |
+| A sheet (where you write or sign) | `oklch(0.212 0.010 165)` ≈ #151a18 | `oklch(0.997 0.002 150)` ≈ #fdfefd |
+| Ink (text) | `oklch(0.912 0.014 138)` ≈ #dde4db | `oklch(0.205 0.022 165)` ≈ #0d1a15 |
+| Ink, secondary | `oklch(0.775 0.014 145)` ≈ #b0b8b0 | `oklch(0.375 0.020 165)` ≈ #37453e |
+| Ink, meta | `oklch(0.660 0.014 150)` ≈ #8c958e | `oklch(0.485 0.016 165)` ≈ #57625d |
+| Hairline rule | `oklch(0.268 0.010 165)` ≈ #222825 | `oklch(0.880 0.010 150)` ≈ #d3d9d4 |
+| **The seal — vermilion** | `oklch(0.705 0.185 35)` ≈ #fd6c48 | `oklch(0.535 0.200 33)` ≈ #c72500 |
 
-**Typography:** **Space Grotesk** (UI/display) + **JetBrains Mono** (data, timestamps, code).
-Tabular numerals for metrics. Letter-spaced mono micro-labels are a signature element.
+Every text pairing clears WCAG 2.2 AA (ink 14.6:1 on Carbon, 16.8:1 on Paper; the seal ≥ 4.7:1),
+enforced by `frontend/src/test/theme-contrast.test.ts`.
 
-**Art direction:** dark cockpit, thin glowing strokes, real data as texture (network brain, globe,
-timelines). No mascots, no gradients-for-gradients'-sake, no stock-photo humans. WorldView's globe
-inherits the same void/cyan language.
+### 7.4 Type
 
-**Logo:** the neural-N mark (`docs/brand/nerva-mark.svg`) with the wordmark "NERVA" set in Space
-Grotesk and the mono sub-line (see HUD top bar `brand-tx`), signal-cyan on void.
+Three families, each with one job. The split is the identity. All are open-licence and
+self-hosted (the product is local-first; no font is ever fetched from the network).
+
+| Role | Face | Sizes |
+|---|---|---|
+| What Nerva writes for you to read, and what you sign: replies, verdicts, entries, the record | **Literata** (serif, optical sizes) | replies 17/27 · titles 22 · verdict 32 · the one figure on a page 44 |
+| The instrument: labels, tables, controls, navigation, and your own typed words | **Barlow** (DIN-like sans) | UI 14/20 · labels 13/18 · meta 12/16 |
+| Identifiers only: hashes, ids, addresses, model and capability names | **JetBrains Mono** | 12 |
+
+Sentence case everywhere; no uppercase tracked labels. Figures are lining, tabular in columns.
+Nothing below 12px; on large screens every reading size steps up one. Literata (variable, with
+optical sizes) and Barlow (300–700) ship with the app, self-hosted under the SIL Open Font License
+(`frontend/src/assets/fonts/`); Sitka and Bahnschrift remain only as the stacks' fallbacks.
+
+### 7.5 Shape, rules, marks, motion
+
+- **Rules, not boxes.** A hairline separates rows, a 2px rule opens a register, a single rule
+  above and a double rule below make a total. Radius 0 on rules and sheets, 2px on controls, 4px
+  on transient layers; only seals and state marks are round. A page has at most one bordered
+  sheet, and it is where the owner signs or stops. No shadows on work surfaces; no translucency.
+- **Marks.** State is a shape plus a word, never a hue alone: ● ok · ◐ attention · ■ problem ·
+  dashed ○ unknown · clock ○ stale · ‖ held · ⊘ blocked · ▶ working · ✓ done. Risk is a three-bar
+  glyph plus its name (read only, reversible, external, irreversible or money).
+- **Motion.** Still by default: 120ms on hover and press, 180ms when a seal fills or a row opens,
+  nothing else. No pulsing, no tickers, no spinners; reduced motion sets both to 0.
+
+### 7.6 Art direction for marketing assets
+
+The page itself, photographed honestly: Today in Carbon, or Paper for print. Real data as
+content, demo data visibly badged. No mascots, no glows, no gradients, no stock photos, no
+decorative networks or globes. One idea per asset, generous margins, the serif for the headline,
+Barlow for everything around it, vermilion only where the asset shows the owner signing.
+
+### 7.7 Three things this identity never does
+
+1. It never uses vermilion for itself — not for the brand, errors, alerts or emphasis.
+   Vermilion means the owner's hand.
+2. It never draws a box where a rule will do, and never a card inside a card.
+3. It never shows a reading it did not get: no default values, no 0 for unknown, no "all clear"
+   when the feed did not answer, no decorative shield.
+
+### 7.8 Retired with HUD v2
+
+Void black `#04070E` and `#030810`, signal cyan `#2BB8F0` and `#00AEEF`, Space Grotesk as the
+brand face, letter-spaced uppercase mono micro-labels, corner brackets, chamfers, glows and
+scanlines survive only inside the interface's optional **Classic** themes (7.9), and only as a
+skin: since 2026-11-24 every theme, Classic included, draws the same Ledger page (the masthead,
+the running head, Home's day, conversation and docket). The HUD v2 shell is gone in every theme:
+the top bar and its badges, the scrolling ticker and its "ALL NOMINAL", the mode rail, the
+cockpit's neural mesh and cognition trace, and the spinning reactor beside the wordmark.
+
+Surfaces not migrated at the time of writing (2026-11-24):
+
+- outside the interface: the marketing landing page (`marketing/landing/`), the brand SVGs in
+  `docs/brand/`, the legacy `/v1` pages and the imported `/os` interface;
+- the mobile app, which follows each theme's dark palette but keeps its own structure, faces and
+  shapes, and has no light scheme;
+- inside the interface, drawn in the HUD v2 markup and restyled by the theme rather than redrawn
+  in the Ledger language: Cinema (`m`: the neural mesh, the voice orb and the briefing wall, kept
+  at the owner's request, with the reactor mark in its corner), the agent Dossier, the provenance,
+  keyboard-shortcut and first-run dialogs, and the bodies of the Console panels shown as pages.
+
+### 7.9 Themes the owner can choose
+
+The interface ships with installable themes, switched in Settings → Personalisation, each with a
+dark and a light scheme: **Ledger** (the default and the brand), **Presence**, **Briefing**,
+**Workbench**, **Threshold**, **Console**, **Atlas**, and **Classic** (Obsidian, Graphite — the HUD
+v2 look). A theme changes the look of the same structure; it is a personal preference, not a
+second brand. Marketing material always shows Ledger.
 
 ---
 
@@ -173,8 +285,9 @@ Grotesk and the mono sub-line (see HUD top bar `brand-tx`), signal-cyan on void.
 | **Website** | `http://www.andrei649.ro` (swap for a product page at launch) |
 | **Topics** | `ai`, `personal-assistant`, `multi-agent`, `local-first`, `self-hosted`, `privacy`, `llm`, `fastapi`, `lm-studio`, `ollama`, `autonomous-agents`, `knowledge-graph`, `voice-assistant`, `osint` |
 
-**Social preview image:** HUD V2 cockpit screenshot on void-black with the wordmark + primary
-tagline; same asset doubles as the README hero until the demo GIF lands.
+**Social preview image:** the Today page in Carbon (Ledger), cropped to the docket and the
+conversation, with the serif wordmark and the primary tagline; same asset doubles as the README
+hero until the demo GIF lands. (Before 2026-11-23 this was the HUD v2 cockpit on void black.)
 
 ---
 

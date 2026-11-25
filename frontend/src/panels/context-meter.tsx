@@ -12,12 +12,16 @@
    `free` is the rest of the window. Read-only: nothing here compacts or changes the
    conversation — /compress in the chat reports what the next turn's compaction will do. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, inpS } from '../panel-kit';
+import { useApi, arr, mono, note, asLive, Card, State, Row, Tag, inpS } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
+/* Categories are told apart by hue (with a legend). `system` takes the info role: Classic
+   resolves it to --accent-light as before, while a Nerva theme maps --accent-light to its
+   emphasis ink, which would be the same ink as `history`. */
 export const CATEGORY_COLORS: Record<string, string> = {
-  system: 'var(--accent-light)',
+  system: 'var(--n-info)',
   tools: 'var(--amber)',
-  skills: 'var(--violet, #a78bfa)',
+  skills: 'var(--violet)',
   memory: 'var(--green)',
   history: 'var(--ink)',
   attachments: 'var(--red)',
@@ -56,37 +60,37 @@ export function ContextMeterPanel() {
   return (
     <Card title="Context meter" sub="what fills the model's window · estimates" live={asLive(meter)} onReload={reload}>
       <Row>
-        <span style={{ ...mono }}>session</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>session</span>
         <input aria-label="session id" style={{ ...inpS, flex: 1 }} placeholder={fallback || 'session id'}
           value={typed} onChange={(ev) => setTyped(ev.target.value)} />
       </Row>
-      {!sid ? <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>No conversation to measure yet.</div> : null}
+      {!sid ? <div style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)' }}>No conversation to measure yet.</div> : null}
       {sid ? <State e={e} loading={loading && !meter} n={meter ? 1 : 0} /> : null}
       {meter ? (
         <div>
-          <div style={{ ...mono, margin: '6px 0' }}>
+          <div style={{ ...note, margin: '6px 0' }}>
             {Number(meter.used).toLocaleString()} of {Number(meter.window).toLocaleString()} tokens ({meter.percent}%) · model {meter.model || 'default'}
           </div>
           <MeterBar meter={meter} />
           {arr(meter, 'categories').map((c: any) => (
             <Row key={c.name}>
               <span style={{ width: 10, height: 10, background: CATEGORY_COLORS[c.name], display: 'inline-block' }} />
-              <span style={{ ...mono, width: 90 }}>{c.name}</span>
+              <span style={{ ...LABEL, fontSize: 'var(--n-fs-label)', width: 90 }}>{c.name}</span>
               <span style={{ ...mono, marginLeft: 'auto' }}>{Number(c.tokens).toLocaleString()}</span>
               <Tag>{(Number(c.share) * 100).toFixed(1)}%</Tag>
             </Row>
           ))}
           <Row>
-            <span style={{ ...mono, width: 100 }}>free</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-label)', width: 100 }}>free</span>
             <span style={{ ...mono, marginLeft: 'auto' }}>{Number(meter.free).toLocaleString()}</span>
           </Row>
-          <div style={{ fontSize: 12, marginTop: 6 }} data-testid="tier">
+          <div style={{ fontSize: 'var(--n-fs-label)', marginTop: 6 }} data-testid="tier">
             Compaction tier <Tag>{meter.compaction_tier}</Tag> {TIER_TEXT[meter.compaction_tier] || ''}
           </div>
           {meter.measured ? (
-            <div style={{ fontSize: 12, color: 'var(--ink-2)' }}>The provider measured the last request at {Number(meter.measured).toLocaleString()} tokens.</div>
+            <div style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)' }}>The provider measured the last request at {Number(meter.measured).toLocaleString()} tokens.</div>
           ) : null}
-          <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{meter.note}</div>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{meter.note}</div>
         </div>
       ) : null}
     </Card>

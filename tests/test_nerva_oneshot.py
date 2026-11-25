@@ -194,13 +194,17 @@ def test_the_sentinel_table_still_matches_the_hub():
     from agents.cli.nerva import _NOT_AN_ANSWER
     from agents.core.agent_runtime import _APPROVAL_REPLY
     from agents.core.conversation_clock import CONTEXT_REFUSED_REPLY
-    from agents.core.llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, THINKING_EXHAUSTED_REPLY
+    from agents.core.llm.base import (
+        CLOUD_SELECTION_UNAVAILABLE_REPLY,
+        LOCAL_SELECTION_UNAVAILABLE_REPLY,
+        THINKING_EXHAUSTED_REPLY,
+    )
     from agents.core.orchestrator import TURN_BUSY_REPLY
     from agents.core.session_continuation import CONTINUATION_REFUSED_REPLY
 
     for constant in (_APPROVAL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY,
                      CONTINUATION_REFUSED_REPLY, LOCAL_SELECTION_UNAVAILABLE_REPLY,
-                     THINKING_EXHAUSTED_REPLY):
+                     CLOUD_SELECTION_UNAVAILABLE_REPLY, THINKING_EXHAUSTED_REPLY):
         assert constant.strip() in _NOT_AN_ANSWER, (
             f"the hub now replies {constant!r}; add it to _NOT_AN_ANSWER in agents/cli/nerva.py"
         )
@@ -631,13 +635,17 @@ def test_the_sentinel_table_matches_every_reply_the_hub_can_send():
         _WINDOW_REPLY,
     )
     from agents.core.conversation_clock import CONTEXT_REFUSED_REPLY
-    from agents.core.llm.base import LOCAL_SELECTION_UNAVAILABLE_REPLY, THINKING_EXHAUSTED_REPLY
+    from agents.core.llm.base import (
+        CLOUD_SELECTION_UNAVAILABLE_REPLY,
+        LOCAL_SELECTION_UNAVAILABLE_REPLY,
+        THINKING_EXHAUSTED_REPLY,
+    )
     from agents.core.orchestrator import TURN_BUSY_REPLY
     from agents.core.session_continuation import CONTINUATION_REFUSED_REPLY
 
     for constant in (_APPROVAL_REPLY, TURN_BUSY_REPLY, CONTEXT_REFUSED_REPLY,
                      CONTINUATION_REFUSED_REPLY, LOCAL_SELECTION_UNAVAILABLE_REPLY,
-                     THINKING_EXHAUSTED_REPLY,
+                     CLOUD_SELECTION_UNAVAILABLE_REPLY, THINKING_EXHAUSTED_REPLY,
                      _DEADLINE_REPLY, _CONTEXT_REPLY, _WINDOW_REPLY, _REPEAT_REPLY,
                      _FAILURE_REPLY):
         assert _not_an_answer(constant), (

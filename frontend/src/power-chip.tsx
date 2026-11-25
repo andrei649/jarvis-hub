@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiGet } from './api/client';
 import { appUrl } from './base-path';
+import { LABEL } from './theme/type';
 
 export interface KeepAwakeState {
   enabled: boolean;
@@ -83,9 +84,9 @@ export function PowerChip({ state }: { state: PowerState }) {
   const warn = state.deferred || !!state.keepAwake.refused || !!state.keepAwake.error;
   return (
     <div role="status" data-testid="power-chip"
-      style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap', padding: '2px 12px',
-        fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.06em',
-        color: warn ? 'var(--amber, #f59e0b)' : 'var(--dim, #94a3b8)' }}>
+      style={{ ...LABEL, display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap', padding: '2px 12px',
+        fontSize: 'var(--n-fs-meta)',
+        color: warn ? 'var(--amber)' : 'var(--ink-2)' }}>
       {labels.map((label) => <span key={label}>{label}</span>)}
     </div>
   );

@@ -34,6 +34,7 @@ from agents.cli.nerva import (
     main,
 )
 from agents.core import settings_db
+from tests.private_file_permissions import assert_private_file
 
 
 class _FakeHub:
@@ -625,6 +626,7 @@ def test_config_edit_writes_back_only_what_changed(temp_settings, tmp_path, monk
     real_run_editor = nerva_module._run_editor
 
     def spy(argv, path):
+        assert_private_file(path)
         seen_paths.append(path)
         return real_run_editor(argv, path)
 

@@ -49,7 +49,7 @@
 
    Both routes are user-tier (user_guard): act(), not actA(); useApi(..., admin=false). */
 import React, { useState } from 'react';
-import { useApi, mono, asLive, Card, State, Row, Tag, Btn, act, Json } from '../panel-kit';
+import { useApi, note, asLive, Card, State, Row, Tag, Btn, act, Json } from '../panel-kit';
 
 const STATUS_PATH = '/api/signals/governance';
 const SUBMIT_PATH = '/api/signals/governance/submit';
@@ -75,7 +75,7 @@ export function SignalGovernancePanel() {
   const enabled = loaded ? d.enabled === true : null;
   const flag = loaded ? str(d.flag) : null;    // rendered from the payload, never hardcoded
   const kind = loaded ? str(d.kind) : null;
-  const note = loaded ? str(d.note) : null;
+  const bridgeNote = loaded ? str(d.note) : null;
   /* Only meaningful when available === true. On the unavailable branch the handler's 0 is
      filler and must never reach the screen as a number. */
   const pending = available === true ? int(d.pending) : null;
@@ -117,11 +117,11 @@ export function SignalGovernancePanel() {
         <>
           <Row>
             <Tag c="var(--red)">UNAVAILABLE</Tag>
-            <span style={{ ...mono, color: 'var(--red)' }}>
+            <span style={{ ...note, color: 'var(--red)' }}>
               bridge unavailable · {str(d.reason) || '(the response carried no reason)'}
             </span>
           </Row>
-          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>
+          <div style={{ ...note, color: 'var(--ink-2)', marginTop: 6 }}>
             pending not measured — on this branch the handler ships a hardcoded 0 beside the
             reason (signals.py:141), so there is no count to show.
           </div>
@@ -135,14 +135,14 @@ export function SignalGovernancePanel() {
             {enabled
               ? <Tag c="var(--green)">ENABLED</Tag>
               : <Tag c="var(--amber)">DISABLED</Tag>}
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>
+            <span style={{ ...note, color: 'var(--ink-2)' }}>
               {pending == null ? 'pending unreadable' : pending}
               {kind ? ` × ${kind}` : ''} awaiting a human decision (BLOCKED in the decision inbox)
             </span>
           </Row>
 
           {!enabled && (
-            <div style={{ ...mono, color: 'var(--amber)', marginTop: 6 }}>
+            <div style={{ ...note, color: 'var(--amber)', marginTop: 6 }}>
               {flag
                 ? `${flag} is not set — the bridge queues nothing until the owner sets it.`
                 : 'the flag is not set — the bridge queues nothing until the owner sets it. (the response named no flag)'}
@@ -155,8 +155,8 @@ export function SignalGovernancePanel() {
             </div>
           )}
 
-          {note && (
-            <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>
+          {bridgeNote && (
+            <div style={{ ...note, color: 'var(--ink-2)', marginTop: 6 }}>{bridgeNote}</div>
           )}
 
           {/* Only the DISABLED branch needs this: with the flag unset the bridge queues
@@ -166,7 +166,7 @@ export function SignalGovernancePanel() {
               be an invented cause. On the ENABLED branch the row above is already the
               whole truth and this note would be a lie about the live queue. */}
           {!enabled && pending != null && pending > 0 && (
-            <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>
+            <div style={{ ...note, color: 'var(--ink-2)', marginTop: 6 }}>
               The bridge queues nothing while the flag is unset, so this count is of items
               already in the inbox — the response does not say when, or by what, they were
               queued.
@@ -177,18 +177,18 @@ export function SignalGovernancePanel() {
 
       {/* ── The submit control ───────────────────────────────────────────────── */}
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>
+        <span style={{ ...note, color: 'var(--ink-2)' }}>
           submit the sidecar's live world brief (GET /briefs/world, fetched server-side)
         </span>
         <Btn onClick={submit}>{busy ? 'submitting…' : 'submit brief → inbox'}</Btn>
       </Row>
-      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+      <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
         Nothing is typed here: the route takes no request body. The recommendations come
         from the Signal Layer sidecar's own brief, and every accepted item lands BLOCKED —
         nothing is approved, executed or scheduled by this control.
       </div>
       {loaded && available === true && enabled === false && (
-        <div style={{ ...mono, color: 'var(--amber)', marginTop: 4 }}>
+        <div style={{ ...note, color: 'var(--amber)', marginTop: 4 }}>
           the bridge is off — a submit returns status:disabled and queues nothing.
         </div>
       )}
@@ -196,7 +196,7 @@ export function SignalGovernancePanel() {
       {out && out.t === 'body' && <SubmitOutcome r={out.r} flag={flag} />}
       {out && out.t === 'err' && <SubmitFailure err={out.err} />}
 
-      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 8, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
+      <div style={{ ...note, color: 'var(--ink-2)', marginTop: 8, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         user-tier read and write (user_guard) — nothing on this panel is admin. `pending` is
         counted over the queue's first 100 pending decisions (limit=100, id ASC), and a
         failed read is collapsed to 0 server-side, so it is a lower bound, not a total.
@@ -220,14 +220,14 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
     const dropped = reason == null || ROUTER_REASONS.indexOf(reason) === -1;
     return box('var(--red)', (
       <>
-        <div style={{ ...mono, color: 'var(--red)' }}>
+        <div style={{ ...note, color: 'var(--red)' }}>
           refused · {reason || '(the response carried no reason)'}
         </div>
-        <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+        <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
           Nothing was queued. The string above is the backend's own reason, printed as sent.
         </div>
         {dropped && (
-          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+          <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
             The router forwards only this status — the sidecar's `error` detail (which holds
             the failed path) and its `provider` are dropped before the response, so nothing
             more can honestly be said about the cause here.
@@ -241,10 +241,10 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
   if (r.status === 'disabled') {
     return box('var(--amber)', (
       <>
-        <div style={{ ...mono, color: 'var(--amber)' }}>
+        <div style={{ ...note, color: 'var(--amber)' }}>
           disabled · nothing queued{flag ? ` · ${flag} is not set` : ' · the governance flag is not set'}
         </div>
-        <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+        <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
           The request reached the bridge and the bridge declined to queue anything. Not a
           transport failure, and not a submission.
         </div>
@@ -265,7 +265,7 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
     const tone = lost ? 'var(--amber)' : 'var(--green)';
     return box(tone, (
       <>
-        <div style={{ ...mono, color: tone }}>
+        <div style={{ ...note, color: tone }}>
           queued {queued == null ? '?' : queued} · skipped {skipped == null ? '?' : skipped}
           {lost ? ` · failed ${failed}` : ''}
         </div>
@@ -279,7 +279,7 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
             NEITHER counter. The bridge now counts failures separately and returns them, so
             the cause can be stated instead of hedged. */}
         {queued === 0 && failed === 0 && (
-          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+          <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
             Nothing was queued and nothing failed — the brief carried no actionable
             recommendations.
           </div>
@@ -288,14 +288,14 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
             that could not separate the two producers of queued:0, so the honest answer there
             is still the hedge — the panel does not upgrade an unknown into a verdict. */}
         {queued === 0 && failed == null && (
-          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+          <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
             Nothing was queued, and this response does not say why: it carries no `failed`
             count, so an empty brief and a run whose queue writes all raised are
             indistinguishable here.
           </div>
         )}
         {failed > 0 && (
-          <div style={{ ...mono, color: 'var(--red)', marginTop: 4 }}>
+          <div style={{ ...note, color: 'var(--red)', marginTop: 4 }}>
             {failed} recommendation{failed > 1 ? 's were' : ' was'} DROPPED — the bridge tried
             to queue {failed > 1 ? 'them' : 'it'} and failed, so {failed > 1 ? 'they are' : 'it is'}{' '}
             not waiting in the decision inbox and no one will be asked to approve{' '}
@@ -307,9 +307,9 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
             ))}
           </div>
         )}
-        {str(r.note) && <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>{str(r.note)}</div>}
+        {str(r.note) && <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>{str(r.note)}</div>}
         {skipped != null && skipped > 0 && (
-          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+          <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
             {skipped} not queued — these were either non-actionable or refused by the
             recommendation contract. That split is not in the response, so it is not guessed
             here; failures are counted separately above and are never folded into this number.
@@ -318,7 +318,7 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
         {/* "Each id above" is only true when there ARE ids, and the swallow caveat is
             already carried by the queued-0 line, so neither is printed unconditionally. */}
         {ids.length > 0 && (
-          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+          <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
             Each id above is BLOCKED with decision=await_human_approval, waiting in the
             decision inbox. A per-item enqueue failure is reported separately as `failed`
             rather than silently shrinking this list.
@@ -331,7 +331,7 @@ function SubmitOutcome({ r, flag }: { r: any; flag: string | null }) {
   // (4) anything else — shown raw rather than collapsed into a guess.
   return box('var(--amber)', (
     <>
-      <div style={{ ...mono, color: 'var(--amber)' }}>
+      <div style={{ ...note, color: 'var(--amber)' }}>
         unrecognised response · status {str(r.status) || '(none)'} — printed as received,
         with no interpretation.
       </div>
@@ -351,12 +351,12 @@ function SubmitFailure({ err }: { err: any }) {
     : (err && err.message) || 'request failed';
   return (
     <div role="alert" style={{ marginTop: 8, padding: 6, border: '1px solid var(--red)', borderRadius: 4 }}>
-      <div style={{ ...mono, color: 'var(--red)' }}>
+      <div style={{ ...note, color: 'var(--red)' }}>
         submit failed · HTTP {(err && err.status) || '?'} · POST {SUBMIT_PATH}
       </div>
-      {line != null && <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>{line}</div>}
+      {line != null && <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>{line}</div>}
       {b && b.detail != null && typeof b.detail !== 'string' && <Json v={b.detail} />}
-      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+      <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
         The request did not reach the bridge — nothing was queued.
       </div>
     </div>

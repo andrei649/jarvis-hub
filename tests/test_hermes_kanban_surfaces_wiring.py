@@ -373,3 +373,44 @@ async def test_owner_command_cannot_borrow_worker_or_unbound_authority(tmp_path,
         assert not (await controller.request_owner_command(command))["ok"]
     assert orch.autonomy_queue.list() == []
     assert decisions == []
+
+
+@pytest.mark.asyncio
+async def test_rpc_office_attach_and_authenticated_download(active, tmp_path):
+    from io import BytesIO
+    from xml.etree import ElementTree as ET
+    from zipfile import ZipFile
+
+    from docx import Document
+
+    from tests.test_hermes_kanban_tools_port import call, server_for
+
+    client, _orch = active
+    server = server_for(tmp_path)
+    schema = next(tool["input_schema"] for tool in server.tools() if tool["name"] == "kanban_attach")
+    assert "office" in schema["properties"]
+    tid = (await call(server, "kanban_create", {"title": "synthetic export", "assignee": "jarvis"}))["task_id"]
+    for filename, office in (
+        ("note.docx", {"format": "docx", "text": "# Sample\n\nUnicode Ț"}),
+        ("data.xlsx", {"format": "xlsx", "rows": [["Code", "Formula"], ["001", "=1+2"]]}),
+    ):
+        answer = await call(server, "kanban_attach", {"task_id": tid, "filename": filename, "office": office})
+        assert answer["ok"], answer
+    legacy = await call(server, "kanban_attach", {"task_id": tid, "filename": "plain.txt", "content_base64": "bm90ZQ=="})
+    assert legacy["ok"], legacy
+
+    attachments = client.get(f"/api/kanban/tasks/{tid}", headers=OWNER).json()["attachments"]
+    assert [entry["filename"] for entry in attachments] == ["note.docx", "data.xlsx", "plain.txt"]
+    assert [entry["content_type"] for entry in attachments[:2]] == [
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ]
+    paths = [f"/api/kanban/attachments/{entry['id']}" for entry in attachments]
+    assert client.get(paths[0]).status_code == 401
+    downloads = [client.get(path, headers=OWNER) for path in paths]
+    assert all(response.status_code == 200 for response in downloads)
+    assert Document(BytesIO(downloads[0].content)).paragraphs[0].text == "Sample"
+    with ZipFile(BytesIO(downloads[1].content)) as archive:
+        sheet = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+        assert "001" in "".join(sheet.itertext()) and "=1+2" in "".join(sheet.itertext())
+    assert downloads[2].content == b"note"

@@ -53,6 +53,7 @@ from .queue import (
 )
 
 logger = logging.getLogger("jarvis.autonomy.worker")
+_PARALLEL_REFILL_SECONDS = 1.0
 
 INTERRUPT_BUDGET_PER_DAY = 4
 
@@ -1906,7 +1907,8 @@ class AutonomyWorker:
 
     async def tick(self, limit: int = 10, max_tier: Optional[int] = None, *,
                    task_id: int | None = None, parallel_kind: str | None = None,
-                   parallel_limit: int = 1, parallel_agent_limit: int = 1) -> dict:
+                   parallel_limit: int = 1, parallel_agent_limit: int = 1,
+                   parallel_admission: Callable[[], tuple[int, int, int | None]] | None = None) -> dict:
         """Run approved tasks. Returns a small summary dict.
 
         `max_tier` caps which risk tiers run this pass — used by the night shift
@@ -1915,6 +1917,8 @@ class AutonomyWorker:
         Zero capacity holds that kind's approvals without holding unrelated tasks.
         """
         if parallel_kind is None:
+            if parallel_admission is not None:
+                raise ValueError("parallel_admission requires parallel_kind")
             return await self._tick(limit, max_tier, task_id=task_id)
         if not isinstance(parallel_kind, str) or not parallel_kind.strip():
             raise ValueError("parallel_kind must be a nonempty string")
@@ -1927,10 +1931,11 @@ class AutonomyWorker:
             return await self._tick(
                 limit, max_tier, task_id=task_id, parallel_kind=parallel_kind,
                 parallel_limit=parallel_limit, parallel_agent_limit=parallel_agent_limit,
+                parallel_admission=parallel_admission if task_id is None else None,
             )
 
     async def _tick(self, limit, max_tier, *, task_id=None, parallel_kind=None,
-                    parallel_limit=1, parallel_agent_limit=1):
+                    parallel_limit=1, parallel_agent_limit=1, parallel_admission=None):
         if task_id is not None and (type(task_id) is not int or task_id <= 0):
             raise ValueError("task_id must be a positive integer")
         await self.approval_housekeeping(limit=limit, reconcile=not self._halted())
@@ -1950,10 +1955,13 @@ class AutonomyWorker:
         else:
             summary = await self._run_parallel(
                 runnable, parallel_kind, parallel_limit, parallel_agent_limit,
+                refill_limit=max(0, limit - len(runnable)), admission=parallel_admission,
+                max_tier=max_tier,
             )
         return {**summary, "reaped": reaped}
 
-    async def _run_parallel(self, runnable, kind, total_cap, agent_cap):
+    async def _run_parallel(self, runnable, kind, total_cap, agent_cap, *,
+                            refill_limit=0, admission=None, max_tier=None):
         running = [t for t in self.queue.active_kind_tasks(kind) if t.status == "running"]
         counts = Counter(t.agent for t in running)
         slots = max(0, total_cap - len(running))
@@ -1975,8 +1983,54 @@ class AutonomyWorker:
         summary = await self._run_runnable(ordinary)
         # Each child reaches the original guard/claim/permit path, with independent
         # ContextVars. TaskGroup awaits all cleanup when the parent is cancelled.
+        initial_ids = {task.id for task in runnable}
         async with asyncio.TaskGroup() as group:
             children = [group.create_task(self._run_runnable([task])) for task in selected]
+            inflight = {task.id: (task, child) for task, child in zip(selected, children, strict=True)}
+            last_refill_error = None
+            while admission is not None and refill_limit > 0 and any(not child.done() for child in children):
+                live = {child for child in children if not child.done()}
+                await asyncio.wait(live, timeout=_PARALLEL_REFILL_SECONDS,
+                                   return_when=asyncio.FIRST_COMPLETED)
+                if not any(not child.done() for child in children):
+                    break
+                if self._halted():
+                    continue
+                try:
+                    current_total, current_agent, current_tier = admission()
+                    if (any(type(cap) is not int or not 0 <= cap <= 16
+                            for cap in (current_total, current_agent))
+                            or current_tier is not None and type(current_tier) is not int):
+                        continue
+                    effective_tier = (max_tier if current_tier is None else current_tier
+                                      if max_tier is None else min(max_tier, current_tier))
+                    active = [t for t in self.queue.active_kind_tasks(kind) if t.status == "running"]
+                    active_ids = {t.id for t in active}
+                    pending = [task for task, child in inflight.values()
+                               if not child.done() and task.id not in active_ids]
+                    counts = Counter(t.agent for t in active + pending)
+                    slots = max(0, current_total - len(active) - len(pending))
+                    if slots == 0 or current_agent == 0:
+                        continue
+                    candidates = self.queue.runnable(limit=16, max_tier=effective_tier, kind=kind)
+                    for task in candidates:
+                        if (refill_limit == 0 or slots == 0):
+                            break
+                        if (task.id in initial_ids or task.id in inflight or self._halted(task.agent)
+                                or task.mediation_scope and self._halted(task.mediation_scope)
+                                or self._recalled_by_off(task)
+                                or counts[task.agent] >= current_agent):
+                            continue
+                        child = group.create_task(self._run_runnable([task]))
+                        children.append(child)
+                        inflight[task.id] = (task, child)
+                        counts[task.agent] += 1
+                        slots -= 1
+                        refill_limit -= 1
+                except Exception as exc:
+                    if str(exc) != last_refill_error:
+                        logger.warning("parallel approval refill unavailable", exc_info=True)
+                        last_refill_error = str(exc)
         summary["held"] += held
         for child in children:
             for key, value in child.result().items():

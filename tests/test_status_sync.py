@@ -1,14 +1,19 @@
 """Tests for scripts/status_sync.py (CDX-5).
 
-Only the pure / fast parts are exercised — the route count (from the snapshot),
-the STATUS.md rewrite, and the parse. ``count_tests()`` refuses to start a nested
-``pytest --collect-only`` while this suite is running. The script is loaded by path
-(scripts/ is not a package), mirroring tests/test_release_build.py.
+Fast projection/parser checks plus real miniature pytest trees. ``count_tests()``
+refuses nested project collection; CLI probes collect only explicit temporary
+trees in separate children. The script is loaded by path (scripts/ is not a
+package), mirroring tests/test_release_build.py.
 """
 
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
+from xml.etree import ElementTree
 
 import pytest
 
@@ -50,10 +55,86 @@ def test_count_tests_refuses_nested_pytest_collection(monkeypatch):
         status_sync.count_tests()
 
 
+def test_stdlib_backlog_help_does_not_require_collector_xml_dependency():
+    run = subprocess.run(
+        [sys.executable, "-S", str(REPO / "scripts/backlog.py"), "--help"],
+        cwd=REPO, capture_output=True, text=True, timeout=15, check=False,
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "usage:" in run.stdout
+
+
+def _count_isolated_tree(tree):
+    """Probe the real CLI in a child, collecting only an explicit tiny temp tree."""
+    env = dict(os.environ)
+    env.pop("PYTEST_CURRENT_TEST", None)
+    program = (
+        "import importlib.util, sys; from pathlib import Path; "
+        "spec=importlib.util.spec_from_file_location('count_probe', sys.argv[1]); "
+        "module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
+        "print(module.count_tests(Path(sys.argv[2])))"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", program, str(REPO / "scripts/status_sync.py"), str(tree)],
+        cwd=tree, env=env, capture_output=True, text=True, timeout=20, check=False,
+    )
+
+
+@pytest.mark.parametrize("module_skip,runtime_skip", [(False, False), (True, False), (True, True)])
+def test_generated_count_matches_real_junit_including_collection_skips(tmp_path, module_skip, runtime_skip):
+    (tmp_path / "pytest.ini").write_text("[pytest]\ntestpaths = .\n", encoding="utf-8")
+    (tmp_path / "test_plain.py").write_text(
+        "from pathlib import Path\n"
+        "def test_plain():\n    Path('executed.flag').write_text('ran')\n", encoding="utf-8")
+    if module_skip:
+        (tmp_path / "test_missing.py").write_text(
+            "import pytest\npytest.importorskip('nerva_synthetic_missing_count_dependency')\n",
+            encoding="utf-8")
+    if runtime_skip:
+        (tmp_path / "test_runtime.py").write_text(
+            "import pytest\ndef test_runtime():\n    pytest.skip('synthetic runtime skip')\n",
+            encoding="utf-8")
+    generated = _count_isolated_tree(tmp_path)
+    assert generated.returncode == 0, generated.stdout + generated.stderr
+    assert not (tmp_path / "executed.flag").exists(), "count generation executed a test body"
+    report = tmp_path / "run.xml"
+    run = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", f"--junitxml={report}"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert (tmp_path / "executed.flag").exists()
+    actual = int(ElementTree.parse(report).getroot()[0].attrib["tests"])
+    assert int(generated.stdout.strip()) == actual
+
+
+def test_generated_count_refuses_real_collection_error(tmp_path):
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (tmp_path / "test_broken.py").write_text("raise RuntimeError('synthetic collection failure')\n", encoding="utf-8")
+    generated = _count_isolated_tree(tmp_path)
+    assert generated.returncode != 0
+    assert "pytest collection failed" in generated.stderr
+
+
+@pytest.mark.parametrize("report", [None, '<testsuite tests="9">', '<testsuite tests="invalid"/>'])
+def test_generated_count_refuses_unavailable_or_invalid_collection_report(tmp_path, monkeypatch, report):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    def fake_collection(args, **kwargs):
+        path = next((arg.split("=", 1)[1] for arg in args if arg.startswith("--junitxml=")), None)
+        if path and report is not None:
+            Path(path).write_text(report, encoding="utf-8")
+        return SimpleNamespace(stdout="1 tests collected", stderr="", returncode=0)
+
+    monkeypatch.setattr(status_sync.subprocess, "run", fake_collection)
+    with pytest.raises(RuntimeError, match="collection.*report"):
+        status_sync.count_tests(tmp_path)
+
+
 def test_apply_to_status_rewrites_both_tokens():
     sample = "x · **Tests:** ~1,234 passed (6 skipped) · **HTTP routes:** 42 (+ feedback) y"
     out = status_sync.apply_to_status(sample, tests=9999, routes=100)
-    assert "~9,999 collected" in out
+    assert "~9,999 reported" in out
     assert "HTTP routes:** 100 " in out
     assert "~1,234" not in out and "routes:** 42" not in out
 
@@ -63,7 +144,7 @@ def test_apply_is_anchored_leaves_other_numbers_untouched():
     sample = "v0.11.0 · **Tests:** ~10 passed · **HTTP routes:** 5 — 45 per-domain routers"
     out = status_sync.apply_to_status(sample, tests=20, routes=6)
     assert "v0.11.0" in out and "45 per-domain routers" in out
-    assert "~20 collected" in out and "HTTP routes:** 6 " in out
+    assert "~20 reported" in out and "HTTP routes:** 6 " in out
 
 
 def test_apply_each_token_independently():
@@ -77,9 +158,10 @@ def test_apply_each_token_independently():
     assert "mobile **4 jest**" in updated
 
 
-def test_apply_to_status_preserves_honest_collection_wording():
-    sample = "**Tests:** ~10 collected · **HTTP routes:** 5"
-    assert "~20 collected" in status_sync.apply_to_status(sample, tests=20)
+def test_apply_to_status_uses_honest_report_count_wording():
+    for wording in ("collected", "reported"):
+        sample = f"**Tests:** ~10 {wording} · **HTTP routes:** 5"
+        assert "~20 reported" in status_sync.apply_to_status(sample, tests=20)
 
 
 def test_current_counts_parses_status():

@@ -58,7 +58,8 @@ from agents.core.web_helpers import nocache_json as _nocache_json
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, field_validator
+from agents.core.kanban.chat_sources import BoardReference, BoardSource
 
 logger = logging.getLogger("jarvis.web")
 
@@ -988,12 +989,31 @@ async def generic_error_handler(request: Request, exc: Exception):
     )
 
 
-# Nerva Workspace: WorkspaceError → {"error", "message", ...}, and FastAPI's request
-# validation reshaped to 422 invalid_request on /api/workspace/* only — every other path
-# keeps FastAPI's default {"detail": [...]} body (agents/core/workspace/errors.py).
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+
 from agents.core.workspace import errors as _workspace_errors  # noqa: E402
 
-_workspace_errors.register_handlers(app)
+app.add_exception_handler(
+    _workspace_errors.WorkspaceError, _workspace_errors.workspace_error_handler,  # type: ignore[arg-type]
+)
+
+
+@app.exception_handler(RequestValidationError)
+async def chat_reference_validation_handler(request: Request, exc: RequestValidationError):
+    """Redact reference input before delegating to Workspace or FastAPI validation."""
+    # The matched route uses the logical path even under a configured root path.
+    path = getattr(request.scope.get("route"), "path", None)
+    if path == "/api/kanban/board-note/preview":
+        return _nocache_json({"detail": "invalid_board_reference"}, status_code=422)
+    if path in {"/chat", "/chat/stream"}:
+        body = exc.body if isinstance(exc.body, dict) else {}
+        if "board_references" in body:
+            return _nocache_json({"detail": "invalid_board_reference"}, status_code=422)
+        if "history_reference" in body or any("history_reference" in error.get("loc", ()) for error in exc.errors()):
+            return _nocache_json({"detail": "invalid_history_reference"}, status_code=422)
+        if "require_full_attachments" in body:
+            return _nocache_json({"detail": "invalid_attachment"}, status_code=422)
+    return await _workspace_errors.validation_error_handler(request, exc)
 
 
 HERE = Path(__file__).parent / "web"
@@ -1340,6 +1360,31 @@ class ChatAttachment(BaseModel):
     text: str = Field(..., min_length=1, max_length=64_000)
 
 
+class HistoryReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str
+    turn: StrictInt = Field(ge=0)
+    revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    excerpt: str = Field(min_length=1, max_length=8_000)
+    allow_cloud: StrictBool = False
+
+    @field_validator("session_id")
+    @classmethod
+    def _valid_source_session(cls, value):
+        from agents.core.validation import is_valid_session_id
+        if not is_valid_session_id(value):
+            raise ValueError("invalid session_id")
+        return value
+
+    @field_validator("excerpt")
+    @classmethod
+    def _bounded_excerpt(cls, value):
+        if len(value.encode("utf-8")) > 8_000:
+            raise ValueError("excerpt exceeds 8000 UTF-8 bytes")
+        return value
+
+
 class ChatRequest(BaseModel):
     # Unknown fields still fail; explicit sessions are validated and hydrated.
     model_config = ConfigDict(extra="forbid")
@@ -1355,6 +1400,12 @@ class ChatRequest(BaseModel):
     # a file outside its folder). Attached like an @file: reference — fenced as content,
     # never the owner's words, and the turn is tainted.
     attachments: list[ChatAttachment] | None = Field(default=None, max_length=8)
+    # Require every supplied editor attachment to fit after @file expansion; an empty
+    # attachment list or a slash command with this flag is a 422; a cut item is a 413.
+    require_full_attachments: StrictBool = False
+    history_reference: HistoryReference | None = None
+    board_references: list[BoardReference] | None = Field(default=None, min_length=1, max_length=8)
+    allow_board_cloud: StrictBool = False
 
     @field_validator("session_id")
     @classmethod
@@ -1456,6 +1507,11 @@ class TurnOutcome(TypedDict):
     recall: NotRequired[list[TurnRecall]]   # one per provider that prefetched, in display order
 
 
+class ModelCall(TypedDict):
+    provider: str
+    model: str
+
+
 class ChatResponse(BaseModel):
     reply: str
 
@@ -1467,6 +1523,10 @@ class ChatResponse(BaseModel):
         return final_text(value)
 
     session_id: str | None = None
+    history_source_used: bool | None = Field(default=None, exclude_if=lambda value: value is None)
+    board_sources: list[BoardSource] | None = Field(default=None, exclude_if=lambda value: value is None)
+    model_calls: list[ModelCall] | None = Field(default=None, min_length=1, max_length=8,
+                                                exclude_if=lambda value: value is None)
     usage: dict | None = None
     runtime_stops: list[str] = []
     # The turn's reply is prose ("…this action requires approval"), which names
@@ -1691,8 +1751,12 @@ async def _bind_status_scope(collector, orchestrator, session_id: str | None) ->
 
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_user_guard)])
 async def chat(req: ChatRequest, request: Request):
+    _validate_strict_attachment_request(req)
     if not orch:
+        if req.board_references:
+            raise HTTPException(status_code=503, detail="board_reference_unavailable")
         return ChatResponse(reply="Jarvis not initialized.")
+    req = _pin_sourced_destination(req, request)
     from agents.core.turn_usage import turn_usage_scope
     from agents.core.turn_stops import turn_stops_scope
     with turn_usage_scope() as collector, turn_stops_scope() as stops:
@@ -1718,9 +1782,160 @@ async def _busy_command_refusal(request: Request, session_id, message) -> str | 
     return reply if type(reply) is str else None
 
 
-async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops):
+async def _guard_chat_request(req: ChatRequest, request: Request):
     from agents.core.foreign_history import http_owner_guard
-    await http_owner_guard(orch.checkpoints, req.session_id or getattr(orch, "session_id", None), request)
+    origin = await http_owner_guard(orch.checkpoints, req.session_id or getattr(orch, "session_id", None), request)
+    if (req.history_reference is not None or req.board_references) and origin.tainted:
+        raise HTTPException(status_code=409, detail="history_destination_untrusted")
+    if (_AGENT_SETTINGS.get(req.agent, {}).get("enabled") is False
+            or (req.agent != "jarvis" and req.agent not in orch.agents)):
+        raise HTTPException(status_code=409, detail="chat_agent_unavailable")
+
+
+def _pin_sourced_destination(req: ChatRequest, request: Request) -> ChatRequest:
+    if req.board_references and not _web_principal(request).admin:
+        raise HTTPException(status_code=403, detail="board_reference_owner_required")
+    if (req.history_reference is None and not req.board_references) or req.session_id is not None:
+        return req
+    from agents.core.session_continuation import identity
+    from agents.core.validation import is_valid_session_id
+    sid = getattr(orch, "session_id", None)
+    cp = getattr(orch, "checkpoints", None)
+    if not is_valid_session_id(sid) or cp is None or cp._conn is None:
+        raise HTTPException(status_code=409, detail="history_destination_unavailable")
+    with cp._lock:
+        if identity(cp._conn, sid) is None:
+            raise HTTPException(status_code=409, detail="history_destination_unavailable")
+    return req.model_copy(update={"session_id": sid})
+
+
+async def _history_source(req: ChatRequest, request: Request):
+    if req.history_reference is None:
+        return None
+    if not _web_principal(request).admin:
+        raise HTTPException(status_code=403, detail="history_reference_owner_required")
+    from agents.core.commands import preappend_command_name, side_question_command_name
+    if (req.message.lstrip().startswith("/") or preappend_command_name(req.message)
+            or side_question_command_name(req.message)):
+        raise HTTPException(status_code=400, detail="history_reference_requires_message")
+    from agents.core.llm.hybrid_router import LOCAL_ONLY_AGENTS
+    if req.agent not in LOCAL_ONLY_AGENTS and not req.history_reference.allow_cloud:
+        raise HTTPException(status_code=403, detail="history_reference_cloud_disclosure_required")
+    from agents.core.session_continuation import ContinuationRefused
+    from agents.core.session_transcript import resolve_history_reference
+    try:
+        return await resolve_history_reference(orch, req.history_reference)
+    except ContinuationRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.reason) from exc
+    except Exception as exc:
+        logger.exception("history source unavailable")
+        raise HTTPException(status_code=503, detail="history_source_unavailable") from exc
+
+
+def _attach_history_source(req: ChatRequest, expansion, verified):
+    if verified is None:
+        return expansion
+    from agents.core import context_refs
+    attachment, provenance = verified
+    if len(expansion.attached) >= context_refs.MAX_EDITOR_ITEMS:
+        raise HTTPException(status_code=413, detail="history_reference_attachment_limit")
+    before = len(expansion.attached)
+    expansion = context_refs.attach_editor_content(expansion, req.message, [attachment])
+    if (len(expansion.attached) != before + 1
+            or expansion.attached[-1].get("text") != attachment["text"]
+            or expansion.attached[-1].get("truncated")):
+        raise HTTPException(status_code=413, detail="history_reference_attachment_limit")
+    expansion.history_source = provenance
+    expansion.history_destination = req.session_id or getattr(orch, "session_id", None)
+    return expansion
+
+
+async def _verified_board_sources(req: ChatRequest):
+    if not req.board_references:
+        return None
+    from agents.core import context_refs
+    from agents.core.commands import preappend_command_name, side_question_command_name
+    from agents.core.llm.hybrid_router import LOCAL_ONLY_AGENTS
+    from agents.core.routers.kanban import reviewed_chat_sources
+    if (req.message.lstrip().startswith("/") or preappend_command_name(req.message)
+            or side_question_command_name(req.message)):
+        raise HTTPException(status_code=400, detail="board_reference_requires_message")
+    if req.agent not in LOCAL_ONLY_AGENTS and not req.allow_board_cloud:
+        raise HTTPException(status_code=403, detail="board_reference_cloud_disclosure_required")
+    refs = req.board_references
+    if len({(ref.board, ref.task_id) for ref in refs}) != len(refs):
+        raise HTTPException(status_code=422, detail="duplicate_board_reference")
+    sizes = [len(ref.excerpt.encode("utf-8")) for ref in refs]
+    if max(sizes) > context_refs.MAX_REF_BYTES or sum(sizes) > context_refs.MAX_TOTAL_BYTES:
+        raise HTTPException(status_code=413, detail="board_reference_attachment_limit")
+    try:
+        return await asyncio.to_thread(reviewed_chat_sources, refs)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("board reference unavailable")
+        raise HTTPException(status_code=503, detail="board_reference_unavailable") from exc
+
+
+def _attach_board_sources(req, expansion, verified):
+    if verified is None:
+        return expansion
+    from agents.core import context_refs
+    items = [
+        {"name": f"Kanban {'result' if ref.source == 'result' else 'summary'} ({ref.board}/{ref.task_id})",
+         "text": ref.excerpt} for ref in req.board_references
+    ]
+    names = {item["name"] for item in items}
+    if any(row["kind"] == "editor" and row["name"] in names for row in expansion.attached):
+        raise HTTPException(status_code=422, detail="duplicate_board_reference")
+    before = len(expansion.attached)
+    if before + len(items) > context_refs.MAX_EDITOR_ITEMS:
+        raise HTTPException(status_code=413, detail="board_reference_attachment_limit")
+    context_refs.attach_editor_content(expansion, req.message, items)
+    added = expansion.attached[before:]
+    if len(added) != len(items) or any(row["truncated"] for row in added):
+        raise HTTPException(status_code=413, detail="board_reference_attachment_limit")
+    expansion.board_sources = verified
+    expansion.history_destination = req.session_id
+    return expansion
+
+
+def _consumed_board_sources(verified, expansion):
+    if verified is None:
+        return None
+    return verified if expansion is not None and expansion.board_sources_recorded else []
+
+
+def _validate_strict_attachment_request(req: ChatRequest):
+    if req.require_full_attachments:
+        if not req.attachments:
+            raise HTTPException(status_code=422, detail="attachments_required")
+        if req.message.lstrip().startswith("/"):
+            raise HTTPException(status_code=422, detail="attachments_require_message")
+
+
+def _attach_editor_attachments(req: ChatRequest, expansion):
+    if expansion is None or not req.attachments:
+        return expansion
+    from agents.core import context_refs
+
+    before = len(expansion.attached)
+    expansion = context_refs.attach_editor_content(
+        expansion, req.message, [item.model_dump() for item in req.attachments])
+    if req.require_full_attachments:
+        added = expansion.attached[before:]
+        if (len(added) != len(req.attachments)
+                or any(row["truncated"] or row["text"] != item.text
+                       for row, item in zip(added, req.attachments, strict=True))):
+            raise HTTPException(status_code=413, detail="attachment_limit")
+    return expansion
+
+
+async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops):
+    await _guard_chat_request(req, request)
+    verified_history = await _history_source(req, request)
+    verified_boards = await _verified_board_sources(req)
+    expansion = None
     # Declared before the try so the failure branch can report it too: a turn that
     # queued an action and *then* raised still left those rows on the queue, and
     # answering "Internal error." with an empty list would hide them.
@@ -1736,12 +1951,12 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
                                      "runtime_stops": stops.snapshot()}, status_code=exc.status)
         refused = await _busy_command_refusal(request, req.session_id, req.message)
         if refused is not None:   # H058: answered now — no interrupt, no wait behind the turn
-            return ChatResponse(reply=refused, usage=collector.snapshot(), runtime_stops=stops.snapshot())
+            return ChatResponse(reply=refused, history_source_used=False if verified_history else None,
+                                board_sources=[] if verified_boards else None,
+                                usage=collector.snapshot(), runtime_stops=stops.snapshot())
         from agents.core import code_interruptions
         from agents.core.commands import side_question_command_name
         side_question = side_question_command_name(req.message) is not None
-        if not side_question:   # H414: a side question must not interrupt the running work
-            code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
         # H579: @file:path references in the owner's own message are attached for this turn:
         # the model reads them after the message, which itself goes on as typed.
         from agents.core import context_refs
@@ -1752,9 +1967,12 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
         # or prefixed to it.
         checkpoint_command = preappend_command_name(req.message) is not None
         expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
-        if expansion is not None and req.attachments:   # G11 review M2: editor content, fenced
-            expansion = context_refs.attach_editor_content(
-                expansion, req.message, [item.model_dump() for item in req.attachments])
+        expansion = _attach_editor_attachments(req, expansion)
+        if expansion is not None:
+            expansion = _attach_history_source(req, expansion, verified_history)
+            expansion = _attach_board_sources(req, expansion, verified_boards)
+        if not side_question:   # H414: a side question must not interrupt the running work
+            code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
         # H10.21: inject the active session's notes as persistent context.
         message = req.message
         notes = getattr(orch, "notes", None)
@@ -1782,7 +2000,9 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
             with reasoning_scope(req.reasoning):
                 async with _turn_lease(orch, req.session_id, side_question=side_question) as acquired:
                     if not acquired:
-                        return ChatResponse(reply=TURN_BUSY_REPLY, usage=collector.snapshot(),
+                        return ChatResponse(reply=TURN_BUSY_REPLY, history_source_used=False if verified_history else None,
+                                            board_sources=[] if verified_boards else None,
+                                            usage=collector.snapshot(),
                                             runtime_stops=stops.snapshot())
                     if req.session_id is not None:
                         await prepare_session(orch, req.session_id)
@@ -1821,22 +2041,33 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
             context_refs.reset_attached(attached_token)
             session_titles.reset_own_words(words_token)
         return ChatResponse(reply=reply, session_id=orch.session_id if isinstance(orch.session_id, str) else None,
+                            board_sources=_consumed_board_sources(verified_boards, expansion),
+                            history_source_used=(expansion.history_source is None) if verified_history else None,
+                            model_calls=collector.reply_model_calls(orch.session_id),
                             pending_approvals=queued_approvals, warming=warming, notices=turn_notices,
                             outcome=_selected_turn_outcome(orch, measured_outcome, usage=collector.snapshot(),
                                                            session_id=orch.session_id), usage=collector.snapshot(),
                             runtime_stops=stops.snapshot())
+    except HTTPException:
+        raise
     except Exception:
         # Constant reply — exception text in the client body is an
         # information-exposure pattern; the log line above keeps the specifics.
         logger.exception("chat error")
         return ChatResponse(reply="Internal error.", pending_approvals=queued_approvals,
+                            board_sources=_consumed_board_sources(verified_boards, expansion),
+                            history_source_used=(expansion is not None and expansion.history_source is None)
+                                if verified_history else None,
                             notices=turn_notices, usage=collector.snapshot(),
                             runtime_stops=stops.snapshot())
 
 
+_CHAT_STREAM_PING_SECONDS = 15.0
+
+
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
                              attached=None, own_words=None, pending_actor=None, pending_current=None, refused=None,
-                             tool_events=False, turn_id=None, pending_poll=False, pending_owner=None):
+                             tool_events=False, turn_id=None, pending_poll=False, pending_owner=None, board_sources=None):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1861,6 +2092,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
     # runner task's context and the consumer below is what has to report it.
     queued_approvals: list[int] = []
     turn_notices: list[dict] = []
+    sourced = attached is not None and attached.history_source is not None
     live_usage = None
     from agents.core.channels.outbound_stream import OutboundStream, safe_notices, safe_prompt
 
@@ -1960,7 +2192,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             await queue.put(("end", (text, session if isinstance(session, str) else None,
                                      _selected_turn_outcome(orch, measured, usage=collector.snapshot(),
                                                             session_id=session), collector.snapshot(),
-                                     stops.snapshot(), transition_sink.finish(session))))
+                                     stops.snapshot(), transition_sink.finish(session),
+                                     collector.reply_model_calls(session))))
 
         try:
             if refused is not None:
@@ -2042,7 +2275,12 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
     try:
         yield f"data: {json.dumps({'type': 'start', 'agent': agent})}\n\n"
         while True:
-            kind, data = await queue.get()
+            try:
+                kind, data = await asyncio.wait_for(queue.get(), _CHAT_STREAM_PING_SECONDS)
+            except TimeoutError:
+                # Local models can prefill for longer than the client's idle timeout.
+                yield ": ping\n\n"
+                continue
             if kind == "token":
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
             elif kind == "outcome_progress":
@@ -2055,9 +2293,15 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 if not acknowledged.done():
                     acknowledged.set_result(True)
             elif kind == "end":
-                full, actual_session, outcome, usage, stops, transition = data
+                full, actual_session, outcome, usage, stops, transition, model_calls = data
                 turn_notices[:] = safe_notices(turn_notices)
                 extra = {"session_transition": transition} if transition is not None else {}
+                if model_calls:
+                    extra["model_calls"] = model_calls
+                if sourced:
+                    extra["history_source_used"] = attached.history_source is None
+                if board_sources is not None:
+                    extra["board_sources"] = _consumed_board_sources(board_sources, attached)
                 yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': outcome, 'usage': usage, 'runtime_stops': stops, **extra})}\n\n"
                 break
             elif kind == "error":
@@ -2066,7 +2310,10 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 # turn that queued something before failing still has to name it.
                 usage, stops = data
                 turn_notices[:] = safe_notices(turn_notices)
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'session_id': None, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': None, 'usage': usage, 'runtime_stops': stops})}\n\n"
+                extra = {"history_source_used": attached.history_source is None} if sourced else {}
+                if board_sources is not None:
+                    extra["board_sources"] = _consumed_board_sources(board_sources, attached)
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'session_id': None, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': None, 'usage': usage, 'runtime_stops': stops, **extra})}\n\n"
                 break
     finally:
         # Runs on normal completion AND on client disconnect (GeneratorExit). Awaiting
@@ -2084,10 +2331,13 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
 
 @app.post("/chat/stream", dependencies=[Depends(_user_guard)])
 async def chat_stream(req: ChatRequest, request: Request):
+    _validate_strict_attachment_request(req)
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    from agents.core.foreign_history import http_owner_guard
-    await http_owner_guard(orch.checkpoints, req.session_id or getattr(orch, "session_id", None), request)
+    req = _pin_sourced_destination(req, request)
+    await _guard_chat_request(req, request)
+    verified_history = await _history_source(req, request)
+    verified_boards = await _verified_board_sources(req)
 
     if req.session_id is not None:
         from agents.core.session_continuation import ContinuationRefused, prepare_session
@@ -2099,8 +2349,6 @@ async def chat_stream(req: ChatRequest, request: Request):
     from agents.core import code_interruptions
     from agents.core.commands import side_question_command_name
     side_question = side_question_command_name(req.message) is not None   # H414, see /chat
-    if not side_question and refused is None:
-        code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
     agent_override = req.agent if req.agent != "jarvis" else None
     # H579: @file:path references are attached for the turn here too, as on /chat.
     from agents.core import context_refs
@@ -2109,9 +2357,12 @@ async def chat_stream(req: ChatRequest, request: Request):
     checkpoint_command = preappend_command_name(req.message) is not None   # see /chat
     expansion = (None if checkpoint_command or refused is not None
                  else await asyncio.to_thread(context_refs.expand, req.message))
-    if expansion is not None and req.attachments:   # G11 review M2: editor content, fenced
-        expansion = context_refs.attach_editor_content(
-            expansion, req.message, [item.model_dump() for item in req.attachments])
+    expansion = _attach_editor_attachments(req, expansion)
+    if expansion is not None:
+        expansion = _attach_history_source(req, expansion, verified_history)
+        expansion = _attach_board_sources(req, expansion, verified_boards)
+    if not side_question and refused is None:
+        code_interruptions.interrupt(str(req.session_id or getattr(orch, "session_id", None) or ""))
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped
     # applying the moment the cockpit switched to streaming.
@@ -2129,7 +2380,7 @@ async def chat_stream(req: ChatRequest, request: Request):
     pending_poll = request.headers.get("x-nerva-pending", "").strip().lower() == "poll"
     return StreamingResponse(
         _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
-                           attached=expansion, own_words=req.message, pending_actor=actor,
+                           attached=expansion, own_words=req.message, pending_actor=actor, board_sources=verified_boards,
                            pending_current=lambda: actor is not None and http_actor(request) == actor,
                            refused=refused, tool_events=req.tool_events,
                            turn_id=turn_interrupts.turn_id_from(request.headers.get(turn_interrupts.TURN_ID_HEADER)),

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { fetchCommands } from '../../mobile/src/api/commands';
+import { CommandsModal } from '../../mobile/src/components/CommandsModal';
 import { ServerProvider, useServer } from '../../mobile/src/context/ServerContext';
 import { ChatScreen } from '../../mobile/src/screens/ChatScreen';
 import { records } from './support/storage';
@@ -36,7 +37,7 @@ beforeEach(() => {
   records.set(KEY, JSON.stringify({ version: 2, config, appearance: null, chatScope: 'scope-one' }));
   vi.stubGlobal('XMLHttpRequest', ChatXHR);
   (ChatXHR as typeof ChatXHR & { latest?: ChatXHR }).latest = undefined;
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => reply(url.endsWith('/api/commands')
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => reply(url.includes('/api/commands')
     ? { ok: true, commands: items } : { agents: [] })));
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -47,6 +48,11 @@ it('uses both configured chat credentials and returns the live catalog', async (
   expect(fetch).toHaveBeenCalledWith('https://hub.test/api/commands', expect.objectContaining({
     method: 'GET', headers: expect.objectContaining({ 'X-User-Token': 'user', 'X-Admin-Token': 'owner' }),
   }));
+});
+
+it('scopes discovery to the selected agent without changing legacy callers', async () => {
+  await fetchCommands(config, new AbortController().signal, 'agent/one');
+  expect(fetch).toHaveBeenCalledWith('https://hub.test/api/commands?agent=agent%2Fone', expect.anything());
 });
 
 it('accepts bounded shortcut rows and marks a partial catalog', async () => {
@@ -77,7 +83,7 @@ it('rejects malformed or oversized shortcut rows', async () => {
 });
 
 it('lists shortcut kinds and inserts a choice without sending', async () => {
-  vi.mocked(fetch).mockImplementation(async url => reply(String(url).endsWith('/api/commands')
+  vi.mocked(fetch).mockImplementation(async url => reply(String(url).includes('/api/commands')
     ? { ok: true, commands: items, shortcuts, truncated: true, shortcuts_unavailable: true } : { agents: [] }) as Response);
   mount(); await screen.findByPlaceholderText('Message Jarvis…');
   fireEvent.click(screen.getByText('Commands'));
@@ -165,14 +171,100 @@ it('preserves a newer typed draft when a command is chosen', async () => {
   expect((screen.getByPlaceholderText('Message Jarvis…') as HTMLInputElement).value).toBe('My unsent question');
 });
 
+it('filters a large catalog to skills and keeps a refused choice visible', async () => {
+  vi.mocked(fetch).mockImplementation(async url => reply(String(url).includes('/api/commands')
+    ? { ok: true, commands: [...items, ...Array.from({ length: 8 }, (_, index) => ({
+      name: `extra${index}`, command: `/extra${index}`, usage: `/extra${index}`, description: 'Extra command', tier: 'user',
+    }))], shortcuts } : { agents: [] }) as Response);
+  const onChoose = vi.fn(() => false);
+  render(<ServerProvider><CommandsModal visible agent="frigga" onClose={() => {}} onChoose={onChoose} /></ServerProvider>);
+  await screen.findByLabelText('Show skills');
+  expect(screen.getByText('Insert into chat with frigga')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Show skills'));
+  expect(screen.getByLabelText('Insert /web-research in message')).toBeTruthy();
+  expect(screen.queryByLabelText('Insert /status in message')).toBeNull();
+  fireEvent.click(screen.getByLabelText('Insert /web-research in message'));
+  expect(onChoose).toHaveBeenCalledWith('/web-research', 'skill');
+  expect(screen.getByText(/draft changed\. Close and reopen Commands/)).toBeTruthy();
+  expect(screen.getByLabelText('Insert /web-research in message')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Show all commands'));
+  expect(screen.getByLabelText('Insert /status in message')).toBeTruthy();
+});
+
+it('searches skill slugs locally and distinguishes no match from no skills', async () => {
+  const learned = { ...shortcuts[1], name: 'learned-procedure', command: '/learned-procedure' };
+  vi.mocked(fetch).mockImplementation(async url => reply(String(url).includes('/api/commands')
+    ? { ok: true, commands: items, shortcuts: [shortcuts[1], learned] } : { agents: [] }) as Response);
+  const view = render(<ServerProvider><CommandsModal visible agent="frigga" onClose={() => {}} onChoose={() => {}} /></ServerProvider>);
+  await screen.findByLabelText('Show skills');
+  fireEvent.click(screen.getByLabelText('Show skills'));
+  fireEvent.change(screen.getByLabelText('Search skills'), { target: { value: 'Learned Procedure' } });
+  expect(screen.getByLabelText('Insert /learned-procedure in message')).toBeTruthy();
+  expect(screen.queryByLabelText('Insert /web-research in message')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Search skills'), { target: { value: 'unknown' } });
+  expect(screen.getByText('No matching skills.')).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Show all commands'));
+  fireEvent.click(screen.getByLabelText('Show skills'));
+  expect((screen.getByLabelText('Search skills') as HTMLInputElement).value).toBe('');
+  expect(screen.getByLabelText('Insert /web-research in message')).toBeTruthy();
+  expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/api/commands')).length).toBe(1);
+  view.rerender(<ServerProvider><CommandsModal visible agent="jarvis" onClose={() => {}} onChoose={() => {}} /></ServerProvider>);
+  await screen.findByText('Insert into chat with jarvis');
+  await screen.findByLabelText('Show skills');
+  fireEvent.click(screen.getByLabelText('Show skills'));
+  expect((screen.getByLabelText('Search skills') as HTMLInputElement).value).toBe('');
+  fireEvent.change(screen.getByLabelText('Search skills'), { target: { value: 'unknown' } });
+  view.rerender(<ServerProvider><CommandsModal visible={false} agent="jarvis" onClose={() => {}} onChoose={() => {}} /></ServerProvider>);
+  view.rerender(<ServerProvider><CommandsModal visible agent="jarvis" onClose={() => {}} onChoose={() => {}} /></ServerProvider>);
+  await screen.findByLabelText('Show skills');
+  fireEvent.click(screen.getByLabelText('Show skills'));
+  expect((screen.getByLabelText('Search skills') as HTMLInputElement).value).toBe('');
+});
+
+it('offers the Skills filter when a legacy catalog lists none', async () => {
+  render(<ServerProvider><CommandsModal visible agent="jarvis" onClose={() => {}} onChoose={() => {}} /></ServerProvider>);
+  await screen.findByLabelText('Show skills');
+  fireEvent.click(screen.getByLabelText('Show skills'));
+  expect(screen.getByText('This hub listed no skills for jarvis.')).toBeTruthy();
+  expect(screen.queryByText('No matching skills.')).toBeNull();
+});
+
+it('asks for a selected destination before reading a catalog', async () => {
+  render(<ServerProvider><CommandsModal visible agent="" onClose={() => {}} onChoose={() => {}} /></ServerProvider>);
+  await screen.findByText(/Choose an agent before opening commands/);
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/commands'))).toBe(false);
+});
+
+it('aborts and hides stale command results when the destination agent changes', async () => {
+  let release!: (value: any) => void;
+  vi.mocked(fetch).mockImplementation(async url => {
+    if (String(url).includes('agent=jarvis')) return new Promise(resolve => { release = resolve; });
+    return reply({ ok: true, commands: [] }) as Response;
+  });
+  let changeAgent!: (value: string) => void;
+  function ProbeModal() {
+    const [agent, setAgent] = useState('jarvis');
+    changeAgent = setAgent;
+    return <CommandsModal visible agent={agent} onClose={() => {}} onChoose={() => {}} />;
+  }
+  render(<ServerProvider><ProbeModal /></ServerProvider>);
+  await waitFor(() => expect(release).toBeDefined());
+  const signal = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('agent=jarvis'))![1]!.signal!;
+  await act(async () => changeAgent('frigga'));
+  expect(signal.aborted).toBe(true);
+  expect(screen.getByText('Insert into chat with frigga')).toBeTruthy();
+  await act(async () => release(reply({ ok: true, commands: items, shortcuts })));
+  expect(screen.queryByLabelText('Insert /web-research in message')).toBeNull();
+});
+
 it('shows unavailable and retry states distinctly from an empty catalog', async () => {
-  vi.mocked(fetch).mockImplementation(async url => reply(String(url).endsWith('/api/commands')
+  vi.mocked(fetch).mockImplementation(async url => reply(String(url).includes('/api/commands')
     ? { ok: false, reason: 'commands_unavailable', commands: [] } : { agents: [] },
-  String(url).endsWith('/api/commands') ? 503 : 200) as Response);
+  String(url).includes('/api/commands') ? 503 : 200) as Response);
   mount(); await screen.findByPlaceholderText('Message Jarvis…');
   fireEvent.click(screen.getByText('Commands'));
   await screen.findByText(/Commands unavailable/);
-  vi.mocked(fetch).mockImplementation(async url => reply(String(url).endsWith('/api/commands')
+  vi.mocked(fetch).mockImplementation(async url => reply(String(url).includes('/api/commands')
     ? { ok: true, commands: [] } : { agents: [] }) as Response);
   fireEvent.click(screen.getByText('Retry'));
   await screen.findByText(/No commands available/);
@@ -180,7 +272,7 @@ it('shows unavailable and retry states distinctly from an empty catalog', async 
 
 it('shows a transport error with a retry action', async () => {
   vi.mocked(fetch).mockImplementation(async url => {
-    if (String(url).endsWith('/api/commands')) throw new Error('offline');
+    if (String(url).includes('/api/commands')) throw new Error('offline');
     return reply({ agents: [] }) as Response;
   });
   mount(); await screen.findByPlaceholderText('Message Jarvis…');
@@ -191,12 +283,12 @@ it('shows a transport error with a retry action', async () => {
 
 it('aborts a pending read on close and ignores its late response', async () => {
   let release!: (value: any) => void;
-  vi.mocked(fetch).mockImplementation(async url => String(url).endsWith('/api/commands')
+  vi.mocked(fetch).mockImplementation(async url => String(url).includes('/api/commands')
     ? new Promise(resolve => { release = resolve; }) : reply({ agents: [] }) as Response);
   mount(); await screen.findByPlaceholderText('Message Jarvis…');
   fireEvent.click(screen.getByText('Commands'));
   await waitFor(() => expect(release).toBeDefined());
-  const signal = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/api/commands'))![1]!.signal!;
+  const signal = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('/api/commands'))![1]!.signal!;
   fireEvent.click(screen.getByText('Close commands'));
   expect(signal.aborted).toBe(true);
   await act(async () => release(reply({ ok: true, commands: items })));
@@ -206,12 +298,12 @@ it('aborts a pending read on close and ignores its late response', async () => {
 
 it('aborts and fences old-hub results after a connection change', async () => {
   let release!: (value: any) => void;
-  vi.mocked(fetch).mockImplementation(async url => String(url).endsWith('/api/commands')
+  vi.mocked(fetch).mockImplementation(async url => String(url).includes('/api/commands')
     ? new Promise(resolve => { release = resolve; }) : reply({ agents: [] }) as Response);
   mount(); await screen.findByPlaceholderText('Message Jarvis…');
   fireEvent.click(screen.getByText('Commands'));
   await waitFor(() => expect(release).toBeDefined());
-  const signal = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/api/commands'))![1]!.signal!;
+  const signal = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('/api/commands'))![1]!.signal!;
   await act(async () => server.updateConfig({ ...config, baseUrl: 'https://other.test' }));
   expect(signal.aborted).toBe(true);
   await act(async () => release(reply({ ok: true, commands: items, shortcuts })));
@@ -221,7 +313,7 @@ it('aborts and fences old-hub results after a connection change', async () => {
 
 it('clears owner shortcuts when the credential changes', async () => {
   mount(); await screen.findByPlaceholderText('Message Jarvis…');
-  vi.mocked(fetch).mockImplementation(async url => reply(String(url).endsWith('/api/commands')
+  vi.mocked(fetch).mockImplementation(async url => reply(String(url).includes('/api/commands')
     ? { ok: true, commands: items, shortcuts } : { agents: [] }) as Response);
   fireEvent.click(screen.getByText('Commands'));
   await screen.findByLabelText('Insert /backup in message');
@@ -230,12 +322,12 @@ it('clears owner shortcuts when the credential changes', async () => {
 });
 
 it('aborts a pending catalog read when the chat screen unmounts', async () => {
-  vi.mocked(fetch).mockImplementation(async url => String(url).endsWith('/api/commands')
+  vi.mocked(fetch).mockImplementation(async url => String(url).includes('/api/commands')
     ? new Promise(() => {}) : reply({ agents: [] }) as Response);
   const view = mount(); await screen.findByPlaceholderText('Message Jarvis…');
   fireEvent.click(screen.getByText('Commands'));
-  await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/api/commands'))).toBe(true));
-  const signal = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/api/commands'))![1]!.signal!;
+  await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/api/commands'))).toBe(true));
+  const signal = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('/api/commands'))![1]!.signal!;
   view.unmount();
   expect(signal.aborted).toBe(true);
 });

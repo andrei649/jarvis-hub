@@ -8,7 +8,7 @@
 import React, { useEffect, useState } from 'react';
 import { internalLink } from '../base-path';
 import { Markdown } from '../markdown';
-import { Card, State, arr, asLive, mono, useApi } from '../panel-kit';
+import { Card, State, arr, asLive, note, useApi } from '../panel-kit';
 
 const DEFAULT_DOC = 'user-guide';
 
@@ -64,8 +64,8 @@ export function DocsPanel() {
       {current && (
         <>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
-            <a href={docHref(slug)} target="_blank" rel="noopener noreferrer" style={mono}>open in a new tab ↗</a>
-            {current.truncated && <span style={{ ...mono, color: 'var(--amber)' }}>shown in part — the file is longer</span>}
+            <a href={docHref(slug)} target="_blank" rel="noopener noreferrer" style={note}>open in a new tab ↗</a>
+            {current.truncated && <span style={{ ...note, color: 'var(--amber)' }}>shown in part — the file is longer</span>}
           </div>
           <Markdown text={current.markdown} className="md docs-md" />
         </>

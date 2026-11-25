@@ -119,10 +119,6 @@ export class JarvisHUD {
     document.body.dataset.brain = brainId;
     const label = brainId === "fable-5.2" ? "FABLE 5.2" : "OPUS 5.5";
     document.getElementById("brain-label-text").textContent = label;
-    const wsModel = document.getElementById("workshop-model-name");
-    if (wsModel) {
-      wsModel.textContent = brainId === "fable-5.2" ? "Claude Fable 5.2" : "Claude Opus 5.5";
-    }
 
     document.querySelectorAll(".brain-option").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.brain === brainId);

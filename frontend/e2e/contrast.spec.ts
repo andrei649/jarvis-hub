@@ -9,6 +9,14 @@
  * `--ink-3`, which composites to 2.79:1 on `--void` where AA wants 4.5:1. A green axe lane there
  * does not mean the contrast is fine; it means the contrast is UNKNOWN.
  *
+ * SINCE THE CUTOVER (PHASE_B_PLAN.md §8.2 row 29). The paragraph above is the classic shell's
+ * story. The Ledger frame is the HUD now, and the chrome this lane measures is its frame: the
+ * masthead (the nine area labels, Find, the tools), the running head (the six signals' labels and
+ * values, the approval mode, the interrupts), the running foot, Home's docket register and the
+ * composer's bar — in three looks, Ledger dark, Ledger light and Classic · Obsidian, because a
+ * theme changes every colour role the chrome reads. The 9 area labels and the running-head labels
+ * must come back MEASURED, not merely present: a lane that cannot see them proves nothing.
+ *
  * WHAT THIS DOES. It recovers the true backdrop from RENDERED PIXELS rather than from a
  * compositing model, using a two-shot differential:
  *
@@ -35,12 +43,12 @@
  *     work. Retiring `--ink-3` as a text colour is an owner call and is costed in BACKLOG.md.
  *   - It does not gate a merge. It runs in the e2e lane, which has no `pull_request` trigger. It
  *     asserts only on its OWN integrity, never on a ratio.
- *   - It covers ONE surface: the HUD chrome, named part by part in CHROME_PARTS. The 16 mode
- *     surfaces and every overlay are NOT measured here; measuring 17 surfaces in one process
+ *   - It covers ONE surface: the HUD chrome, named part by part in CHROME_PARTS. The pages inside
+ *     the frame and every overlay are NOT measured here; measuring many surfaces in one process
  *     exhausted this container's memory, so they are a follow-up that grows the registry without
  *     touching the measurement core.
- *   - One look (obsidian), one viewport (1440x900), dpr 1, Chromium, EN. Other looks —
- *     `[data-look="graphite"]` redefines the ink tokens — are not measured.
+ *   - Three looks (Ledger dark, Ledger light, Classic · Obsidian), one viewport (1440x900), dpr 1,
+ *     Chromium, EN. The other Nerva themes and Graphite are not measured.
  *   - Text only (SC 1.4.3). Borders, focus rings and meters are SC 1.4.11 and out of scope.
  *
  * HOW IT REFUSES TO LIE. Every text run lands in exactly one bucket — `measured`, `unpainted`,
@@ -92,15 +100,16 @@ test.skip(
 const NON_CLAIMS = [
   'Does not decide or change the palette; no frontend/src file is touched by this lane.',
   'Does not gate a merge: it asserts only on its own integrity, never on a contrast ratio.',
-  'Covers the HUD CHROME only — exactly the parts listed in header.parts. The 16 mode surfaces and every overlay (palette, console, ambient, cinema, first-run) are NOT measured by this lane.',
-  'One look (obsidian), one viewport (1440x900), devicePixelRatio 1, Chromium, EN only.',
+  'Covers the HUD CHROME only — exactly the parts listed in header.parts (the Ledger frame\'s masthead, running head and running foot, Home\'s docket register and the composer bar). The pages inside the frame and every overlay (the search sheet, Glance, Cinema, first-run) are NOT measured by this lane.',
+  'Three looks (Ledger dark, Ledger light, Classic · Obsidian), one viewport (1440x900), devicePixelRatio 1, Chromium, EN only; the other Nerva themes and Graphite are not measured.',
   'Text contrast (SC 1.4.3) only. Non-text contrast (SC 1.4.11) is out of scope.',
   'The verdict is specMin — the SPECIFIED colour over the measured backdrop. paintBest is reported but never decides: antialiasing caps it below the specified ratio for small or light text.',
   "A run with its own text-shadow is measured, and flagged ownShadow. CSS paints a text shadow beneath the glyph fill, so shot B is still what the fill composited over — but that backdrop includes the run's own halo, which is not the surface behind the element.",
-  'A run under a masked ancestor, or under an element that paints over it (a background, image, backdrop-filter or shadow), is excluded rather than measured. The ticker marquee (mask-image edge fade) and the rail label under the fixed WORLD toggle land there.',
+  'A run under a masked ancestor, or under an element that paints over it (a background, image, backdrop-filter or shadow), is excluded rather than measured. In the classic shell the ticker marquee (mask-image edge fade) and the rail label under the fixed WORLD toggle landed there; every run excluded in this chrome is listed with its reason in the artifact.',
   'Occlusion detection samples 9 points per client rect and only counts an occluder that paints. A transparent element whose own GLYPHS overlap the run is not detected; those pixels are suppressed in shot B too, so they enter the mask and can move the ratio.',
   'Animations are paused at t=0, not disabled, so both shots are the same real frame; a different frame of a moving element could differ.',
   'A run whose glyphs paint no measurable pixels is reported as `unpainted`, never as a pass.',
+  'A colour computed in a syntax other than rgb() (the Ledger looks write their roles in oklch()) is resolved to 8-bit sRGB by Chromium itself, painted into a 1x1 canvas pixel; a colour outside sRGB is measured as Chromium maps it into sRGB.',
 ];
 
 /** WCAG 2.x relative luminance from an 8-bit sRGB triple. */
@@ -122,6 +131,12 @@ type Run = {
   required: number; rects: { x: number; y: number; w: number; h: number }[];
   cal?: 'pass' | 'fail'; bucket?: string; reason?: string; specMin?: number; paintBest?: number;
   ownShadow?: boolean; paintedBelow?: boolean; verdict?: string; instances?: number;
+  /** The CHROME_PARTS selector the run belongs to ('[data-cc-cal]' on the calibration pass). */
+  part?: string | null;
+  /** The nearest test hook above the run: `data-area=<id>`, `data-signal=<id>` or `data-runhead=<id>`. */
+  hook?: string | null;
+  /** The run is a term's label (inside a `<dt>`): the running head's signal labels. */
+  inLabel?: boolean;
 };
 
 /* ---------------------------------------------------------------- in-page probe */
@@ -132,12 +147,44 @@ const PROBE = ([rootSel, includeSel]: [string, string[]]) => {
   const missing = includeSel.filter((s) => !root.querySelector(s));
   if (missing.length) return { error: `chrome parts absent from ${rootSel}: ${missing.join(', ')}` } as any;
 
+  // A computed colour as 8-bit sRGB plus its alpha. Chromium serialises a computed colour in the
+  // syntax it was written in: `rgb()` for the classic looks, but `oklch(L C H / a)` for the Ledger
+  // looks (their roles are written in oklch) and `color(srgb …)` for a `color-mix()` result. Reading
+  // only `rgb()` left every Ledger run `unparseable-color`, so the lane measured nothing there. Any
+  // other syntax is resolved by Chromium itself: the colour, made opaque, is painted into a 1×1 sRGB
+  // canvas and the pixel read back (the same 8-bit sRGB the screenshots hold); its alpha is taken
+  // from the string. A string CSS does not accept as a colour stays unparseable.
+  const resolved = new Map<string, [number, number, number, number] | null>();
+  let pixel: CanvasRenderingContext2D | null = null;
   const parseRgb = (s: string): [number, number, number, number] | null => {
-    const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.%]+))?\s*\)/.exec(s);
-    if (!m) return null;
-    let a = 1;
-    if (m[4] !== undefined) a = m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
-    return [+m[1], +m[2], +m[3], a];
+    const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.%]+))?\s*\)$/.exec(s.trim());
+    if (m) {
+      let a = 1;
+      if (m[4] !== undefined) a = m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+      return [+m[1], +m[2], +m[3], a];
+    }
+    if (resolved.has(s)) return resolved.get(s)!;
+    let out: [number, number, number, number] | null = null;
+    const alpha = /\/\s*([\d.]+%?)\s*\)\s*$/.exec(s);
+    const opaque = alpha ? s.replace(/\s*\/\s*[\d.]+%?\s*\)\s*$/, ')') : s;
+    if (s !== 'transparent' && CSS.supports('color', opaque)) {
+      if (!pixel) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1;
+        canvas.height = 1;
+        pixel = canvas.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' });
+      }
+      if (pixel) {
+        pixel.clearRect(0, 0, 1, 1);
+        pixel.fillStyle = opaque;
+        pixel.fillRect(0, 0, 1, 1);
+        const d = pixel.getImageData(0, 0, 1, 1).data;
+        const a = alpha ? (alpha[1].endsWith('%') ? parseFloat(alpha[1]) / 100 : parseFloat(alpha[1])) : 1;
+        if (d[3] === 255) out = [d[0], d[1], d[2], a];
+      }
+    }
+    resolved.set(s, out);
+    return out;
   };
 
   const out: any[] = [];
@@ -154,7 +201,7 @@ const PROBE = ([rootSel, includeSel]: [string, string[]]) => {
     // positively is what stops the file claiming reach it does not have: the first version
     // excluded `.workzone` wholesale, which silently dropped `.center-tab` and the input bar —
     // two of the things the header says this lane exists to measure — because both render inside
-    // `.workzone cockpit` (app.tsx:424, 436-439, 446). A reach proof below asserts each part is
+    // `.workzone cockpit` of the HUD v2 shell (since deleted). A reach proof below asserts each part is
     // present and measured, so that failure mode cannot recur silently.
     if (!includeSel.some((s) => el.closest(s))) continue;
 
@@ -185,8 +232,8 @@ const PROBE = ([rootSel, includeSel]: [string, string[]]) => {
 
     // Painted OVER by something else? The effective-alpha walk above climbs ANCESTORS, so it is
     // blind to an element stacked on top of this one. That is not hypothetical: at 1440x900 the
-    // fixed z-60 WORLD toggle (`button.tool-btn`, rgba(10,22,38,.55), rect 16,855,73x29 —
-    // world_app.tsx:32) covers the `Admin` rail label at rect 32,873,25x9. Because the veil is
+    // HUD v2's fixed z-60 WORLD toggle (`button.tool-btn`, rgba(10,22,38,.55), rect 16,855,73x29;
+    // deleted with the classic shell in Phase B) covered the `Admin` rail label at rect 32,873,25x9. Because the veil is
     // only 55% opaque the glyphs still change pixels, so the |A-B| mask fires, the run looks
     // measurable, and shot B holds the VEIL rather than the rail's own backdrop. The first
     // version of this file published that as `.rl "Admin" 1.55:1` — a real-looking number for a
@@ -198,8 +245,9 @@ const PROBE = ([rootSel, includeSel]: [string, string[]]) => {
     // the difference between excluding 7 runs and excluding the 1 that is actually veiled.
     const paints = (e: Element) => {
       const c = getComputedStyle(e);
-      const bg = /rgba?\(\s*[\d.]+[,\s]+[\d.]+[,\s]+[\d.]+(?:[,\s/]+([\d.]+))?\s*\)/.exec(c.backgroundColor);
-      const bgAlpha = bg ? (bg[1] === undefined ? 1 : parseFloat(bg[1])) : 0;
+      // the same reader as the run's own colour: an oklch() background paints too
+      const bg = parseRgb(c.backgroundColor);
+      const bgAlpha = bg ? bg[3] : 0;
       return bgAlpha > 0 || c.backgroundImage !== 'none'
         || (c.backdropFilter && c.backdropFilter !== 'none')
         || (c.boxShadow && c.boxShadow !== 'none');
@@ -247,6 +295,17 @@ const PROBE = ([rootSel, includeSel]: [string, string[]]) => {
     const text = raw.trim().replace(/\s+/g, ' ').slice(0, 80);
     const styleTuple = `${colourSrc}/${alpha.toFixed(2)}/${fontPx}/${weight}`;
 
+    // Which named part the run is in, and the nearest test hook above it: the reach proofs ask for
+    // the nine area labels and the running-head labels by these, not by class names.
+    const part = includeSel.find((s) => el.closest(s)) ?? null;
+    let hook: string | null = null;
+    for (let a: Element | null = el; a && !hook; a = a.parentElement) {
+      for (const attr of ['data-area', 'data-signal', 'data-runhead']) {
+        const v = a.getAttribute(attr);
+        if (v) { hook = `${attr}=${v}`; break; }
+      }
+    }
+
     out.push({
       ownerPath: owners.join('>'), text, styleTuple,
       cssPathHint: `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : ''}`,
@@ -254,6 +313,7 @@ const PROBE = ([rootSel, includeSel]: [string, string[]]) => {
       alpha, fontPx, weight, required: large ? 3 : 4.5,
       rects, masked, occluded, ownShadow, unparseable: !parsed,
       cal: el.closest('[data-cc-cal]') ? el.closest('[data-cc-cal]')!.getAttribute('data-cc-cal') : null,
+      part, hook, inLabel: !!el.closest('dt'),
     });
   }
   return { runs: out };
@@ -317,13 +377,49 @@ const REDUCE = async (payload: { a: string; b: string; runs: any[] }) => {
 };
 
 /* --------------------------------------------------------------------- surfaces */
-/** The HUD chrome, named part by part. `.center-tabs` and `.inputbar` live INSIDE
- *  `.workzone cockpit` (app.tsx:424, 436-439, 446), so a `.workzone` exclusion would drop them —
- *  and `.center-tab` is half the reason this lane exists, being exactly what axe parks in
- *  `incomplete` over a gradient. Listing the parts positively keeps the claim and the code the
- *  same sentence, and PROBE errors if any of them is absent rather than measuring a smaller HUD. */
+/** The HUD chrome, named part by part: the Ledger frame's three regions, Home's docket register
+ *  and the composer's bar (PHASE_B_PLAN.md §8.2 row 29), by their test hooks. The classic list
+ *  (`.topbar .ticker .rail .center-tabs .inputbar`) taught why it is an include list: a `.workzone`
+ *  exclusion once dropped two of the parts the lane existed for. Listing the parts positively
+ *  keeps the claim and the code the same sentence, and PROBE errors if any of them is absent
+ *  rather than measuring a smaller HUD. */
 const CHROME_ROOT = '.hud-root';
-const CHROME_PARTS = ['.topbar', '.ticker', '.rail', '.center-tabs', '.inputbar'];
+const CHROME_PARTS = [
+  '[data-frame="masthead"]', '[data-frame="runhead"]', '[data-frame="runfoot"]', '[data-register="docket"]', '[data-composer-bar]',
+];
+
+/** The looks the chrome is measured in: a theme changes every colour role the chrome reads. */
+type Look = { id: string; look: 'ledger' | 'obsidian'; scheme: 'dark' | 'light' };
+const LOOKS: Look[] = [
+  { id: 'ledger-dark', look: 'ledger', scheme: 'dark' },
+  { id: 'ledger-light', look: 'ledger', scheme: 'light' },
+  { id: 'obsidian', look: 'obsidian', scheme: 'dark' },
+];
+
+/** Home in a look, chosen before load through the appearance cache (hud.appearance.v1:/, version 2)
+ *  and pinned on the hub's answer, so a sync cannot change it between the two shots. Demo, so the
+ *  docket holds entries to measure. */
+async function openChrome(page: Page, look: Look) {
+  await page.setViewportSize(VIEWPORT);
+  const prefs = { look: look.look, scheme: look.scheme, lang: 'en', density: 'normal', motion: 'calm', font: 'theme',
+    accent: 'cyan', scanline: 'off', dotgrid: 'off' };
+  await page.addInitScript((cache) => {
+    try {
+      localStorage.setItem('hud.firstrun.dismissed', '1');
+      localStorage.setItem('hud.seen', '1');
+      localStorage.setItem('hud.appearance.v1:/', JSON.stringify({ version: 2, preferences: cache }));
+    } catch { /* private mode */ }
+  }, prefs);
+  await page.route('**/api/preferences/appearance', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', json: { revision: 'contrast', configured: true, preferences: prefs },
+  }));
+  await page.goto('/v2/?demo=1', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
+  await expect(page.locator('[data-frame="masthead"]')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('html'), 'the look this run measures').toHaveAttribute('data-look', look.look);
+  await expect(page.locator('html'), 'the scheme this run measures').toHaveAttribute('data-scheme', look.scheme);
+  await expect(page.locator('[data-register="docket"] [data-docket-entry]').first()).toBeVisible();
+}
 
 /* ----------------------------------------------------------------- spec helpers */
 async function settleAndFreeze(page: Page) {
@@ -456,6 +552,7 @@ async function measure(page: Page, surface: string, root: string, include: strin
       rects: r.rects, cal: r.cal || undefined, bucket, reason, specMin, paintBest,
       ownShadow: r.ownShadow || undefined, verdict: verdictOf(bucket, specMin, r.required),
       paintedBelow: bucket === 'measured' && paintBest !== undefined ? paintBest < r.required : undefined,
+      part: r.part ?? null, hook: r.hook ?? null, inLabel: !!r.inLabel,
     });
   });
   return runs;
@@ -492,12 +589,9 @@ function collapse(runs: Run[]) {
 }
 
 /* ------------------------------------------------------------------------ the lane */
-test('painted-contrast inventory: the HUD chrome', async ({ page }) => {
+for (const look of LOOKS) test(`painted-contrast inventory: the HUD chrome · ${look.id}`, async ({ page }) => {
   test.setTimeout(180_000);
-  await page.setViewportSize(VIEWPORT);
-  await page.addInitScript(() => { try { localStorage.setItem('hud.firstrun.dismissed', '1'); } catch { /* private mode */ } });
-  await page.goto('/v2/?demo=1', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
+  await openChrome(page, look);
 
   expect(
     await page.evaluate(() => window.devicePixelRatio),
@@ -505,25 +599,24 @@ test('painted-contrast inventory: the HUD chrome', async ({ page }) => {
   ).toBe(1);
   await page.evaluate(() => (document as any).fonts.ready);
 
-  // Reach proof: the chrome must actually contain the elements this lane exists for.
-  // .rail-btn and .center-tab are styled --ink-3 and are exactly what axe cannot judge —
-  // .center-tab lands in `incomplete` on a gradient backdrop and the rail labels are not
-  // reported at all. If they are not here, the run proves nothing.
-  const railCount = await page.locator('.rail-btn').count();
-  expect(railCount, 'the chrome must expose the mode rail; it is the surface axe cannot read').toBe(16);
+  // Reach proof: the chrome must actually contain the parts this lane exists for — the nine area
+  // labels the owner navigates by, the running head's six signals with the approval mode and the
+  // interrupts, the docket the owner signs from, and the composer bar. If they are not here, the
+  // run proves nothing.
+  const areaCount = await page.locator('[data-frame="masthead"] a[data-area]:visible').count();
+  expect(areaCount, 'the masthead must dock the nine areas at this width').toBe(9);
+  const signalCount = await page.locator('[data-frame="runhead"] [data-signal]').count();
+  expect(signalCount, 'the running head must carry its six signals').toBe(6);
   expect(
-    await page.locator('.rail-btn .rl').first().textContent(),
-    'rail buttons must carry their text labels, or there is no text to measure',
-  ).toBeTruthy();
-  const tabCount = await page.locator('.center-tab').count();
-  expect(tabCount, '.center-tab is the other blind spot — axe parks it in `incomplete` over a gradient').toBe(3);
-  expect(
-    await page.locator('.inputbar').count(),
-    'the input bar is named in nonClaims as covered, so it must be on screen to be covered',
-  ).toBe(1);
+    await page.locator('[data-frame="runhead"] [data-runhead="mode"], [data-frame="runhead"] [data-runhead="interrupts"]').count(),
+    'the running head must carry the approval mode and the interrupts',
+  ).toBe(2);
+  expect(await page.locator('[data-register="docket"]').count(), 'the docket is named in header.parts, so it must be on screen').toBe(1);
+  expect(await page.locator('[data-composer-bar]').count(), 'the composer bar is named in header.parts, so it must be on screen').toBe(1);
 
+  const surface = `chrome-${look.id}`;
   // Pass 1 — calibration only. Proves the pixel chain end to end on this very run.
-  const calPass = await measure(page, 'chrome', CHROME_ROOT, CHROME_PARTS, true);
+  const calPass = await measure(page, surface, CHROME_ROOT, CHROME_PARTS, true);
   const cals = calPass.filter((r) => r.cal);
   expect(cals.length, 'calibration nodes vanished; the pixel chain is unproven').toBeGreaterThanOrEqual(2);
   for (const c of cals) {
@@ -537,7 +630,7 @@ test('painted-contrast inventory: the HUD chrome', async ({ page }) => {
   }
 
   // Pass 2 — the real inventory, with nothing of ours on screen to occlude it.
-  const all = await measure(page, 'chrome', CHROME_ROOT, CHROME_PARTS, false);
+  const all = await measure(page, surface, CHROME_ROOT, CHROME_PARTS, false);
   expect(
     all.filter((r) => r.cal).length,
     'the calibration nodes must be gone for the inventory pass, or they occlude real content',
@@ -551,10 +644,10 @@ test('painted-contrast inventory: the HUD chrome', async ({ page }) => {
   const failing = groups.filter((g) => g.verdict === 'FAIL');
 
   mkdirSync('e2e/artifacts', { recursive: true });
-  writeFileSync('e2e/artifacts/contrast-painted-chrome-obsidian-1440x900.json', JSON.stringify({
+  writeFileSync(`e2e/artifacts/contrast-painted-chrome-${look.id}-1440x900.json`, JSON.stringify({
     header: {
-      surface: 'chrome', lane: 'obsidian', viewport: VIEWPORT, dpr: 1,
-      parts: CHROME_PARTS, railButtons: railCount, centerTabs: tabCount,
+      surface: 'chrome', lane: look.id, look: look.look, scheme: look.scheme, viewport: VIEWPORT, dpr: 1,
+      parts: CHROME_PARTS, areaLinks: areaCount, signals: signalCount,
       method: 'two-shot differential: A as painted, B with text fill forced transparent (paint-only; geometry asserted identical)',
       convention: 'unrounded composite, WCAG 2.x relative luminance, ratio minimised over glyph-mask pixels',
       verdictFrom: 'specMin — the SPECIFIED colour composited over the measured backdrop (SC 1.4.3). '
@@ -570,17 +663,17 @@ test('painted-contrast inventory: the HUD chrome', async ({ page }) => {
       required: g.required, specMin: g.specMin, paintBest: g.paintBest,
       paintedBelow: g.paintedBelow, verdict: g.verdict,
     })),
-    // `ownShadow` rides on `decisions[]`, not only on `failing[]`: the sole shadowed run in this
-    // chrome is `.clock-time`, 40px large text that passes at required 3.0, so it is never in
-    // `failing[]`. Without this a reader greps the artifact for `ownShadow`, finds nothing, and
-    // concludes no published number includes a glyph's own halo.
+    // `ownShadow` rides on `decisions[]`, not only on `failing[]`: a shadowed run that passes (the
+    // classic chrome's `.clock-time`, 40px large text, was one) is never in `failing[]`. Without
+    // this a reader greps the artifact for `ownShadow`, finds nothing, and concludes no published
+    // number includes a glyph's own halo.
     decisions: groups.map((g) => ({
       identity: g.identity, bucket: g.bucket, instances: g.instances,
       specMin: g.specMin, paintBest: g.paintBest, ownShadow: g.ownShadow, verdict: g.verdict,
     })),
   }, null, 2));
 
-  console.log(`painted contrast · chrome · ${body.length} runs -> ${groups.length} decisions`);
+  console.log(`painted contrast · chrome · ${look.id} · ${body.length} runs -> ${groups.length} decisions`);
   console.log(`  buckets: ${JSON.stringify(buckets)} (denominator ${total})`);
   console.log(`  reasons: ${JSON.stringify(reasons)}`);
   for (const why of ['masked-ancestor', 'occluded', 'glyphs-changed-no-pixels']) {
@@ -611,66 +704,70 @@ test('painted-contrast inventory: the HUD chrome', async ({ page }) => {
   ).toEqual([]);
   expect(total, 'the printed denominator must be the run count').toBe(body.length);
 
-  // Non-vacuity, stated as the thing this lane exists for rather than as a magic number:
-  // the 16 rail labels are styled --ink-3 and axe does not report them at all. If they are
-  // not in `measured`, this lane has not done the one job that justifies it.
-  const railRuns = body.filter((r) => r.bucket === 'measured' && /\brl\b/.test(r.cssPathHint));
+  // Non-vacuity, stated as the thing this lane exists for rather than as a magic number: the nine
+  // area labels and the running head's labels are what the owner reads to find anything, in every
+  // look. Every one of them must be in `measured` — present on screen is not enough, because the
+  // `excluded` and `unpainted` buckets remove runs quietly. If they are not measured, this lane has
+  // not done the one job that justifies it.
+  const measured = body.filter((r) => r.bucket === 'measured');
+  const areasMeasured = new Set(measured
+    .filter((r) => r.part === '[data-frame="masthead"]' && r.hook?.startsWith('data-area=')).map((r) => r.hook));
   expect(
-    railRuns.length,
-    `the rail labels must be MEASURED — they are what axe cannot see. Got ${railRuns.length} `
-    + `in bucket 'measured' (buckets: ${JSON.stringify(buckets)})`,
-  ).toBeGreaterThanOrEqual(15);
-  const tabRuns = body.filter((r) => r.bucket === 'measured' && /center-tab/.test(r.cssPathHint));
+    areasMeasured.size,
+    `the nine area labels must be MEASURED. Got ${areasMeasured.size}: ${[...areasMeasured].join(', ')} `
+    + `(buckets: ${JSON.stringify(buckets)})`,
+  ).toBe(9);
+  const labelsMeasured = new Set(measured
+    .filter((r) => r.part === '[data-frame="runhead"]' && r.inLabel && r.hook?.startsWith('data-signal=')).map((r) => r.hook));
   expect(
-    tabRuns.length,
-    `.center-tab is the run axe reports as \`incomplete\` over a gradient — the other half of this `
-    + `lane's reason to exist. Got ${tabRuns.length} in bucket 'measured'`,
-  ).toBe(3);
-  // `header.parts` publishes `.inputbar` as covered, and NON_CLAIMS[2] defers to that list — so
-  // "present" is not enough. This file has just added a bucket that removes runs quietly: a fixed
-  // overlay over the composer, or a mask on an ancestor, would send every input-bar run to
-  // `excluded` while the lane stayed green and still claimed the part. Then a reader pairing the
-  // coverage claim with a short `failing` list would conclude the composer was measured and passed.
-  const barRuns = body.filter((r) => r.bucket === 'measured' && /inputbar|chan|transmit|mic/.test(r.cssPathHint));
-  expect(
-    barRuns.length,
-    `the input bar is published in header.parts as covered, so at least one of its runs must be `
-    + `MEASURED and not merely on screen. Got ${barRuns.length} (buckets: ${JSON.stringify(buckets)})`,
-  ).toBeGreaterThanOrEqual(1);
+    labelsMeasured.size,
+    `the running head's six signal labels must be MEASURED. Got ${labelsMeasured.size}: ${[...labelsMeasured].join(', ')}`,
+  ).toBe(6);
+  for (const item of ['data-runhead=mode', 'data-runhead=interrupts']) {
+    expect(measured.some((r) => r.hook === item), `the running head's ${item.slice('data-runhead='.length)} must be MEASURED`).toBe(true);
+  }
+  // `header.parts` publishes the foot, the docket and the composer bar as covered, and NON_CLAIMS[2]
+  // defers to that list — so "present" is not enough. A fixed overlay over the composer, or a mask
+  // on an ancestor, would send every one of a part's runs to `excluded` while the lane stayed green
+  // and still claimed the part; then a reader pairing the coverage claim with a short `failing` list
+  // would conclude the part was measured and passed.
+  for (const part of ['[data-frame="runfoot"]', '[data-register="docket"]', '[data-composer-bar]']) {
+    const runs = measured.filter((r) => r.part === part).length;
+    expect(
+      runs,
+      `${part} is published in header.parts as covered, so at least one of its runs must be MEASURED and `
+      + `not merely on screen. Got ${runs} (buckets: ${JSON.stringify(buckets)})`,
+    ).toBeGreaterThanOrEqual(1);
+  }
 });
 
 /* --------------------------------------------------------------- red proofs (§5.2) */
 test('red proof: a deliberately dimmed node is reported, not passed', async ({ page }) => {
   test.setTimeout(120_000);
-  await page.setViewportSize(VIEWPORT);
-  await page.addInitScript(() => { try { localStorage.setItem('hud.firstrun.dismissed', '1'); } catch { /* nope */ } });
-  await page.goto('/v2/?demo=1', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
+  await openChrome(page, LOOKS[0]);
 
   const before = await measure(page, 'chrome', CHROME_ROOT, CHROME_PARTS);
   const cleanFails = before.filter((r) => !r.cal && r.verdict === 'FAIL').length;
 
-  await page.addStyleTag({ content: '.topbar,.topbar *{color:rgba(233,244,253,.06) !important;}' });
+  await page.addStyleTag({ content: '[data-frame="masthead"],[data-frame="masthead"] *{color:rgba(233,244,253,.06) !important;}' });
   const after = await measure(page, 'chrome', CHROME_ROOT, CHROME_PARTS);
   const dimmedFails = after.filter((r) => !r.cal && r.verdict === 'FAIL').length;
 
   expect(
     dimmedFails,
-    'forcing the topbar to 6% alpha must produce MORE failures; if it does not, '
+    'forcing the masthead to 6% alpha must produce MORE failures; if it does not, '
     + 'the measurement is not reading the page it thinks it is',
   ).toBeGreaterThan(cleanFails);
 });
 
 test('red proof: an invisible node lands in `unpainted`, never in `measured`', async ({ page }) => {
   test.setTimeout(120_000);
-  await page.setViewportSize(VIEWPORT);
-  await page.addInitScript(() => { try { localStorage.setItem('hud.firstrun.dismissed', '1'); } catch { /* nope */ } });
-  await page.goto('/v2/?demo=1', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
+  await openChrome(page, LOOKS[0]);
 
-  await page.addStyleTag({ content: '.brand .l1{visibility:hidden !important;}' });
+  // the brand's name ("Nerva"), hidden but still laid out
+  await page.addStyleTag({ content: '[data-frame="masthead"] .n-masthead__name{visibility:hidden !important;}' });
   const runs = await measure(page, 'chrome', CHROME_ROOT, CHROME_PARTS);
-  const hidden = runs.filter((r) => !r.cal && /JARVIS|NERVA/i.test(r.text));
+  const hidden = runs.filter((r) => !r.cal && r.part === '[data-frame="masthead"]' && /^NERVA$/i.test(r.text));
 
   expect(hidden.length, 'the brand text run should still be enumerated even when invisible').toBeGreaterThan(0);
   for (const h of hidden) {

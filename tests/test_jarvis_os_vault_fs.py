@@ -301,12 +301,46 @@ def test_a_vault_note_colliding_with_a_repo_doc_is_served_as_vault_content(tree,
     (inside / "README.md").write_text("# Mine\n\nThe vault's own file.\n", encoding="utf-8")
     cfg = cfg_for(vault, repo_like)
     assert "The vault's own file." in engine.read_indexed_note(cfg, "Nerva/jarvis-hub/README.md")[2]
+    _context, hits = engine.retrieve_vault_context("README", cfg, top_k=10)
+    assert not any(node["id"].startswith("nerva-") and node["relPath"] == "Nerva/jarvis-hub/README.md"
+                   for node in hits)
     (inside / "README.md").unlink()
     os.link(outside / "secret.md", inside / "README.md")
     with pytest.raises(OSError):
         engine.read_indexed_note(cfg, "Nerva/jarvis-hub/README.md")
     # A real repo doc with no vault twin is still readable, with the repo's policy.
     assert "Template." in engine.read_indexed_note(cfg, "Nerva/jarvis-hub/agents/jarvis/SOUL.md")[2]
+
+
+def test_ambiguous_vault_key_cannot_fall_back_to_repo_doc(tree, repo_like):
+    vault, _outside = tree
+    folder = vault / "Nerva" / "jarvis-hub"
+    folder.mkdir(parents=True)
+    nfc_name, nfd_name = "Café.md", "Cafe\u0301.md"
+    first, second = folder / nfc_name, folder / nfd_name
+    first.write_text("# First\n\nvault-collision-one", encoding="utf-8")
+    second.write_text("# Second\n\nvault-collision-two", encoding="utf-8")
+    if first.samefile(second):
+        pytest.skip("filesystem normalizes Unicode filenames")
+    (repo_like / nfc_name).write_text("# Repo\n\nrepo-body", encoding="utf-8")
+    cfg = cfg_for(vault, repo_like)
+    engine.build_real_brain_graph(cfg)
+    with pytest.raises(ValueError):
+        engine.read_indexed_note(cfg, "Nerva/jarvis-hub/Café.md")
+
+
+def test_ambiguous_repo_key_fails_closed(tree, repo_like):
+    vault, _outside = tree
+    nfc_name, nfd_name = "Café.md", "Cafe\u0301.md"
+    first, second = repo_like / nfc_name, repo_like / nfd_name
+    first.write_text("# First\n\nrepo-collision-one", encoding="utf-8")
+    second.write_text("# Second\n\nrepo-collision-two", encoding="utf-8")
+    if first.samefile(second):
+        pytest.skip("filesystem normalizes Unicode filenames")
+    cfg = cfg_for(vault, repo_like)
+    engine.build_real_brain_graph(cfg)
+    with pytest.raises(ValueError):
+        engine.read_indexed_note(cfg, "Nerva/jarvis-hub/Café.md")
 
 
 def test_switching_to_a_missing_vault_leaves_nothing_readable(tree, tmp_path):

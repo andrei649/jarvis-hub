@@ -1,7 +1,7 @@
 import { Text } from './ThemedText';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
-import { ApiError, fetchAgents, type AgentInfo } from '../api/client';
+import { ApiError, chatRoutingLabel, fetchAgents, selectableChatAgents, type AgentInfo } from '../api/client';
 import { useServer } from '../context/ServerContext';
 import { useThemeStyles, type Theme } from '../theme';
 
@@ -13,35 +13,47 @@ export function AgentPicker({ value, onChange }: { value: string; onChange: (id:
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
 
   const load = useCallback(async () => {
     if (!configured) return;
+    const request = ++requestId.current;
     setLoading(true);
     setError(null);
     try {
-      setAgents(await fetchAgents(config));
+      const roster = await fetchAgents(config);
+      if (requestId.current === request) setAgents(selectableChatAgents(roster));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Failed to load agents');
+      if (requestId.current === request) {
+        setAgents([]);
+        setError(e instanceof ApiError ? e.message : 'Failed to load agents');
+      }
     } finally {
-      setLoading(false);
+      if (requestId.current === request) setLoading(false);
     }
   }, [config, configured]);
 
   useEffect(() => {
-    if (open) load();
-  }, [open, load]);
+    void load();
+    return () => { ++requestId.current; };
+  }, [load]);
 
   const current = agents.find((a) => a.id === value);
   const label = current?.name || value;
 
   return (
     <>
-      <Pressable style={styles.chip} onPress={() => setOpen(true)}>
-        <Text style={styles.chipText} numberOfLines={1}>
-          {label}
+      <View style={styles.selection}>
+        <Pressable style={styles.chip} onPress={() => { setOpen(true); void load(); }} accessibilityRole="button" accessibilityLabel={`Choose agent, current recipient ${label}`}>
+          <Text style={styles.chipText} numberOfLines={1}>
+            {label}
+          </Text>
+          <Text style={styles.caret}>▾</Text>
+        </Pressable>
+        <Text style={styles.policy} accessibilityLabel={`Configured routing policy: ${chatRoutingLabel(current?.chat_routing)}`}>
+          Routing policy: {chatRoutingLabel(current?.chat_routing)}
         </Text>
-        <Text style={styles.caret}>▾</Text>
-      </Pressable>
+      </View>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
@@ -50,7 +62,7 @@ export function AgentPicker({ value, onChange }: { value: string; onChange: (id:
             {loading && <ActivityIndicator color={theme.accent} style={styles.spinner} />}
             {error && <Text style={styles.error}>{error}</Text>}
             <FlatList
-              data={agents}
+              data={loading ? [] : agents}
               keyExtractor={(a) => a.id}
               style={styles.list}
               renderItem={({ item }) => (
@@ -84,6 +96,8 @@ export function AgentPicker({ value, onChange }: { value: string; onChange: (id:
 }
 
 const makeStyles = (theme: Theme) => StyleSheet.create({
+  selection: { maxWidth: 220 },
+  policy: { color: theme.textDim, fontSize: 11, marginTop: 4 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',

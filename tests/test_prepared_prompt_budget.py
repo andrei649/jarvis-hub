@@ -115,6 +115,12 @@ async def test_generate_response_checks_clock_rendered_system_and_sends_same_str
         assert backend.calls[0]["system"] == render_snapshot(short, clock)
 
 
+def test_prompt_only_advertises_skill_markers_when_the_response_can_be_reviewed():
+    agent = Agent("jarvis", {}, router_for(Backend()))
+    assert "[learn:" not in agent.build_prompt("hello", {})
+    assert "[learn:" in agent.build_prompt("hello", {"_can_propose_skill_marker": True})
+
+
 @pytest.mark.asyncio
 async def test_process_refuses_oversized_fresh_system_before_residency_or_checkpoint(monkeypatch):
     backend = Backend()

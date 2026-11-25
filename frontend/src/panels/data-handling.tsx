@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { apiPost } from '../api/client';
-import { mono, Tag } from '../panel-kit';
+import { mono, note, Tag } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const ROLE_LABELS = {
   'role:approval_judge': 'Approval judge',
@@ -39,8 +40,8 @@ export function DataHandling({ value, reload }) {
     }
   };
   return <section aria-label="Provider data handling" style={{ marginTop: 12 }}>
-    <div style={mono}>provider data handling</div>
-    <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+    <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>provider data handling</div>
+    <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
       These controls cover routed agent conversations, tool runs and context caching.
       Separate provider integrations may use their own controls.
     </p>
@@ -50,39 +51,40 @@ export function DataHandling({ value, reload }) {
     {value.role_settings_readable === false && <div role="alert" style={{ color: 'var(--amber)' }}>
       Role consent settings unavailable; unattended use of role models with unknown or training policies is blocked.
     </div>}
-    {targets.some(t => t.target_id === 'role:approval_judge') && <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+    {targets.some(t => t.target_id === 'role:approval_judge') && <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
       Approval judge consent is separate from provider consent. Acknowledgment does not enable remote judging.
     </p>}
-    {targets.some(t => t.target_id === 'role:telegram_media_reader') && <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+    {targets.some(t => t.target_id === 'role:telegram_media_reader') && <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
       Telegram image descriptions require a local VLM on the Nerva server.
       Unknown or training policies require their own acknowledgment.
       Acknowledgment does not enable remote image descriptions.
     </p>}
-    {targets.some(t => t.target_id === 'role:camera_descriptions') && <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+    {targets.some(t => t.target_id === 'role:camera_descriptions') && <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
       Camera descriptions require a local VLM on the Nerva server.
       Unknown or training policies require separate model-data acknowledgment.
       Acknowledgment does not enable camera capture, event description or remote destinations,
       and does not replace household consent.
     </p>}
-    {targets.some(t => t.target_id === 'role:video_analysis') && <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+    {targets.some(t => t.target_id === 'role:video_analysis') && <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
       Video analysis requires a separate owner-approved tool call. Remote model use also
       requires explicit approval and this role's configuration-bound consent.
     </p>}
-    {targets.some(t => /^role:video_fallback_[1-4]$/.test(t.target_id)) && <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+    {targets.some(t => /^role:video_fallback_[1-4]$/.test(t.target_id)) && <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
       Each configured video fallback has separate model-data consent. Acknowledging one candidate
       does not authorize another candidate or approve a video tool call.
     </p>}
-    {[...providers, ...targets].map((p, index) => <div key={`${identity(p)}:${p.scope || ''}:${index}`} style={{ padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
-      <span style={mono}>{p.target_id ? ROLE_LABELS[p.target_id] : p.provider}</span>{' '}
+    {[...providers, ...targets].map((p, index) => <div key={`${identity(p)}:${p.scope || ''}:${index}`} style={{ padding: '8px 0', borderBottom: '1px solid var(--panel-line)' }}>
+      {/* A role's name is words; a provider is named by its id. */}
+      <span style={p.target_id ? note : mono}>{p.target_id ? ROLE_LABELS[p.target_id] : p.provider}</span>{' '}
       <Tag c={p.warning ? 'var(--amber)' : 'var(--ink-2)'}>{p.policy || 'unknown'}</Tag>
-      {p.target_id && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>{p.provider} · {p.mode} · {p.model}</div>}
-      {p.note && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>{p.note}</div>}
+      {p.target_id && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{p.provider} · {p.mode} · {p.model}</div>}
+      {p.note && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{p.note}</div>}
       {p.warning && <>
-        <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>{p.warning}</div>
-        <div style={{ fontSize: 11, marginTop: 4 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>{p.warning}</div>
+        <div style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>
           {p.acknowledged ? 'Unattended use allowed for this configuration.' : 'Unattended use requires your acknowledgment.'}
         </div>
-        {p.acknowledgment_unavailable && <div style={{ fontSize: 11, color: 'var(--amber)' }}>{p.acknowledgment_unavailable}</div>}
+        {p.acknowledgment_unavailable && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>{p.acknowledgment_unavailable}</div>}
         <button className="tool-btn" style={{ marginTop: 4 }}
           aria-label={`${p.acknowledged ? 'Revoke' : 'Allow'} unattended use for ${p.target_id ? ROLE_LABELS[p.target_id] : p.provider}`}
           disabled={busy !== null || (p.target_id ? value.role_settings_readable : value.settings_readable) !== true || p.can_acknowledge === false || !p.scope}

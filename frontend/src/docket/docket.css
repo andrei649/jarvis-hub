@@ -1,0 +1,676 @@
+/* =====================================================================================
+   docket — Home's register of what awaits the owner's signature (PHASE_B_PLAN.md §5.4)
+   -------------------------------------------------------------------------------------
+   Drawn as docs/design/hud-next/ledger/ledger.css draws the docket, through the --n-* roles
+   only: no colour literal, type from the --n-fs-* scale (nothing under 12px), labels in the
+   theme's label voice. The accent is the owner's hand alone: the figure of what awaits a
+   signature (while the feed is live), the signature line's instruction and rule, and the seal.
+   Phase A's primitives (n-btn, n-textarea, n-link, …) and the kit's blocks (n-register, n-mk,
+   n-tier, n-total, n-consequence) are used, never redefined. This file owns:
+
+     n-docket (__figure __words __state __state-line __outcomes __outcome __outcome-words
+       __outcome-about __table __cols __list __other __other-lead __other-item __total (--stale)
+       __total-asof __line)
+     n-entry (--open; __risk __lvl __who __role __when __age __count __sub __main __title __open
+       __line __undo __hand __how __why __members __member-id __member-target __members-more
+       __consequence __sentence __ident __applies __special __special-note __signrow __confirm
+       (--inline) __confirm-what __confirm-title __confirm-does __reason __reason-toggle
+       __reason-body __reason-label __reason-field __reason-note __acts __fine __verb __preview
+       __preview-title __preview-line __preview-term __effects __question __question-text
+       __outcome __editor __editor-label __editor-field __editor-note __editor-acts)
+     n-signline (__group __x __label __here __how __word __input __sign (--filled) __seal
+       (--ready) __seal-open __seal-given)
+
+   Widths follow frame/frame.css's shared breakpoints: l and up (≥ 1680) draws three columns —
+   Risk · Entry · Your hand; m and down (≤ 1679) opens the entry into one column and turns every
+   other entry into one ruled line; s and down (≤ 1339) puts the signature's words beside its line;
+   below 760px every other entry is two lines (the tier word, then the title and the hand).
+   ===================================================================================== */
+
+.n-docket {
+  --docket-risk-w: 104px;
+  --docket-hand-w: 118px;
+  --docket-gap: calc(var(--n-s-3) + 2px);
+}
+
+/* ---- the head: the figure of what awaits your signature ------------------------------- */
+.n-docket__figure {
+  margin-right: calc(var(--n-s-1) * 1.5);
+  font-family: var(--n-font-title);
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-figure);
+  line-height: var(--n-lh-figure);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--n-text-2);
+}
+/* only a live count is the owner's hand */
+.n-docket__figure[data-figure-state="live"] { color: var(--n-accent-text); }
+.n-docket__words { font-weight: var(--n-w-bold); }
+
+/* ---- states: a mark and a sentence ------------------------------------------------------ */
+.n-docket__state {
+  margin: 0;
+  padding: var(--n-s-3) 0 var(--n-s-2);
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+  color: var(--n-text);
+}
+.n-docket__state[data-docket-state="checking"],
+.n-docket__state[data-docket-state="demo"] { color: var(--n-text-2); }
+.n-docket__state[data-docket-state="empty"] {
+  font-family: var(--n-font-text);
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+}
+.n-docket__state-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--n-s-2);
+  margin: 0 0 var(--n-s-1);
+}
+
+/* ---- the columns: Risk · Entry, and what happens if you sign · Your hand -------------------
+   One grid holds the column heads and every entry: the heads' row, the list and each entry are
+   subgrids of .n-docket__table, so the columns line up across rows. Risk is never narrower than
+   --docket-risk-w and grows to the widest tier word drawn in it (its min-content: the tier never
+   wraps, every other line of the column may), in the look's own label voice and the owner's
+   language — Classic's capitals and tracking, a long Romanian word — so the tier word never runs
+   into the title. A browser without subgrid keeps the fixed columns each row declares first. */
+.n-docket__table {
+  display: grid;
+  grid-template-columns: minmax(var(--docket-risk-w), min-content) minmax(0, 1fr) var(--docket-hand-w);
+  column-gap: var(--docket-gap);
+}
+.n-docket__cols,
+.n-docket__list,
+.n-entry {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: var(--docket-risk-w) minmax(0, 1fr) var(--docket-hand-w);
+  grid-template-columns: subgrid;
+  column-gap: var(--docket-gap);
+}
+.n-docket__cols {
+  padding: calc(var(--n-s-1) * 1.5) 0 var(--n-s-1);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-3);
+}
+.n-docket__cols > :last-child { text-align: right; }
+
+.n-docket__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---- an entry ------------------------------------------------------------------------------ */
+.n-entry {
+  align-items: start;
+  padding: var(--n-s-2) 0;
+  border-bottom: var(--n-hair) solid var(--n-rule);
+}
+.n-entry:last-child { border-bottom: 0; }
+
+.n-entry__risk {
+  display: grid;
+  align-content: start;
+  row-gap: 1px;
+  min-width: 0;
+  padding-top: var(--n-s-1);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--n-text-3);
+}
+.n-entry__lvl {
+  margin-bottom: var(--n-s-1);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-entry[data-tier="3"] .n-entry__lvl,
+.n-entry[data-tier="money"] .n-entry__lvl,
+.n-entry[data-tier="unknown"] .n-entry__lvl { color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-entry[data-tier="2"] .n-entry__lvl { color: var(--n-text); }
+.n-entry__who { color: var(--n-text-2); }
+.n-entry__risk > * { overflow-wrap: anywhere; }
+
+.n-entry__main { min-width: 0; }
+
+/* closed entries are set regular; only the open entry is bold, so the decision in front of the
+   owner is the heaviest type on the docket */
+.n-entry__title {
+  margin: 0;
+  font-family: var(--n-font-text);
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-prose);
+  line-height: var(--n-lh-own);
+  color: var(--n-text);
+  text-wrap: balance;
+  unicode-bidi: isolate;
+  overflow-wrap: anywhere;
+}
+.n-entry__open {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--n-r-1);
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.n-entry__open:hover { text-decoration: underline; text-decoration-color: var(--n-rule-field); text-underline-offset: 3px; }
+.n-entry__open:focus-visible,
+.n-entry__title:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+
+.n-entry__line {
+  margin: 3px 0 0;
+  font-size: var(--n-fs-label);
+  line-height: calc(var(--n-lh-label) + 1px);
+  color: var(--n-text-2);
+}
+.n-entry__undo { display: block; color: var(--n-text-3); }
+
+.n-entry__hand {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: calc(var(--n-s-1) + 1px);
+  min-width: 0;
+  padding-top: 1px;
+}
+.n-entry__hand > * { min-width: 0; }
+/* a one-click signature arrives wrapped (its verb hook): the button still takes the column */
+.n-entry__hand > span[data-verb] { display: flex; flex-direction: column; }
+.n-entry__how {
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-3);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* a stale, offline or unreadable feed: the last entries stay, in the stale ink */
+.n-docket__list[data-mode="stale"] :is(.n-entry__title, .n-entry__line, .n-entry__why) { color: var(--n-text-3); }
+
+/* ---- the open entry: the decision in full ---------------------------------------------- */
+.n-entry--open {
+  padding: var(--n-s-3) 0 calc(var(--n-s-3) + 2px);
+  border-bottom: var(--n-hair) solid var(--n-text-3);
+}
+/* the decision takes the Entry and Your hand columns: its signature is drawn in it */
+.n-entry--open > .n-entry__main { grid-column: 2 / -1; }
+.n-entry--open .n-entry__title {
+  font-family: var(--n-font-title);
+  font-weight: var(--n-w-bold);
+  font-size: var(--n-fs-title);
+  line-height: var(--n-lh-title);
+  letter-spacing: var(--n-title-track);
+}
+.n-entry__why {
+  margin: var(--n-s-1) 0 0;
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+
+.n-entry__members {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: var(--n-s-6);
+  margin: calc(var(--n-s-2) + 1px) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--n-hair) solid var(--n-rule);
+}
+.n-entry__members > li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--n-s-2);
+  min-width: 0;
+  padding: var(--n-s-1) 0;
+  border-bottom: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+}
+.n-entry__member-id { flex: none; font-family: var(--n-font-mono); font-size: var(--n-fs-meta); color: var(--n-text-3); }
+.n-entry__member-target {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--n-font-mono);
+  font-size: var(--n-fs-meta);
+  color: var(--n-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.n-entry__members-more { grid-column: 1 / -1; color: var(--n-text-3); }
+
+/* The open entry's consequence keeps its terms on one line in every look: its term column grows to the
+   look's --n-term-max (frame/kit/kit.css .n-consequence; theme/tokens.css). 0px in every Nerva look, so
+   nothing moves there; Classic's mono capitals take their widest term ("IF YOU SIGN" 92px, "CA SĂ ANULEZI"
+   109px), where 74px broke each onto two lines and made each row two lines tall: the open entry stood 21px
+   (English) to 44px (Romanian) taller than its words need, and its sign line went below what the body
+   shows at 1280×800 (and in Romanian at 1340–1440×900). */
+.n-entry__consequence { --consequence-term-max: var(--n-term-max, 0px); }
+/* one sentence per line inside a consequence */
+.n-entry__sentence { display: block; }
+.n-entry__ident {
+  font-family: var(--n-font-mono);
+  font-size: var(--n-fs-label);
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+.n-entry__applies {
+  margin: var(--n-s-2) 0 0;
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+
+.n-entry__special { margin-top: calc(var(--n-s-3) - 1px); }
+.n-entry__special-note {
+  margin: 0 0 var(--n-s-2);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+
+/* ---- the signature: the one bordered sheet on the page ------------------------------------ */
+.n-signline {
+  margin-top: calc(var(--n-s-3) - 1px);
+  padding: calc(var(--n-s-2) + 1px) var(--n-s-3) var(--n-s-3);
+  border: var(--n-hair) solid var(--n-rule-heavy);
+  background: var(--n-sheet);
+}
+.n-signline__group {
+  display: grid;
+  grid-template-columns: var(--n-s-3) minmax(0, 1fr) auto;
+  column-gap: var(--n-s-2);
+  align-items: end;
+}
+/* the instruction spans the sheet above the line; × marks where to sign */
+.n-signline__group > :not(.n-signline__x):not(input):not(button) { grid-column: 1 / -1; grid-row: 1; margin-bottom: 2px; }
+.n-signline__x { grid-column: 1; grid-row: 2; }
+.n-signline__input { grid-column: 2; grid-row: 2; }
+.n-signline__group > button { grid-column: 3; grid-row: 2; margin-left: calc(var(--n-s-1) * 1.5); }
+
+.n-signline__label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--n-s-2);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+}
+.n-signline__here { color: var(--n-accent-text); }
+.n-signline__how { font-weight: var(--n-w-reg); color: var(--n-text-2); }
+.n-signline__word {
+  padding: 0 1px;
+  font-family: var(--n-font-text);
+  font-style: italic;
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-own);
+  color: var(--n-text);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.n-signline__x {
+  font-family: var(--n-font-title);
+  font-size: var(--n-fs-title);
+  line-height: var(--n-control-h);
+  color: var(--n-accent);
+}
+.n-signline__input {
+  appearance: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--n-control-h);
+  padding: 0 2px;
+  border: 0;
+  border-bottom: calc(var(--n-hair) * 1.5) solid var(--n-accent);
+  border-radius: 0;
+  background: none;
+  font-family: var(--n-font-text);
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-prose);
+  line-height: var(--n-lh-prose);
+  color: var(--n-text);
+}
+.n-signline__input::placeholder {
+  font-style: italic;
+  font-size: var(--n-fs-own);
+  color: var(--n-text-3);
+  opacity: 1;
+}
+.n-signline__input:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 3px; }
+
+/* the seal on a signing button: the open seal while it waits; on the typed signature's button,
+   the given seal once the phrase matches (the button is then enabled and filled) */
+.n-signline__seal { display: inline-flex; align-items: center; gap: calc(var(--n-s-1) * 1.5); }
+.n-signline__seal--ready .n-signline__seal-given { display: none; }
+.n-signline__sign:enabled .n-signline__seal--ready .n-signline__seal-open { display: none; }
+.n-signline__sign:enabled .n-signline__seal--ready .n-signline__seal-given { display: inline-block; }
+/* on the accent fill the seal is drawn in the ink that sits on the accent */
+.n-signline__sign--filled:enabled .n-mk { color: var(--n-on-accent); --mk-knock: var(--n-accent); }
+
+/* ---- two steps: what signing does, then the confirmation ------------------------------------ */
+.n-entry__signrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--n-s-2); margin-top: calc(var(--n-s-3) - 1px); }
+.n-entry__confirm {
+  display: grid;
+  gap: var(--n-s-2);
+  width: 100%;
+  padding: calc(var(--n-s-2) + 1px) var(--n-s-3) var(--n-s-3);
+  border: var(--n-hair) solid var(--n-rule-heavy);
+  background: var(--n-sheet);
+}
+.n-entry__confirm > span:last-child { display: flex; flex-wrap: wrap; gap: var(--n-s-2); }
+.n-entry__confirm-what { display: grid; gap: var(--n-s-1); }
+.n-entry__confirm-title {
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-accent-text);
+  overflow-wrap: anywhere;
+}
+.n-entry__confirm-does {
+  font-family: var(--n-font-text);
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+  color: var(--n-text);
+}
+/* a confirmation inside the row of verbs (Reject group, Reject all N) */
+.n-entry__confirm--inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  width: auto;
+  padding: var(--n-s-1) var(--n-s-2);
+  border-color: var(--n-rule-2);
+  background: none;
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+
+/* ---- the reason, before the verbs ------------------------------------------------------------ */
+.n-entry__reason { margin-top: var(--n-s-2); }
+.n-entry__reason-body { display: grid; gap: var(--n-s-1); margin-top: var(--n-s-1); }
+.n-entry__reason-body[hidden] { display: none; }
+.n-entry__reason-label,
+.n-entry__editor-label {
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-2);
+}
+.n-entry__reason-field { min-height: calc(var(--n-lh-ui) * 2 + var(--n-s-2) * 2); }
+.n-entry__reason-note,
+.n-entry__editor-note {
+  margin: 0;
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-3);
+}
+
+/* ---- the other verbs ------------------------------------------------------------------------- */
+.n-entry__acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.5);
+  margin-top: var(--n-s-2);
+}
+.n-entry__fine {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-3);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.n-entry__verb { display: inline-flex; }
+
+/* ---- the dry run --------------------------------------------------------------------------- */
+.n-entry__preview {
+  margin-top: var(--n-s-2);
+  padding-top: var(--n-s-2);
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-entry__preview-title,
+.n-entry__preview-term {
+  margin: 0 0 var(--n-s-1);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text);
+}
+.n-entry__preview-line { margin: 0 0 var(--n-s-1); }
+.n-entry__effects { margin: 0; padding: 0; list-style: none; }
+.n-entry__effects > li { padding: 2px 0; border-bottom: var(--n-hair) solid var(--n-rule); }
+.n-entry__question-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--n-text); }
+
+/* ---- after a decision: in the entry that still holds the request, or in the register --------- */
+.n-entry__outcome,
+.n-docket__outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 calc(var(--n-s-1) * 1.5);
+  margin: var(--n-s-2) 0 0;
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-entry__outcome .n-mk,
+.n-docket__outcome .n-mk { flex: none; align-self: center; }
+.n-entry__outcome:is([data-outcome="refused"], [data-outcome="partial"], [data-outcome="not-sent"]),
+.n-docket__outcome:is([data-outcome="refused"], [data-outcome="partial"], [data-outcome="not-sent"]) { color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-docket__outcome-words { min-width: 0; overflow-wrap: anywhere; }
+/* what a register outcome was about: the hub's title, plain, and the request — one line at most,
+   so the outcomes never push the open entry's signature out of view (the words above it wrap) */
+.n-docket__outcome-about {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: var(--n-w-reg);
+  color: var(--n-text-3);
+  unicode-bidi: isolate;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.n-docket__outcomes {
+  padding: 0 0 var(--n-s-2);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+}
+
+/* ---- edit, then sign ------------------------------------------------------------------------- */
+.n-entry__editor { display: grid; gap: var(--n-s-1); margin-top: calc(var(--n-s-3) - 1px); }
+.n-entry__editor-field { min-height: calc(var(--n-lh-label) * 6 + var(--n-s-2) * 2); }
+.n-entry__editor-acts { display: flex; justify-content: flex-end; }
+
+/* ---- the foot: what else waits, and the total --------------------------------------------- */
+.n-docket__other {
+  margin: 0;
+  padding: var(--n-s-2) 0 calc(var(--n-s-1) * 1.5);
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-docket__other-lead { color: var(--n-text-3); }
+/* the total's two halves ("6 entries · 9 requests", "4 typed · 2 two-step · 0 one click") and the
+   words in each wrap where the docket is narrow (a phone, a long Romanian phrase in capitals)
+   rather than run over each other and past the register */
+.n-docket__total { flex-wrap: wrap; row-gap: var(--n-s-1); margin-bottom: var(--n-s-4); }
+.n-docket__total > * { flex-wrap: wrap; row-gap: 2px; }
+/* off a live reading the counts are the last good reading's: said in words, in the stale ink */
+.n-docket__total--stale { color: var(--n-text-3); }
+.n-docket__total-asof { display: inline-flex; align-items: center; gap: var(--n-s-1); }
+
+/* ---- the floating window's line -------------------------------------------------------------- */
+.n-docket__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.5);
+  margin: 0;
+  padding: calc(var(--n-s-1) * 1.5) 0;
+  border-top: var(--n-hair) solid var(--n-rule);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text);
+}
+
+/* ---- the owner's screen (xl): wider columns, more air ------------------------------------- */
+@media (min-width: 2200px) {
+  .n-docket { --docket-risk-w: 112px; --docket-hand-w: 126px; }
+  .n-entry { padding: calc(var(--n-s-3) - 1px) 0 var(--n-s-3); }
+  .n-entry--open { padding: calc(var(--n-s-3) + 2px) 0 var(--n-s-4); }
+  .n-entry__members { margin-top: calc(var(--n-s-3) - 1px); }
+  .n-signline { margin-top: calc(var(--n-s-4) - 1px); padding: calc(var(--n-s-3) - 1px) calc(var(--n-s-3) + 2px) calc(var(--n-s-3) + 2px); }
+  .n-entry__acts { margin-top: calc(var(--n-s-3) - 1px); }
+}
+
+/* ---- m and down (≤ 1679): the open entry in one column, the others one ruled line each ------ */
+@media (max-width: 1679px) {
+  .n-docket__cols { display: none; }
+  /* Your hand: as wide as the widest hand on the list, so the titles end at one line */
+  .n-docket__table { grid-template-columns: minmax(var(--docket-risk-w), min-content) minmax(0, 1fr) auto; }
+  .n-entry--open > .n-entry__risk,
+  .n-entry--open > .n-entry__main { grid-column: 1 / -1; }
+  .n-entry--open .n-entry__risk {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--n-s-2);
+    padding: 0 0 calc(var(--n-s-1) + 1px);
+  }
+  .n-entry--open .n-entry__lvl { margin: 0 calc(var(--n-s-1) * 1.5) 0 0; }
+  .n-entry__members { grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: var(--n-s-4); }
+  .n-entry__member-target { display: none; }
+
+  /* every other entry: risk, title, hand on one line. A one-click signature keeps what it would
+     do on the line, because nothing is signed unseen. */
+  .n-entry:not(.n-entry--open) {
+    grid-template-columns: var(--docket-risk-w) minmax(0, 1fr) auto;
+    grid-template-columns: subgrid;
+    align-items: center;
+    padding: var(--n-s-2) 0;
+  }
+  .n-entry:not(.n-entry--open) .n-entry__risk { padding-top: 0; }
+  .n-entry:not(.n-entry--open) .n-entry__lvl { margin: 0; }
+  .n-entry:not(.n-entry--open) .n-entry__risk > :not(.n-entry__lvl) { display: none; }
+  /* the title on one line: the button that holds it is the line, so a title that does not fit ends
+     in an ellipsis drawn inside it (an ellipsis on the heading would never be drawn: its overflowing
+     content is the button, an atomic inline, which was cut short instead). The whole title stays in
+     the button's name and its tooltip (DocketEntry). */
+  .n-entry:not(.n-entry--open) .n-entry__title {
+    min-width: 0;
+    font-size: var(--n-fs-own);
+    line-height: var(--n-lh-own);
+    white-space: nowrap;
+  }
+  .n-entry:not(.n-entry--open) .n-entry__open {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .n-entry:not(.n-entry--open) .n-entry__how { display: none; }
+  .n-entry:not(.n-entry--open):not([data-friction="click"]) .n-entry__line { display: none; }
+  .n-entry[data-friction="click"]:not(.n-entry--open) .n-entry__line { margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .n-entry[data-friction="click"]:not(.n-entry--open) .n-entry__undo { display: none; }
+  .n-entry:not(.n-entry--open) .n-entry__hand { padding-top: 0; }
+}
+
+/* ---- s and down (≤ 1339): tighter; the signature keeps its words beside the line ----------- */
+@media (max-width: 1339px) {
+  .n-docket { --docket-risk-w: 92px; }
+  .n-docket__figure { font-size: var(--n-fs-verdict); line-height: var(--n-lh-verdict); }
+  .n-entry--open { padding: calc(var(--n-s-2) + 1px) 0 calc(var(--n-s-3) - 1px); }
+  .n-entry__members { margin-top: calc(var(--n-s-2) - 1px); }
+  .n-signline { margin-top: calc(var(--n-s-2) + 1px); padding: calc(var(--n-s-1) * 1.5) calc(var(--n-s-2) + 2px) var(--n-s-2); }
+  .n-signline__group { grid-template-columns: auto var(--n-s-3) minmax(0, 1fr) auto; column-gap: calc(var(--n-s-2) + 2px); }
+  .n-signline__group > :not(.n-signline__x):not(input):not(button) { grid-column: 1; grid-row: 1; margin-bottom: 0; white-space: nowrap; }
+  .n-signline__x { grid-column: 2; grid-row: 1; }
+  .n-signline__input { grid-column: 3; grid-row: 1; }
+  .n-signline__group > button { grid-column: 4; grid-row: 1; }
+  .n-entry__acts { margin-top: calc(var(--n-s-2) - 1px); }
+  .n-entry:not(.n-entry--open) { padding: calc(var(--n-s-2) - 1px) 0; }
+}
+
+/* ---- xs and down (≤ 1099): one column of the page; the signature stacks again -------------- */
+@media (max-width: 1099px) {
+  .n-signline__group { grid-template-columns: var(--n-s-3) minmax(0, 1fr) auto; }
+  .n-signline__group > :not(.n-signline__x):not(input):not(button) { grid-column: 1 / -1; grid-row: 1; white-space: normal; }
+  .n-signline__x { grid-column: 1; grid-row: 2; }
+  .n-signline__input { grid-column: 2; grid-row: 2; }
+  .n-signline__group > button { grid-column: 3; grid-row: 2; }
+}
+
+@media (max-width: 759px) {
+  .n-docket { --docket-risk-w: 84px; }
+  .n-entry__members { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .n-signline__group > button { grid-column: 1 / -1; grid-row: 3; margin: var(--n-s-2) 0 0; }
+  /* a phone: no room for a Risk column beside the title (Classic's tier word alone takes a third of
+     the row), so every other entry is two lines — the tier word across the row, then the title and
+     the hand — and the columns still line up: the titles start together, the hands end together.
+     The hand takes at most 45% of the row, its words wrapping inside the button beyond that
+     (Romanian "Deschide ca să semnezi" in Classic's capitals would leave the title a sliver). */
+  .n-docket__table { grid-template-columns: minmax(0, 1fr) fit-content(45%); }
+  .n-entry:not(.n-entry--open) {
+    grid-template-columns: minmax(0, 1fr) fit-content(45%);
+    grid-template-columns: subgrid;
+    row-gap: 2px;
+  }
+  .n-entry:not(.n-entry--open) > .n-entry__risk { grid-column: 1 / -1; grid-row: 1; }
+  .n-entry:not(.n-entry--open) > .n-entry__main { grid-column: 1; grid-row: 2; }
+  .n-entry:not(.n-entry--open) > .n-entry__hand { grid-column: 2; grid-row: 2; }
+}

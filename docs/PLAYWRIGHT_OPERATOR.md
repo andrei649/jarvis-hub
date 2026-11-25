@@ -12,8 +12,12 @@ Use `requirements-browser.txt` in an isolated hub Python environment. It pins
 Playwright and psutil and uses an already installed Chrome/Chromium, without a
 Playwright engine download. On this Mac the installed Chrome is under
 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`; Linux checks the
-normal Chrome/Chromium executable names. Native Windows browser acceptance remains
-separate from this Mac fixture and the desktop adapter below.
+normal Chrome/Chromium executable names. Windows finds Chrome under Program Files or
+the per-user install directory. On Windows, use an absolute, long-form local NTFS
+path for `JARVIS_HOME`. The host gives its disposable Chrome profile and ownership
+journal private ACLs. After an interruption it verifies the recorded process and
+directory identities before closing Chrome and removing the profile. An identity
+mismatch keeps the browser unavailable for new work.
 
 Readiness requires `JARVIS_PLAYWRIGHT_HOST=1`, `JARVIS_UNIFIED_ACTION_API=1`, the
 enabled Action Kernel, mediation in `enforce`, a current governed worker and trusted

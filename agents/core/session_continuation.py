@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 
 from .conversation_clock import ClockSnapshot, parse_started_at
-from .memory.conversation import _tool_names
+from .memory.conversation import _tool_names, validated_board_sources, validated_history_source
 from .validation import is_valid_session_id
 
 MAX_SEED_BYTES = 512 * 1024
@@ -146,6 +146,16 @@ def seed_json(turns):
             if foreign_origin not in {"claude", "codex"}:
                 raise ContinuationRefused("invalid_history")
             carried["foreign_origin"] = foreign_origin
+        if foreign_origin is None and turn["role"] == "user" and "history_source" in turn:
+            source = validated_history_source(turn["history_source"])
+            if source is None:
+                raise ContinuationRefused("invalid_history")
+            carried["history_source"] = source
+        if foreign_origin is None and turn["role"] == "user" and "board_sources" in turn:
+            sources = validated_board_sources(turn["board_sources"])
+            if sources is None:
+                raise ContinuationRefused("invalid_history")
+            carried["board_sources"] = sources
         tools = _tool_names(turn.get("tools"))   # H441: names only, absent when none
         if tools:
             carried["tools"] = tools
@@ -440,6 +450,20 @@ def _load_locked(orch, sid):
             "SELECT 1 FROM session_imports WHERE session_id=?", (sid,)).fetchone() is not None
     if head is not None and head[0] != instance:
         raise ContinuationRefused("history_identity_changed")
+
+    def fresh_native_empty(document):
+        if (head is not None or origin.tainted or lineage or type(document) is not dict
+                or type(document.get("revision")) is not int or document != {
+                    "session_id": sid, "turns": [], "instance_id": instance, "revision": 0,
+                }):
+            return False
+        with orch.checkpoints._lock:
+            row = orch.checkpoints._conn.execute(
+                "SELECT turn_count FROM sessions WHERE id=? AND instance_id=? AND NOT EXISTS "
+                "(SELECT 1 FROM session_continuations WHERE session_id=?)", (sid, instance, sid)
+            ).fetchone()
+        return row == (0,)
+
     if sid in conversation.sessions:
         if origin.tainted and conversation.foreign_origins.get(sid) != origin:
             raise ContinuationRefused("invalid_history")
@@ -466,6 +490,14 @@ def _load_locked(orch, sid):
                 # G11: the empty conversation this hub opened for an editor (POST
                 # /api/acp/sessions) before its first turn; nothing to seed or verify.
                 return turns
+            if head is None and conversation.revisions.get(sid) == 0:
+                try:
+                    with (persistence.memory_dir() / f"{sid}.json").open("rb") as stream:
+                        raw = stream.read(MAX_SEED_BYTES + 4097)
+                    if len(raw) <= MAX_SEED_BYTES + 4096 and fresh_native_empty(json.loads(raw)):
+                        return turns
+                except (OSError, ValueError, TypeError, UnicodeError, RecursionError):
+                    pass
             if head is None or conversation.revisions.get(sid) != head[1]:
                 raise ContinuationRefused("invalid_history")
         else:
@@ -503,7 +535,7 @@ def _load_locked(orch, sid):
                 # JSON landed but its SQLite transaction never committed.
                 raise ContinuationRefused("invalid_history")
             if turns == []:
-                if (head is None or document.get("rewound") is not True
+                if not fresh_native_empty(document) and (head is None or document.get("rewound") is not True
                         or known != instance):
                     raise ContinuationRefused("invalid_history")
             else:
@@ -527,6 +559,10 @@ def _load_locked(orch, sid):
             value["role"], value["content"], value.get("agent_id"), value.get("token_count", 0),
             tools=value.get("tools"), media=restored_media(value.get("media")),
             foreign_origin=value.get("foreign_origin"),
+            history_source=value.get("history_source") if not origin.tainted else None,
+            board_sources=value.get("board_sources") if not origin.tainted and not legacy else None,
+            model_calls=value.get("model_calls") if not origin.tainted and not lineage else None,
+            tool_activity=value.get("tool_activity") if not origin.tainted and not lineage else None,
         )
         turn.timestamp = value["timestamp"]
         restored.append(turn)

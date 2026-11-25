@@ -6,7 +6,7 @@
    to the approve route for the right skill. fetch is mocked (like skill-history-panel). */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { PendingSkillsPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -26,6 +26,35 @@ const PENDING = {
 };
 
 describe('PendingSkillsPanel — the CDX-8 approval gate is reachable', () => {
+  it('opens the linked skill beyond the first ten only after finding it in the owner list', async () => {
+    const name = 'Print & proof';
+    const pending = [...Array.from({ length: 10 }, (_, i) => ({ name: 'sample-' + i })), { name }];
+    const fetcher = vi.fn(async (url) => ({ ok: true, status: 200, json: async () =>
+      String(url).endsWith('/pending') ? { pending } : String(url).endsWith('/pending/' + encodeURIComponent(name))
+        ? { fingerprint: 'sha256:' + 'a'.repeat(64), files: [{ path: 'SKILL.md', text: 'Compare the two proofs.' }] } : {} }));
+    global.fetch = fetcher;
+    const previous = location.href;
+    try {
+      history.replaceState(null, '', '/v2/console/pending-skills#skill=' + encodeURIComponent(name));
+      render(<PendingSkillsPanel />);
+      expect(await screen.findByText('Compare the two proofs.')).toBeTruthy();
+      expect(screen.getAllByTitle(/^review —/)[0].getAttribute('aria-expanded')).toBe('true');
+      expect(fetcher.mock.calls.every(([_, init]) => !init?.method || init.method === 'GET')).toBe(true);
+    } finally { history.replaceState(null, '', previous); }
+  });
+
+  it('reports an expired skill link without fetching its detail or approving another item', async () => {
+    const fetcher = mockFetch(PENDING);
+    const previous = location.href;
+    try {
+      history.replaceState(null, '', '/v2/console/pending-skills#skill=gone');
+      render(<PendingSkillsPanel />);
+      expect(await screen.findByText('This skill is no longer in the pending list.')).toBeTruthy();
+      expect(fetcher.mock.calls.some(([url]) => String(url).includes('/pending/'))).toBe(false);
+      expect(screen.getAllByTitle(/^approve —/).every(button => button.disabled)).toBe(true);
+    } finally { history.replaceState(null, '', previous); }
+  });
+
   it('GETs the admin pending endpoint and renders each quarantined skill', async () => {
     const fn = mockFetch(PENDING);
     render(<PendingSkillsPanel />);
@@ -37,7 +66,7 @@ describe('PendingSkillsPanel — the CDX-8 approval gate is reachable', () => {
     expect(screen.getByText('condense the overnight mail')).toBeTruthy();
     // Both rows are quarantined; only the one with agents shows the agent tag.
     expect(screen.getAllByText('quarantined').length).toBe(2);
-    expect(screen.getByText('2 agent(s)')).toBeTruthy();
+    expect(screen.getByText('For jarvis, argus')).toBeTruthy();
   });
 
   it('approves the skill the button belongs to, not the first one', async () => {
@@ -59,7 +88,7 @@ describe('PendingSkillsPanel — the CDX-8 approval gate is reachable', () => {
   });
 
   it('states the quarantine property rather than implying the code is live', async () => {
-    mockFetch({ count: 0, pending: [] });
+    mockFetch(PENDING);
     render(<PendingSkillsPanel />);
 
     await waitFor(() => expect(screen.getByText(/never exec'd in-process until approved/)).toBeTruthy());
@@ -104,6 +133,63 @@ function routeFetch(extra = {}) {
 const posts = (fn, part) => fn.mock.calls.filter((c) => String(c[0]).includes(part) && c[1] && c[1].method === 'POST');
 
 describe('PendingSkillsPanel — H331 review, discard and bulk decisions', () => {
+  it('counts a proposal-only inbox without claiming it is empty or showing a code warning', async () => {
+    global.fetch = vi.fn(async (url) => ({ ok: true, status: 200, json: async () =>
+      String(url).includes('/api/skills/proposals') ? PROPOSALS
+        : String(url).includes('/api/skills/batches') ? { batches: [] } : { pending: [] } }));
+    render(<PendingSkillsPanel />);
+    expect(await screen.findByText('plan')).toBeTruthy();
+    expect(document.querySelector('.panel-head .st')?.textContent).toBe('1');
+    expect(screen.queryByText('nothing yet')).toBeNull();
+    expect(screen.queryByText(/LLM-authored code is never/)).toBeNull();
+  });
+
+  it('shows one empty state only after all review sources load', async () => {
+    const finish = [];
+    global.fetch = vi.fn(() => new Promise(resolve => { finish.push(resolve); }));
+    render(<PendingSkillsPanel />);
+    expect(screen.queryByText('nothing yet')).toBeNull();
+    expect(document.querySelector('.panel-head .st')).toBeNull();
+    await act(async () => finish.forEach(resolve => resolve({ ok: true, status: 200,
+      json: async () => ({ pending: [], proposals: [], batches: [] }) })));
+    expect(await screen.findByText('nothing yet')).toBeTruthy();
+    expect(screen.getAllByText('nothing yet')).toHaveLength(1);
+    expect(document.querySelector('.panel-head .st')?.textContent).toBe('0');
+  });
+
+  it('names a failed review source without showing an empty state or partial total', async () => {
+    global.fetch = vi.fn(async (url) => String(url).includes('/api/skills/proposals')
+      ? { ok: false, status: 503, json: async () => ({ error: 'unavailable' }) }
+      : { ok: true, status: 200, json: async () => ({ pending: [], batches: [] }) });
+    render(<PendingSkillsPanel />);
+    expect(await screen.findByText(/Skill changes could not be read/)).toBeTruthy();
+    expect(screen.queryByText('nothing yet')).toBeNull();
+    expect(document.querySelector('.panel-head .st')).toBeNull();
+  });
+
+  it('opens the linked proposal diff even beyond the first ten proposals', async () => {
+    const prior = location.href;
+    const proposals = Array.from({ length: 11 }, (_, i) => ({ id: `p${i}`, skill: `skill-${i}`,
+      diff: `-old ${i}\n+new ${i}`, card: `c${i}` }));
+    const fetcher = vi.fn(async (url) => ({ ok: true, status: 200, json: async () =>
+      String(url).includes('/api/skills/proposals') ? { proposals } : { pending: [], batches: [] } }));
+    global.fetch = fetcher;
+    try {
+      history.replaceState(null, '', '/v2/console/pending-skills#proposal=p10');
+      render(<PendingSkillsPanel />);
+      expect(await screen.findByText(/\+new 10/)).toBeTruthy();
+      expect(screen.getByLabelText('select change to skill-10')).toBeTruthy();
+      expect(screen.queryByText('skill-9')).toBeNull();
+      expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/api/skills/proposals?focus=p10'))).toBe(true);
+      fireEvent.click(screen.getAllByTitle(/^diff — the whole proposed change/)[1]);
+      expect(screen.getByText(/\+new 0/)).toBeTruthy();
+      history.replaceState(null, '', '/v2/console/pending-skills#proposal=p9');
+      fireEvent(window, new Event('hashchange'));
+      expect(await screen.findByText(/\+new 9/)).toBeTruthy();
+      expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/api/skills/proposals?focus=p9'))).toBe(true);
+    } finally { history.replaceState(null, '', prior); }
+  });
+
   it('shows the full SKILL.md and code of a quarantined skill before approval', async () => {
     const fn = routeFetch();
     render(<PendingSkillsPanel />);

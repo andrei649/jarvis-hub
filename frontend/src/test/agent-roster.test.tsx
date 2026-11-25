@@ -206,4 +206,20 @@ describe('the roster and the Dossier host the dialogs — H202', () => {
     const { container } = render(<Dossier id="vega" onClose={() => {}} onOpen={() => {}} />);
     expect(container.innerHTML).toBe('');
   });
+
+  // PHASE_B_PLAN.md §2.1, §6: opening the Dossier never changes who the owner writes to; "Write to
+  // <Agent>" does, and only where App would take that agent as the recipient (App passes onWriteTo).
+  it('offers "Write to <Agent>" only when given it, writes to that agent and closes', async () => {
+    const onWriteTo = vi.fn();
+    const onClose = vi.fn();
+    render(<Dossier id="pepper" onClose={onClose} onOpen={() => {}} onWriteTo={onWriteTo} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Write to Pepper' }));
+    expect(onWriteTo).toHaveBeenCalledWith('pepper');
+    expect(onWriteTo).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    cleanup();
+    render(<Dossier id="pepper" onClose={() => {}} onOpen={() => {}} />);
+    expect(screen.queryByRole('button', { name: /^Write to/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Close dossier' })).toBeTruthy();
+  });
 });

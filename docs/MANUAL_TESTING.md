@@ -48,7 +48,7 @@ real-world wiring) · ⚠️ partially covered · ❌ no automated coverage (tes
 | LLM backend + model | e.g. LM Studio · `google/gemma-4-12b` |
 | Services up | Qdrant ☐ · Neo4j ☐ · n8n ☐ |
 | AI-OS host seams | Chromium ☐ · Windows UIA ☐ · HA ☐ · Frigate ☐ · media devices (2+) ☐ |
-| Previous run (baseline) | [`docs/qa-runs/2026-07-24-cowork-run.md`](qa-runs/2026-07-24-cowork-run.md) — v0.11.0 · `029da4c9` · ✗ not cleared, 3 fabrication blockers |
+| Previous run (baseline) | [`docs/archive/qa-runs/2026-07-24-cowork-run.md`](qa-runs/2026-07-24-cowork-run.md) — v0.11.0 · `029da4c9` · ✗ not cleared, 3 fabrication blockers |
 
 | § | Area | Pass / Total | Open blockers |
 |---|---|---|---|
@@ -668,7 +668,7 @@ Each needs a real token/account and a live round-trip (send → receive → repl
 
 > Carry this section forward between runs: every fix that closed a prior finding gets re-proved on
 > real hardware before the finding is considered closed. The list below is the **2026-07-24** run
-> ([`docs/qa-runs/2026-07-24-cowork-run.md`](qa-runs/2026-07-24-cowork-run.md)); its fixes were all
+> ([`docs/archive/qa-runs/2026-07-24-cowork-run.md`](qa-runs/2026-07-24-cowork-run.md)); its fixes were all
 > written in a remote sandbox that cannot run a model, a browser, or this hardware. Verdict each row
 > **HELD / REGRESSED / STILL OPEN** with evidence. Full repro steps: [`COWORK_QA_RUNBOOK.md`](COWORK_QA_RUNBOOK.md) §3b.
 

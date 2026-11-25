@@ -314,6 +314,8 @@ def test_a_new_skill_lands_quarantined_pending_review(installed, tmp_path, monke
     assert got["ok"] is True and got["kind"] == "new" and got["pending"] is True
     created = installed.root / got["skill"]
     assert (created / "PENDING_REVIEW").exists() and (created / "SKILL.md").exists()
+    assert not (created / "main.py").exists()
+    assert "2. sum the totals" in (created / "SKILL.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("posture,origin,reason", [

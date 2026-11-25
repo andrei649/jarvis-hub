@@ -116,11 +116,36 @@ def test_brain_graph_holds_the_vault_notes_and_their_links(client, vault):
     assert any(node.get("sourceVault") == "Nerva Jarvis Hub" for node in body["nodes"])
 
 
+def test_fenced_passages_are_searchable_without_creating_note_links(client, vault):
+    text = ("[[Plans]]\n\n````text\n[[Literal]] and [label](example.md)\n"
+            "```\n[[Still literal]]\n````\n  ~~~\n[[Example]]\n  ~~~\n[Report](report.md)\n")
+    (vault / "02 Proiecte" / "Handoff.md").write_text(text, encoding="utf-8")
+    note = client.get("/api/os/brain/note", params={"relPath": "02 Proiecte/Handoff.md"}).json()
+    assert note["wikilinks"] == ["Plans", "report"]
+    assert "[[Still literal]]" in note["body"]
+
+
 def test_note_reads_a_vault_file_and_a_repo_doc(client, vault):
     note = client.get("/api/os/brain/note", params={"relPath": "02 Proiecte/Atelier iPod.md"}).json()
     assert note["ok"] is True and note["title"] == "Atelier iPod" and "Acasa" in note["wikilinks"]
     doc = client.get("/api/os/brain/note", params={"relPath": "Nerva/jarvis-hub/NERVA.md"})
     assert doc.status_code == 200 and doc.json()["ok"] is True
+
+
+def test_note_reader_opens_at_the_late_match_and_preserves_the_default_view(client, vault):
+    prefix = "Ordinary studio notes.\n\n" * 410
+    lesson = "Spectroscope calibration uses the indigo reference."
+    text = prefix + lesson + "\n\n" + "Studio log. " * 620
+    (vault / "02 Proiecte" / "Log.md").write_bytes(text.encode("utf-8"))
+    url = "/api/os/brain/note"
+    params = {"relPath": "02 Proiecte/Log.md"}
+    first = client.get(url, params=params).json()
+    assert first["body"] == text[:6000] and "start" not in first
+    match = client.get(url, params={**params, "q": "spectroscope calibration"}).json()
+    assert match["start"] > 6000 and lesson in match["body"]
+    assert match["body"] == text[match["start"]:match["start"] + 6000]
+    unrelated = client.get(url, params={**params, "q": "nohitsanywhere"}).json()
+    assert unrelated["body"] == first["body"]
 
 
 @pytest.mark.parametrize("rel", [
@@ -146,6 +171,9 @@ def test_retrieve_returns_chat_attachments_and_a_focus_title(client, vault):
 
 def test_retrieve_with_no_question_or_no_vault_is_empty(client, vault, tmp_path, monkeypatch):
     assert client.get("/api/os/brain/retrieve").json() == {"ok": True, "attachments": [], "focus": None}
+    engine = jarvis_os._engine()
+    monkeypatch.setattr(engine, "build_real_brain_graph", lambda *args, **kwargs: pytest.fail("unexpected vault walk"))
+    assert client.get("/api/os/brain/retrieve", params={"q": "ce este"}).json()["attachments"] == []
     monkeypatch.setenv(jarvis_os.VAULT_ENV, str(tmp_path / "missing"))
     body = client.get("/api/os/brain/retrieve", params={"q": "ipod"}).json()
     assert body == {"ok": True, "attachments": [], "focus": None}

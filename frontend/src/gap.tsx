@@ -1,13 +1,14 @@
 import { galleryItemKey, useMediaGallery } from './media-gallery';
 import { internalLink } from './base-path';
-/* HUD v2 · P4c — the net-new gap surfaces from the §5b/§5c audit, hosted in a
-   Console overlay (mirrors v1 tools.js). Each panel fetches its real endpoint and
-   degrades to an offline/empty state — never blocks. Admin-guarded calls work on
-   localhost; on a network they surface the 401 via the client's token prompt. */
+/* HUD v2 · P4c — the net-new gap surfaces from the §5b/§5c audit (mirrors v1 tools.js), each one
+   a page of its area since Phase B (/v2/console/<id>, frame/PanelPage.tsx → ConsolePanel below).
+   Each panel fetches its real endpoint and degrades to an offline/empty state — never blocks.
+   Admin-guarded calls work on localhost; on a network they surface the 401 via the client's
+   token prompt. */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FIRST_RUN_DISMISS_KEY } from './onboarding-state';
-import { CONSOLE_PANELS, CONSOLE_PANEL_MAP } from './console-routes';
-import { navigateHud, routeHref } from './hud-routing';
+import { CONSOLE_PANEL_MAP } from './console-routes';
+import { routeHref } from './hud-routing';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { isKillSwitchState } from './api/actions';
 import { localModelStatus } from './api/live';
@@ -17,6 +18,7 @@ import { setAgentAutonomyMode, agentModeRefusalNote } from './api/actions';
 import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
+import { AppearancePanel } from './panels/appearance';
 import { WebhooksPanel } from './panels/webhooks';
 import { McpPanel } from './panels/mcp';
 import { LongTermMemoryPanel } from './panels/long-term-memory';
@@ -85,32 +87,46 @@ import { DataHandling } from './panels/data-handling';
 import { CredentialShares } from './panels/credential-shares';
 import { UsagePanel } from './panels/usage';
 
-import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
+/* Contract §5: `mono` is for identifiers only (ids, paths, code, JSON, model and skill names,
+   figures in a column); messages, notes, errors and hints take the kit's `note` (the label
+   step in the interface face). It is imported as `noteS` because fourteen panels below keep a
+   local `note` of their own, which would shadow the style. */
+import { useApi, arr, mono, note as noteS, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, codeS, Json } from './panel-kit';
+/* IDENT: an identifier inside a label (a room id), mono in its own case and spacing whatever
+   the label voice does to the words around it. */
+import { IDENT, LABEL, MONO } from './theme/type';
+/* DecisionInboxPanel (PHASE_B_PLAN.md §5.4): it decides through the one decision client and
+   grades its friction as the docket does, so it cannot be used to go around the docket. */
+import { decide as decideRequest, decideConsent as consentRequest, demoActive, preview as previewRequest, rejectGroup as rejectGroupRequest } from './api/decisions';
+import { isCatalogRefreshProposal, isCloudImageProposal, isImageProposal, isKreaEnhanceProposal, isKreaResumeProposal, kreaEnhanceDetails } from './docket/special';
+import { phraseFor } from './docket/phrases';
+import { isMoney } from './docket/kinds';
+import { tierKey } from './frame/kit/marks';
 
 function MediaOutcome({ value }) {
   if (!value) return null;
   if (value.output && value.output.ok === false) {
-    return <div role="alert" style={{ ...mono, color: 'var(--red)', marginTop: 8 }}>
+    return <div role="alert" style={{ ...noteS, color: 'var(--red)', marginTop: 8 }}>
       refused · {value.output.reason || value.reason || 'media_action_failed'}
     </div>;
   }
   if (value.status === 'completed' && value.output?.ok === true && value.output?.verified === true) {
-    return <div role="status" style={{ ...mono, color: 'var(--green)', marginTop: 8 }}>
+    return <div role="status" style={{ ...noteS, color: 'var(--green)', marginTop: 8 }}>
       verified success · {value.output.device || 'device'} · {value.output.verification || 'verified'}
     </div>;
   }
   if (value.status === 'completed' && value.output?.ok === true) {
-    return <div role="alert" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+    return <div role="alert" style={{ ...noteS, color: 'var(--amber)', marginTop: 8 }}>
       unverified · success not claimed
     </div>;
   }
   if (value.status === 'queued') {
-    return <div role="status" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+    return <div role="status" style={{ ...noteS, color: 'var(--amber)', marginTop: 8 }}>
       queued for approval · {value.reason || 'approval_required'}
     </div>;
   }
   if (value.status === 'refused' || value.status === 'disabled' || value.status === 'failed') {
-    return <div role="alert" style={{ ...mono, color: 'var(--red)', marginTop: 8 }}>
+    return <div role="alert" style={{ ...noteS, color: 'var(--red)', marginTop: 8 }}>
       {value.status} · {value.reason || 'request_failed'}
     </div>;
   }
@@ -119,39 +135,39 @@ function MediaOutcome({ value }) {
 function HouseOutcome({ value }) {
   if (!value) return null;
   if (value.status === 'sending') {
-    return <div role="status" style={{ ...mono, color: 'var(--ink-2)', marginTop: 8 }}>submitting governed proposal…</div>;
+    return <div role="status" style={{ ...noteS, color: 'var(--ink-2)', marginTop: 8 }}>submitting governed proposal…</div>;
   }
   if (value.status === 'queued' && value.strong_confirmation_required) {
-    return <div role="status" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+    return <div role="status" style={{ ...noteS, color: 'var(--amber)', marginTop: 8 }}>
       strong confirmation required · task {value.task_id || 'pending'}
     </div>;
   }
   if (value.status === 'queued') {
-    return <div role="status" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+    return <div role="status" style={{ ...noteS, color: 'var(--amber)', marginTop: 8 }}>
       queued for approval · task {value.task_id || 'pending'}
     </div>;
   }
   if (value.status === 'verified') {
-    return <div role="status" style={{ ...mono, color: 'var(--green)', marginTop: 8 }}>
+    return <div role="status" style={{ ...noteS, color: 'var(--green)', marginTop: 8 }}>
       verified success · {value.reason || 'state_verified'}
     </div>;
   }
   if (value.status === 'unverified') {
-    return <div role="alert" style={{ ...mono, color: 'var(--amber)', marginTop: 8 }}>
+    return <div role="alert" style={{ ...noteS, color: 'var(--amber)', marginTop: 8 }}>
       unverified · no action claimed · {value.reason || 'verification_missing'}
     </div>;
   }
-  return <div role="alert" style={{ ...mono, color: 'var(--red)', marginTop: 8 }}>
+  return <div role="alert" style={{ ...noteS, color: 'var(--red)', marginTop: 8 }}>
     denied · {value.reason || 'request_refused'}
   </div>;
 }
 function DiffView({ text }) {
   if (text == null) return null;
-  if (text === '') return <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', marginTop: 6 }}>identical · no changes</div>;
+  if (text === '') return <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>identical · no changes</div>;
   const color = (l) => l.startsWith('@@') ? 'var(--accent-light)'
     : (l.startsWith('+') && !l.startsWith('+++')) ? 'var(--green)'
     : (l.startsWith('-') && !l.startsWith('---')) ? 'var(--red)' : 'var(--ink-2)';
-  return <pre style={{ ...mono, fontSize: 10.5, lineHeight: 1.45, whiteSpace: 'pre-wrap', maxHeight: 220, overflow: 'auto', margin: '6px 0 0', padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+  return <pre style={{ ...mono, fontSize: 'var(--n-fs-meta)', lineHeight: 1.45, whiteSpace: 'pre-wrap', maxHeight: 220, overflow: 'auto', margin: '6px 0 0', padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
     {text.split('\n').map((l, i) => <div key={i} style={{ color: color(l) }}>{l || ' '}</div>)}
   </pre>;
 }
@@ -176,7 +192,7 @@ export function CapturePanel() {
       <State e={e} loading={loading} n={recs.length} />
       {recs.slice(0, 10).map((r, i) => (
         <Row key={r.id ?? i}>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{r.preview || r.surface}</span>
+          <span style={{ ...noteS, color: 'var(--ink-2)' }}>{r.preview || r.surface}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {r.surface && <Tag>{r.surface}</Tag>}
             <button className="tool-btn" title="delete" onClick={() => del(r.id)}>✕</button>
@@ -184,7 +200,7 @@ export function CapturePanel() {
         </Row>
       ))}
       {recs.length > 0 && <div style={{ marginTop: 8 }}><button className="tool-btn" onClick={clearAll}>clear all</button></div>}
-      {recs.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>nothing captured · opt-in surfaces stream here, each deletable</div>}
+      {recs.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>nothing captured · opt-in surfaces stream here, each deletable</div>}
     </Card>
   );
 }
@@ -238,7 +254,7 @@ export function KgPanel() {
   return (
     <Card title="KNOWLEDGE GRAPH" live={asLive(d, !kgError)} sub={d ? `${ents.length} entities` : null} onReload={reload}>
       <State e={e} loading={loading} n={ents.length} />
-      {kgError && <Row><span style={{ ...mono, color: 'var(--amber)' }}>{String(kgError)} — graph unavailable, not empty</span></Row>}
+      {kgError && <Row><span style={{ ...noteS, color: 'var(--amber)' }}>{String(kgError)} — graph unavailable, not empty</span></Row>}
       {ents.slice(0, 12).map((en, i) => (
         <Row key={en.name ?? i}>
           <span style={{ ...mono, color: 'var(--ink-2)' }}>{en.name}</span>
@@ -250,7 +266,7 @@ export function KgPanel() {
         </Row>
       ))}
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-        <input value={forgetId} onChange={(ev) => setForgetId(ev.target.value)} placeholder="memory item id to forget" style={{ ...inpS, flex: 1 }} />
+        <input value={forgetId} onChange={(ev) => setForgetId(ev.target.value)} placeholder="memory item id to forget" style={{ ...inpS, ...MONO, flex: 1 }} />
         <button className="tool-btn" onClick={forget}>forget</button>
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
@@ -263,7 +279,7 @@ export function KgPanel() {
         <textarea value={ingestText} onChange={(ev) => setIngestText(ev.target.value)} placeholder="text to extract triples from…" style={{ ...taS, minHeight: 48 }} />
         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
           <button className="tool-btn" onClick={ingest}>ingest</button>
-          <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>extraction is heuristic — the written triples are listed below, not just counted</span>
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>extraction is heuristic — the written triples are listed below, not just counted</span>
         </div>
       </div>
       {triples.slice(0, 10).map((t, i) => (
@@ -273,7 +289,7 @@ export function KgPanel() {
           </span>
         </Row>
       ))}
-      {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
     </Card>
   );
 }
@@ -309,8 +325,8 @@ export function MemoryWritePanel() {
         <input value={source} onChange={(ev) => setSource(ev.target.value)} placeholder="source (optional)" style={{ ...inpS, flex: 1 }} />
         <button className="tool-btn" onClick={remember}>remember</button>
       </div>
-      {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+      {msg && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
         Long-term vector memory. Without an embedder the route still answers 200 — this card says
         "not stored" for that case rather than claiming a write that did not happen.
       </div>
@@ -337,7 +353,7 @@ export function MemoryHygienePanel() {
       <State e={e} loading={loading} n={cands.length} />
       {cands.slice(0, 12).map((c, i) => (
         <Row key={c.id ?? i}>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{c.label || c.id}</span>
+          <span style={{ ...noteS, color: 'var(--ink-2)' }}>{c.label || c.id}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c="var(--amber)">{c.activation}</Tag>
             <button className="tool-btn" title="forget this item and its dependents" onClick={() => forget(c.id)}>✕</button>
@@ -345,15 +361,15 @@ export function MemoryHygienePanel() {
         </Row>
       ))}
       <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
-        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>threshold</span>
+        <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>threshold</span>
         <input
           type="number" step="0.1" min="0" value={threshold}
           onChange={(ev) => setThreshold(Number(ev.target.value) || 0)}
           style={{ ...inpS, width: 70 }}
         />
       </div>
-      {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+      {msg && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
         ACT-R activation below the threshold — ✕ forgets the item AND its dependents.
       </div>
     </Card>
@@ -397,11 +413,11 @@ export function MemoryEvalPanel() {
         <button className="tool-btn" disabled={busy} onClick={() => go('keyword')}>run keyword</button>
         <button className="tool-btn" disabled={busy} onClick={() => go('recall')}>run recall</button>
       </div>
-      <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>
         recall writes the corpus into the vector store (one remembered record per case fact) — keyword does not.
       </div>
       {overall && <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>{`${overall.passed}/${overall.n} passed`}</span>
+        <span style={{ ...noteS, color: 'var(--ink-2)' }}>{`${overall.passed}/${overall.n} passed`}</span>
         <span style={{ marginLeft: 'auto' }}><Tag c={overall.score >= 0.8 ? 'var(--green)' : 'var(--amber)'}>{run?.mode || 'keyword'}</Tag></span>
       </Row>}
       {Object.entries(byAbility).map(([name, b]: any) => (
@@ -410,7 +426,7 @@ export function MemoryEvalPanel() {
           <span style={{ marginLeft: 'auto' }}><Tag c={b?.score === 1 ? 'var(--green)' : 'var(--amber)'}>{`${b?.passed ?? 0}/${b?.n ?? 0} · ${b?.score}`}</Tag></span>
         </Row>
       ))}
-      {msg && <div style={{ fontSize: 10, color: 'var(--red)', marginTop: 6 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 6 }}>{msg}</div>}
     </Card>
   );
 }
@@ -425,7 +441,7 @@ export function DataSpacesPanel() {
   const [name, setName] = useState(''); const [src, setSrc] = useState('');
   const [agent, setAgent] = useState(''); const [assignSpace, setAssignSpace] = useState('');
   const [msg, setMsg] = useState('');
-  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11, flex: 1 };
+  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 'var(--n-fs-meta)', flex: 1 };
   const create = () => { if (!name.trim()) return; apiPost('/api/memory/spaces', { name: name.trim(), sources: src.split(',').map((s) => s.trim()).filter(Boolean) }, { admin: true }).then(() => { setName(''); setSrc(''); reload(); }).catch(() => {}); };
   const assign = () => {
     const a = agent.trim(); const sp = assignSpace.trim();
@@ -440,9 +456,9 @@ export function DataSpacesPanel() {
   const optionSpaces = spaces.map(spaceName).filter(Boolean);
   return <Card title="DATA SPACES" live={asLive(d)} sub={spaces.length} onReload={reload}>
     <State e={e} loading={loading} n={spaces.length} />
-    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{spaceName(s)}</span><span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{(s.sources || s.categories || []).join?.(', ')}</span><Btn onClick={() => apiDelete('/api/memory/spaces/' + spaceName(s), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
+    {spaces.slice(0, 12).map((s, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{spaceName(s)}</span><span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{(s.sources || s.categories || []).join?.(', ')}</span><Btn onClick={() => apiDelete('/api/memory/spaces/' + spaceName(s), { admin: true }).then(reload).catch(() => {})}>✕</Btn></Row>)}
     {assignmentRows.length > 0 && <div style={{ marginTop: 8 }}>
-      <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, marginBottom: 4 }}>ASSIGNMENTS</div>
+      <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', marginBottom: 4 }}>ASSIGNMENTS</div>
       {assignmentRows.slice(0, 16).map((r, i) => <Row key={`${r.agent}:${r.space}:${i}`}>
         <span style={{ ...mono, color: 'var(--ink-2)' }}>{r.agent}</span>
         <Tag c="var(--accent-light)">{r.space}</Tag>
@@ -462,8 +478,8 @@ export function DataSpacesPanel() {
       </select>
       <button className="tool-btn" onClick={assign}>assign</button>
     </div>
-    {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>per-agent read scope (H10.26) · default-open</div>
+    {msg && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>per-agent read scope (H10.26) · default-open</div>
   </Card>;
 }
 function LocalDocsPanel() {
@@ -479,7 +495,7 @@ function NotesPanel() {
   const [v, setV] = useState(null);
   const cur = v != null ? v : (d?.content || d?.notes || '');
   return <Card title="NOTES" live={asLive(d)} onReload={reload}>
-    <textarea value={cur} onChange={(ev) => setV(ev.target.value)} placeholder="session notes injected into every turn…" style={{ width: '100%', minHeight: 70, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono }} />
+    <textarea value={cur} onChange={(ev) => setV(ev.target.value)} placeholder="session notes injected into every turn…" style={{ width: '100%', minHeight: 70, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...noteS, fontFamily: 'var(--n-font-ui)' }} />
     <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
       <button className="tool-btn" onClick={() => apiPut('/api/notes', { content: cur }).catch(() => {})}>save</button>
       <button className="tool-btn" onClick={() => act('/api/notes/rewrite', { save: true }, reload)}>rewrite with AI</button>
@@ -503,7 +519,7 @@ const NoteBlockRows = ({ nodes, depth = 0, onEdit, onDelete }: any) => (
         <Row>
           <span style={{ width: depth * 12 }} />
           <Tag>{n.type}</Tag>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{n.text}</span>
+          <span style={{ ...noteS, color: 'var(--ink-2)' }}>{n.text}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
             <button className="tool-btn" title="edit this block" onClick={() => onEdit(n)}>edit</button>
             <button className="tool-btn" title="delete this block and its children" onClick={() => onDelete(n)}>✕</button>
@@ -564,7 +580,7 @@ export function NoteDocsPanel() {
           <button
             className="tool-btn"
             title="open this doc"
-            style={{ ...mono, color: doc.id === openId ? 'var(--accent-light)' : 'var(--ink-2)' }}
+            style={{ ...noteS, color: doc.id === openId ? 'var(--accent-light)' : 'var(--ink-2)' }}
             onClick={() => openDoc(doc.id)}
           >{doc.title || doc.id}</button>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -589,8 +605,8 @@ export function NoteDocsPanel() {
           <button className="tool-btn" onClick={addBlock}>add block</button>
         </div>
       </div>}
-      {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+      {msg && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
         Stable block ids · ✕ on a block removes its whole subtree · inserting never renumbers siblings.
       </div>
     </Card>
@@ -649,7 +665,7 @@ export function VaultPanel() {
         <Row key={it.id}>
           <span style={{ color: 'var(--accent-light)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name || it.id}</span>
           <Tag>{it.kind}</Tag>
-          <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{it.bytes}B</span>
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{it.bytes}B</span>
           <button className="tool-btn" onClick={() => download(it.id, it.name)}>get</button>
           <button className="tool-btn" onClick={() => del(it.id)}>del</button>
         </Row>
@@ -660,11 +676,11 @@ export function VaultPanel() {
         <button className="tool-btn" disabled={!text.trim()} onClick={storeText}>store text</button>
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
-        <input type="file" onChange={(ev) => setFile(ev.target.files && ev.target.files[0])} style={{ fontSize: 10, flex: 1 }} />
+        <input type="file" onChange={(ev) => setFile(ev.target.files && ev.target.files[0])} style={{ fontSize: 'var(--n-fs-meta)', flex: 1 }} />
         <button className="tool-btn" disabled={!file} onClick={storeFile}>store file</button>
       </div>
-      {note && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>encrypted at rest · included in your own data export, erased on forget</div>
+      {note && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>encrypted at rest · included in your own data export, erased on forget</div>
     </Card>
   );
 }
@@ -675,13 +691,13 @@ function ReflectionPanel() {
   const run = () => { setOut('running…'); act('/api/reflection/run', {}, (r) => { setOut(r?.ok ? (r.result || 'done') : (r?.error || 'failed')); reload(); }); };
   return <Card title="NIGHTLY REFLECTION" live={asLive(d, d?.enabled)} onReload={reload}>
     <State e={e} loading={loading} n={d ? 1 : 0} />
-    {d && <div style={{ ...mono, fontSize: 11 }}>
-      <Row><span>enabled</span><span style={{ marginLeft: 'auto', color: d.enabled ? 'var(--green)' : 'var(--ink-2)' }}>{String(!!d.enabled)}</span></Row>
-      <Row><span>last run</span><span style={{ marginLeft: 'auto', color: 'var(--ink-2)' }}>{d.last_run || 'never'}</span></Row>
+    {d && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)' }}>
+      <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-label)' }}>enabled</span><span style={{ ...MONO, marginLeft: 'auto', color: d.enabled ? 'var(--green)' : 'var(--ink-2)' }}>{String(!!d.enabled)}</span></Row>
+      <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-label)' }}>last run</span><span style={{ ...(d.last_run ? MONO : {}), marginLeft: 'auto', color: 'var(--ink-2)' }}>{d.last_run || 'never'}</span></Row>
     </div>}
     <button className="tool-btn" style={{ marginTop: 6 }} onClick={run}>run now</button>
     {out != null && <Json v={out} max={120} />}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>last 60 turns → entities/relations/lessons → KG (H5.15)</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>last 60 turns → entities/relations/lessons → KG (H5.15)</div>
   </Card>;
 }
 
@@ -717,7 +733,7 @@ export function PairingPanel() {
   return <Card title="SENDER PAIRING" live={asLive(d)} sub={d?.summary ? (d.summary.pending ?? senders.length) + ' pending' : senders.length} onReload={reload}>
     <State e={e} loading={loading} n={senders.length} />
     {senders.slice(0, 10).map((s, i) => { const ok = senderApproved(s.status); return <Row key={i}>
-      <span style={mono}>{s.name || s.sender_id || s.id}</span>
+      <span style={s.name ? noteS : mono}>{s.name || s.sender_id || s.id}</span>
       <Tag>{s.channel}</Tag>
       <Tag c={ok ? 'var(--green)' : s.status === 'blocked' ? 'var(--red)' : 'var(--amber)'}>{s.status || 'pending'}</Tag>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
@@ -735,7 +751,7 @@ export function PairingPanel() {
           prompt="nobody is blocked; they can ask again" armedLabel={`drop ${pendingCount} pending`} onConfirm={clearPending} />
       </span>
     </div>}
-    {cleared != null && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>cleared {cleared}</div>}
+    {cleared != null && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>cleared {cleared}</div>}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={code} onChange={(ev) => setCode(ev.target.value)} placeholder="pairing code (empty = clear)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={() => actA('/api/channels/pairing/code', { code: code || null }, () => { setCode(''); reload(); })}>set code</button>
@@ -746,15 +762,15 @@ export function PairingPanel() {
       {(d?.summary?.deeplinks_outstanding ?? 0) > 0
         && <button className="tool-btn" title="invalidate every outstanding link" onClick={revokeLinks}>revoke links</button>}
     </div>
-    {link && <div style={{ ...mono, fontSize: 11, marginTop: 6, wordBreak: 'break-all' }}>
-      <div style={{ color: 'var(--green)' }}>{link.url || link.token}</div>
+    {link && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6, wordBreak: 'break-all' }}>
+      <div style={{ ...MONO, color: 'var(--green)' }}>{link.url || link.token}</div>
       {/* Said plainly: a link that looks reusable gets treated as one. */}
-      <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 3 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 3 }}>
         One use, then dead — whoever opens it first is the one paired. Expires in
         {' '}{Math.round((link.ttl_seconds || 0) / 60)} min.
       </div>
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>unknown senders are held until you decide (H12.19)</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>unknown senders are held until you decide (H12.19)</div>
   </Card>;
 }
 function InjectionScanPanel() {
@@ -764,17 +780,17 @@ function InjectionScanPanel() {
   return <Card title="INJECTION SCAN" live={'live'}>
     <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="paste suspect text — emails, skill output, web content…" style={taS} />
     <button className="tool-btn" style={{ marginTop: 6 }} onClick={scan}>scan</button>
-    {out && <div style={{ ...mono, fontSize: 11, marginTop: 6, color: out.suspicious ? 'var(--red)' : 'var(--green)' }}>
+    {out && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6, color: out.suspicious ? 'var(--red)' : 'var(--green)' }}>
       {out.suspicious ? '⚠ ' + (out.flags || []).length + ' pattern(s): ' + (out.flags || []).join(', ') : '✓ clean — no injection patterns'}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>prompt-injection detector (H17.1) — same engine as the quarantine gate</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>prompt-injection detector (H17.1) — same engine as the quarantine gate</div>
   </Card>;
 }
 function SecretsPanel() {
   const { d, e, loading, reload } = useApi('/api/secrets/broker');
   const names = arr(d, 'names', 'secrets');
   const [nm, setNm] = useState(''); const [vl, setVl] = useState('');
-  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11 };
+  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 'var(--n-fs-meta)' };
   const store = () => { if (!nm.trim()) return; apiPost('/api/secrets/broker', { name: nm.trim(), value: vl }, { admin: true }).then(() => { setNm(''); setVl(''); reload(); }).catch(() => {}); };
   return <Card title="SECRET BROKER" live={asLive(d)} sub={names.length} onReload={reload}>
     <State e={e} loading={loading} n={names.length} />
@@ -784,7 +800,7 @@ function SecretsPanel() {
       <input value={vl} onChange={(ev) => setVl(ev.target.value)} placeholder="value" type="password" style={{ ...inp, flex: 1 }} />
       <button className="tool-btn" onClick={store}>store</button>
     </div>
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>just-in-time {'{{secret:NAME}}'} injection at approval time</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>just-in-time {'{{secret:NAME}}'} injection at approval time</div>
   </Card>;
 }
 export function KillSwitchPanel() {
@@ -822,7 +838,7 @@ export function KillSwitchPanel() {
               prompt="type DISENGAGE to release the global halt; scoped halts may remain:" onConfirm={toggle} />
           : <ConfirmAction tier={RISK_TIER.READ_ONLY} label="HALT ALL" onConfirm={toggle} />}
       </span></Row>
-    {actErr && <Row><span role="alert" style={{ ...mono, color: 'var(--red)' }}>
+    {actErr && <Row><span role="alert" style={{ ...noteS, color: 'var(--red)' }}>
       {globalHalted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
     </span></Row>}
   </Card>;
@@ -849,13 +865,13 @@ export function SecuritySkillsPanel() {
       {tactics.slice(0, 14).map((t, i) => (
         <div key={t.id ?? i}>
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)', cursor: 'pointer' }} onClick={() => toggle(t.id)}>{t.id} · {t.name}</span>
+            <span style={{ ...noteS, color: 'var(--ink-2)', cursor: 'pointer' }} onClick={() => toggle(t.id)}>{t.id} · {t.name}</span>
             <span style={{ marginLeft: 'auto' }}><Tag>{open === t.id ? '▾' : '▸'}</Tag></span>
           </Row>
           {open === t.id && techs.slice(0, 10).map((tech, j) => (
-            <div key={tech.id ?? j} style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', padding: '2px 0 2px 14px' }}>{tech.id} · {tech.name}</div>
+            <div key={tech.id ?? j} style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', padding: '2px 0 2px 14px' }}>{tech.id} · {tech.name}</div>
           ))}
-          {open === t.id && techs.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', padding: '2px 0 2px 14px' }}>no curated techniques for this tactic</div>}
+          {open === t.id && techs.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', padding: '2px 0 2px 14px' }}>no curated techniques for this tactic</div>}
         </div>
       ))}
     </Card>
@@ -891,7 +907,7 @@ export function CapabilitiesPanel() {
       <button className="tool-btn" onClick={issue}>issue</button>
     </div>
     {issued.length > 0 && <div style={{ marginTop: 8 }}>
-      <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, marginBottom: 4 }}>RECENT GRANTS</div>
+      <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', marginBottom: 4 }}>RECENT GRANTS</div>
       {issued.map((t, i) => <Row key={t.id || i}>
         <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.id}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -900,15 +916,15 @@ export function CapabilitiesPanel() {
       </Row>)}
     </div>}
     <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-      <input value={checkToken} onChange={(e) => setCheckToken(e.target.value)} placeholder="token id" style={{ ...inpS, flex: 1, minWidth: 120 }} />
+      <input value={checkToken} onChange={(e) => setCheckToken(e.target.value)} placeholder="token id" style={{ ...inpS, ...MONO, flex: 1, minWidth: 120 }} />
       <input value={checkCap} onChange={(e) => setCheckCap(e.target.value)} placeholder="capability to check" style={{ ...inpS, flex: 1, minWidth: 120 }} />
       <button className="tool-btn" onClick={check}>check</button>
     </div>
     {checkOut && <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
       <Tag c={checkOut.allowed ? 'var(--green)' : 'var(--red)'}>{checkOut.allowed ? 'allowed' : 'blocked'}</Tag>
-      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{checkOut.reason || 'token grants capability'}</span>
+      <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{checkOut.reason || 'token grants capability'}</span>
     </div>}
-    {out && <pre style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', whiteSpace: 'pre-wrap', marginTop: 6 }}>{out.slice(0, 200)}</pre>}
+    {out && <pre style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', whiteSpace: 'pre-wrap', marginTop: 6 }}>{out.slice(0, 200)}</pre>}
   </Card>;
 }
 
@@ -921,7 +937,7 @@ export function KernelMetricsPanel() {
       <State e={e} loading={loading} n={d ? d.total : 0} />
       {d && (
         <Row>
-          <span style={mono}>verdicts</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>verdicts</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c="var(--green)">{v.grant || 0} grant</Tag>
             <Tag c="var(--amber)">{v.queue || 0} queue</Tag>
@@ -932,10 +948,10 @@ export function KernelMetricsPanel() {
       {denials.slice(0, 8).map((dn, i) => (
         <Row key={i}>
           <span style={{ ...mono, color: 'var(--red)' }}>{dn.kind}</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(dn.reason || '').slice(0, 48)}</span>
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{(dn.reason || '').slice(0, 48)}</span>
         </Row>
       ))}
-      {d && d.total === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_ACTION_KERNEL is on</div>}
+      {d && d.total === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_ACTION_KERNEL is on</div>}
     </Card>
   );
 }
@@ -954,7 +970,7 @@ export function ReadinessPanel() {
       <State e={e} loading={loading} n={d ? d.total : 0} />
       {d && (
         <Row>
-          <span style={mono}>readiness</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>readiness</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c="var(--ink-2)">{bs.seam || 0} seam</Tag>
             <Tag c="var(--accent-light)">{bs.wired || 0} wired</Tag>
@@ -963,7 +979,7 @@ export function ReadinessPanel() {
           </span>
         </Row>
       )}
-      {pending && <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>harness pending · wired, not yet proven — nothing is VERIFIED until a green reality-harness promotes it</div>}
+      {pending && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>harness pending · wired, not yet proven — nothing is VERIFIED until a green reality-harness promotes it</div>}
       {caps.slice(0, 8).map((c, i) => {
         const confidence = typeof c.confidence === 'number'
           ? Math.round(Math.max(0, Math.min(1, c.confidence)) * 100) + '%' : '—';
@@ -978,7 +994,7 @@ export function ReadinessPanel() {
               <Tag c={Number(c.confidence) > 0 ? 'var(--green)' : 'var(--ink-2)'}>{confidence}</Tag>
             </span>
           </div>
-          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', marginTop: 3 }}>{supports}</div>
+          <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 3 }}>{supports}</div>
         </div>;
       })}
     </Card>
@@ -1015,7 +1031,7 @@ export function GovernancePanel() {
       <State e={e} loading={loading} n={suites.length} />
       {d && (
         <Row>
-          <span style={mono}>overall</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>overall</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c={d.pass ? 'var(--green)' : 'var(--red)'}>{typeof d.overall_score === 'number' ? Math.round(d.overall_score * 100) + '%' : '—'}</Tag>
             <Tag>≥ {typeof d.threshold === 'number' ? Math.round(d.threshold * 100) + '%' : '—'}</Tag>
@@ -1024,7 +1040,7 @@ export function GovernancePanel() {
       )}
       {suites.map((x) => (
         <Row key={x[0]}>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{x[0]}</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)' }}>{x[0]}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c={(x[1].passed === x[1].n) ? 'var(--green)' : 'var(--amber)'}>{x[1].passed}/{x[1].n}</Tag>
             <Tag>{pct(x[1])}</Tag>
@@ -1044,7 +1060,7 @@ export function PosturePanel() {
       <State e={e} loading={loading} n={d ? 1 : 0} />
       {d && (
         <>
-          <Row><span style={mono}>secrets at rest</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>secrets at rest</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {/* Three states. `encrypted_at_rest` is null when the secret store
                   could not be opened — rendering that as "plain" would be its own
@@ -1059,13 +1075,13 @@ export function PosturePanel() {
               <Tag>{sec.backend || '—'}</Tag>
             </span>
           </Row>
-          <Row><span style={mono}>skill signing</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>skill signing</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={sk.require_signed ? 'var(--green)' : 'var(--ink-2)'}>{sk.require_signed ? 'required' : 'optional'}</Tag>
               <Tag c={(sk.untrusted ?? 0) > 0 ? 'var(--amber)' : 'var(--green)'}>{sk.trusted ?? 0}/{sk.total ?? 0} trusted</Tag>
             </span>
           </Row>
-          <Row><span style={mono}>sandbox</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>sandbox</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={sb.isolated ? 'var(--green)' : 'var(--amber)'}>{sb.isolated ? 'isolated' : 'host'}</Tag>
               {sb.docker_available && <Tag>docker</Tag>}
@@ -1076,7 +1092,7 @@ export function PosturePanel() {
         </>
       )}
       {/* H165 — each switch above has a price; the flags doc names it. */}
-      <Row><a href={docHref('flags')} style={mono}>what flipping a flag costs ↗</a></Row>
+      <Row><a href={docHref('flags')} style={noteS}>what flipping a flag costs ↗</a></Row>
     </Card>
   );
 }
@@ -1107,7 +1123,7 @@ export function AuditAnchorsPanel() {
       <State e={e} loading={loading} n={d ? 1 : 0} />
       {d && (
         <>
-          <Row><span style={mono}>chain</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>chain</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {n === 0
                 ? <Tag c="var(--ink-2)">nothing anchored yet</Tag>
@@ -1119,7 +1135,7 @@ export function AuditAnchorsPanel() {
           {anchors.slice(0, 10).map((a, i) => (
             <Row key={a.anchor_hash || i}>
               <span style={{ ...mono, color: 'var(--accent-light)' }}>#{a.seq}</span>
-              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{when(a.ts)}</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{when(a.ts)}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                 <Tag>{a.source || '—'}</Tag>
                 <Tag>root {short(a.root)}</Tag>
@@ -1128,7 +1144,7 @@ export function AuditAnchorsPanel() {
             </Row>
           ))}
           <Row>
-            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>anchor the current chain head into the transparency log</span>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>anchor the current chain head into the transparency log</span>
             <button
               className="tool-btn" style={{ marginLeft: 'auto' }} title="anchor now (admin)"
               onClick={() => actA('/api/security/audit/anchor', {},
@@ -1136,8 +1152,8 @@ export function AuditAnchorsPanel() {
                 (err) => setNote(`refused · ${err?.message || 'anchor failed'}`))}
             >anchor now</button>
           </Row>
-          {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
-          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+          {note && <div role="alert" style={{ ...noteS, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
             Receipts are hash-linked, so a rewritten anchor log is detectable — but the log is
             local: anchoring pins ordering, it does not publish to a third party (H17.4).
           </div>
@@ -1167,37 +1183,37 @@ export function SelfImprovementPanel() {
       <State e={e} loading={loading} n={d ? 1 : 0} />
       {d && (
         <>
-          <Row><span style={mono}>errors (48h)</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>errors (48h)</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={(errors.active_groups ?? 0) > 0 ? 'var(--amber)' : 'var(--green)'}>{errors.active_groups ?? 0} groups</Tag>
             </span>
           </Row>
-          <Row><span style={mono}>observer</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>observer</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={observer.enabled ? 'var(--green)' : 'var(--ink-2)'}>{observer.enabled ? 'on' : 'off'}</Tag>
               <Tag>{(observer.unhealthy || []).length} unhealthy</Tag>
             </span>
           </Row>
-          <Row><span style={mono}>capability acquisition</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>capability acquisition</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={acquisition.enabled ? 'var(--green)' : 'var(--ink-2)'}>{acquisition.enabled ? 'on' : 'off'}</Tag>
               <Tag>{acquisition.status || '—'}</Tag>
             </span>
           </Row>
-          <Row><span style={mono}>ambient monitors</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>ambient monitors</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={ambient.enabled ? 'var(--green)' : 'var(--ink-2)'}>{ambient.enabled ? 'on' : 'off'}</Tag>
               <Tag>{ambient.monitors ?? 0} monitor(s)</Tag>
             </span>
           </Row>
-          <Row><span style={mono}>tech scout</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>tech scout</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={techScout.enabled ? 'var(--green)' : 'var(--ink-2)'}>{techScout.enabled ? 'on' : 'off'}</Tag>
               <Tag>{techScout.last_run ? 'ran' : 'never run'}</Tag>
             </span>
           </Row>
           {!allOn && (
-            <Row><span style={{ fontSize: 10, color: 'var(--ink-2)' }}>flip the documented owner opt-ins</span>
+            <Row><span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>flip the documented owner opt-ins</span>
               <Btn onClick={() => actA('/api/self-improvement/enable', {}, reload)}>enable bundle</Btn></Row>
           )}
         </>
@@ -1223,6 +1239,8 @@ export function SelfImprovementPanel() {
    `review_status` path for third-party skills, and merging the two surfaces would imply
    they share a mechanism they do not. */
 const reviewKey = (kind, id) => `${kind}:${id}`;
+const linkedPendingSkill = () => new URLSearchParams(window.location.hash.slice(1)).get('skill');
+const linkedSkillProposal = () => new URLSearchParams(window.location.hash.slice(1)).get('proposal');
 
 function PendingSkillDetail({ name, onReviewed }) {
   const { d, e, loading } = useApi(`/api/skills/pending/${encodeURIComponent(name)}`, true, true);
@@ -1236,14 +1254,14 @@ function PendingSkillDetail({ name, onReviewed }) {
       <State e={e} loading={loading} n={d ? files.length : undefined} />
       {d && d.review_note && <Json v={d.review_note} max={80} />}
       {warnings.length > 0 && (
-        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>
           {warnings.length} code warning(s): {[...new Set(warnings.map((w) => w.rule))].join(', ')}
         </div>
       )}
       {files.map((f) => (
         <div key={f.path} style={{ marginTop: 6 }}>
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{f.path}</span>
-          {f.size != null && <span style={{ fontSize: 10, color: 'var(--ink-2)', marginLeft: 6 }}>{f.size} B</span>}
+          {f.size != null && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginLeft: 6 }}>{f.size} B</span>}
           {f.truncated && <Tag c="var(--amber)">cut short</Tag>}
           {f.binary && <Tag c="var(--amber)">binary · not shown</Tag>}
           {f.symlink && <Tag c="var(--red)">link · not followed</Tag>}
@@ -1251,19 +1269,37 @@ function PendingSkillDetail({ name, onReviewed }) {
           {typeof f.text === 'string' && <Json v={f.text} max={260} />}
         </div>
       ))}
-      {d && d.more_files > 0 && <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>{d.more_files} more file(s) not shown</div>}
+      {d && d.more_files > 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>{d.more_files} more file(s) not shown</div>}
     </div>
   );
 }
 
 export function PendingSkillsPanel() {
+  const [reviewHash, setReviewHash] = useState(window.location.hash);
+  useEffect(() => {
+    const onHash = () => setReviewHash(window.location.hash);
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  return <PendingSkillsPanelBody key={reviewHash} />;
+}
+
+function PendingSkillsPanelBody() {
+  const linkedProposal = linkedSkillProposal();
   const { d, e, loading, reload } = useApi('/api/skills/pending', true, true);  // admin-guarded
-  const props = useApi('/api/skills/proposals', true, true);
+  const props = useApi('/api/skills/proposals' + (linkedProposal ? '?focus=' + encodeURIComponent(linkedProposal) : ''), true, true);
   const bats = useApi('/api/skills/batches', true, true);
   const pending = arr(d, 'pending');
   const proposals = arr(props.d, 'proposals');
   const batches = arr(bats.d, 'batches');
-  const [open, setOpen] = useState('');
+  const ready = d && props.d && bats.d && !e && !props.e && !bats.e
+    && !loading && !props.loading && !bats.loading;
+  const total = pending.length + proposals.length + batches.length + Math.max(0, Number(props.d?.more) || 0);
+  const linkedName = linkedPendingSkill();
+  const linked = linkedName && pending.find(skill => skill.name === linkedName);
+  const visible = linked ? [linked, ...pending.filter(skill => skill !== linked)] : pending;
+  const [open, setOpen] = useState(linkedProposal ? reviewKey('proposal', linkedProposal)
+    : linkedName ? reviewKey('skill', linkedName) : '');
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [reviewed, setReviewed] = useState<Record<string, string>>({});
   const [note, setNote] = useState(null);
@@ -1304,37 +1340,52 @@ export function PendingSkillsPanel() {
     <input type="checkbox" aria-label={`select ${label}`} checked={picked.has(k)} onChange={() => toggle(k)} />
   );
   return (
-    <Card title="GENERATED SKILLS — PENDING REVIEW" live={asLive(d)} sub={pending.length} onReload={reloadAll}>
-      <State e={e} loading={loading} n={pending.length} />
-      {pending.slice(0, 10).map((s, i) => (
-        <React.Fragment key={i}>
-          <Row>
+    <Card title="SKILLS AND PROCEDURES — PENDING REVIEW" live={ready ? 'live' : undefined}
+      sub={ready ? total : null} onReload={reloadAll}>
+      {e && <p role="alert">Pending skills could not be read · {e}</p>}
+      {props.e && <p role="alert">Skill changes could not be read · {props.e}</p>}
+      {bats.e && <p role="alert">Skill batches could not be read · {bats.e}</p>}
+      {!ready && !e && !props.e && !bats.e && <p role="status">loading…</p>}
+      {ready && total === 0 && <p role="status">nothing yet</p>}
+      {linkedProposal && !props.loading && !props.e && props.d && !proposals.some(p => p.id === linkedProposal) &&
+        <p role="status">This proposal is no longer awaiting review.</p>}
+      {linkedName && Array.isArray(d?.pending) && !linked && !loading && !e && !note &&
+        <p role="status">This skill is no longer in the pending list.</p>}
+      {visible.slice(0, 10).map(s => (
+        <React.Fragment key={s.name}>
+          <div className="pending-skill-row">
             <input type="checkbox" aria-label={`select ${s.name}`}
               checked={picked.has(reviewKey('skill', s.name))}
               onChange={() => toggle(reviewKey('skill', s.name))} />
-            <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name}</span>
-            <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(s.description || '').slice(0, 40)}</span>
-            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-              <Tag c="var(--amber)">quarantined</Tag>
-              {arr(s, 'agents').length > 0 && <Tag c="var(--ink-2)">{arr(s, 'agents').length} agent(s)</Tag>}
+            <div className="pending-skill-summary">
+              <strong>{s.name}</strong>
+              {s.description && <span>{s.description}</span>}
+              <span className="pending-skill-scope">
+                <Tag c="var(--amber)">quarantined</Tag>
+                {arr(s, 'agents').length > 0 && <span>For {arr(s, 'agents').join(', ')}</span>}
+              </span>
+            </div>
+            <div className="pending-skill-actions">
               <button className="tool-btn" title="review — read its full content (SKILL.md and code)"
-                aria-expanded={open === reviewKey('skill', s.name)} onClick={() => setOpen(open === reviewKey('skill', s.name) ? '' : reviewKey('skill', s.name))}>review</button>
+                aria-expanded={open === reviewKey('skill', s.name)} onClick={() => setOpen(open === reviewKey('skill', s.name) ? '' : reviewKey('skill', s.name))}>{open === reviewKey('skill', s.name) ? 'Hide details' : 'Review'}</button>
               <button
                 className="tool-btn"
                 title="approve — sign and activate this generated skill"
                 disabled={!reviewed[s.name]}
                 onClick={() => actA(`/api/skills/${encodeURIComponent(s.name)}/approve`,
-                  { expected_fingerprint: reviewed[s.name] }, reloadAll, failed)}
-              >✓</button>
-              <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="✕" title="discard — reject this generated skill"
+                  { expected_fingerprint: reviewed[s.name] },
+                  () => { setNote({ bad: false, text: `Approved ${s.name}` }); reloadAll(); }, failed)}
+              >Approve</button>
+              <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="Discard" title="discard — reject this generated skill"
                 ariaLabel={`discard ${s.name}`} armedLabel="discard" prompt="moves it out of the skills tree"
                 onConfirm={() => discard(s.name)} />
-            </span>
-          </Row>
+            </div>
+          </div>
           {open === reviewKey('skill', s.name) && <PendingSkillDetail name={s.name} onReviewed={recordReview} />}
         </React.Fragment>
       ))}
-      {proposals.slice(0, 10).map((p) => (
+      {(linkedProposal ? [...proposals].sort((a, b) => Number(b.id === linkedProposal) - Number(a.id === linkedProposal)) : proposals)
+        .slice(0, 10).map((p) => (
         <React.Fragment key={`p-${p.id}`}>
           <Row>
             <Pick k={reviewKey('proposal', p.id)} label={`change to ${p.skill}`} />
@@ -1363,7 +1414,7 @@ export function PendingSkillsPanel() {
       ))}
       {picked.size > 0 && (
         <div role="group" aria-label="bulk review" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{picked.size} selected</span>
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{picked.size} selected</span>
           <ConfirmAction tier={RISK_TIER.REVERSIBLE} label={`approve ${picked.size}`} title="approve every selected item"
             armedLabel={`approve ${picked.size} selected`} onConfirm={() => bulk(true)} />
           <ConfirmAction tier={RISK_TIER.REVERSIBLE} label={`reject ${picked.size}`} title="reject every selected item"
@@ -1371,11 +1422,11 @@ export function PendingSkillsPanel() {
             onConfirm={() => bulk(false)} />
         </div>
       )}
-      {note && <div role="status" style={{ fontSize: 11, marginTop: 6, color: note.bad ? 'var(--amber)' : 'var(--green)' }}>{note.text}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
-        LLM-authored code, never exec&apos;d in-process until approved — review reads it whole, ✓ signs and
-        activates it, ✕ discards it (CDX-8). Leaving a skill here is still the safe outcome.
-      </div>
+      {note && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', marginTop: 6, color: note.bad ? 'var(--amber)' : 'var(--green)' }}>{note.text}</div>}
+      {pending.length > 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
+        LLM-authored code is never exec&apos;d in-process until approved. Review the files before deciding.
+        Leaving a skill here is a safe outcome.
+      </div>}
     </Card>
   );
 }
@@ -1386,7 +1437,7 @@ export function PendingSkillsPanel() {
    look merely idle. */
 const CogModule = ({ label, s, children }: { label: any; s: any; children?: any }) => (
   <Row>
-    <span style={mono}>{label}</span>
+    <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>{label}</span>
     <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
       {s == null ? <Tag>loading…</Tag>
         : s.available === false ? <Tag c="var(--amber)">unavailable</Tag>
@@ -1430,7 +1481,7 @@ export function CognitionPanel() {
       <State e={st.e} loading={st.loading} n={st.d ? 1 : 0} />
       {st.d && (
         <>
-          <Row><span style={mono}>master</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>master</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={st.d.enabled ? 'var(--green)' : 'var(--ink-2)'}>{st.d.enabled ? 'on' : 'off'}</Tag>
               <Tag>{arr(st.d, 'modules').length} module(s) registered</Tag>
@@ -1438,7 +1489,7 @@ export function CognitionPanel() {
           </Row>
           {flagKeys.map((k) => (
             <Row key={k}>
-              <span style={mono}>{k.replace(/_enabled$/, '')}</span>
+              <span style={{ ...LABEL, fontSize: 'var(--n-fs-label)' }}>{k.replace(/_enabled$/, '')}</span>
               <span style={{ marginLeft: 'auto' }}>
                 <Tag c={flags[k] ? 'var(--green)' : 'var(--ink-2)'}>{flags[k] ? 'on' : 'off'}</Tag>
               </span>
@@ -1467,7 +1518,7 @@ export function CognitionPanel() {
             <Tag>{arr(ens.d, 'agents').length} agent(s)</Tag>
             <Tag>diversity {num(ens.d && ens.d.diversity)}</Tag>
           </CogModule>
-          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
             The modules are registered and reporting even while the flags are off — the flags
             gate cognition behaviour, not these reads. No toggle here: the cognition flags are
             admin settings (cognition.*), not an endpoint.
@@ -1506,7 +1557,7 @@ export function SwarmPanel() {
       <State e={e} loading={loading} n={d ? 1 : 0} />
       {d && (
         <>
-          <Row><span style={mono}>kernel</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>kernel</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={d.halted === true ? 'var(--red)' : d.halted === false ? 'var(--green)' : undefined}>
                 {d.halted === true ? 'HALTED' : d.halted === false ? 'armed' : '—'}
@@ -1514,13 +1565,13 @@ export function SwarmPanel() {
               <Tag>{activeAgents}/{agents.length} agents active</Tag>
             </span>
           </Row>
-          <Row><span style={mono}>autonomy</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>autonomy</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag>{autonomy.mode || '—'}</Tag>
               <Tag c={(autonomy.pending_count ?? 0) > 0 ? 'var(--amber)' : 'var(--green)'}>{autonomy.pending_count ?? 0} pending</Tag>
             </span>
           </Row>
-          <Row><span style={mono}>workspaces</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>workspaces</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag>{missions.length} missions</Tag>
               <Tag>{runs.length} workflow runs</Tag>
@@ -1528,13 +1579,13 @@ export function SwarmPanel() {
             </span>
           </Row>
           {a2a.enabled && (
-            <Row><span style={mono}>a2a inbox</span>
+            <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>a2a inbox</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                 <Tag c={(a2a.pending ?? 0) > 0 ? 'var(--amber)' : 'var(--green)'}>{a2a.pending ?? 0} pending</Tag>
               </span>
             </Row>
           )}
-          <Row><span style={mono}>dev swarm</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>dev swarm</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
               {locks.available ? knownDev.map((name) => {
                 const on = lockedAgents.some((l) => l.agent === name && !l.stale);
@@ -1750,7 +1801,7 @@ export function SubAgentsPanel() {
       <State e={e} loading={loading} n={d ? 1 : 0} />
       {d && (
         <>
-          <Row><span style={mono}>capacity</span>
+          <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>capacity</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               <Tag c={atCap ? 'var(--amber)' : 'var(--green)'}>{stats.active ?? 0}/{stats.cap ?? '—'} active</Tag>
               {atCap && <Tag c="var(--amber)">at cap</Tag>}
@@ -1759,7 +1810,7 @@ export function SubAgentsPanel() {
             </span>
           </Row>
           {gate && (
-            <Row><span style={mono}>new sub-agents</span>
+            <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>new sub-agents</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                 {gate.halted && <Tag c="var(--red)">{HALTS[gate.halted] || 'stopped'}</Tag>}
                 {gate.paused && <Tag c="var(--amber)">paused</Tag>}
@@ -1776,7 +1827,7 @@ export function SubAgentsPanel() {
             <React.Fragment key={s.id || i}>
               <Row>
                 <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.id}</span>
-                <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(s.task || '').slice(0, 40)}</span>
+                <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{String(s.task || '').slice(0, 40)}</span>
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                   <Tag>{s.agent || 'sub'}</Tag>
                   {s.selection && s.selection.model && (
@@ -1811,13 +1862,13 @@ export function SubAgentsPanel() {
               </Row>
               {transcriptFor === s.id && transcript && (
                 <div style={{ margin: '2px 0 6px 8px', padding: 6, border: '1px solid var(--panel-line)', borderRadius: 4 }}>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 10 }}>
-                    <span style={mono}>transcript · {transcript.events.length} event(s)</span>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--n-fs-meta)' }}>
+                    <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>transcript · {transcript.events.length} event(s)</span>
                     <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => openTranscript(s.id, transcript.next)}>tail next</button>
                   </div>
                   {transcript.events.length === 0
-                    ? <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>no transcript events recorded yet</div>
-                    : <ul aria-label={`transcript for ${s.id}`} style={{ listStyle: 'none', margin: '4px 0 0', padding: 0, fontSize: 10, ...mono }}>
+                    ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>no transcript events recorded yet</div>
+                    : <ul aria-label={`transcript for ${s.id}`} style={{ listStyle: 'none', margin: '4px 0 0', padding: 0, fontSize: 'var(--n-fs-meta)', ...mono }}>
                         {transcript.events.map((ev, idx) => (
                           <li key={ev.seq ?? idx}>{ev.kind || ev.type || 'event'}{ev.tool ? ` · ${ev.tool}` : ''}{ev.status ? ` · ${ev.status}` : ''}{ev.detail ? ` · ${ev.detail}` : ''}</li>
                         ))}
@@ -1826,14 +1877,15 @@ export function SubAgentsPanel() {
               )}
               {resultFor === s.id && fullResult && (
                 <div style={{ margin: '2px 0 6px 8px', padding: 6, border: '1px solid var(--panel-line)', borderRadius: 4 }}>
-                  <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>durable result · reading here does not consume claim delivery</div>
-                  <pre style={{ fontSize: 10, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: '4px 0 0' }}>
+                  <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>durable result · reading here does not consume claim delivery</div>
+                  {/* A <pre> defaults to the browser's monospace: the result's text inherits the interface face, JSON takes the theme's mono. */}
+                  <pre style={{ ...(typeof fullResult.result === 'string' ? { fontFamily: 'inherit' } : mono), fontSize: 'var(--n-fs-meta)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: '4px 0 0' }}>
                     {typeof fullResult.result === 'string' ? fullResult.result : JSON.stringify(fullResult, null, 2)}
                   </pre>
                 </div>
               )}
               {s.status === 'failed' && s.failure && (
-                <div style={{ ...mono, fontSize: 10, color: 'var(--red)', margin: '0 0 4px 8px' }}>
+                <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', margin: '0 0 4px 8px' }}>
                   {s.failure.error}{s.failure.detail ? ` · ${s.failure.detail}` : ''}
                 </div>
               )}
@@ -1854,7 +1906,7 @@ export function SubAgentsPanel() {
             </React.Fragment>
           ))}
           <Row>
-            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>unclaimed completions</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>unclaimed completions</span>
             <button
               className="tool-btn" style={{ marginLeft: 'auto' }}
               title="claim finished sub-agent results not yet consumed"
@@ -1862,7 +1914,7 @@ export function SubAgentsPanel() {
             >claim completed</button>
           </Row>
           {claimedOut && claimedOut.length > 0 && (
-            <ul aria-label="claimed completions" style={{ listStyle: 'none', margin: '4px 0', padding: 0, fontSize: 10, ...mono }}>
+            <ul aria-label="claimed completions" style={{ listStyle: 'none', margin: '4px 0', padding: 0, fontSize: 'var(--n-fs-meta)', ...noteS }}>
               {claimedOut.map((row, idx) => (
                 <li key={row.id || row.spawn_id || idx}>{(row.spawn_id || row.id || '?')} · {row.status || 'done'}{row.summary ? ` · ${String(row.summary).slice(0, 80)}` : ''}</li>
               ))}
@@ -1896,23 +1948,23 @@ export function SubAgentsPanel() {
               disabled={pending || !batchTasks.length || batchTasks.length > 16} onClick={runBatch}
             >run batch</button>
           </Row>
-          {batchTasks.length > 16 && <div style={{ ...mono, fontSize: 10, color: 'var(--red)' }}>a batch holds at most 16 tasks</div>}
+          {batchTasks.length > 16 && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)' }}>a batch holds at most 16 tasks</div>}
           {batchOut && batchOut.summary && (
-            <div role="status" style={{ ...mono, marginTop: 6, fontSize: 11 }}>
+            <div role="status" style={{ ...noteS, marginTop: 6, fontSize: 'var(--n-fs-meta)' }}>
               batch · {batchOut.summary.done} done · {batchOut.summary.failed} failed · {batchOut.summary.refused} refused
             </div>
           )}
           {batchOut && batchOut.notice && (
-            <div role="alert" style={{ ...mono, marginTop: 6, fontSize: 11, color: 'var(--red)' }}>{batchOut.notice.message}</div>
+            <div role="alert" style={{ ...noteS, marginTop: 6, fontSize: 'var(--n-fs-meta)', color: 'var(--red)' }}>{batchOut.notice.message}</div>
           )}
-          {pending && <div role="status" style={{ ...mono, marginTop: 6, color: 'var(--amber)' }}>spawning… the connection is held for the whole turn</div>}
-          {note && <div role="alert" style={{ ...mono, marginTop: 6, color: /^(refused|failed)/.test(note) ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+          {pending && <div role="status" style={{ ...noteS, marginTop: 6, color: 'var(--amber)' }}>spawning… the connection is held for the whole turn</div>}
+          {note && <div role="alert" style={{ ...noteS, marginTop: 6, color: /^(refused|failed)/.test(note) ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
           {guard && (
             <button className="tool-btn" style={{ marginTop: 6 }} disabled={pending}
               title="confirm this model and send the same request again" onClick={confirmGuard}
             >confirm ({guard.needs.join(', ')}) and send</button>
           )}
-          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
             Spawning is long-running, not fire-and-forget: the POST runs the sub-agent inline and
             the request stays open until the sub-agent&apos;s turn finishes. Cap, recursion-depth and
             budget refusals all answer 429 — the capacity row above says which limit is tight.
@@ -1977,11 +2029,11 @@ export function SystemMapPanel() {
               return (
                 <g key={ed.id}>
                   <path d={mapEdgePath(byId[ed.from], byId[ed.to])} fill="none"
-                    stroke={hot ? 'var(--accent-light)' : 'var(--line)'} strokeWidth={1.6} />
+                    stroke={hot ? 'var(--accent-light)' : 'var(--panel-line)'} strokeWidth={1.6} />
                   {act && (
                     <text x={(ax + bx) / 2} y={(ay === by ? ay : (ay + by) / 2) - 7}
                       textAnchor="middle" fill={hot ? 'var(--accent-light)' : 'var(--ink-2)'}
-                      style={{ font: '11px var(--font-mono)' }}>{act.count}</text>
+                      style={{ font: 'var(--n-fs-meta) var(--font-mono)' }}>{act.count}</text>
                   )}
                 </g>
               );
@@ -1995,20 +2047,20 @@ export function SystemMapPanel() {
                   onClick={() => { if (n.href) window.open(internalLink(n.href), '_blank', 'noopener'); }}>
                   <title>{`${n.label} — ${info.status}\n${Object.entries(info.stats || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n')}`}</title>
                   <rect x={n.pos[0]} y={n.pos[1]} width={n.size[0]} height={n.size[1]} rx={6}
-                    fill="var(--panel, rgba(255,255,255,0.03))" stroke={stroke} strokeWidth={1.6}
+                    fill="var(--surface-2)" stroke={stroke} strokeWidth={1.6}
                     opacity={info.status === 'off' ? 0.55 : 1}
                     strokeDasharray={info.status === 'unknown' ? '4 3' : undefined} />
                   <text x={n.pos[0] + n.size[0] / 2} y={n.pos[1] + 27} textAnchor="middle"
-                    fill="var(--ink-1, var(--ink-2))" style={{ font: '600 13px var(--font-mono)' }}>{n.label}</text>
+                    fill="var(--ink-2)" style={{ font: '600 var(--n-fs-ui) var(--n-font-label)' }}>{n.label}</text>
                   <text x={n.pos[0] + n.size[0] / 2} y={n.pos[1] + 45} textAnchor="middle"
                     fill={statusTextColor}
-                    style={{ font: '11px var(--font-mono)' }}>{info.status}</text>
+                    style={{ font: 'var(--n-fs-meta) var(--n-font-label)' }}>{info.status}</text>
                 </g>
               );
             })}
           </svg>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-            <span style={{ ...mono, color: 'var(--ink-2)', fontSize: 10 }}>topology {topo.version} · unknown never renders green</span>
+            <span style={{ ...noteS, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>topology {topo.version} · unknown never renders green</span>
             <a className="tool-btn" href={internalLink("/map")} target="_blank" rel="noopener noreferrer">open wall map →</a>
           </div>
         </>
@@ -2036,7 +2088,7 @@ export function ArenaPanel() {
           </span>
         </Row>
       ))}
-      {rows.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>no matches yet · run an arena comparison to rank models</div>}
+      {rows.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>no matches yet · run an arena comparison to rank models</div>}
     </Card>
   );
 }
@@ -2050,7 +2102,7 @@ export function QualityPanel() {
       <State e={e} loading={loading} n={typeof st.n === 'number' ? st.n : (d ? 1 : 0)} />
       {d && (
         <Row>
-          <span style={mono}>alert threshold</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>alert threshold</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c={st.alerting ? 'var(--red)' : 'var(--green)'}>{st.alerting ? 'ALERTING' : 'ok'}</Tag>
             <Tag>{typeof st.threshold === 'number' ? st.threshold.toFixed(2) : '—'}</Tag>
@@ -2087,7 +2139,7 @@ export function MeshPeersPanel() {
       <State e={e} loading={loading} n={peers.length} />
       {peers.slice(0, 12).map((p, i) => (
         <Row key={p.peer_id ?? i}>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{p.name || p.peer_id}</span>
+          <span style={{ ...(p.name ? noteS : mono), color: 'var(--ink-2)' }}>{p.name || p.peer_id}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {p.secret_hint && <Tag>{p.secret_hint}</Tag>}
             {/* H563: a credential is not permission — suspend a peer without revoking it */}
@@ -2099,11 +2151,11 @@ export function MeshPeersPanel() {
         </Row>
       ))}
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-        <input value={pid} onChange={(ev) => setPid(ev.target.value)} placeholder="peer_id" style={{ ...inpS, flex: 1 }} />
+        <input value={pid} onChange={(ev) => setPid(ev.target.value)} placeholder="peer_id" style={{ ...inpS, ...MONO, flex: 1 }} />
         <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="name" style={{ ...inpS, flex: 1 }} />
         <button className="tool-btn" onClick={add}>add</button>
       </div>
-      {secret && <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>shared secret (shown once): <span style={mono}>{secret}</span></div>}
+      {secret && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>shared secret (shown once): <span style={mono}>{secret}</span></div>}
     </Card>
   );
 }
@@ -2125,7 +2177,7 @@ export function OraclePanel() {
           <span style={{ marginLeft: 'auto' }}><Tag c={c.resolved ? 'var(--green)' : 'var(--amber)'}>{c.resolved ? 'resolved' : 'conflict'}</Tag></span>
         </Row>
       ))}
-      {conflicts.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>in sync · no conflicts</div>}
+      {conflicts.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)', marginTop: 6 }}>in sync · no conflicts</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
         <button className="tool-btn" onClick={syncNow}>sync now</button>
         {conflicts.length > 0 && <button className="tool-btn" onClick={clearResolved}>clear resolved</button>}
@@ -2156,10 +2208,10 @@ export function SatellitesPanel() {
         </Row>
       ))}
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-        <input value={sid} onChange={(ev) => setSid(ev.target.value)} placeholder="device id (pair a phone as a mic)" style={{ ...inpS, flex: 1 }} />
+        <input value={sid} onChange={(ev) => setSid(ev.target.value)} placeholder="device id (pair a phone as a mic)" style={{ ...inpS, ...MONO, flex: 1 }} />
         <button className="tool-btn" onClick={pair}>pair</button>
       </div>
-      {sats.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>no satellites · pair a phone/device to use it as a mic</div>}
+      {sats.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>no satellites · pair a phone/device to use it as a mic</div>}
     </Card>
   );
 }
@@ -2215,14 +2267,14 @@ export function A2AInboxPanel() {
   return <Card title="A2A APPROVAL INBOX" live={asLive(d)} sub={items.length} onReload={reload}>
     <State e={e} loading={loading} n={items.length} />
     {/* H563: the peer's text as the hub defanged and framed it (banner dropped here) */}
-    {items.slice(0, 10).map((it, i) => <Row key={i}><span style={mono}>{it.peer_id || it.peer || '?'}</span><span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{String(it.view || '').split('\n\n').slice(1).join(' ').slice(0, 40)}</span>
+    {items.slice(0, 10).map((it, i) => <Row key={i}><span style={mono}>{it.peer_id || it.peer || '?'}</span><span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{String(it.view || '').split('\n\n').slice(1).join(' ').slice(0, 40)}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
         {/* PNL-106: the API body is {approve} — {approved} 422'd invisibly */}
         <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approve: true }, reload)}>✓</button>
         <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approve: false }, reload)}>✕</button>
       </span></Row>)}
     <Row>
-      <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>verified peer tasks land here; never auto-execute (H16.2)</span>
+      <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>verified peer tasks land here; never auto-execute (H16.2)</span>
       <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={togglePeers}>{peersOpen ? 'hide peers' : 'outbound peers'}</button>
     </Row>
     {peersOpen && (
@@ -2230,7 +2282,7 @@ export function A2AInboxPanel() {
         {peers.map((p, idx) => (
           <Row key={p.peer_id || idx}>
             <span style={mono}>{p.peer_id}</span>
-            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{(p.outbound && p.outbound.url) || 'inbound only'}</span>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{(p.outbound && p.outbound.url) || 'inbound only'}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
               <button className="tool-btn" onClick={() => { setPeerId(p.peer_id || ''); setPeerUrl((p.outbound && p.outbound.url) || ''); setAllowLan(!!(p.outbound && p.outbound.allow_lan)); }}>select</button>
               {p.outbound && p.outbound.url && (
@@ -2241,7 +2293,7 @@ export function A2AInboxPanel() {
         ))}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
           <Row>
-            <input aria-label="peer id" placeholder="peer id" value={peerId} onChange={(ev) => setPeerId(ev.target.value)} style={{ ...inpS, width: 120 }} />
+            <input aria-label="peer id" placeholder="peer id" value={peerId} onChange={(ev) => setPeerId(ev.target.value)} style={{ ...inpS, ...MONO, width: 120 }} />
             <input aria-label="peer outbound url" placeholder="https://peer.example.test" value={peerUrl} onChange={(ev) => setPeerUrl(ev.target.value)} style={{ ...inpS, flex: 1 }} />
           </Row>
           <Row>
@@ -2253,12 +2305,12 @@ export function A2AInboxPanel() {
             <input aria-label="peer tenant" placeholder="tenant (optional)" value={tenant} onChange={(ev) => setTenant(ev.target.value)} style={{ ...inpS, width: 110 }} />
           </Row>
           <Row>
-            <label style={{ fontSize: 10, display: 'flex', gap: 4, alignItems: 'center' }}><input type="checkbox" checked={keepToken} onChange={(ev) => setKeepToken(ev.target.checked)} /> keep stored token</label>
-            <label style={{ fontSize: 10, display: 'flex', gap: 4, alignItems: 'center' }}><input type="checkbox" checked={allowLan} onChange={(ev) => setAllowLan(ev.target.checked)} /> allow LAN literal</label>
+            <label style={{ fontSize: 'var(--n-fs-meta)', display: 'flex', gap: 4, alignItems: 'center' }}><input type="checkbox" checked={keepToken} onChange={(ev) => setKeepToken(ev.target.checked)} /> keep stored token</label>
+            <label style={{ fontSize: 'var(--n-fs-meta)', display: 'flex', gap: 4, alignItems: 'center' }}><input type="checkbox" checked={allowLan} onChange={(ev) => setAllowLan(ev.target.checked)} /> allow LAN literal</label>
             <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!peerId.trim() || !peerUrl.trim()} onClick={saveOutbound}>save outbound</button>
           </Row>
         </div>
-        {peerNote && <div role="alert" style={{ ...mono, fontSize: 10, marginTop: 4, color: peerNote.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{peerNote}</div>}
+        {peerNote && <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 4, color: peerNote.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{peerNote}</div>}
       </div>
     )}
   </Card>;
@@ -2288,8 +2340,8 @@ export function MarketplacePanel() {
         {s.review_status !== 'rejected' && <button className="tool-btn" title="reject skill" onClick={() => actA('/api/skills/marketplace/review', { name: s.name, status: 'rejected' }, reload)}>✕</button>}
         <button className="tool-btn" title="roll back to the previous package" onClick={() => actA(`/api/skills/marketplace/${encodeURIComponent(s.name)}/rollback`, {}, (r) => { setNote(`${s.name} · restored ${(r && r.restored_version) || '?'} ← ${(r && r.previous_version) || '?'}`); reload(); }, (err) => setNote(`refused · ${refusalReason(err, 'rollback failed')}`))}>⟲</button>
       </span></Row>)}
-    {note && <div role="alert" style={{ ...mono, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>signed + moderated — ✓/✕ sets review status (anti-ClawHub, H12.12).
+    {note && <div role="alert" style={{ ...noteS, marginTop: 6, color: note.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{note}</div>}
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>signed + moderated — ✓/✕ sets review status (anti-ClawHub, H12.12).
       ⟲ reverts the registry package to its archived prior version and is itself reversible; the
       installed skill is unchanged until it is re-installed through the moderation gate.</div>
   </Card>;
@@ -2316,15 +2368,15 @@ function EvalPanel() {
     <State e={e} loading={loading} n={ds.length} />
     {ds.slice(0, 8).map((x, i) => <Row key={i}>
       <span style={{ ...mono, cursor: 'pointer', color: open === x.name ? 'var(--accent)' : 'var(--ink)' }} onClick={() => showRuns(x.name)} title="show recent runs">{x.name}</span>
-      <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>v{x.latest_version ?? x.version ?? '?'} · {x.cases ?? x.count ?? '?'}</span>
+      <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>v{x.latest_version ?? x.version ?? '?'} · {x.cases ?? x.count ?? '?'}</span>
       <Btn onClick={() => act('/api/eval/datasets/run', { name: x.name }, reload)}>run</Btn></Row>)}
     {open && <div style={{ marginTop: 6 }}>
-      <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)' }}>{open.toUpperCase()} · RECENT RUNS</div>
-      {runs.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>no recorded runs</div>}
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{open.toUpperCase()} · RECENT RUNS</div>
+      {runs.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>no recorded runs</div>}
       {runs.map((r, i) => <Row key={i}><span style={mono}>{(r.run_id || r.id || r.ts || '').toString().slice(0, 19)}</span>
-        <span style={{ marginLeft: 'auto', ...mono, fontSize: 10, color: 'var(--accent-light)' }}>μ {r.mean_score ?? r.score ?? '—'}</span></Row>)}
+        <span style={{ marginLeft: 'auto', ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)' }}>μ {r.mean_score ?? r.score ?? '—'}</span></Row>)}
       {runs.length >= 2 && <button className="tool-btn" style={{ marginTop: 6 }} onClick={compare}>compare last two</button>}
-      {cmp && <div style={{ ...mono, fontSize: 10.5, marginTop: 6 }}>
+      {cmp && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6 }}>
         {/* WFL-078/PNB-018: the API emits `regressed`/`improved` (lists of case
             names) — the old `regressions`/`improvements` keys made a real
             regression render as "0 regression(s)". */}
@@ -2355,9 +2407,9 @@ export function ReviewPanel() {
     <State e={e} loading={loading} n={q.length} />
     {q.slice(0, 10).map((it, i) => {
       const id = it.id || it.trace_id;
-      return <Row key={i}><span style={{ fontSize: 11 }}>{(it.text_preview || it.preview || it.text || '').slice(0, 38)}</span>
+      return <Row key={i}><span style={{ fontSize: 'var(--n-fs-meta)' }}>{(it.text_preview || it.preview || it.text || '').slice(0, 38)}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-          {note && note.id === id && <span style={{ fontSize: 10, color: note.ok ? 'var(--green)' : 'var(--red)' }}>{note.text}</span>}
+          {note && note.id === id && <span style={{ fontSize: 'var(--n-fs-meta)', color: note.ok ? 'var(--green)' : 'var(--red)' }}>{note.text}</span>}
           {it.in_dataset
             ? <Tag c="var(--green)">in dataset</Tag>
             : <button className="tool-btn" title="promote to eval dataset" onClick={() => promote(id)}>⇪</button>}
@@ -2365,7 +2417,7 @@ export function ReviewPanel() {
           <button className="tool-btn" onClick={() => act(`/api/review/${id}/vote`, { verdict: 'down' }, reload)}>👎</button>
         </span></Row>;
     })}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
       ⇪ promotes a reviewed turn into the `review_flagged` eval dataset (H9.3b). An item with no
       prompt is refused rather than replayed empty (WFL-088); a refusal shows on its own row.
     </div>
@@ -2384,9 +2436,9 @@ function APMPanel() {
 function SchedulePanel() {
   const [text, setText] = useState('every weekday at 7am'); const [out, setOut] = useState(null);
   return <Card title="NL SCHEDULING" live={'live'}>
-    <input value={text} onChange={(e) => setText(e.target.value)} style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...mono }} />
+    <input value={text} onChange={(e) => setText(e.target.value)} style={{ width: '100%', background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, ...noteS }} />
     <button className="tool-btn" style={{ marginTop: 6 }} onClick={() => act('/api/schedule/parse', { text }, (r) => setOut(r))}>parse → cron</button>
-    {out && <div style={{ ...mono, fontSize: 11, color: 'var(--accent-light)', marginTop: 6 }}>{out.cron || out.error || JSON.stringify(out)}</div>}
+    {out && <div style={{ ...(!out.cron && out.error ? noteS : mono), fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{out.cron || out.error || JSON.stringify(out)}</div>}
   </Card>;
 }
 
@@ -2400,7 +2452,7 @@ function HeartbeatPanel() {
     {list.slice(0, 12).map((h, i) => { const id = h.agent_id || h.agent || h.id; const on = h.running ?? h.active ?? (h.status === 'running' || h.status === 'started'); return <Row key={i}>
       <span style={mono}>{id}</span>
       <Tag c={on ? 'var(--green)' : 'var(--ink-2)'}>{on ? 'running' : 'stopped'}</Tag>
-      <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{h.schedule || h.interval || ''}</span>
+      <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{h.schedule || h.interval || ''}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
         <button className="tool-btn" title="run once now" onClick={() => hb(id, 'run')}>▶ now</button>
         {on ? <button className="tool-btn" title="stop schedule" onClick={() => hb(id, 'stop')}>⏹</button>
@@ -2419,12 +2471,12 @@ function TranscriptPanel() {
       <input value={src} onChange={(ev) => setSrc(ev.target.value)} placeholder="source (optional)" style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={ingest}>ingest</button>
     </div>
-    {out != null && (typeof out === 'string' ? <div style={{ ...mono, fontSize: 11, color: 'var(--ink-2)', marginTop: 6 }}>{out}</div>
-      : <div style={{ ...mono, fontSize: 11, color: 'var(--accent-light)', marginTop: 6 }}>
+    {out != null && (typeof out === 'string' ? <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>{out}</div>
+      : <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>
         {(out.items || out.tasks || []).length} action item(s) {out.enqueued != null ? `· ${out.enqueued} queued for approval` : '· preview only (queue offline)'}
         {(out.items || out.tasks || []).slice(0, 5).map((it, i) => <div key={i} style={{ color: 'var(--ink-2)' }}>· {(it.title || it.text || it).toString().slice(0, 60)}</div>)}
       </div>)}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>governed — every item is an ask-tier task you approve (H12.25)</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>governed — every item is an ask-tier task you approve (H12.25)</div>
   </Card>;
 }
 function EscalationPanel() {
@@ -2440,8 +2492,8 @@ function EscalationPanel() {
       <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder="escalation message" onKeyDown={(ev) => { if (ev.key === 'Enter') send(); }} style={{ ...inpS, flex: 1 }} />
       <button className="tool-btn" onClick={send}>send</button>
     </div>
-    {out && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', marginTop: 6 }}>{JSON.stringify(out).slice(0, 140)}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>governed channels only (H12.11) · admin</div>
+    {out && <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>{JSON.stringify(out).slice(0, 140)}</div>}
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>governed channels only (H12.11) · admin</div>
   </Card>;
 }
 function TemplatesPanel() {
@@ -2452,10 +2504,10 @@ function TemplatesPanel() {
   const inst = (tpl) => act('/api/agent-templates/instantiate', { template: tpl.id || tpl.name || tpl, name: name || undefined }, (r) => setOut(r.config || r));
   return <Card title="AGENT TEMPLATES" live={asLive(d)} sub={tpls.length} onReload={reload}>
     <State e={e} loading={loading} n={tpls.length} />
-    {tpls.slice(0, 8).map((tp, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{tp.id || tp.name || tp}</span><span style={{ fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(tp.description || tp.role || '').slice(0, 36)}</span><Btn onClick={() => inst(tp)}>instantiate</Btn></Row>)}
+    {tpls.slice(0, 8).map((tp, i) => <Row key={i}><span style={{ ...mono, color: 'var(--accent-light)' }}>{tp.id || tp.name || tp}</span><span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(tp.description || tp.role || '').slice(0, 36)}</span><Btn onClick={() => inst(tp)}>instantiate</Btn></Row>)}
     <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="new agent name (optional)" style={{ ...inpS, width: '100%', marginTop: 8 }} />
     {out && <Json v={out} />}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>a preview of an agents.yaml config + SOUL skeleton — create the agent from the Agents roster (+ New agent), which keeps it (H10.29, H202)</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>a preview of an agents.yaml config + SOUL skeleton — create the agent from the Agents roster (+ New agent), which keeps it (H10.29, H202)</div>
   </Card>;
 }
 
@@ -2475,7 +2527,7 @@ export function WorkflowsPanel() {
       <State e={e} loading={loading} n={rows.length} />
       {rows.slice(0, 12).map((w, i) => (
         <Row key={w.id ?? i}>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{w.name || w.id}</span>
+          <span style={{ ...noteS, color: 'var(--ink-2)' }}>{w.name || w.id}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag>{(w.steps || []).length} steps</Tag>
             <button className="tool-btn" onClick={() => run(w.id)}>run</button>
@@ -2483,7 +2535,7 @@ export function WorkflowsPanel() {
           </span>
         </Row>
       ))}
-      {out && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{out}</div>}
+      {out && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{out}</div>}
     </Card>
   );
 }
@@ -2576,13 +2628,13 @@ export function WorkflowBuilderPanel() {
       <button className="tool-btn" type="button" disabled={!gen} onClick={addStep} aria-label="add step to draft">add step to draft</button>
     </div>
     {gen != null && <Json v={gen} max={110} />}
-    <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>DRAFT</div>
+    <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '10px 0 4px' }}>DRAFT</div>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
       <select aria-label="workflow to edit" value={existing ? wid : ''} onChange={(ev) => pick(ev.target.value)} style={inpS}>
         <option value="">new workflow…</option>
         {rows.map((w, i) => <option key={w.id ?? i} value={w.id}>{w.name || w.id}</option>)}
       </select>
-      <input aria-label="workflow draft id" value={wid} onChange={(ev) => setWid(ev.target.value)} placeholder="id" style={inpS} />
+      <input aria-label="workflow draft id" value={wid} onChange={(ev) => setWid(ev.target.value)} placeholder="id" style={{ ...inpS, ...MONO }} />
       <input aria-label="workflow draft name" value={name} onChange={(ev) => setName(ev.target.value)} placeholder="name" style={inpS} />
       <input aria-label="workflow draft description" value={desc2} onChange={(ev) => setDesc2(ev.target.value)} placeholder="description" style={inpS} />
     </div>
@@ -2591,13 +2643,13 @@ export function WorkflowBuilderPanel() {
       value={stepsText}
       onChange={(ev) => setStepsText(ev.target.value)}
       spellCheck={false}
-      style={{ ...taS, marginTop: 6 }}
+      style={{ ...codeS, marginTop: 6 }}
     />
     <button className="tool-btn" style={{ marginTop: 6 }} type="button" onClick={save} aria-label="save workflow">
       {existing ? 'save workflow (update)' : 'save workflow'}
     </button>
-    {note && <div role="status" style={{ ...mono, fontSize: 10, color: note.startsWith('refused') || note.startsWith('steps must') ? 'var(--red)' : 'var(--accent-light)', marginTop: 6 }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>generate → add to draft → save (admin) · the steps JSON is the editor of record for router/critic/loop/subflow configs (H10.7)</div>
+    {note && <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: note.startsWith('refused') || note.startsWith('steps must') ? 'var(--red)' : 'var(--accent-light)', marginTop: 6 }}>{note}</div>}
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>generate → add to draft → save (admin) · the steps JSON is the editor of record for router/critic/loop/subflow configs (H10.7)</div>
   </Card>;
 }
 /* DRA-08 Phase 3, console half. `SandboxExecuteBody.tools` was added so the governed
@@ -2660,19 +2712,19 @@ export function SandboxPanel() {
   const insecure = st?.insecure_host_exec;
   const shellWithTools = tools && lang !== 'python';
   return <Card title="SANDBOX" live={asLive(st)} sub={st ? (st.backend || st.active_backend || (st.docker ? 'docker' : 'subprocess')) : null} onReload={reload}>
-    {insecure && <div style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>⚠ host-exec fallback active — code runs WITHOUT isolation</div>}
-    <textarea value={code} onChange={(ev) => setCode(ev.target.value)} placeholder={lang === 'python' ? 'print("hello from the sandbox")' : 'echo hello'} style={taS} spellCheck={false} />
+    {insecure && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginBottom: 6 }}>⚠ host-exec fallback active — code runs WITHOUT isolation</div>}
+    <textarea value={code} onChange={(ev) => setCode(ev.target.value)} placeholder={lang === 'python' ? 'print("hello from the sandbox")' : 'echo hello'} style={codeS} spellCheck={false} />
     <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
       <select value={lang} onChange={(ev) => setLang(ev.target.value)} style={inpS}><option value="python">python</option><option value="shell">shell</option></select>
-      <label style={{ ...mono, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4, color: rpcAvailable ? 'var(--ink-2)' : 'var(--ink-2)' }}
+      <label style={{ ...noteS, fontSize: 'var(--n-fs-meta)', display: 'flex', alignItems: 'center', gap: 4, color: rpcAvailable ? 'var(--ink-2)' : 'var(--ink-2)' }}
         title={rpcAvailable ? 'run through the governed ToolRPC pipeline (python only)' : 'the governed runtime is not attached on this server — the route would refuse with 503'}>
         <input type="checkbox" checked={tools} disabled={!rpcAvailable} onChange={(ev) => setTools(ev.target.checked)} />
         governed tools
       </label>
       <button className="tool-btn" onClick={run}>execute</button>
     </div>
-    {shellWithTools && <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>shell + governed tools will be refused 422 — the pipeline is python-only</div>}
-    {out != null && (typeof out === 'string' ? <div style={{ ...mono, fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>{out}</div>
+    {shellWithTools && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>shell + governed tools will be refused 422 — the pipeline is python-only</div>}
+    {out != null && (typeof out === 'string' ? <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>{out}</div>
       : <>
         <Json v={(out.stdout || out.output || '') + (out.stderr ? '\n[stderr] ' + out.stderr : '') || out} />
         {/* Only rendered when the governed run actually reported them — an absent
@@ -2680,7 +2732,7 @@ export function SandboxPanel() {
             the pipeline, and a "0 tools" line would read as governed and idle. */}
         {(out.tool_calls != null || out.timed_out != null) && (
           <Row>
-            <span style={mono}>governed</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>governed</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {out.tool_calls != null && <Tag>{out.tool_calls} tool calls</Tag>}
               {out.timed_out != null && <Tag c={out.timed_out ? 'var(--red)' : 'var(--green)'}>{out.timed_out ? 'timed out' : 'completed'}</Tag>}
@@ -2688,14 +2740,14 @@ export function SandboxPanel() {
           </Row>
         )}
       </>)}
-    {ks && <div style={{ marginTop: 8, borderTop: '1px solid var(--line)', paddingTop: 6 }}>
-      <Row><span style={mono}>session kernel</span>
+    {ks && <div style={{ marginTop: 8, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
+      <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>session kernel</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
           <Tag c={sessionMode ? 'var(--green)' : 'var(--ink-2)'}>{ks.mode || 'unknown'}</Tag>
           {!sessionMode && ks.reason && <Tag>{ks.reason}</Tag>}
         </span>
       </Row>
-      {kernel ? <Row><span style={mono}>yours</span>
+      {kernel ? <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>yours</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
           <Tag>{kernel.cells_run} cells</Tag>
           <Tag>idle {Math.round(kernel.idle_seconds)}s</Tag>
@@ -2704,13 +2756,13 @@ export function SandboxPanel() {
           </Tag>
         </span>
       </Row>
-        : <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+        : <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
           {sessionMode ? 'no kernel yet — the first cell starts one' : 'each call runs in its own container'}
         </div>}
       {sessionMode && <button className="tool-btn" style={{ marginTop: 6 }} onClick={resetKernel}>reset kernel</button>}
-      {resetNote && <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>{resetNote}</div>}
+      {resetNote && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>{resetNote}</div>}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
       Docker-isolated execution, audited (DEV_MODE gate){rpc && !rpcAvailable ? ' · governed tools unavailable on this server' : ''}
     </div>
   </Card>;
@@ -2793,16 +2845,16 @@ export function ScreenReflexPanel() {
     onReload={vlm.reload}
   >
     {vlm.d && !configured && (
-      <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 6 }}>
         no VLM configured · {vlm.d.reason || 'set JARVIS_VLM_BACKEND'} — the reflex will refuse rather than guess
       </div>
     )}
     {configured && !isLocal && (
-      <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>
+      <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginBottom: 6 }}>
         {vlm.d.base_url} is not loopback — the route refuses it (a local VLM on the Nerva server is required)
       </div>
     )}
-    {policyMessages.map((message) => <div key={message} role="status" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>{message}</div>)}
+    {policyMessages.map((message) => <div key={message} role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 6 }}>{message}</div>)}
     <div onPaste={onPaste}>
       <input
         aria-label="screenshot image file"
@@ -2811,7 +2863,7 @@ export function ScreenReflexPanel() {
         onChange={(ev) => { const f = ev.target.files && ev.target.files[0]; if (f) readBlob(f, f.name); }}
         style={{ ...inpS, width: '100%' }}
       />
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
         {img ? `loaded · ${imgName}` : 'pick a screenshot, or paste one here (⌘/Ctrl+V)'}
       </div>
     </div>
@@ -2831,19 +2883,19 @@ export function ScreenReflexPanel() {
       style={{ ...inpS, width: '100%', marginTop: 6 }}
     />
     {generated && (
-      <div style={{ ...mono, fontSize: 11, color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.answer}</div>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.answer}</div>
     )}
     {generated && out.mode === 'ground' && elements.map((el, i) => (
       <Row key={`${el.label}:${i}`}>
-        <span style={{ ...mono, color: 'var(--accent-light)' }}>{`${el.label} · (${el.x}, ${el.y})`}</span>
+        <span style={{ ...noteS, color: 'var(--accent-light)' }}>{`${el.label} · (${el.x}, ${el.y})`}</span>
         <span style={{ marginLeft: 'auto' }}><Tag>{el.source || 'vlm'}</Tag></span>
       </Row>
     ))}
     {out && !generated && (
-      <div role="alert" style={{ ...mono, fontSize: 11, color: 'var(--ink-2)', marginTop: 8 }}>{typeof out.reason === 'string' && out.reason.trim() ? out.reason.slice(0, 500) : 'no answer'}</div>
+      <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 8 }}>{typeof out.reason === 'string' && out.reason.trim() ? out.reason.slice(0, 500) : 'no answer'}</div>
     )}
-    {note && <div role="status" style={{ ...mono, fontSize: 10, color: note.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+    {note && <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: note.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
       screen bytes are held in memory and sent to the local VLM on the Nerva server · the global hotkey + OS-level grab stay host-gated
     </div>
   </Card>;
@@ -2863,9 +2915,9 @@ export function LearningPanel() {
   const promote = (id) => { if (!id) return; actA('/learning/promote', { bench_agent: id }, (r) => { setNote(r?.promoted ? 'promoted ' + id : 'not promoted'); setAgent(''); reload(); }); };
   return <Card title="LEARNING · BENCH" live={asLive(d)} sub={cands.length} onReload={reload}>
     <State e={e} loading={loading} n={cands.length} />
-    {cands.slice(0, 8).map((c, i) => { const id = c.agent || c.bench_agent || c.id || (typeof c === 'string' ? c : ''); return <Row key={i}><span style={mono}>{id}</span><span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{c.trigger || c.reason || c.uses || ''}</span><Btn onClick={() => promote(id)}>promote</Btn></Row>; })}
+    {cands.slice(0, 8).map((c, i) => { const id = c.agent || c.bench_agent || c.id || (typeof c === 'string' ? c : ''); return <Row key={i}><span style={mono}>{id}</span><span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{c.trigger || c.reason || c.uses || ''}</span><Btn onClick={() => promote(id)}>promote</Btn></Row>; })}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-      <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="bench agent id (e.g. bruce)" style={{ ...inpS, flex: 1 }} />
+      <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="bench agent id (e.g. bruce)" style={{ ...inpS, ...MONO, flex: 1 }} />
       <button className="tool-btn" onClick={() => promote(agent.trim().toLowerCase())}>promote</button>
     </div>
     <div style={{ display: 'flex', gap: 8, marginTop: 6, alignItems: 'center' }}>
@@ -2884,8 +2936,8 @@ export function LearningPanel() {
             });
         }}
       >propose prompt optimizations</button>
-      {note && <span style={{ fontSize: 10, color: 'var(--green)' }}>{note}</span>}
-      {evolveNote && <span role="status" style={{ fontSize: 10, color: evolveNote.startsWith('refused') ? 'var(--red)' : 'var(--ink-2)' }}>{evolveNote}</span>}
+      {note && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)' }}>{note}</span>}
+      {evolveNote && <span role="status" style={{ fontSize: 'var(--n-fs-meta)', color: evolveNote.startsWith('refused') ? 'var(--red)' : 'var(--ink-2)' }}>{evolveNote}</span>}
     </div>
   </Card>;
 }
@@ -2945,13 +2997,13 @@ export function LMStudioPanel() {
         </span>
       </Row>;
     })}
-    {note && <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
-    {vlmD && <div role="status" style={{ ...mono, fontSize: 10, color: vlmD.configured ? 'var(--ink-2)' : 'var(--ink-2)', marginTop: 6 }}>
+    {note && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
+    {vlmD && <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: vlmD.configured ? 'var(--ink-2)' : 'var(--ink-2)', marginTop: 6 }}>
       VLM · {vlmD.configured
         ? `${vlmD.backend} · ${vlmD.default_model || 'no default model'} · ${vlmD.local ? 'local' : 'remote'} · reachable not probed`
         : `off · ${vlmD.reason || 'not configured'}`}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>configured routing is independent from provider-reported residency · lifecycle actions follow backend capabilities</div>
   </Card>;
 }
 /* DRA-29 — browser-picked images are sent as data: URIs to the strict-loopback
@@ -3021,21 +3073,21 @@ export function VlmDescribePanel() {
   >
     <State e={e} loading={loading} n={null} />
     {vlmD && !configured && (
-      <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 6 }}>
         VLM off · {vlmD.reason || 'not configured'} — configure JARVIS_VLM_BACKEND / JARVIS_VLM_URL
       </div>
     )}
     {configured && isLocal && (
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginBottom: 6 }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
         {destination} · loopback · reachable not probed
       </div>
     )}
     {configured && !isLocal && (
-      <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginBottom: 6 }}>
+      <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginBottom: 6 }}>
         refused · {destination} is not loopback — a local VLM on the Nerva server is required
       </div>
     )}
-    {policyMessages.map((message) => <div key={message} role="status" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginBottom: 6 }}>{message}</div>)}
+    {policyMessages.map((message) => <div key={message} role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 6 }}>{message}</div>)}
     <input
       aria-label="image files to describe"
       type="file"
@@ -3066,16 +3118,16 @@ export function VlmDescribePanel() {
         onClick={describe}
         title={configured && !isLocal ? 'refused · destination must be loopback' : 'describe the picked image(s)'}
       >describe</button>
-      <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{images.length}/{VLM_MAX_IMAGES} image(s)</span>
+      <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{images.length}/{VLM_MAX_IMAGES} image(s)</span>
     </div>
     {described && (
       <>
-        <div style={{ ...mono, fontSize: 11, color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.response}</div>
-        <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>model · {out.model || 'unnamed'}</div>
+        <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink)', marginTop: 8, whiteSpace: 'pre-wrap' }}>{out.response}</div>
+        <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>model · {out.model || 'unnamed'}</div>
       </>
     )}
-    {note && <div role="status" style={{ ...mono, fontSize: 10, color: /^(refused|describe failed)/.test(note) ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+    {note && <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: /^(refused|describe failed)/.test(note) ? 'var(--red)' : 'var(--amber)', marginTop: 6 }}>{note}</div>}
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
       images are read in the browser into data: URIs — the backend rejects file paths, so no host file can be smuggled through this control
     </div>
   </Card>;
@@ -3090,12 +3142,12 @@ export function AuthProfilesPanel() {
     <State e={e} loading={loading} n={list.length} />
     {list.slice(0, 8).map((p, i) => <Row key={i}>
       <span style={mono}>{p.provider || p.name || '?'}</span>
-      <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{p.active || p.current || ''}</span>
+      <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{p.active || p.current || ''}</span>
       <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
         <Tag c={(p.healthy ?? p.ok ?? true) ? 'var(--green)' : 'var(--red)'}>{p.keys != null ? p.keys + ' key(s)' : (p.healthy ?? p.ok ?? true) ? 'healthy' : 'failing'}</Tag>
         {p.cooldown ? <Tag c="var(--amber)">cooldown</Tag> : null}
       </span></Row>)}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>masked rotation/failover pools (H12.20) · keys never shown</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>masked rotation/failover pools (H12.20) · keys never shown</div>
   </Card>;
 }
 export function OAuthPanel() {
@@ -3154,7 +3206,7 @@ export function OAuthPanel() {
       </span></Row>)}
     <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--panel-line)' }}>
       <Row>
-        <span style={mono}>Nous Portal</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>Nous Portal</span>
         <input aria-label="Nous profile" value={nousProfile} onChange={(ev) => setNousProfile(ev.target.value)} placeholder="default" style={{ ...inpS, width: 96 }} />
         {nousState && (
           <Tag c={nousState.usable ? 'var(--green)' : nousState.authenticated ? 'var(--amber)' : 'var(--ink-2)'}>
@@ -3168,18 +3220,18 @@ export function OAuthPanel() {
         </span>
       </Row>
       {nousLogin && (
-        <div style={{ fontSize: 10.5, marginTop: 4 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>
           <span style={mono}>code: {nousLogin.user_code}</span> ·{' '}
           <a href={nousLogin.verification_uri_complete || nousLogin.verification_uri} target="_blank" rel="noopener noreferrer">open Nous Portal</a>
           <button className="tool-btn" style={{ marginLeft: 8 }} onClick={pollNous}>poll Nous</button>
         </div>
       )}
-      {nousNote && <div role="alert" style={{ ...mono, fontSize: 10, marginTop: 4, color: nousNote.startsWith('refused') ? 'var(--red)' : 'var(--ink-2)' }}>{nousNote}</div>}
+      {nousNote && <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 4, color: nousNote.startsWith('refused') ? 'var(--red)' : 'var(--ink-2)' }}>{nousNote}</div>}
     </div>
   </Card>;
 }
 function settingsField(it, val, on, suggest?: string[]) {
-  const ip = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: '3px 6px', ...mono, fontSize: 11 };
+  const ip = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: '3px 6px', ...mono, fontSize: 'var(--n-fs-meta)' };
   // H613: a text setting with known choices (voice.tts_voice: the Piper voices, the command
   // provider) offers them, and still takes any value typed.
   if (suggest && suggest.length && (it.kind === 'text' || !it.kind)) {
@@ -3285,11 +3337,11 @@ export function SettingsPanel() {
     {billingView ? <UsagePanel /> : <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
     <State e={e} loading={loading} n={Object.keys(cats).length} />
     <SettingsSearch value={query} onChange={setQuery} matches={nMatches} />
-    {query.trim() && nMatches === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>no setting matches “{query.trim()}”</div>}
+    {query.trim() && nMatches === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>no setting matches “{query.trim()}”</div>}
     <div style={{ maxHeight: 300, overflow: 'auto' }}>
       {shownCats.map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 6 }}>
-          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.16em', color: 'var(--ink-2)', margin: '6px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '6px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>{String(cat).toUpperCase()}</span>
             {(cats[cat] || []).some((it) => it.source !== 'undeclared') && (
               <span style={{ marginLeft: 'auto' }}><ResetCategory cat={cat} count={(cats[cat] || []).length} onDone={(c) => afterReset([c])} /></span>
@@ -3299,16 +3351,16 @@ export function SettingsPanel() {
           {cat === 'voice' && <VoiceCommands />}
           {(items || []).map((it) => (
             <Row key={it.key}>
-              <span style={{ fontSize: 11, color: 'var(--ink-2)', flex: '0 0 46%' }} title={it.key}>{it.label || it.key}</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', flex: '0 0 46%' }} title={it.key}>{it.label || it.key}</span>
               {costs[`${cat}.${it.key}`] && (
                 <a href={docHref('flags', costs[`${cat}.${it.key}`])} target="_blank" rel="noopener noreferrer"
-                  style={{ ...mono, fontSize: 9.5 }} title="what flipping this costs (FLAGS.md)">cost ↗</a>
+                  style={{ ...noteS, fontSize: 'var(--n-fs-meta)' }} title="what flipping this costs (FLAGS.md)">cost ↗</a>
               )}
               {/* H259: a setting that differs from its declared default says so, and ↺ stages the
                   default for the next save (a secret carries no default, so never). */}
               {!it.written_by && !it.managed && 'default' in it && JSON.stringify(valOf(cat, it)) !== JSON.stringify(it.default) && <>
-                <span title={`default: ${shownSetting(it.default)}`} style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>changed</span>
-                <button className="tool-btn" style={{ padding: '0 5px', fontSize: 9.5 }} title={`default: ${shownSetting(it.default)}`}
+                <span title={`default: ${shownSetting(it.default)}`} style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>changed</span>
+                <button className="tool-btn" style={{ padding: '0 5px', fontSize: 'var(--n-fs-meta)' }} title={`default: ${shownSetting(it.default)}`}
                   aria-label={`put ${cat}.${it.key} back to its default`} onClick={() => setVal(cat, it.key, it.default)}>↺</button>
               </>}
               {/* review-H329 F1: a setting only its own route writes (the skill switches) is
@@ -3317,14 +3369,14 @@ export function SettingsPanel() {
                   it, never an edit box; the hub refuses a write that would change it. */}
               {it.managed
                 ? <span data-testid="managed-setting" style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                    <span style={{ ...mono, fontSize: 11 }}>{shownSetting(it.value)}</span>
-                    <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-2)' }}
+                    <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{shownSetting(it.value)}</span>
+                    <span style={{ display: 'block', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}
                       title={it.managed.source}>🔒 managed by your administrator{it.managed.leaves && it.managed.leaves.length ? ` (${it.managed.leaves.join(', ')})` : ''}</span>
                   </span>
                 : it.written_by
                 ? <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                    <span style={{ ...mono, fontSize: 11 }}>{shownSetting(it.value)}</span>
-                    <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-2)' }}>change it in {it.written_by}</span>
+                    <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{shownSetting(it.value)}</span>
+                    <span style={{ display: 'block', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>change it in {it.written_by}</span>
                   </span>
                 : <span style={{ marginLeft: 'auto' }}>{settingsField(it, valOf(cat, it), (v) => setVal(cat, it.key, v),
                     cat === 'voice' && it.key === 'tts_voice' ? voiceChoices : undefined)}</span>}
@@ -3334,9 +3386,9 @@ export function SettingsPanel() {
       ))}
     </div>
     {nDirty > 0 && <button className="tool-btn" style={{ marginTop: 8 }} onClick={save}>💾 save {nDirty} change{nDirty === 1 ? '' : 's'}{nHidden ? ` (${nHidden} hidden by the search)` : ''}</button>}
-    {saved != null && <span style={{ fontSize: 10, color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
-    {refused.map((r) => <div key={r} role="alert" style={{ ...mono, fontSize: 10, color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
-    {sent.length > 0 && <div data-testid="sent-to-approvals" role="status" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>
+    {saved != null && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)', marginLeft: 8 }}>updated {saved}</span>}
+    {refused.map((r) => <div key={r} role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 4 }}>not saved · {r}</div>)}
+    {sent.length > 0 && <div data-testid="sent-to-approvals" role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>
       {sent.map((line) => <div key={line}>{line}</div>)}
     </div>}
     {guard.view}
@@ -3358,7 +3410,7 @@ function PromptsPanel() {
   const [note, setNote] = useState('');
   const a = pick[0], b = pick[1];
   const base = '/api/admin/prompts/' + agent;
-  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11 };
+  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 'var(--n-fs-meta)' };
 
   const onAgent = (v) => { setAgent(v); setPick([]); setDiff(null); setAb(null); setEdit(null); setPreview(null); setNote(''); };
   const toggle = (vn) => setPick((p) => p.includes(vn) ? p.filter((x) => x !== vn) : [...p, vn].slice(-2));
@@ -3384,7 +3436,7 @@ function PromptsPanel() {
         <span onClick={() => toggle(vn)} style={{ ...mono, cursor: 'pointer', color: slot ? 'var(--accent)' : 'var(--accent-light)' }} title="pick A/B">v{vn}</span>
         {slot && <Tag c="var(--accent)">{slot}</Tag>}
         {v.is_current && <Tag c="var(--green)">current</Tag>}
-        <span style={{ fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v.message}>{(v.message || v.author || v.hash || '').slice(0, 22)}</span>
+        <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v.message}>{(v.message || v.author || v.hash || '').slice(0, 22)}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
           <button className="tool-btn" onClick={() => loadEdit(vn)} title="edit → new version">✎</button>
           {!v.is_current && <button className="tool-btn" onClick={() => rollback(vn)} title="rollback to this">⟲</button>}
@@ -3394,29 +3446,29 @@ function PromptsPanel() {
     <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       <button className="tool-btn" onClick={doDiff} disabled={a == null || b == null}>diff {a ?? '·'}↔{b ?? '·'}</button>
       <button className="tool-btn" onClick={doAB} disabled={a == null || b == null}>A/B {a ?? '·'}↔{b ?? '·'}</button>
-      {note && <span style={{ fontSize: 10, color: 'var(--green)' }}>{note}</span>}
+      {note && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)' }}>{note}</span>}
     </div>
     {diff != null && <DiffView text={diff === '…' ? '' : diff} />}
-    {ab && <div style={{ ...mono, fontSize: 10.5, marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
-      <div style={{ color: 'var(--ink-2)', letterSpacing: '.1em' }}>A/B · v{ab.a} vs v{ab.b} · split {Math.round((ab.split ?? 0.5) * 100)}% → B</div>
-      {[ab.a, ab.b].map((ver) => { const r = (ab.results || {})[ver] || {}; const m = (ab.means || {})[ver]; return <Row key={ver}><span>v{ver}{ab.winner === ver ? ' ★' : ''}</span><span style={{ marginLeft: 'auto', color: 'var(--ink-2)' }}>n={r.n ?? 0} · μ={m == null ? '—' : m}</span></Row>; })}
+    {ab && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+      <div style={{ color: 'var(--ink-2)' }}>A/B · v{ab.a} vs v{ab.b} · split {Math.round((ab.split ?? 0.5) * 100)}% → B</div>
+      {[ab.a, ab.b].map((ver) => { const r = (ab.results || {})[ver] || {}; const m = (ab.means || {})[ver]; return <Row key={ver}><span style={MONO}>v{ver}{ab.winner === ver ? ' ★' : ''}</span><span style={{ ...MONO, marginLeft: 'auto', color: 'var(--ink-2)' }}>n={r.n ?? 0} · μ={m == null ? '—' : m}</span></Row>; })}
     </div>}
     {edit && <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 4 }}>editing from v{edit.version} → commits a NEW version (non-destructive)</div>
-      <textarea value={edit.content} onChange={(ev) => setEdit({ ...edit, content: ev.target.value })} style={{ width: '100%', minHeight: 110, ...inp }} />
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>editing from v{edit.version} → commits a NEW version (non-destructive)</div>
+      <textarea value={edit.content} onChange={(ev) => setEdit({ ...edit, content: ev.target.value })} style={{ width: '100%', minHeight: 110, ...inp, fontFamily: 'var(--n-font-ui)' }} />
       <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-        <input value={edit.message} onChange={(ev) => setEdit({ ...edit, message: ev.target.value })} placeholder="commit message" style={{ ...inp, flex: 1, minWidth: 120 }} />
+        <input value={edit.message} onChange={(ev) => setEdit({ ...edit, message: ev.target.value })} placeholder="commit message" style={{ ...inp, fontFamily: 'var(--n-font-ui)', flex: 1, minWidth: 120 }} />
         <button className="tool-btn" onClick={doPreview}>preview</button>
         <button className="tool-btn" onClick={doCommit} title="save a version only; the persona in use does not change">commit</button>
         <button className="tool-btn" onClick={doApply} title="save a version and make it the live persona">apply</button>
         <button className="tool-btn" onClick={() => { setEdit(null); setPreview(null); }}>✕</button>
       </div>
       {preview && <div style={{ marginTop: 6 }}>
-        <div style={{ ...mono, fontSize: 10, color: preview.valid ? 'var(--green)' : 'var(--amber)' }}>+{preview.added_lines} −{preview.removed_lines} · {preview.valid ? 'valid' : 'warn: ' + (preview.warnings || []).join('; ')}</div>
+        <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: preview.valid ? 'var(--green)' : 'var(--amber)' }}>+{preview.added_lines} −{preview.removed_lines} · {preview.valid ? 'valid' : 'warn: ' + (preview.warnings || []).join('; ')}</div>
         <DiffView text={preview.diff} />
       </div>}
     </div>}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback (an agent's rollback is live) · commit saves a version, apply makes it live (H10.22, H156)</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>click v# to pick A/B · ✎ edit · ⟲ rollback (an agent's rollback is live) · commit saves a version, apply makes it live (H10.22, H156)</div>
   </Card>;
 }
 export function RoomsPanel() {
@@ -3430,7 +3482,7 @@ export function RoomsPanel() {
   const hist = useApi(sel ? '/api/rooms/' + encodeURIComponent(sel) + '/history' : '/api/rooms', Boolean(sel));
   const rep = useApi(sel ? `/api/rooms/${encodeURIComponent(sel)}/replica-state` : '/api/rooms', Boolean(sel));
   const turns = arr(hist.d, 'history');
-  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11, flex: 1 };
+  const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 'var(--n-fs-meta)', flex: 1 };
   const create = () => { if (!name.trim()) return; apiPost('/api/rooms', { name: name.trim() }).then(() => { setName(''); reload(); }).catch(() => {}); };
   const send = () => {
     if (!sel || !msg.trim()) return;
@@ -3483,37 +3535,37 @@ export function RoomsPanel() {
   const repData: any = rep.d || {};
   return <Card title="ROOMS" live={asLive(d)} sub={rooms.length} onReload={reload}>
     <State e={e} loading={loading} n={rooms.length} />
-    {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: sel === (r.id || r.name) ? 'var(--accent)' : 'var(--accent-light)', cursor: 'pointer' }} onClick={() => { setSel(r.id || r.name); setFailoverNote(''); }}>{r.name || r.id}</span>{r.authority_role && <Tag c={r.authority_role === 'fenced' ? 'var(--warn, #e07a5f)' : 'var(--ink-2)'}>{r.authority_role}·e{r.authority_epoch ?? 1}</Tag>}<span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{(r.agents || []).join(', ')}</span></Row>)}
+    {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: sel === (r.id || r.name) ? 'var(--accent)' : 'var(--accent-light)', cursor: 'pointer' }} onClick={() => { setSel(r.id || r.name); setFailoverNote(''); }}>{r.name || r.id}</span>{r.authority_role && <Tag c={r.authority_role === 'fenced' ? 'var(--amber)' : 'var(--ink-2)'}>{r.authority_role}·e{r.authority_epoch ?? 1}</Tag>}<span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{(r.agents || []).join(', ')}</span></Row>)}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="new room" style={inp} />
       <button className="tool-btn" onClick={create}>+ room</button>
     </div>
     {sel && <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-      <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder={'message ' + sel + ' (@agent)'} onKeyDown={(ev) => { if (ev.key === 'Enter') send(); }} style={inp} />
+      <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder={'message ' + sel + ' (@agent)'} onKeyDown={(ev) => { if (ev.key === 'Enter') send(); }} style={{ ...inp, fontFamily: 'var(--n-font-ui)' }} />
       <button className="tool-btn" onClick={send}>send</button>
       <button className="tool-btn" onClick={() => setShowFailover((v) => !v)} title="H657 room replica failover and fencing">{showFailover ? 'hide failover' : 'failover'}</button>
     </div>}
     {sel && showFailover && <div style={{ marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
-        <Tag c={repData.authority_role === 'fenced' ? 'var(--warn, #e07a5f)' : 'var(--accent-light)'}>{repData.authority_role || 'owner'} · epoch {repData.authority_epoch ?? 1}</Tag>
-        <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>host {repData.authority_host || 'local'} · seq {repData.last_seq ?? 0}</span>
+        <Tag c={repData.authority_role === 'fenced' ? 'var(--amber)' : 'var(--accent-light)'}>{repData.authority_role || 'owner'} · epoch {repData.authority_epoch ?? 1}</Tag>
+        <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>host {repData.authority_host || 'local'} · seq {repData.last_seq ?? 0}</span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={exportLogPage}>export page</button>
         <button className="tool-btn" onClick={ingestReplicaPage}>replicate</button>
         <button className="tool-btn" onClick={demoteRoom}>fence/demote</button>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <label style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 4 }}>
           <input type="checkbox" checked={confirmPromote} onChange={(ev) => setConfirmPromote(ev.target.checked)} />
           confirm epoch+1 takeover
         </label>
         <button className="tool-btn" disabled={!confirmPromote} onClick={promoteRoom}>promote replica</button>
       </div>
       <textarea value={failoverJson} onChange={(ev) => setFailoverJson(ev.target.value)} rows={3} placeholder="paste room log page JSON (replicate) or fencing proof JSON (demote)" style={{ ...inp, width: '100%', resize: 'vertical' }} />
-      {failoverNote && <div style={{ ...mono, fontSize: 10, color: 'var(--accent-light)', marginTop: 4 }}>{failoverNote}</div>}
+      {failoverNote && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 4 }}>{failoverNote}</div>}
     </div>}
     {sel && <div style={{ marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-        <span style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)' }}>HISTORY · {sel}</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>HISTORY · <span style={IDENT}>{sel}</span></span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} title="reload room history" onClick={hist.reload}>↻</button>
       </div>
       <State e={hist.e} loading={hist.loading} n={turns.length} />
@@ -3523,8 +3575,8 @@ export function RoomsPanel() {
         const ts = t.at || t.created_at || t.ts || '';
         return <Row key={i}>
           <Tag c={t.role === 'assistant' ? 'var(--accent-light)' : 'var(--ink-2)'}>{label}</Tag>
-          <span style={{ ...mono, color: 'var(--ink-2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{text}</span>
-          {ts && <span style={{ ...mono, marginLeft: 'auto', fontSize: 9.5, color: 'var(--ink-2)' }}>{String(ts).slice(0, 19)}</span>}
+          <span style={{ ...noteS, color: 'var(--ink-2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{text}</span>
+          {ts && <span style={{ ...mono, marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{String(ts).slice(0, 19)}</span>}
         </Row>;
       })}
     </div>}
@@ -3551,11 +3603,11 @@ export function ActivityTimelinePanel() {
   return <Card title="ACTIVITY · what it did" live={asLive(audit.d)} sub={items.length} onReload={() => { audit.reload(); tasks.reload(); }}>
     <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>{fbtn('all', 'all')}{fbtn('audit', 'audit')}{fbtn('task', 'tasks')}</div>
     <State e={audit.e} loading={audit.loading} n={items.length} />
-    {items.length === 0 && !audit.loading && <Row><span style={{ ...mono, color: 'var(--ink-2)' }}>no activity yet — actions and decisions will appear here</span></Row>}
+    {items.length === 0 && !audit.loading && <Row><span style={{ ...noteS, color: 'var(--ink-2)' }}>no activity yet — actions and decisions will appear here</span></Row>}
     {items.map((it, i) => <Row key={i}>
       <Tag c={it.src === 'task' ? 'var(--accent-light)' : 'var(--ink-2)'}>{it.kind}</Tag>
-      <span style={{ ...mono, color: 'var(--ink-2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{it.text}</span>
-      <span style={{ ...mono, marginLeft: 'auto', fontSize: 9.5, color: 'var(--ink-2)' }}>{String(it.ts).slice(0, 19)}</span>
+      <span style={{ ...noteS, color: 'var(--ink-2)', flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{it.text}</span>
+      <span style={{ ...mono, marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{String(it.ts).slice(0, 19)}</span>
     </Row>)}
   </Card>;
 }
@@ -3564,10 +3616,10 @@ export function ActivityTimelinePanel() {
 // and Missions (governed workspaces) into one surface, plus session history and the
 // activity timeline, so the owner can run multiple subjects in parallel with history.
 // Reuses the existing panels (their data layer already works); this is the layout.
-export function ProjectsMode(_props: any) {
+export function ProjectsMode({ onDiscussResult }: { t?: unknown; onDiscussResult?: (ref: { board: string; taskId: string }) => void }) {
   return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
-    <div style={{ ...mono, fontSize: 11, letterSpacing: '.16em', color: 'var(--ink-2)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>
-    <KanbanView />
+    <div style={{ ...LABEL, textTransform: 'none', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>
+    <KanbanView onDiscussResult={onDiscussResult} />
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
       <RoomsPanel />
       <MissionsPanel />
@@ -3625,7 +3677,7 @@ export function NetworkMonitorPanel() {
       <State e={e} loading={loading} n={names.length} />
       {d && (
         <Row>
-          <span style={mono}>egress</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>egress</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c={ext > 0 ? 'var(--amber)' : 'var(--green)'}>{ext} external</Tag>
             <Tag c={model == null ? 'var(--ink-2)' : model > 0 ? 'var(--amber)' : 'var(--green)'}>
@@ -3636,11 +3688,11 @@ export function NetworkMonitorPanel() {
         </Row>
       )}
       {violations.length > 0 && (
-        <Row><span style={{ ...mono, color: 'var(--red)' }}>⚠ local-only egress: {violations.join(', ')}</span></Row>
+        <Row><span style={{ ...noteS, color: 'var(--red)' }}>⚠ local-only egress: {violations.join(', ')}</span></Row>
       )}
       {ledger && (
         <Row>
-          <span style={mono}>ledger</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>ledger</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
             {ledger.persistent
               ? <Tag c="var(--green)">{ledger.since ? `saved since ${String(ledger.since).slice(0, 10)}` : 'saved · empty'}</Tag>
@@ -3652,18 +3704,18 @@ export function NetworkMonitorPanel() {
         </Row>
       )}
       {ledger && ledger.error && (
-        <Row><span style={{ ...mono, fontSize: 10, color: 'var(--amber)' }}>ledger store: {String(ledger.error)}</span></Row>
+        <Row><span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>ledger store: {String(ledger.error)}</span></Row>
       )}
       {prompts.length > 0 && (
-        <Row><span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>where model calls went</span></Row>
+        <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>where model calls went</span></Row>
       )}
       {prompts.map((r, i) => (
         <Row key={`${r.ts}-${i}`}>
-          <span style={{ ...mono, fontSize: 11 }}>{`${r.plugin} → ${r.host || '?'}`}</span>
+          <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{`${r.plugin} → ${r.host || '?'}`}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {!r.allowed && <Tag c="var(--red)">refused</Tag>}
             {r.origin && <Tag c={EGRESS_ORIGIN_COLOR[r.origin] || 'var(--ink-2)'}>{r.origin}</Tag>}
-            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{String(r.ts || '').slice(5, 16).replace('T', ' ')}</span>
+            <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{String(r.ts || '').slice(5, 16).replace('T', ' ')}</span>
           </span>
         </Row>
       ))}
@@ -3698,7 +3750,7 @@ export function FeedbackPanel() {
       <State e={e} loading={loading} n={recent.length} />
       {d && (
         <Row>
-          <span style={mono}>nps</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>nps</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c="var(--green)">{d.promoters || 0} prom</Tag>
             <Tag c="var(--red)">{d.detractors || 0} detr</Tag>
@@ -3707,18 +3759,18 @@ export function FeedbackPanel() {
         </Row>
       )}
       {Object.keys(byKind).length > 0 && (
-        <Row><span style={mono}>by kind</span><span style={{ marginLeft: 'auto', ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{Object.entries(byKind).map(([k, v]) => `${k}:${v}`).join('  ')}</span></Row>
+        <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>by kind</span><span style={{ marginLeft: 'auto', ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{Object.entries(byKind).map(([k, v]) => `${k}:${v}`).join('  ')}</span></Row>
       )}
       {recent.slice(0, 6).map((r, i) => (
-        <Row key={i}><Tag>{r.kind}{r.score != null ? ` ${r.score}` : ''}</Tag><span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(r.message || '').slice(0, 40)}</span></Row>
+        <Row key={i}><Tag>{r.kind}{r.score != null ? ` ${r.score}` : ''}</Tag><span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{(r.message || '').slice(0, 40)}</span></Row>
       ))}
       <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
-        <span style={{ ...mono, fontSize: 10 }}>NPS</span>
-        <input type="number" min={0} max={10} value={score} onChange={(ev) => setScore(Number(ev.target.value))} style={{ ...inpS, width: 48 }} />
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>NPS</span>
+        <input type="number" min={0} max={10} value={score} onChange={(ev) => setScore(Number(ev.target.value))} style={{ ...inpS, width: 64 }} />
         <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder="comment…" style={{ ...inpS, flex: 1 }} />
         <button className="tool-btn" onClick={submit}>send</button>
       </div>
-      {sent && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 4 }}>thanks — recorded locally</div>}
+      {sent && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)', marginTop: 4 }}>thanks — recorded locally</div>}
     </Card>
   );
 }
@@ -3730,7 +3782,7 @@ export function OnboardingPanel() {
   return (
     <Card title="ONBOARDING" live={asLive(d)} sub={d ? (d.complete ? 'complete ✓' : `${done.size}/${steps.length}`) : null} onReload={reload}>
       <State e={e} loading={loading} n={steps.length} />
-      {d && d.hint && <Row><span style={{ color: 'var(--amber)', fontSize: 11 }}>⚠ {d.hint}</span></Row>}
+      {d && d.hint && <Row><span style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>⚠ {d.hint}</span></Row>}
       {steps.map((s) => {
         const ok = done.has(s.key);
         return (
@@ -3750,7 +3802,17 @@ export function OnboardingPanel() {
    accept / reject / defer, each → POST /autonomy/tasks/{id}/decision {action} (admin).
    H315 — under them, the plans the agent is working through (GET /sessions/todo).
    H318 — and the skill changes the agent proposed, each with its whole diff
-   (GET /api/skills/proposals; panels/skill-changes.tsx). */
+   (GET /api/skills/proposals; panels/skill-changes.tsx).
+   Phase B (PHASE_B_PLAN.md §5.4) — the same grading as the docket, so this page is no way
+   around it: accept, approve once and save & approve go through ConfirmAction at the task's
+   risk tier (tier 0 one click, tier 1 two steps, tiers 2–3 and an unknown tier a typed phrase
+   from docket/phrases.ts; Enter in the phrase box does nothing); "Allow always" and "reject
+   group" take two steps; reject and defer stay one click. Only a fresh press decides: a held
+   key's repeat or the second click of a double-click never confirms or rejects (by then the
+   next card may sit under the pointer), and a card's decision in flight disables its controls
+   so it is not sent twice. Every request decision is posted by api/decisions.ts, and while the
+   demo sample is on none of them is enabled; nor are the approve and reject of the skill
+   changes and skill batches below, which this page passes the demo flag (§1.4). */
 export function DecisionInboxPanel() {
   const { d, e, loading, reload } = useApi('/autonomy/tasks?status=blocked', true, true);  // admin
   useEffect(() => {
@@ -3763,9 +3825,13 @@ export function DecisionInboxPanel() {
   const groupFollowers = new Set();
   arr(d, 'groups').forEach(group => {
     const members = group.member_ids;
+    // A group is drawn as one only when "reject group" can send it back as the hub sent it
+    // (api/decisions.ts rejectGroup: an id, the snapshot, task-id members); otherwise its
+    // members are cards of their own.
     if (!Array.isArray(members) || members.length < 2 || members.length !== group.count
         || new Set(members).size !== members.length || !members.includes(group.leader_id)
-        || !members.every(id => taskIds.has(id))) return;
+        || !members.every(id => taskIds.has(id) && Number.isSafeInteger(id) && id > 0)
+        || typeof group.id !== 'string' || !group.id || typeof group.snapshot !== 'string' || !group.snapshot) return;
     groupLeaders.set(group.leader_id, group);
     members.forEach(id => { if (id !== group.leader_id) groupFollowers.add(id); });
   });
@@ -3840,6 +3906,25 @@ export function DecisionInboxPanel() {
           && typeof category.permanent === 'boolean')) return null;
     return offer;
   };
+  // While the demo sample is on, no request is decided here (api/decisions.ts would refuse too).
+  const demo = demoActive();
+  // The requests whose decision is in flight: one decision per request at a time, whatever
+  // clicks arrive before the answer (the ref answers at once; the state disables the controls).
+  const inflight = useRef(new Set<number>());
+  const [inFlight, setInFlight] = useState<ReadonlySet<number>>(new Set());
+  const hold = (ids) => {
+    if (ids.some(id => inflight.current.has(id))) return false;
+    ids.forEach(id => inflight.current.add(id));
+    setInFlight(new Set(inflight.current));
+    return true;
+  };
+  const release = (ids) => {
+    ids.forEach(id => inflight.current.delete(id));
+    setInFlight(new Set(inflight.current));
+  };
+  // A click that is the first of its sequence (or came from the keyboard): the second click of a
+  // double-click is not a decision.
+  const firstClick = (ev) => !(ev && ev.detail > 1);
   const decideConsent = (task, choice) => {
     const offer = consentOffer(task);
     if (!offer || consentPending.has(task.id)) return;
@@ -3849,107 +3934,68 @@ export function DecisionInboxPanel() {
     const settled = () => setConsentPending(previous => {
       const next = new Set(previous); next.delete(task.id); return next;
     });
-    return actA('/autonomy/tasks/' + task.id + '/consent', {
-      choice, revision: offer.revision, ...(reason ? { reason } : {}),
-    }, () => { settled(); reload(); }, err => {
+    return Promise.resolve().then(() => consentRequest(task.id, { choice, revision: offer.revision, reason })).then((outcome) => {
       settled();
-      setGroupError(err?.body?.error || err?.message || 'Consent offer changed; reload and review.');
+      if (!outcome.ok) setGroupError(outcome.reason || 'Consent offer changed; reload and review.');
       reload();
-    });
+      return outcome.ok;
+    }, () => { settled(); setGroupError('Consent offer changed; reload and review.'); return false; });
   };
   const rejectGroup = (group) => {
+    const ids = [...group.member_ids];
+    if (!hold(ids)) return Promise.resolve(false);
     setGroupError('');
     const reason = (decisionReasons[group.leader_id] || '').trim();
-    return actA('/autonomy/tasks/groups/' + encodeURIComponent(group.id) + '/reject', {
-      snapshot: group.snapshot, member_ids: group.member_ids, ...(reason ? { reason } : {}),
-    }, () => {
+    // A group the client cannot send back (it throws before posting) is said, never swallowed.
+    return Promise.resolve().then(() => rejectGroupRequest(group, reason)).then((outcome) => {
+      if (!outcome.ok) { setGroupError(outcome.reason || 'Group decision refused; reload and review.'); return false; }
       setDecisionReasons(previous => {
         const next = { ...previous }; group.member_ids.forEach(id => { delete next[id]; }); return next;
       });
       if (group.member_ids.includes(editing)) setEditing(null);
       reload();
-    }, err => setGroupError(err?.body?.error || err?.message || 'Group decision refused; reload and review.'));
+      return true;
+    }, () => { setGroupError('Group decision refused; reload and review.'); return false; })
+      .finally(() => release(ids));
   };
+  // Resolves true when the hub took the decision; a refusal keeps a confirmation armed and is
+  // said in the hub's own words. A second decision about a request in flight is not sent.
   const decide = (id, action, payload?) => {
+    if (!hold([id])) return Promise.resolve(false);
     const image = pending.some(t=>t.id===id && isImageProposal(t) && !isCatalogRefreshProposal(t));
     const reason = (decisionReasons[id] || '').trim();
-    return actA('/autonomy/tasks/' + id + '/decision',
-      { action, ...(payload !== undefined ? { payload } : {}), ...(reason ? { reason } : {}) }, () => {
-        if(image && Number.isSafeInteger(id) && id>0) setImageReturn(id);
-        setDecisionReasons(previous => { const next = { ...previous }; delete next[id]; return next; });
-        setEditing(null); reload();
-      });
+    setGroupError('');
+    return Promise.resolve().then(() => decideRequest(id, action, { ...(payload !== undefined ? { payload } : {}), reason })).then((outcome) => {
+      if (!outcome.ok) { setGroupError(outcome.reason || 'Decision refused; reload and review.'); return false; }
+      if(image && Number.isSafeInteger(id) && id>0) setImageReturn(id);
+      setDecisionReasons(previous => { const next = { ...previous }; delete next[id]; return next; });
+      setEditing(null); reload();
+      return true;
+    }, () => { setGroupError('Decision refused; reload and review.'); return false; })
+      .finally(() => release([id]));
   };
   const startEdit = (t) => { setEditing(t.id); setDraft(JSON.stringify(t.payload || {}, null, 2)); };
-  const saveEdit = (id) => { let p; try { p = JSON.parse(draft); } catch { return; } decide(id, 'edit', p); };
+  // The edited payload: a JSON object, or null while the draft is not one (save & approve waits).
+  const draftPayload = (() => {
+    try { const p = JSON.parse(draft); return p && typeof p === 'object' && !Array.isArray(p) ? p : null; } catch { return null; }
+  })();
+  const saveEdit = (id) => (draftPayload ? decide(id, 'edit', draftPayload) : false);
+  // The friction a task's accept takes (confirm.tsx confirmStyle): a non-number tier is the
+  // strictest; the typed phrase is the docket's (docket/phrases.ts), the edited amount for an edit.
+  const acceptTier = (t) => (typeof t.risk_tier === 'number' ? t.risk_tier : Number.NaN);
+  // (an edited payload decides whether the request is money, and so whether its amount is typed)
+  const acceptPhrase = (t, payload = t.payload) => phraseFor(t, tierKey(t.risk_tier, isMoney({ ...t, payload })), 'typed', 'en', payload);
   // dry-run preview (H12.5) — "see what it'll do before you approve" (the open preview endpoint)
   const [preview, setPreview] = useState(null);   // { id, data }
   const loadPreview = (id) => {
     if (preview && preview.id === id) { setPreview(null); return; }
     setPreview({ id, data: null });
-    apiGet('/api/autonomy/tasks/' + id + '/preview', { admin: true })
+    previewRequest(id)
       .then((r) => setPreview({ id, data: r || {} }))
       .catch(() => setPreview({ id, data: { error: 'preview unavailable' } }));
   };
   const tierColor = (n) => n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-2)';
-  const isCatalogRefreshProposal = (task) => task.kind === 'plugin.egress'
-    && task.payload?.plugin === 'cloud-image-deepinfra' && task.payload?.method === 'GET'
-    && task.payload?.url === 'https://api.deepinfra.com/v1/openai/models?filter=true&sort_by=hermes'
-    && task.payload?.image?.body?.operation === 'catalog_refresh'
-    && task.payload?.image?.body?.prompt === '';
-  const kreaEnhanceDetails = (task) => {
-    if (task.kind !== 'plugin.egress' || task.payload?.plugin !== 'cloud-image-krea'
-      || !task.payload?.image?.body || !task.payload?.image?.enhance) return null;
-    const {body,enhance} = task.payload.image;
-    if (Object.keys(body).sort().join(',') !== 'image_scaling_factor,image_url,model,operation,prompt,size'
-      || Object.keys(enhance).sort().join(',') !== 'artifact_id,binding,nonce,sha256,task_id'
-      || body.operation !== 'enhance' || body.image_scaling_factor !== 2
-      || !['krea-2-medium','krea-2-large','krea-2-medium-turbo'].includes(body.model)
-      || typeof body.prompt !== 'string' || !body.prompt.trim() || body.prompt.length > 4000
-      || !['1024x1024','1536x1024','1024x1536'].includes(body.size)
-      || typeof body.image_url !== 'string' || body.image_url.length > 1024
-      || !Number.isSafeInteger(enhance.task_id) || enhance.task_id < 1
-      || typeof enhance.nonce !== 'string' || !/^[a-f0-9]{16,128}$/i.test(enhance.nonce)
-      || typeof enhance.binding !== 'string' || !enhance.binding || enhance.binding.length > 256
-      || typeof enhance.artifact_id !== 'string' || !/^[a-f0-9]{32}$/.test(enhance.artifact_id)
-      || typeof enhance.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(enhance.sha256)) return null;
-    try {
-      const url = new URL(body.image_url);
-      if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.hash) return null;
-    } catch { return null; }
-    return {body,enhance};
-  };
-  const isKreaEnhanceProposal = (task) => task.payload?.method === 'POST'
-    && task.payload?.url === 'https://api.krea.ai/generate/enhance/krea/enhance'
-    && kreaEnhanceDetails(task) !== null;
-  const isKreaResumeProposal = (task) => {
-    if (task.kind !== 'plugin.egress' || task.payload?.plugin !== 'cloud-image-krea'
-      || task.payload?.method !== 'GET' || !task.payload?.image?.body) return false;
-    const resume = task.payload.image.resume;
-    return Number.isSafeInteger(resume?.task_id) && resume.task_id > 0
-      && typeof resume.nonce === 'string' && typeof resume.binding === 'string'
-      && typeof resume.job_id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(resume.job_id)
-      && (task.payload.image.body.operation !== 'enhance' || kreaEnhanceDetails(task) !== null)
-      && task.payload.url === 'https://api.krea.ai/jobs/' + resume.job_id;
-  };
-  const isCloudImageProposal = (task) => {
-    if (isCatalogRefreshProposal(task) || isKreaResumeProposal(task) || isKreaEnhanceProposal(task)) return true;
-    if (task.kind !== 'plugin.egress' || task.payload?.method !== 'POST' || !task.payload?.image?.body) return false;
-    const {plugin,url,image} = task.payload;
-    if (plugin === 'cloud-image') return ['https://api.openai.com/v1/images/generations', 'https://api.openai.com/v1/images/edits'].includes(url);
-    if (plugin === 'cloud-image-codex') return ['https://chatgpt.com/backend-api/codex/images/generations', 'https://chatgpt.com/backend-api/codex/images/edits'].includes(url);
-    if (plugin === 'cloud-image-openrouter') return ['https://openrouter.ai/api/v1/images',
-      'https://openrouter.ai/api/v1/chat/completions'].includes(url);
-    if (plugin === 'cloud-image-xai') return ['https://api.x.ai/v1/images/generations', 'https://api.x.ai/v1/images/edits'].includes(url);
-    if (plugin === 'cloud-image-deepinfra') return url === 'https://api.deepinfra.com/v1/openai/images/generations';
-    if (plugin === 'cloud-image-krea') return ({
-      'krea-2-medium': 'https://api.krea.ai/generate/image/krea/krea-2/medium',
-      'krea-2-large': 'https://api.krea.ai/generate/image/krea/krea-2/large',
-      'krea-2-medium-turbo': 'https://api.krea.ai/generate/image/krea/krea-2/medium-turbo',
-    })[image.body.model] === url;
-    return plugin === 'cloud-image-fal' && typeof image.body.endpoint === 'string'
-      && /^fal-ai\/[A-Za-z0-9_./-]{1,160}$/.test(image.body.endpoint) && url === 'https://fal.run/' + image.body.endpoint;
-  };
+  // The image-proposal predicates live in docket/special.ts (moved unchanged), shared with the docket.
   const cloudImageLabel = (task) => ({'cloud-image':'OpenAI', 'cloud-image-codex':'Codex OAuth',
     'cloud-image-fal':'FAL', 'cloud-image-openrouter':'OpenRouter', 'cloud-image-krea':'Krea',
     'cloud-image-xai':'xAI', 'cloud-image-deepinfra':'DeepInfra'}[task.payload?.plugin]);
@@ -3968,67 +4014,74 @@ export function DecisionInboxPanel() {
       });
     } catch { return []; }
   };
-  const isImageProposal = (task) => isCloudImageProposal(task) || (task.payload?.tool === 'image_generate'
-    && (task.kind === 'toolrpc.image_generate'
-      || (task.kind === 'tool.rpc' && task.payload?.target === 'image_generate')));
   return (
     <div id="decision-inbox"><Card title="DECISION INBOX" live={asLive(d)}
       sub={d ? `${pending.length} awaiting you` + (ib && ib.per_day != null ? ` · ${ib.used ?? 0}/${ib.per_day} interrupts today` : '') : null}
       onReload={() => { reload(); interrupts.reload(); plans.reload(); changes.reload(); }}>
       <State e={e} loading={loading} n={pending.length} />
+      {demo && <p role="note" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>The demo sample is on: the requests in this queue and the skill changes further down cannot be decided here. Exit the demo to decide them.</p>}
       {groupError && <div role="alert" style={{ color: 'var(--red)' }}>{groupError}</div>}
       {imageReturn && <p><a href={internalLink("/v2/console/images?image_task="+imageReturn)}>Watch decided image task</a></p>}
       {focusCard != null && !pending.some(t => t.id === focusCard) && d &&
-        <p role="status" style={{ fontSize: 11, color: 'var(--ink-2)' }}>card #{focusCard} is no longer waiting (already decided or withdrawn)</p>}
+        <p role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>card #{focusCard} is no longer waiting (already decided or withdrawn)</p>}
       {cards.slice(0, 10).map((t, i) => (
         <div key={t.id ?? i} id={t.id != null ? 'decision-card-' + t.id : undefined}
           data-focused={t.id === focusCard ? 'true' : undefined}
           style={t.id === focusCard ? { outline: '1px solid var(--accent)', borderRadius: 4 } : undefined}>
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
+            <span style={{ ...noteS, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
               {approvalModeNote(t.approval_mode, t.asked_under) &&
                 <span title={approvalModeNote(t.approval_mode, t.asked_under).why}
                   aria-label={`Approval mode for ${t.title || t.kind || ('task ' + t.id)}`}
-                  style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>
+                  style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>
                   {approvalModeNote(t.approval_mode, t.asked_under).label}</span>}
               {!isImageProposal(t) && <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>}
-              <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>{groupLeaders.has(t.id) ? 'approve once' : '✓'}</button>
-              {!isImageProposal(t) && t.kind !== VOICE_COMMAND_KIND && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
-              <button className="tool-btn" title="reject" onClick={() => decide(t.id, 'reject')}>✕</button>
-              <button className="tool-btn" title="defer" onClick={() => decide(t.id, 'defer')}>defer</button>
-              {groupLeaders.has(t.id) && <button className="tool-btn" onClick={() => rejectGroup(groupLeaders.get(t.id))}>reject group</button>}
+              <ConfirmAction tier={acceptTier(t)} className="tool-btn" title="accept" label={groupLeaders.has(t.id) ? 'approve once' : '✓'}
+                phrase={acceptPhrase(t)} enterConfirms={false} repeatConfirms={false} armedLabel="confirm accept" cancelLabel="cancel"
+                inputLabel={`type ${acceptPhrase(t)} to accept ${t.title || t.kind || ('task ' + t.id)}`}
+                groupLabel={`confirming accept of ${t.title || t.kind || ('task ' + t.id)}`}
+                disabled={demo || inFlight.has(t.id)} onConfirm={() => decide(t.id, 'accept')} />
+              {!isImageProposal(t) && t.kind !== VOICE_COMMAND_KIND && <button className="tool-btn" title="edit" disabled={demo || inFlight.has(t.id)} onClick={() => startEdit(t)}>edit</button>}
+              <button className="tool-btn" title="reject" disabled={demo || inFlight.has(t.id)} onClick={(ev) => { if (firstClick(ev)) decide(t.id, 'reject'); }}>✕</button>
+              <button className="tool-btn" title="defer" disabled={demo || inFlight.has(t.id)} onClick={(ev) => { if (firstClick(ev)) decide(t.id, 'defer'); }}>defer</button>
+              {groupLeaders.has(t.id) && <ConfirmAction tier={RISK_TIER.REVERSIBLE} className="tool-btn" label="reject group" repeatConfirms={false}
+                armedLabel={`confirm reject all ${groupLeaders.get(t.id).count}`} cancelLabel="cancel"
+                disabled={demo || groupLeaders.get(t.id).member_ids.some(id => inFlight.has(id))}
+                onConfirm={() => rejectGroup(groupLeaders.get(t.id))} />}
             </span>
           </Row>
           {typeof t.approval_deadline_at === 'string' && Number.isFinite(Date.parse(t.approval_deadline_at)) &&
             <div aria-label={`Approval deadline for ${t.title || t.kind || ('task ' + t.id)}`}
-              style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 4 }}>
+              style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 4 }}>
               Expires without a response: <time dateTime={t.approval_deadline_at}>
                 {new Date(t.approval_deadline_at).toLocaleString()}
               </time>
             </div>}
-          {groupLeaders.has(t.id) && <div style={{ ...mono, fontSize: 11, marginBottom: 4 }}>
+          {groupLeaders.has(t.id) && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginBottom: 4 }}>
             {groupLeaders.get(t.id).count} matching requests · approval applies only to this task; the next remains pending.
           </div>}
           <textarea aria-label={`Your decision reason for ${t.title || t.kind || ('task ' + t.id)}`}
             placeholder="Your decision reason (optional)" maxLength={280}
             value={decisionReasons[t.id] || ''} style={taS}
             onChange={event => setDecisionReasons(previous => ({ ...previous, [t.id]: event.target.value }))} />
-          {consentOffer(t) && <div aria-label="Reusable terminal consent" style={{ margin: '6px 0 10px 12px', fontSize: 11 }}>
+          {consentOffer(t) && <div aria-label="Reusable terminal consent" style={{ margin: '6px 0 10px 12px', fontSize: 'var(--n-fs-meta)' }}>
             {consentOffer(t).categories.map((category, index) => <div key={index}>
               {category.description}{!category.permanent && ' · session only'}
             </div>)}
             <div>Applies to {consentOffer(t).count} matching requests.</div>
             <div style={{ display: 'flex', gap: 6, marginTop: 5 }}>
-              <button className="tool-btn" disabled={consentPending.has(t.id)} onClick={() => decideConsent(t, 'session')}>Allow this session</button>
-              <button className="tool-btn" disabled={consentPending.has(t.id)} onClick={() => decideConsent(t, 'always')}>Allow always</button>
-              <button className="tool-btn" disabled={consentPending.has(t.id)} onClick={() => decideConsent(t, 'deny')}>Deny matching requests</button>
+              <button className="tool-btn" disabled={consentPending.has(t.id) || demo} onClick={(ev) => { if (firstClick(ev)) decideConsent(t, 'session'); }}>Allow this session</button>
+              <ConfirmAction tier={RISK_TIER.REVERSIBLE} className="tool-btn" label="Allow always" armedLabel="confirm allow always"
+                cancelLabel="cancel" prompt={`a standing permission for ${consentOffer(t).count} matching requests`} repeatConfirms={false}
+                disabled={consentPending.has(t.id) || demo} onConfirm={() => decideConsent(t, 'always')} />
+              <button className="tool-btn" disabled={consentPending.has(t.id) || demo} onClick={(ev) => { if (firstClick(ev)) decideConsent(t, 'deny'); }}>Deny matching requests</button>
             </div>
             {consentOffer(t).categories.some(category => !category.permanent)
               && <div>Session-only warnings stay limited to this session when you choose always.</div>}
           </div>}
-          {t.judge?.advisory === false && <div aria-label="Guardian terminal verdict" style={{ margin: '4px 0 8px 12px', fontSize: 11, overflowWrap: 'anywhere' }}>
+          {t.judge?.advisory === false && <div aria-label="Guardian terminal verdict" style={{ margin: '4px 0 8px 12px', fontSize: 'var(--n-fs-meta)', overflowWrap: 'anywhere' }}>
             <div style={{ color: 'var(--amber)' }}>
               {t.judge.decision === 'deny' ? 'Guardian denied this command' : 'Guardian escalated this command'} · awaiting your decision
             </div>
@@ -4037,7 +4090,7 @@ export function DecisionInboxPanel() {
             </div>
             <div>Your approval applies once to this task.</div>
           </div>}
-          {t.judge && t.judge.advisory !== false && <div aria-label="Advisory model opinion" style={{ margin: '4px 0 8px 12px', fontSize: 11, overflowWrap: 'anywhere' }}>
+          {t.judge && t.judge.advisory !== false && <div aria-label="Advisory model opinion" style={{ margin: '4px 0 8px 12px', fontSize: 'var(--n-fs-meta)', overflowWrap: 'anywhere' }}>
             <div style={{ color: 'var(--ink-2)' }}>Model opinion · advisory only · you decide</div>
             <div style={{ color: Number(t.judge.score) >= 70 ? 'var(--amber)' : 'var(--ink-2)' }}>
               Risk score {t.judge.score}/100 · {t.judge.judge?.provider || 'unknown provider'} · {t.judge.judge?.model || 'unknown model'} · {t.judge.judge?.local ? 'local' : 'remote'}
@@ -4049,12 +4102,12 @@ export function DecisionInboxPanel() {
             </div>}
             <blockquote style={{ margin: '4px 0', whiteSpace: 'pre-wrap', fontStyle: 'italic' }}>{t.judge.rationale || 'No rationale supplied.'}</blockquote>
           </div>}
-          {!t.judge && t.judge_pending === true && <div style={{ margin: '4px 0 8px 12px', fontSize: 11, color: 'var(--ink-2)' }}>
+          {!t.judge && t.judge_pending === true && <div style={{ margin: '4px 0 8px 12px', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             {t.judge_mode === 'smart'
               ? (judgeExpired.has(t.id) ? 'Guardian review is taking longer · refresh to check again; you can decide now.' : 'Guardian review pending · you can decide now.')
               : (judgeExpired.has(t.id) ? 'Advisory model opinion is taking longer · refresh to check again; you can decide now.' : 'Advisory model opinion pending · you can decide now.')}
           </div>}
-          {isImageProposal(t) && <div style={{ fontSize: 12, margin: '6px 0' }}>
+          {isImageProposal(t) && <div style={{ fontSize: 'var(--n-fs-label)', margin: '6px 0' }}>
             {isCatalogRefreshProposal(t) ? <>
               <p>DeepInfra catalog refresh · GET {t.payload.url}</p>
               <p>This reads the provider catalog after approval. It does not submit paid image generation.</p>
@@ -4091,12 +4144,12 @@ export function DecisionInboxPanel() {
           </div>}
           {t.kind === RETENTION_KIND && <RetentionCard task={t} />}
           {t.kind === VOICE_COMMAND_KIND && <VoiceCommandCard task={t} />}
-          {t.rollback && <div style={{ margin: '3px 0 7px 12px', fontSize: 10, color: 'var(--ink-2)' }}>
-            <div><span style={{ ...mono, color: 'var(--accent-light)' }}>rollback · </span>{t.rollback.description}</div>
+          {t.rollback && <div style={{ margin: '3px 0 7px 12px', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
+            <div><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)' }}>rollback · </span>{t.rollback.description}</div>
             {t.rollback.limitations && <div style={{ color: 'var(--amber)', marginTop: 2 }}>{t.rollback.limitations}</div>}
           </div>}
           {preview && preview.id === t.id && (
-            <div style={{ margin: '4px 0 8px 12px', fontSize: 10 }}>
+            <div style={{ margin: '4px 0 8px 12px', fontSize: 'var(--n-fs-meta)' }}>
               {preview.data === null ? <span style={{ color: 'var(--ink-2)' }}>previewing…</span>
                 : preview.data.error ? <span style={{ color: 'var(--amber)' }}>{preview.data.error}</span>
                 : (
@@ -4126,18 +4179,23 @@ export function DecisionInboxPanel() {
           )}
           {editing === t.id && (
             <div style={{ margin: '6px 0' }}>
-              <textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} style={{ ...taS, minHeight: 80 }} />
-              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                <button className="tool-btn" onClick={() => saveEdit(t.id)}>save &amp; approve</button>
+              <textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} style={{ ...codeS, minHeight: 80 }} />
+              {!draftPayload && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>the payload is not a JSON object yet</div>}
+              <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                <ConfirmAction tier={acceptTier(t)} className="tool-btn" label="save & approve"
+                  phrase={acceptPhrase(t, draftPayload ?? t.payload)} enterConfirms={false} repeatConfirms={false}
+                  armedLabel="confirm save & approve" cancelLabel="cancel"
+                  inputLabel={`type ${acceptPhrase(t, draftPayload ?? t.payload)} to save and approve ${t.title || t.kind || ('task ' + t.id)}`}
+                  disabled={demo || !draftPayload} onConfirm={() => saveEdit(t.id)} />
                 <button className="tool-btn" onClick={() => setEditing(null)}>cancel</button>
               </div>
             </div>
           )}
         </div>
       ))}
-      {pending.length === 0 && <div style={{ fontSize: 10, color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
-      <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} />
-      <SkillBatchesInbox reply={batches.d} error={batches.e} onDecided={batches.reload} />
+      {pending.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)', marginTop: 6 }}>all clear · no decisions waiting</div>}
+      <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} demo={demo} />
+      <SkillBatchesInbox reply={batches.d} error={batches.e} onDecided={batches.reload} demo={demo} />
       <SkillBatchEditor onApplied={batches.reload} />
       <SkillConsolidation onProposed={batches.reload} />
       <PlansInFlight reply={plans.d} error={plans.e} />
@@ -4160,7 +4218,7 @@ export function MissionsPanel() {
       <State e={e} loading={loading} n={missions.length} />
       {missions.slice(0, 12).map((m, i) => (
         <Row key={m.id ?? i}>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{m.title || '(untitled)'}</span>
+          <span style={{ ...noteS, color: 'var(--ink-2)' }}>{m.title || '(untitled)'}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c={statusColor(m.status)}>{m.status}</Tag>
             <Tag>{m.steps_used ?? 0}/{m.max_steps ?? '—'}</Tag>
@@ -4178,9 +4236,32 @@ export function MissionsPanel() {
    AutonomyPolicy.agent_modes enforceable (one agent AUTO/ASK/OFF while the rest follow
    the global mode) but there was no control surface. This is it: GET /autonomy/policy
    shows the global mode + each per-agent override; POST sets one; mode=default clears it
-   (falls back to global). Admin-guarded. Complements the global AutonomyMode in modes2. */
+   (falls back to global). Admin-guarded. Complements the global AutonomyMode in modes2.
+   Phase B (PHASE_B_PLAN.md §4.2, §0.5): an agent made to ask less — a looser override, or a cleared
+   one that falls back to a looser global mode — takes two steps (ConfirmAction tier 1), decided on
+   the policy asked again at the press, never on the last read; a stricter one is one click, as in
+   the running head and Work › Autonomy. While the demo sample is on nothing here changes a mode. */
+const AGENT_MODES = ['auto', 'ask', 'off'] as const;
+type AgentMode = typeof AGENT_MODES[number];
+const agentModeKnown = (m: unknown): m is AgentMode => typeof m === 'string' && (AGENT_MODES as readonly string[]).includes(m);
+const AGENT_MODE_RANK: Record<AgentMode, number> = { auto: 0, ask: 1, off: 2 };
+
+/** Whether giving `agent` the override `target` ('default' clears it) makes it ask less than it does
+ *  now, read from a policy answer ({global, agents}); unknown counts as looser, except a move to Off. */
+export function agentOverrideLoosens(policy: unknown, agent: string, target: string): boolean {
+  if (target === 'off') return false;
+  const p = (policy && typeof policy === 'object' ? policy : {}) as { global?: unknown; agents?: Record<string, unknown> };
+  const global = agentModeKnown(p.global) ? p.global : null;
+  const own = p.agents && typeof p.agents === 'object' ? p.agents[agent] : undefined;
+  const from = own === undefined ? global : agentModeKnown(own) ? own : null;
+  const to = target === 'default' ? global : agentModeKnown(target) ? target : null;
+  if (!from || !to) return true;
+  return AGENT_MODE_RANK[to] < AGENT_MODE_RANK[from];
+}
+
 export function AgentAutonomyPanel() {
   const { d, e, loading, reload } = useApi('/autonomy/policy', true, true);  // admin-guarded
+  const demo = demoActive();
   const globalMode = (d && d.global) || '—';
   const agents = (d && d.agents) || {};
   const entries = Object.keys(agents).map((k) => [k, agents[k]]);
@@ -4189,35 +4270,70 @@ export function AgentAutonomyPanel() {
   // H484: a refused override write (422 invalid agent, 503 not saved / not in force) is
   // shown with what the agent actually runs — it used to be ignored.
   const [refusal, setRefusal] = useState(null);
+  // a looser override waiting for its second step, with the policy it was decided on
+  const [confirming, setConfirming] = useState<{ agent: string; mode: string; to: string } | null>(null);
+  const [checking, setChecking] = useState(false);
   const setPolicy = (ag, m) => {
     setRefusal(null);
     return setAgentAutonomyMode(ag, m)
       .then((r) => { setRefusal(agentModeRefusalNote(ag, m, r)); reload(); })
       .catch(() => { setRefusal(`${ag}: ${m} was not applied (the hub refused the request)`); });
   };
+  const request = async (ag: string, m: string) => {
+    if (demo || checking) return;
+    setChecking(true);
+    setRefusal(null);
+    setConfirming(null);
+    let policy: unknown = null;
+    try { policy = await apiGet('/autonomy/policy', { admin: true }); } catch { /* unknown: asks twice */ }
+    setChecking(false);
+    if (agentOverrideLoosens(policy, ag, m)) {
+      const global = policy && typeof policy === 'object' ? (policy as { global?: unknown }).global : null;
+      setConfirming({ agent: ag, mode: m, to: m === 'default' ? (agentModeKnown(global) ? global : 'the global mode') : m });
+      return;
+    }
+    await setPolicy(ag, m);
+  };
   const modeColor = (m) => m === 'auto' ? 'var(--green)' : m === 'ask' ? 'var(--amber)' : m === 'off' ? 'var(--red)' : 'var(--ink-2)';
+  const loosenPrompt = (ag: string, to: string) => to === 'auto'
+    ? `${ag} on Auto: its reversible actions run without asking.`
+    : to === 'ask' ? `${ag} on Ask: work approved earlier can run; anything with a side effect still waits for you.`
+      : `${ag} follows ${to}, which may ask less than it does now.`;
   return (
     <Card title="PER-AGENT AUTONOMY" live={asLive(d)} sub={d ? `global: ${globalMode}` : null} onReload={reload}>
       <State e={e} loading={loading} n={entries.length} />
+      {demo && <p role="note" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '4px 0' }}>The demo sample is on: no agent's approval mode is changed here. Exit the demo to change one.</p>}
       {entries.map(([ag, m]) => (
         <Row key={ag}>
           <span style={{ ...mono, color: 'var(--ink-2)' }}>{ag}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag c={modeColor(m)}>{m}</Tag>
-            <button className="tool-btn" title="clear (follow global)" onClick={() => setPolicy(ag, 'default')}>✕</button>
+            <button className="tool-btn" title="clear (follow global)" aria-label={`clear ${ag}'s override (follow the global mode)`}
+              disabled={demo || checking} onClick={() => { void request(ag, 'default'); }}>✕</button>
           </span>
         </Row>
       ))}
-      {entries.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>no overrides · every agent follows the global mode ({globalMode})</div>}
-      {globalMode === 'off' && entries.length > 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>the global mode is off: no override applies</div>}
-      {refusal && <div role="alert" style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>{refusal}</div>}
+      {entries.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>no overrides · every agent follows the global mode ({globalMode})</div>}
+      {globalMode === 'off' && entries.length > 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>the global mode is off: no override applies</div>}
+      {refusal && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>{refusal}</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-        <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent" style={{ ...inpS, flex: 1 }} />
-        <select value={mode} onChange={(ev) => setMode(ev.target.value)} style={{ ...inpS }}>
+        <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent" aria-label="Agent id"
+          disabled={demo} style={{ ...inpS, flex: 1 }} />
+        <select value={mode} onChange={(ev) => setMode(ev.target.value)} aria-label="Approval mode for that agent"
+          disabled={demo} style={{ ...inpS }}>
           <option value="auto">auto</option><option value="ask">ask</option><option value="off">off</option>
         </select>
-        <button className="tool-btn" onClick={() => { if (agent.trim()) { setPolicy(agent.trim(), mode); setAgent(''); } }}>set</button>
+        <button className="tool-btn" disabled={demo || checking}
+          onClick={() => { if (agent.trim()) { void request(agent.trim(), mode); setAgent(''); } }}>set</button>
       </div>
+      {confirming && <div style={{ marginTop: 6 }}>
+        <ConfirmAction tier={RISK_TIER.REVERSIBLE} armed block repeatConfirms={false}
+          label={`${confirming.agent} on ${confirming.to}`} groupLabel="Confirm the looser approval mode"
+          prompt={loosenPrompt(confirming.agent, confirming.to)}
+          armedLabel={confirming.mode === 'default' ? `Clear ${confirming.agent}'s override` : `Switch ${confirming.agent} to ${confirming.mode}`}
+          cancelLabel="cancel" onCancel={() => setConfirming(null)}
+          onConfirm={() => setPolicy(confirming.agent, confirming.mode).then(() => setConfirming(null))} />
+      </div>}
     </Card>
   );
 }
@@ -4263,7 +4379,7 @@ export function BackupPanel() {
         <button className="tool-btn" onClick={exportMe}>export my data</button>
         <BackupUpload onDone={(s) => { setMsg(s); reload(); }} />
       </div>
-      {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
       <CheckpointList />
       <div style={{ marginTop: 8 }}>
         <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} label="forget me…" phrase="FORGET" armedLabel="confirm erase"
@@ -4349,10 +4465,10 @@ export function TodayPanel() {
           <React.Fragment key={it.entry_id || i}>
             <Row>
               <Tag c={colour}>{tag}</Tag>
-              <span title={it.entry_id || undefined} style={{ fontSize: 11, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span title={it.entry_id || undefined} style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {todayText(it)}
               </span>
-              <span style={{ marginLeft: 'auto', ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}>{fmt(it.ts)}</span>
+              <span style={{ marginLeft: 'auto', ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{fmt(it.ts)}</span>
               {changeable && <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                 {editable && <button className="tool-btn" aria-label={`edit ${name}`} title="change what was learned"
                   onClick={() => { setEditing(it.entry_id); setText(String(it.value ?? '')); setMsg(null); }}>edit</button>}
@@ -4369,7 +4485,7 @@ export function TodayPanel() {
           </React.Fragment>
         );
       })}
-      {msg && <div role="status" style={{ fontSize: 10, color: msg.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      {msg && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: msg.startsWith('refused') ? 'var(--red)' : 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
       {refs.length > 0 && <div data-testid="today-archive-references">
         <BatchReferences refs={refs} />
       </div>}
@@ -4389,10 +4505,10 @@ export function SkillHistoryPanel() {
   return (
     <Card title="SKILL HISTORY" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} events` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={events.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_SKILL_HISTORY is on — rollback does not depend on this ledger; its control is in SKILLS MARKETPLACE</div>}
+      {d && !enabled && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_SKILL_HISTORY is on — rollback does not depend on this ledger; its control is in SKILLS MARKETPLACE</div>}
       {enabled && Object.keys(byAction).length > 0 && (
         <Row>
-          <span style={mono}>actions</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>actions</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {Object.entries(byAction).map(([a, n]) => <Tag key={a}>{String(n)} {a}</Tag>)}
           </span>
@@ -4401,7 +4517,7 @@ export function SkillHistoryPanel() {
       {events.slice(0, 8).map((ev, i) => (
         <Row key={ev.id || i}>
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{ev.name}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{ev.action} · {ev.version}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{ev.action} · {ev.version}</span>
         </Row>
       ))}
     </Card>
@@ -4429,10 +4545,10 @@ export function MediaGalleryPanel() {
     <Card title="MEDIA GALLERY" live={d ? (enabled ? 'live' : 'seed') : undefined}
       sub={d ? (enabled ? `${d.page ? `${d.page.catalog_total} retained · ` : ''}${items.length} matches loaded · ${scanned} scanned` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={items.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_MEDIA_CATALOG is on</div>}
+      {d && !enabled && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_MEDIA_CATALOG is on</div>}
       {!!d?.page?.invalid_count && <p>Some catalog records are invalid and could not be listed.</p>}
       {enabled && Object.keys(byKind).length > 0 && (
-        <Row><span style={mono}>latest page kinds</span>
+        <Row><span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>latest page kinds</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {Object.entries(byKind).map(([k, n]) => <Tag key={k}>{String(n)} {k}</Tag>)}
           </span>
@@ -4462,7 +4578,7 @@ export function MediaGalleryPanel() {
           disabled={!it.available || (selected.length >= 200 && !selected.includes(galleryItemKey(it)))}
           onChange={e => setSelected(previous => e.target.checked ? [...previous, galleryItemKey(it)] : previous.filter(key => key !== galleryItemKey(it)))} />
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{it.kind}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10 }}>{it.prompt || it.id}</span></Row>
+          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)' }}>{it.prompt || it.id}</span></Row>
         {it.available && it.mime ? <BinaryCard item={{ ...it, mime: it.mime, size: it.size ?? 0, agent: it.agent ?? '', pinned: !!it.pinned }} refresh={reload} /> : it.available === false && <small>File missing or unsupported for delivery.</small>}
       </div>)}
       {hasMore && <button className="tool-btn" disabled={loading} onClick={more}>{items.length ? 'Load more' : 'Continue search'}</button>}
@@ -4552,32 +4668,32 @@ export function MediaDirectorPanel() {
         n={loaded && !enabled ? undefined : devices.length + sessions.length}
       />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           off by default · set JARVIS_MEDIA_DIRECTOR=1 to enable governed presentation
         </div>
       )}
       {enabled && <>
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0' }}>DEVICES</div>
+        <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '4px 0' }}>DEVICES</div>
         {devices.map((device, i) => (
           <Row key={device.id || i}>
-            <span style={{ ...mono, color: 'var(--accent-light)' }}>{device.name || device.id}</span>
+            <span style={{ ...noteS, color: 'var(--accent-light)' }}>{device.name || device.id}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
               {device.room && <Tag>{device.room}</Tag>}
               <Tag>{device.kind}</Tag>
             </span>
           </Row>
         ))}
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>SESSIONS</div>
+        <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '10px 0 4px' }}>SESSIONS</div>
         {sessions.map((session, i) => (
           <Row key={session.device_id || i}>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{session.device_id}</span>
-            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
               {session.state || 'unknown'} · {session.content?.type || 'content'}:{String(session.content?.value || '').slice(0, 80)}
             </span>
             <button className="tool-btn" aria-label={`restore ${session.device_id}`} onClick={() => restore(session.device_id)}>restore</button>
           </Row>
         ))}
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>USER · PRESENT</div>
+        <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '10px 0 4px' }}>USER · PRESENT</div>
         <form onSubmit={present} style={{ display: 'grid', gap: 6 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 6 }}>
             <select aria-label="content type" value={contentType} onChange={(ev) => { setContentType(ev.target.value); setContentValue(''); }} style={inpS}>
@@ -4614,17 +4730,17 @@ export function MediaDirectorPanel() {
         </form>
         <MediaOutcome value={outcome} />
         <section aria-label="media admin controls">
-          <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '12px 0 4px' }}>ADMIN · DEVICE REGISTRY</div>
+          <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '12px 0 4px' }}>ADMIN · DEVICE REGISTRY</div>
           {devices.map((device, i) => (
             <Row key={`admin:${device.id || i}`}>
               <span style={{ ...mono, color: 'var(--ink-2)' }}>{device.id}</span>
-              <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{device.name}</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{device.name}</span>
               <button className="tool-btn" aria-label={`remove ${device.id}`} onClick={() => removeDevice(device.id)}>remove</button>
             </Row>
           ))}
           <form onSubmit={registerDevice} style={{ display: 'grid', gap: 6 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 120px', gap: 6 }}>
-              <input aria-label="admin device id" value={deviceId} onChange={(ev) => setDeviceId(ev.target.value)} maxLength={64} placeholder="device id" style={inpS} />
+              <input aria-label="admin device id" value={deviceId} onChange={(ev) => setDeviceId(ev.target.value)} maxLength={64} placeholder="device id" style={{ ...inpS, ...MONO }} />
               <input aria-label="admin device name" value={deviceName} onChange={(ev) => setDeviceName(ev.target.value)} maxLength={120} placeholder="display name" style={inpS} />
               <select aria-label="admin device kind" value={deviceKind} onChange={(ev) => setDeviceKind(ev.target.value)} style={inpS}>
                 {['chromecast', 'spotify_connect', 'browser_tab', 'local', 'speaker', 'tv'].map((value) => <option key={value} value={value}>{value}</option>)}
@@ -4636,7 +4752,7 @@ export function MediaDirectorPanel() {
               <button className="tool-btn" type="submit" disabled={!deviceId.trim() || !deviceName.trim()}>register device</button>
             </div>
           </form>
-          {adminMessage && <div role="status" style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>{adminMessage}</div>}
+          {adminMessage && <div role="status" style={{ ...noteS, color: 'var(--ink-2)', marginTop: 6 }}>{adminMessage}</div>}
         </section>
       </>}
     </Card>
@@ -4770,20 +4886,20 @@ export function HousePanel() {
     >
       <State e={house.e} loading={house.loading} n={loaded && !enabled ? undefined : rooms.length + devices.length + presence.length} />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           House Brain is off · owner opt-in is required on the hub
         </div>
       )}
       {enabled && !live && (
-        <div role="alert" style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+        <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>
           degraded · {data.reason || 'live Home Assistant state unavailable'} · controls paused
         </div>
       )}
       {enabled && <>
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0' }}>ROOMS & DEVICES</div>
+        <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '4px 0' }}>ROOMS & DEVICES</div>
         {rooms.map((room) => (
           <Row key={room.room_id}>
-            <span style={{ ...mono, color: 'var(--accent-light)' }}>{room.name || room.room_id}</span>
+            <span style={{ ...noteS, color: 'var(--accent-light)' }}>{room.name || room.room_id}</span>
             <span style={{ marginLeft: 'auto' }}><Tag>{room.room_id}</Tag></span>
           </Row>
         ))}
@@ -4795,23 +4911,23 @@ export function HousePanel() {
             </span>
           </Row>
         ))}
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '10px 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>PRESENCE · PSEUDONYMOUS</span>
           <Tag c={data.presence_status === 'live' ? 'var(--green)' : data.presence_status === 'degraded' ? 'var(--amber)' : undefined}>
             {data.presence_status || 'unknown'}
           </Tag>
         </div>
         {data.presence_status === 'off' && (
-          <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>presence writer is off · owner opt-in via house.presence_enabled / JARVIS_HOUSE_PRESENCE</div>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>presence writer is off · owner opt-in via house.presence_enabled / JARVIS_HOUSE_PRESENCE</div>
         )}
         {data.presence_status === 'unavailable' && (
-          <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>presence writer idle · live house state unavailable</div>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>presence writer idle · live house state unavailable</div>
         )}
         {data.presence_status === 'degraded' && (
-          <div role="alert" style={{ fontSize: 10, color: 'var(--amber)' }}>presence write failed · list may be stale</div>
+          <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>presence write failed · list may be stale</div>
         )}
         {data.presence_status === 'live' && presence.length === 0 && (
-          <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>no occupants detected</div>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>no occupants detected</div>
         )}
         {presence.map((item) => (
           <Row key={item.occupant_id}>
@@ -4830,18 +4946,18 @@ export function HousePanel() {
         ))}
         {presenceExplanation && presence.some((item) => item.occupant_id === presenceExplanation.occupant_id && item.fresh === true) && (
           presenceExplanation.status === 'explained'
-            ? <div role="status" style={{ ...mono, fontSize: 10, marginTop: 6 }}>
+            ? <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6 }}>
               model explanation · {presenceExplanation.explanation}
             </div>
             : presenceExplanation.status === 'error'
-              ? <div role="alert" style={{ ...mono, fontSize: 10, marginTop: 6 }}>
+              ? <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6 }}>
                 explanation unavailable · {presenceExplanation.reason}
               </div>
-              : <div role="status" style={{ ...mono, fontSize: 10, marginTop: 6 }}>explaining locally…</div>
+              : <div role="status" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', marginTop: 6 }}>explaining locally…</div>
         )}
       </>}
       {live && <>
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '12px 0 4px' }}>GOVERNED CONTROLS · PROPOSALS</div>
+        <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '12px 0 4px' }}>GOVERNED CONTROLS · PROPOSALS</div>
         {lights.length > 0 && <form onSubmit={proposeLight} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px auto', gap: 6, marginBottom: 6 }}>
           <select aria-label="light target" value={selectedLight} onChange={(event) => setLightTarget(event.target.value)} style={inpS}>
             {lights.map((device) => <option key={device.entity_id} value={device.entity_id}>{device.entity_id}</option>)}
@@ -4873,9 +4989,9 @@ export function HousePanel() {
         </form>}
         <HouseOutcome value={outcome} />
         {hasAdmin && <section aria-label="owner security confirmation">
-          <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '12px 0 4px' }}>ADMIN · STRONG CONFIRMATION</div>
+          <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '12px 0 4px' }}>ADMIN · STRONG CONFIRMATION</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6 }}>
-            <input aria-label="security task id" type="number" min="1" value={securityTaskId} onChange={(event) => setSecurityTaskId(event.target.value)} placeholder="durable task id" style={inpS} />
+            <input aria-label="security task id" type="number" min="1" value={securityTaskId} onChange={(event) => setSecurityTaskId(event.target.value)} placeholder="durable task id" style={{ ...inpS, ...MONO }} />
             <button className="tool-btn" type="button" onClick={mintChallenge} aria-label="Mint owner challenge">mint owner challenge</button>
           </div>
           {challenge && <div style={{ marginTop: 8 }}>
@@ -4885,7 +5001,7 @@ export function HousePanel() {
               <button className="tool-btn" type="button" disabled={confirmationText.trim() !== challenge.intended_state} onClick={confirmChallenge} aria-label="Confirm exact security action">confirm exact security action</button>
             </div>
           </div>}
-          {confirmationMessage && <div role="status" style={{ ...mono, color: 'var(--amber)', marginTop: 6 }}>{confirmationMessage}</div>}
+          {confirmationMessage && <div role="status" style={{ ...noteS, color: 'var(--amber)', marginTop: 6 }}>{confirmationMessage}</div>}
         </section>}
       </>}
     </Card>
@@ -4916,16 +5032,16 @@ export function AmbientWatchPanel() {
     >
       <State e={ambient.e} loading={ambient.loading} n={loaded && !enabled ? undefined : monitors.length} />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: data.status === 'degraded' ? 'var(--amber)' : 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: data.status === 'degraded' ? 'var(--amber)' : 'var(--ink-2)', marginTop: 6 }}>
           {data.status === 'degraded' ? 'Ambient runtime degraded' : 'Ambient intelligence is off'} · {data.reason || 'owner opt-in required'}
         </div>
       )}
       {enabled && <>
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0 8px' }}>
+        <div style={{ ...LABEL, textTransform: 'none', color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '4px 0 8px' }}>
           REDACTED TRANSPARENCY · subjects and event content stay private
         </div>
         <Row>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>GLOBAL ATTENTION</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>GLOBAL ATTENTION</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
             <Tag c={attention.status === 'ready' ? 'var(--green)' : 'var(--amber)'}>{attention.status || 'degraded'}</Tag>
             <Tag>{Number(attention.remaining || 0)} / {Number(attention.limit || 0)} left</Tag>
@@ -4951,10 +5067,10 @@ export function AmbientWatchPanel() {
             <Row key={monitor.monitor_id}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ ...mono, color: 'var(--accent-light)' }}>{monitor.monitor_id}</div>
-                <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 3 }}>
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 3 }}>
                   {monitor.source} · {monitor.schema} · v{monitor.version} · {monitor.state || 'waiting'}
                 </div>
-                {decision && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+                {decision && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
                   last · {decision.transition} → {decision.rung} · {String(decision.policy_reason || '').split('_').join(' ')}
                 </div>}
               </div>
@@ -4965,8 +5081,8 @@ export function AmbientWatchPanel() {
             </Row>
           );
         })}
-        {!monitors.length && <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>No owner-defined monitors yet.</div>}
-        {last && <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 9, marginTop: 8 }}>
+        {!monitors.length && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>No owner-defined monitors yet.</div>}
+        {last && <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', marginTop: 8 }}>
           LAST DECISION · {last.monitor_id} · {last.rung} · {last.attention_mode}
         </div>}
       </>}
@@ -5026,12 +5142,12 @@ export function CameraPanel() {
     >
       <State e={status.e || recent.e} loading={status.loading || recent.loading} n={loaded && !enabled ? undefined : events.length} />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           Camera Intelligence is off · {data.reason || 'owner opt-in and household consent are required'}
         </div>
       )}
       {enabled && <>
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0' }}>
+        <div style={{ ...noteS, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '4px 0' }}>
           METADATA ONLY · {data.source?.status || 'source unavailable'} · {Number(data.source?.camera_count || 0)} cameras
         </div>
         <form onSubmit={search} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, marginBottom: 8 }}>
@@ -5047,9 +5163,9 @@ export function CameraPanel() {
             {searching ? 'searching…' : 'search'}
           </button>
         </form>
-        {searchError && <div role="alert" style={{ ...mono, color: 'var(--danger)' }}>{searchError}</div>}
+        {searchError && <div role="alert" style={{ ...noteS, color: 'var(--red)' }}>{searchError}</div>}
         {searchResult && events.length === 0 && (
-          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 6 }}>No matching camera events.</div>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>No matching camera events.</div>
         )}
         {events.map((item) => {
           const occurred = Number(item.occurred_at);
@@ -5065,10 +5181,10 @@ export function CameraPanel() {
                   {item.room_id && <Tag>{item.room_id}</Tag>}
                   <Tag>{confidence}%</Tag>
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 3 }}>{when}</div>
-                {item.description && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{item.description}</div>}
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 3 }}>{when}</div>
+                {item.description && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{item.description}</div>}
                 {item.description_provenance && (
-                  <div style={{ ...mono, fontSize: 9, color: 'var(--ink-2)', marginTop: 2 }}>
+                  <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>
                     {String(item.description_provenance).split('_').join(' ')}
                   </div>
                 )}
@@ -5078,22 +5194,22 @@ export function CameraPanel() {
         })}
         {hasAdmin && <section aria-label="admin ONVIF discovery" style={{ marginTop: 10 }}>
           <button className="tool-btn" type="button" onClick={discover} aria-label="Discover ONVIF cameras">discover ONVIF cameras</button>
-          {discoveryError && <div role="alert" style={{ ...mono, color: 'var(--danger)', marginTop: 5 }}>{discoveryError}</div>}
+          {discoveryError && <div role="alert" style={{ ...noteS, color: 'var(--red)', marginTop: 5 }}>{discoveryError}</div>}
           {/* Refusals arrive as HTTP-200 bodies (dependency missing, disabled, timeout) — they
               land here through setDiscovery, never through discoveryError, so an empty device
               list must say why instead of leaving the button looking dead. */}
           {discovery && arr(discovery, 'devices').length === 0 && (
             discovery.status === 'unavailable' || discovery.status === 'disabled' || discovery.enabled === false ? (
-              <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--danger)', marginTop: 5 }}>
+              <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 5 }}>
                 {discovery.status || 'unavailable'} · {discovery.reason || 'discovery refused'}
                 {discovery.detail && <div style={{ color: 'var(--ink-2)', marginTop: 2 }}>{discovery.detail}</div>}
               </div>
             ) : discovery.status === 'degraded' ? (
-              <div role="alert" style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 5 }}>
+              <div role="alert" style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 5 }}>
                 degraded · {discovery.reason || 'discovery_failed'}
               </div>
             ) : (
-              <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 5 }}>no ONVIF devices found</div>
+              <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 5 }}>no ONVIF devices found</div>
             )
           )}
           {arr(discovery, 'devices').slice(0, 64).map((device) => (
@@ -5201,13 +5317,13 @@ export function AcquisitionPanel() {
     >
       <State e={status.e || audit.e} loading={status.loading || audit.loading} n={loaded && !enabled ? undefined : packages.length + events.length} />
       {loaded && !enabled && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           Capability Acquisition is off · {data.reason || 'owner enablement is required'}
         </div>
       )}
       {enabled && <>
         {data.status !== 'ready' && (
-          <div role="alert" style={{ ...mono, color: 'var(--amber)', marginBottom: 7 }}>
+          <div role="alert" style={{ ...noteS, color: 'var(--amber)', marginBottom: 7 }}>
             {data.status} · {data.reason || 'acquisition is not ready'}
           </div>
         )}
@@ -5219,7 +5335,7 @@ export function AcquisitionPanel() {
             {data.audit?.chain_valid ? 'chain verified' : 'chain degraded'}
           </Tag>
         </div>
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '4px 0' }}>SIGNED · SANDBOX-ONLY PACKAGES</div>
+        <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '4px 0' }}>SIGNED · SANDBOX-ONLY PACKAGES</div>
         {packages.map((item) => (
           <Row key={item.name}>
             <span style={{ ...mono, color: 'var(--accent-light)' }}>{item.name}</span>
@@ -5232,7 +5348,7 @@ export function AcquisitionPanel() {
             </span>
           </Row>
         ))}
-        <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>HASH-ONLY AUDIT · LATEST</div>
+        <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '10px 0 4px' }}>HASH-ONLY AUDIT · LATEST</div>
         {events.map((item) => (
           <Row key={`${item.sequence}:${item.event_hash || item.event_type}`}>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>#{Number(item.sequence || 0)} · {item.event_type}</span>
@@ -5243,7 +5359,7 @@ export function AcquisitionPanel() {
           <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
             <button className="tool-btn" type="button" onClick={exportLedger} aria-label="Export acquisition ledger">export ledger</button>
           </div>
-          <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, margin: '10px 0 4px' }}>OPEN CAPABILITY GAPS</div>
+          <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '10px 0 4px' }}>OPEN CAPABILITY GAPS</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6, marginBottom: 6 }}>
             <input
               aria-label="acquisition drive entrypoint"
@@ -5251,19 +5367,19 @@ export function AcquisitionPanel() {
               onChange={(event) => setEntrypoint(event.target.value)}
               maxLength={64}
               placeholder="entrypoint"
-              style={inpS}
+              style={{ ...inpS, ...MONO }}
             />
             <textarea
               aria-label="acquisition drive contract cases"
               value={cases}
               onChange={(event) => setCases(event.target.value)}
-              style={{ ...taS, minHeight: 50 }}
+              style={{ ...codeS, minHeight: 50 }}
             />
           </div>
           {requests.e
-            ? <div role="alert" style={{ ...mono, color: 'var(--red)', fontSize: 10 }}>offline · {requests.e}</div>
+            ? <div role="alert" style={{ ...noteS, color: 'var(--red)', fontSize: 'var(--n-fs-meta)' }}>offline · {requests.e}</div>
             : gaps.length === 0
-            ? <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10 }}>no open capability gaps</div>
+            ? <div style={{ ...noteS, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>no open capability gaps</div>
             : gaps.map((item) => (
               <Row key={item.request_id}>
                 <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(item.request_id || '').slice(0, 8)}</span>
@@ -5283,7 +5399,7 @@ export function AcquisitionPanel() {
               phrase={PURGE_PHRASE} armedLabel="purge detail" onConfirm={purgeLedger} />
           </div>
         </section>
-        {outcome && <div role="status" style={{ ...mono, color: outcome.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 7 }}>{outcome}</div>}
+        {outcome && <div role="status" style={{ ...noteS, color: outcome.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginTop: 7 }}>{outcome}</div>}
       </>}
     </Card>
   );
@@ -5301,10 +5417,10 @@ export function ProvenancePanel() {
   return (
     <Card title="PROVENANCE" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} recs · ${(d.stats && d.stats.runs) || 0} runs` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={records.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_PROVENANCE is on</div>}
+      {d && !enabled && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_PROVENANCE is on</div>}
       {enabled && Object.keys(bySource).length > 0 && (
         <Row>
-          <span style={mono}>sources</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>sources</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             {Object.entries(bySource).map(([s, n]) => <Tag key={s}>{String(n)} {s}</Tag>)}
           </span>
@@ -5313,7 +5429,7 @@ export function ProvenancePanel() {
       {records.slice(0, 8).map((r, i) => (
         <Row key={r.id || i}>
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{r.source}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{r.phase} · {(r.content_hash || '').slice(0, 8)}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{r.phase} · {(r.content_hash || '').slice(0, 8)}</span>
         </Row>
       ))}
     </Card>
@@ -5331,11 +5447,11 @@ export function CommsRatePanel() {
   return (
     <Card title="SEND RATE LIMITS" live={d ? (enabled ? 'live' : 'seed') : undefined} sub={d ? (enabled ? `cap ${(d && d.global_cap) || 0}/${(d && d.window_seconds) || 60}s` : 'unlimited') : null} onReload={reload}>
       <State e={e} loading={loading} n={channels.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>unlimited until JARVIS_CHANNEL_SEND_RATE(S) is set</div>}
+      {d && !enabled && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>unlimited until JARVIS_CHANNEL_SEND_RATE(S) is set</div>}
       {channels.slice(0, 10).map((c, i) => (
         <Row key={c.channel || i}>
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{c.channel}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{c.used}/{c.cap > 0 ? c.cap : '∞'}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{c.used}/{c.cap > 0 ? c.cap : '∞'}</span>
         </Row>
       ))}
     </Card>
@@ -5384,7 +5500,7 @@ export function SafeCommsDraftPanel() {
       <State e={e} loading={loading} n={targets.length} />
       {targets.slice(0, 6).map((t, i) => (
         <Row key={t.kind || i}>
-          <span style={{ ...mono, color: 'var(--accent-light)' }}>{t.label || `${t.platform}.${t.action}`}</span>
+          <span style={{ ...noteS, color: 'var(--accent-light)' }}>{t.label || `${t.platform}.${t.action}`}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             <Tag>{t.kind || `${t.platform}.${t.action}`}</Tag>
             {t.credential && <Tag c="var(--ink-2)">{t.credential}</Tag>}
@@ -5401,9 +5517,9 @@ export function SafeCommsDraftPanel() {
       <textarea value={text} onChange={(ev) => setText(ev.target.value)} placeholder="draft text" style={{ ...taS, marginTop: 6, minHeight: 58 }} />
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
         <button className="tool-btn" disabled={!selected || !text.trim()} onClick={queue}>queue draft</button>
-        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>approval queue · no direct send</span>
+        <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>approval queue · no direct send</span>
       </div>
-      {note && <div style={{ ...mono, fontSize: 10.5, color: out?.ok === false ? 'var(--amber)' : 'var(--green)', marginTop: 6 }}>{note}</div>}
+      {note && <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: out?.ok === false ? 'var(--amber)' : 'var(--green)', marginTop: 6 }}>{note}</div>}
     </Card>
   );
 }
@@ -5420,11 +5536,11 @@ export function ModelInfoPanel() {
   return (<>
     <Card title="MODEL FINGERPRINTS" live={asLive(d, enabled)} sub={d ? (enabled ? `${(d.stats && d.stats.total) || 0} models` : 'disabled') : null} onReload={reload}>
       <State e={e} loading={loading} n={models.length} />
-      {d && !enabled && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_MODEL_INFO is on</div>}
+      {d && !enabled && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>empty until JARVIS_MODEL_INFO is on</div>}
       {models.slice(0, 10).map((m, i) => (
         <Row key={m.id || i}>
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{m.id}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{[m.quant, (m.sha256 || '').slice(0, 8)].filter(Boolean).join(' · ')}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{[m.quant, (m.sha256 || '').slice(0, 8)].filter(Boolean).join(' · ')}</span>
         </Row>
       ))}
     </Card>
@@ -5462,13 +5578,13 @@ export function DesignManifestPanel() {
       {ok && (
         <>
           <Row>
-            <span style={mono}>source</span>
-            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{d.source}</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>source</span>
+            <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{d.source}</span>
           </Row>
           <Row>
-            <span style={mono}>variants</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>variants</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              {variants.length ? variants.map((v) => <Tag key={v}>{v}</Tag>) : <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>none</span>}
+              {variants.length ? variants.map((v) => <Tag key={v}>{v}</Tag>) : <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>none</span>}
             </span>
           </Row>
         </>
@@ -5498,13 +5614,13 @@ export function PublishReadinessPanel() {
     <Card title="PUBLISH READINESS" live={'live'}>
       <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
         {['youtube', 'instagram', 'readme'].map((p) => (
-          <button key={p} className="tool-btn" style={{ opacity: platform === p ? 1 : 0.5 }} onClick={() => setPlatform(p)}>{p}</button>
+          <button key={p} className={'tool-btn' + (platform === p ? ' on' : '')} aria-pressed={platform === p} onClick={() => setPlatform(p)}>{p}</button>
         ))}
       </div>
-      <textarea value={meta} onChange={(ev) => setMeta(ev.target.value)} placeholder="metadata JSON" style={{ ...taS, minHeight: 70 }} />
+      <textarea value={meta} onChange={(ev) => setMeta(ev.target.value)} placeholder="metadata JSON" style={{ ...codeS, minHeight: 70 }} />
       <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
         {['disclosure', 'rights', 'preview'].map((k) => (
-          <label key={k} style={{ ...mono, fontSize: 10.5, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <label key={k} style={{ ...noteS, fontSize: 'var(--n-fs-meta)', display: 'flex', alignItems: 'center', gap: 4 }}>
             <input type="checkbox" checked={confirm[k]} onChange={() => toggle(k)} />{k}
           </label>
         ))}
@@ -5513,7 +5629,7 @@ export function PublishReadinessPanel() {
         <button className="tool-btn" onClick={() => run('/api/creative/publish/checklist')}>check</button>
         <button className="tool-btn" onClick={() => run('/api/creative/publish/package')}>package</button>
       </div>
-      {out && out.error && <div style={{ fontSize: 10.5, color: 'var(--amber)', marginTop: 6 }}>{out.error}</div>}
+      {out && out.error && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>{out.error}</div>}
       {checks.map((c, i) => (
         <Row key={i}>
           <span style={mono}>{c.id}</span>
@@ -5521,16 +5637,16 @@ export function PublishReadinessPanel() {
         </Row>
       ))}
       {out && arr(out, 'violations').length > 0 && (
-        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>{arr(out, 'violations').join(' · ')}</div>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>{arr(out, 'violations').join(' · ')}</div>
       )}
       {out && out.ready_for_approval != null && (
-        <div style={{ fontSize: 10.5, marginTop: 6, color: out.ready_for_approval ? 'var(--green)' : 'var(--ink-2)' }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', marginTop: 6, color: out.ready_for_approval ? 'var(--green)' : 'var(--ink-2)' }}>
           {out.ready_for_approval
             ? 'ready to REQUEST approval — still not published'
             : 'not ready · release payload withheld'}
         </div>
       )}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>never uploads · publishing stays approval-held (owner-gated OAuth)</div>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>never uploads · publishing stays approval-held (owner-gated OAuth)</div>
     </Card>
   );
 }
@@ -5556,7 +5672,7 @@ export function PacksPanel() {
     <Card title="PACKS" live={asLive(d, d && d.available)} sub={d ? `${counts.total || 0} packs` : null} onReload={reload}>
       <State e={e} loading={loading} n={packs.length} />
       <Row>
-        <span style={mono}>types</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>types</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {types.map((t) => (
             <Tag key={t.type} c={t.supported ? 'var(--accent-light)' : undefined}>
@@ -5566,18 +5682,18 @@ export function PacksPanel() {
         </span>
       </Row>
       {types.filter((t) => !t.supported && t.reason).map((t) => (
-        <div key={t.type} style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>{t.type}: {t.reason}</div>
+        <div key={t.type} style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{t.type}: {t.reason}</div>
       ))}
       {packs.slice(0, 12).map((p, i) => (
         <Row key={i}>
           <Tag>{p.pack_type}</Tag>
           <span style={{ color: 'var(--accent-light)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-          {p.version && <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>v{p.version}</span>}
+          {p.version && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>v{p.version}</span>}
           {p.pack_type === 'knowledge' && <button className="tool-btn" onClick={() => verify(p.key)}>verify</button>}
         </Row>
       ))}
       {check && (
-        <div style={{ fontSize: 10, marginTop: 6, color: check.loading ? 'var(--ink-2)' : check.ok ? 'var(--green)' : 'var(--amber)' }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', marginTop: 6, color: check.loading ? 'var(--ink-2)' : check.ok ? 'var(--green)' : 'var(--amber)' }}>
           {check.loading ? `verifying ${check.key}…`
             : check.ok ? `${check.key}: intact (${check.v.checked} file(s) checked)`
             : `${check.key}: ${check.reason || 'discrepancies'} — ${[
@@ -5588,7 +5704,7 @@ export function PacksPanel() {
         </div>
       )}
       {unmanifested.length > 0 && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           {unmanifested.length} configured folder(s) without a manifest — drop-folders, not packs
         </div>
       )}
@@ -5623,13 +5739,13 @@ export function SignalRoutingPanel() {
     <Card title="WORLD SIGNALS" live={asLive(d, available)} sub={available ? `${counts.routed || 0}/${counts.signals || 0} routed` : (d ? 'no sidecar' : null)} onReload={reload}>
       <State e={e} loading={loading} n={available ? signals.length : 0} />
       {d && !available && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           signal layer unavailable{d.reason ? ` · ${d.reason}` : ''} — configure the sidecar to populate this feed
         </div>
       )}
       {available && Object.keys(byDomain).length > 0 && (
         <Row>
-          <span style={mono}>domains</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>domains</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {Object.entries(byDomain).map(([dom, idx]) => <Tag key={dom}>{dom} {(idx as any[]).length}</Tag>)}
           </span>
@@ -5637,10 +5753,10 @@ export function SignalRoutingPanel() {
       )}
       {available && Object.keys(byAgent).length > 0 && (
         <Row>
-          <span style={mono}>agents</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>agents</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {Object.entries(byAgent).map(([ag, idx]) => (
-              <button key={ag} className="tool-btn" style={{ fontSize: 9.5, padding: '1px 5px' }} onClick={() => showAgent(ag)}>
+              <button key={ag} className="tool-btn" style={{ fontSize: 'var(--n-fs-meta)', padding: '1px 5px' }} onClick={() => showAgent(ag)}>
                 {ag} {(idx as any[]).length}
               </button>
             ))}
@@ -5650,7 +5766,7 @@ export function SignalRoutingPanel() {
       {slice && (
         <Row>
           <span style={mono}>{slice.agent}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>
+          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             {slice.loading ? 'loading…' : slice.error ? 'slice unavailable'
               : `${slice.signals.length} signal(s) · ${(slice.domains || []).join(', ') || 'no domains'}`}
           </span>
@@ -5658,8 +5774,8 @@ export function SignalRoutingPanel() {
       )}
       {available && (d.unrouted || []).length > 0 && (
         <Row>
-          <span style={mono}>unrouted</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--amber)' }}>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>unrouted</span>
+          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
             {d.unrouted.length} unclassified — shown, never guessed
           </span>
         </Row>
@@ -5703,7 +5819,7 @@ export function WatchlistPanel() {
       <State e={e} loading={loading} n={watches.length} />
       {watches.length > 0 && (
         <Row>
-          <span style={mono}>bands</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>bands</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             <Tag>{stats.with_low || 0} low</Tag>
             <Tag>{stats.with_high || 0} high</Tag>
@@ -5715,15 +5831,15 @@ export function WatchlistPanel() {
           <span style={{ ...mono, color: 'var(--accent-light)' }}>{w.symbol}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {(w.low != null || w.high != null) && <Tag>{w.low ?? '−∞'}–{w.high ?? '+∞'}</Tag>}
-            {w.note && <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{String(w.note).slice(0, 24)}</span>}
+            {w.note && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{String(w.note).slice(0, 24)}</span>}
             <button className="tool-btn" title="remove" onClick={() => del(w.symbol)}>✕</button>
           </span>
         </Row>
       ))}
       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
         <input value={symbol} onChange={(ev) => setSymbol(ev.target.value)} placeholder="symbol" style={{ ...inpS, flex: '0 0 70px' }} />
-        <input value={low} onChange={(ev) => setLow(ev.target.value)} placeholder="low" style={{ ...inpS, width: 56 }} />
-        <input value={high} onChange={(ev) => setHigh(ev.target.value)} placeholder="high" style={{ ...inpS, width: 56 }} />
+        <input value={low} onChange={(ev) => setLow(ev.target.value)} placeholder="low" style={{ ...inpS, width: 72 }} />
+        <input value={high} onChange={(ev) => setHigh(ev.target.value)} placeholder="high" style={{ ...inpS, width: 72 }} />
         <input value={note} onChange={(ev) => setNote(ev.target.value)} placeholder="note (optional)" style={{ ...inpS, flex: 1, minWidth: 90 }} />
         <button className="tool-btn" onClick={add}>watch</button>
       </div>
@@ -5758,7 +5874,7 @@ export function SystemProfilePanel() {
       <State e={e} loading={loading} n={names.length} />
       {hw && (
         <div style={{ marginBottom: 8 }}>
-          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>
+          <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             score {hw.score.score}/100 · {hw.score.tier} · recommended · {hw.recommended_profile} · active · {hw.active_profile}
           </div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
@@ -5766,7 +5882,7 @@ export function SystemProfilePanel() {
             {part('cpu', comps.cpu === 'measured', `${detected.cpu_threads} threads`)}
             {part('ram', comps.ram === 'measured', `${detected.ram_total_gb} GB`)}
           </div>
-          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
             spec-based score (VRAM/threads/RAM as reported) — not a throughput benchmark · the recommendation is advisory, selection stays JARVIS_SYSTEM_PROFILE
           </div>
         </div>
@@ -5866,29 +5982,29 @@ export function CommandCenterPanel() {
       <State e={e} loading={loading} n={actions.length} />
       <Row><span>Usage</span><a className="console-link" style={{ marginLeft: 'auto' }} href={routeHref('/v2/console/usage')}>view usage and estimated cost →</a></Row>
       <Row>
-        <span style={mono}>install</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>install</span>
         <span style={{ marginLeft: 'auto', color: install.ready ? 'var(--green)' : 'var(--amber)' }}>
           {install.ready ? '✓ ready' : '○ starting'}{install.version ? ` · v${install.version}` : ''}
         </span>
       </Row>
       <Row>
-        <span style={mono}>model</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>model</span>
         <span style={{ marginLeft: 'auto', color: modelRouteReady ? 'var(--green)' : 'var(--amber)' }}>
           {modelLabel}
         </span>
       </Row>
-      {d && wizard.hint && <Row><span style={{ color: 'var(--amber)', fontSize: 11 }}>⚠ {wizard.hint}</span></Row>}
+      {d && wizard.hint && <Row><span style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>⚠ {wizard.hint}</span></Row>}
       {steps.length > 0 && (
         <Row>
-          <span style={mono}>onboarding</span>
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-2)' }}>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>onboarding</span>
+          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             {steps.map((s) => (done.has(s.key) ? '●' : '○')).join(' ')} {done.size}/{steps.length}
           </span>
         </Row>
       )}
       {outcomes.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.12em', color: 'var(--ink-2)', marginBottom: 3 }}>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 3 }}>
             WHAT NERVA CAN DO FOR YOU
           </div>
           {outcomes.map((o) => {
@@ -5906,7 +6022,7 @@ export function CommandCenterPanel() {
             return (
               <div key={o.key} style={{ padding: '7px 0', borderBottom: '1px solid var(--panel-line)' }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ color: live ? 'var(--ink-1)' : 'var(--ink-2)' }}>{o.title}</span>
+                  <span style={{ color: live ? 'var(--ink)' : 'var(--ink-2)' }}>{o.title}</span>
                   <Tag c={live ? 'var(--green)' : 'var(--amber)'}>{live ? 'READY NOW' : 'NEEDS SETUP'}</Tag>
                 </div>
                 <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
@@ -5914,7 +6030,7 @@ export function CommandCenterPanel() {
                   <Tag>{changes}</Tag>
                 </div>
                 {!live && o.setup && (
-                  <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{o.setup}</div>
+                  <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{o.setup}</div>
                 )}
               </div>
             );
@@ -5923,16 +6039,16 @@ export function CommandCenterPanel() {
       )}
       {actions.map((a) => (
         <Row key={a.key}>
-          <span style={{ color: a.ready ? 'var(--ink-1)' : 'var(--ink-2)' }}>{a.title}</span>
+          <span style={{ color: a.ready ? 'var(--ink)' : 'var(--ink-2)' }}>{a.title}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {a.ready && a.key === 'say_hello'
               && <button className="tool-btn" onClick={sayHello}>run</button>}
             {!a.ready && a.reason
-              && <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{a.reason}</span>}
+              && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{a.reason}</span>}
           </span>
         </Row>
       ))}
-      {hello && <Row><span style={{ fontSize: 11, color: 'var(--accent-light)' }}>↳ {hello}</span></Row>}
+      {hello && <Row><span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)' }}>↳ {hello}</span></Row>}
     </Card>
   );
 }
@@ -5951,8 +6067,8 @@ export function FirstRunGate({ onClose }) {
     <div className="pal-scrim" style={{ alignItems: 'flex-start', paddingTop: '8vh' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(560px,95vw)', maxHeight: '84vh', overflow: 'auto', background: 'var(--void-2)', border: '1px solid var(--border-active, var(--panel-line))', borderRadius: 'var(--radius)', padding: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 12 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.14em', color: 'var(--accent-light)' }}>FIRST RUN</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>let's get you to a working assistant</span>
+          <span style={{ ...LABEL, color: 'var(--accent-light)' }}>FIRST RUN</span>
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>let's get you to a working assistant</span>
         </div>
         <CommandCenterPanel />
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
@@ -6095,6 +6211,7 @@ const PANEL_COMPONENTS = {
   SystemUpdatePanel,
   OAuthPanel,
   SettingsPanel,
+  AppearancePanel,
   PromptsPanel,
   RoomsPanel,
   LMStudioPanel,
@@ -6112,15 +6229,15 @@ export function ActionFailureBanner() {
   useEffect(() => onActionFailure(setFails), []);
   if (!fails.length) return null;
   return (
-    <div role="alert" style={{ border: '1px solid var(--red)', borderRadius: 4, padding: '8px 10px', marginBottom: 12, background: 'rgba(255,0,0,.06)' }}>
+    <div role="alert" style={{ border: '1px solid var(--red)', borderRadius: 4, padding: '8px 10px', marginBottom: 12, background: 'var(--n-bad-wash)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: fails.length ? 6 : 0 }}>
-        <span style={{ ...mono, color: 'var(--red)' }}>
+        <span style={{ ...noteS, color: 'var(--red)' }}>
           {fails.length} action{fails.length > 1 ? 's' : ''} FAILED — the change did not happen
         </span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => { clearActionFailures(); setFails([]); }}>dismiss</button>
       </div>
       {fails.slice(0, 5).map((f, i) => (
-        <div key={i} style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>
+        <div key={i} style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           {f.method} {f.path} → <span style={{ color: 'var(--red)' }}>{f.status}</span>
           {f.status === 403 ? ' · refused (kernel denial or missing admin token)' : ''}
           {f.status === 401 ? ' · not authorised' : ''}
@@ -6130,51 +6247,20 @@ export function ActionFailureBanner() {
   );
 }
 
-export function ConsoleOverlay({ onClose, panelId = null }: { onClose: () => void; panelId?: string | null }) {
-  // Bolt Optimization: O(1) Map lookup via CONSOLE_PANEL_MAP avoids O(120) array scan
-  const selected = panelId ? CONSOLE_PANEL_MAP.get(panelId) || null : null;
+/* One Console panel as a page inside its area's frame (PHASE_B_PLAN.md §2.3; frame/PanelPage.tsx
+   lazy-loads this): the failed-mutation banner, then the panel the registry lookup
+   PANEL_COMPONENTS[selected.component] chooses. The page head (title, source label) and moving
+   focus to it on navigation belong to PanelPage, so this renders no heading. Pass
+   showFailures={false} where the frame's notices already show ActionFailureBanner on that page.
+   An id CONSOLE_PANELS does not have renders only the banner. (/v2/console itself is All pages,
+   nav/AllPages.tsx: the Console overlay that listed and hosted the panels was retired in Phase B.) */
+export function ConsolePanel({ panelId, showFailures = true }: { panelId: string; showFailures?: boolean }) {
+  const selected = CONSOLE_PANEL_MAP.get(panelId) || null;
   const Panel = selected ? PANEL_COMPONENTS[selected.component] : null;
-  const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { if (selected) heading.current?.focus(); }, [panelId]);
-  const follow = (path: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    e.preventDefault(); navigateHud(path);
-  };
-  useEffect(() => {
-    const h = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [onClose]);
   return (
-    <div className="pal-scrim" onClick={onClose} style={{ alignItems: 'flex-start', paddingTop: '5vh' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(1120px,95vw)', maxHeight: '90vh', overflow: 'auto', background: 'var(--void-2)', border: '1px solid var(--border-active, var(--panel-line))', borderRadius: 'var(--radius)', padding: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, gap: 12 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.14em', color: 'var(--accent-light)' }}>CONSOLE</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>Tools and settings</span>
-          <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={onClose}>esc ✕</button>
-        </div>
-        <ActionFailureBanner />
-        {selected && Panel ? (
-          <section key={selected.id} aria-labelledby="console-panel-title">
-            <a className="console-link" href={routeHref('/v2/console')} onClick={follow('/v2/console')}>All console panels</a>
-            <h2 id="console-panel-title" tabIndex={-1} ref={heading}>{selected.label}</h2>
-            <Panel />
-          </section>
-        ) : (
-          <nav aria-label="Console panels">
-            {[...new Set(CONSOLE_PANELS.map(p => p.group))].map(group => (
-              <section key={group} style={{ marginBottom: 18 }}>
-                <h2 style={{ ...mono, fontSize: 12 }}>{group}</h2>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                  {CONSOLE_PANELS.filter(p => p.group === group).map(p => (
-                    <a className="console-link" key={p.id} href={routeHref('/v2/console/' + p.id)} onClick={follow('/v2/console/' + p.id)}>{p.label}</a>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </nav>
-        )}
-      </div>
-    </div>
+    <>
+      {showFailures && <ActionFailureBanner />}
+      {selected && Panel ? <Panel key={selected.id} /> : null}
+    </>
   );
 }

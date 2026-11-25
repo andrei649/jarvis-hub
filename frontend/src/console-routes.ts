@@ -127,6 +127,7 @@ export const CONSOLE_PANELS = [
   {"id": "restart-update", "label": "Restart / Update", "group": "Admin", "component": "SystemUpdatePanel"},
   {"id": "o-auth", "label": "O Auth", "group": "Admin", "component": "OAuthPanel"},
   {"id": "settings", "label": "Settings", "group": "Admin", "component": "SettingsPanel"},
+  {"id": "appearance", "label": "Personalisation", "group": "Admin", "component": "AppearancePanel"},
   {"id": "prompts", "label": "Prompts", "group": "Admin", "component": "PromptsPanel"},
   {"id": "rooms", "label": "Rooms", "group": "Admin", "component": "RoomsPanel"},
   {"id": "remote-members", "label": "Remote Members", "group": "Admin", "component": "RoomPeersPanel"},

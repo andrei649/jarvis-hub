@@ -2,6 +2,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from '../app';
+import { composerSend } from '../home/talk/test-support';
 
 vi.mock('../voice', () => ({ useVoice: () => ({ active: false, toggle: () => {} }) }));
 vi.mock('../mesh', () => ({ NeuralMesh: () => null, isExecutingAgent: () => false }));
@@ -29,6 +30,26 @@ async function mount() {
   await screen.findByLabelText('Attach images');
 }
 
+it('restores measured model calls on a saved reply without deriving a badge from missing evidence', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => path === '/memory'
+    ? json(200, {session:'current',turns:[
+      {role:'assistant',content:'Measured prior reply',model_calls:[{provider:'ollama',model:'qwen-7b'}]},
+      {role:'assistant',content:'Unexecuted prior reply',usage:{api_calls:0}},
+      {role:'system',content:'Non-assistant notice',model_calls:[{provider:'ollama',model:'wrong-attribution'}]},
+    ]}) : json(200, {})));
+  await mount();
+  // the Ledger reply's footnote (PHASE_B_PLAN.md §5.3) says where a reply was sent, from its receipt only
+  const footnote = (text: string) => screen.getByText(text).closest('[data-turn]')?.querySelector('[data-footnote]');
+  await screen.findByText('Measured prior reply');
+  expect(footnote('Measured prior reply')?.getAttribute('data-marker')).toBe('localRunner');
+  expect(footnote('Measured prior reply')?.textContent).toContain('Sent to Ollama on this computer · qwen-7b');
+  for (const text of ['Unexecuted prior reply', 'Non-assistant notice']) {
+    expect(footnote(text)?.getAttribute('data-marker')).toBe('notReported');
+    expect(footnote(text)?.textContent).toContain('Where it ran: not reported');
+  }
+  expect(footnote('Non-assistant notice')?.textContent).not.toContain('wrong-attribution');
+});
+
 it('rehydrates exact missing-session 404 to current memory and sends the next turn there', async () => {
   sessionStorage.setItem('nerva.chat.session_id', 'old');
   vi.stubGlobal('fetch', vi.fn(async (path: string, init?: { body?: string }) => {
@@ -48,7 +69,7 @@ it('rehydrates exact missing-session 404 to current memory and sends the next tu
   expect(sessionStorage.getItem('nerva.chat.session_id')).toBe('current');
   const input = document.querySelector('[data-composer]') as HTMLInputElement;
   fireEvent.change(input, { target: { value: 'continue here' } });
-  fireEvent.click(document.querySelector('.inputbar .transmit') as HTMLElement);
+  fireEvent.click(composerSend());
   await screen.findByText('New reply');
   const chat = requests.find((request) => request.path === '/chat/stream');
   expect(chat?.body).toMatchObject({ session_id: 'current' });
@@ -122,7 +143,7 @@ it('a completed text turn fences a late fallback snapshot even though busy has c
   await waitFor(() => expect(releaseMemory).toBeTruthy());
   const input = document.querySelector('[data-composer]') as HTMLInputElement;
   fireEvent.change(input, { target: { value: 'new work' } });
-  fireEvent.click(document.querySelector('.inputbar .transmit') as HTMLElement);
+  fireEvent.click(composerSend());
   await screen.findByText('Completed during recovery');
   expect(sessionStorage.getItem('nerva.chat.session_id')).toBe('old');
 

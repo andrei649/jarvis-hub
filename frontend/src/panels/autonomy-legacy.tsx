@@ -1,6 +1,7 @@
-/* AUTONOMY CONTROL — the four autonomy-surface routes that ship in the backend and had
-   no client at all. Handlers read in full: agents/core/routers/autonomy.py (status:158,
-   observer status:172, observer run:186, suggestions:364, call:114), the queue helpers
+/* AUTONOMY CONTROL — the five autonomy-surface routes that ship in the backend and had
+   no client at all. Handlers read in full: agents/core/routers/autonomy.py (kanban
+   dispatch:46, status:158, observer status:172, observer run:186, suggestions:364,
+   call:114), the dispatcher agents/core/kanban/dispatcher.py:47-321, the queue helpers
    agents/core/autonomy/queue.py:1653/1669, the observer agents/core/autonomy/observer.py:252
    and the broker agents/core/autonomy/call_broker.py:207-287.
 
@@ -43,7 +44,10 @@
      answers 200 {ok:true, queued:false} — a preview, nothing enqueued. The panel
      branches on `queued`, not on the status code. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, actA, inpS, taS, Json } from '../panel-kit';
+/* panel-kit's `note` (messages and readouts in the interface face, contract §5) arrives as
+   kitNote: this file's own `note` below is its smaller ink-2 hint paragraph. */
+import { useApi, arr, mono, note as kitNote, asLive, Card, State, Row, Tag, act, actA, inpS, taS, Json } from '../panel-kit';
+import { IDENT, LABEL } from '../theme/type';
 
 const STATUS_PATH = '/autonomy/status';
 const MEDIATION_PATH = '/autonomy/mediation';
@@ -51,6 +55,8 @@ const OBSERVER_PATH = '/autonomy/observer';
 const OBSERVER_RUN_PATH = '/autonomy/observer/run';
 const SUGGESTIONS_PATH = '/autonomy/preferences/suggestions';
 const CALL_PATH = '/api/autonomy/call';
+const KANBAN_DISPATCH_PATH = '/api/autonomy/kanban/dispatch';
+const BOARD_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 /* Presentation order only — taken from the queue's own _TRANSITIONS machine
    (queue.py). A status with zero rows is ABSENT from stats() (GROUP BY status), so
@@ -66,9 +72,11 @@ const PROVIDERS = [
   { id: 'telnyx', credential: 'telnyx_api_key' },
 ];
 
-const amber = { color: 'var(--amber)', fontSize: 11 };
-const note = { color: 'var(--ink-2)', fontSize: 10.5, lineHeight: 1.5, margin: '4px 0 0' };
-const head = { ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)', margin: '10px 0 4px' };
+const amber = { color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' };
+const note = { color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, margin: '4px 0 0' };
+const head = { ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '10px 0 4px' };
+/* A route inside a head is an IDENT span (theme/type): the mono face, with its own case and
+   spacing (contract §5). */
 
 /* The ONLY thing a failed apiGet carries is `GET <path> -> <status>`; the guard's own
    detail string is unreachable on a GET. So the hint names the handler branch that
@@ -170,6 +178,25 @@ export function AutonomyControlPanel() {
   };
   const cred = (PROVIDERS.find((p) => p.id === provider) || {} as any).credential;
 
+  // ── governed Kanban intake (POST /api/autonomy/kanban/dispatch) ──
+  const [kbBoard, setKbBoard] = useState('default');
+  const [kbLimit, setKbLimit] = useState('4');
+  const [kbRes, setKbRes] = useState<any>(null);
+  const [kbErr, setKbErr] = useState<any>(null);
+  const [kbBusy, setKbBusy] = useState(false);
+  const trimmedKbBoard = kbBoard.trim();
+  const parsedKbLimit = /^\d+$/.test(kbLimit.trim()) ? Number(kbLimit.trim()) : NaN;
+  const validKbBoard = BOARD_SLUG_RE.test(trimmedKbBoard);
+  const validKbLimit = Number.isSafeInteger(parsedKbLimit) && parsedKbLimit >= 1 && parsedKbLimit <= 16;
+  const canDispatchKanban = validKbBoard && validKbLimit && !kbBusy;
+  const dispatchKanban = () => {
+    if (!canDispatchKanban) return;
+    setKbBusy(true); setKbRes(null); setKbErr(null);
+    actA(KANBAN_DISPATCH_PATH, { board: trimmedKbBoard, limit: parsedKbLimit },
+      (r) => { setKbRes(r || {}); setKbBusy(false); status.reload(); },
+      (err) => { setKbErr(err); setKbBusy(false); });
+  };
+
   const suggestions = arr(gd, 'suggestions');
   const tierColor = (n) => (n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-2)');
 
@@ -188,10 +215,10 @@ export function AutonomyControlPanel() {
           <div style={amber}>Mediation status unavailable</div>
         ) : (
           <>
-            <Row><span style={mono}>Effective mode: {md.mode}</span></Row>
-            <Row><span style={mono}>Evidence: {md.valid ? 'verified' : 'unavailable or invalid'}</span></Row>
+            <Row><span style={kitNote}>Effective mode: {md.mode}</span></Row>
+            <Row><span style={kitNote}>Evidence: {md.valid ? 'verified' : 'unavailable or invalid'}</span></Row>
             {md.stats && MEDIATION_COUNTS.map(([key, label]) => (
-              <Row key={key}><span style={mono}>{label}: {md.stats?.[key]}</span></Row>
+              <Row key={key}><span style={kitNote}>{label}: {md.stats?.[key]}</span></Row>
             ))}
           </>
         )}
@@ -201,13 +228,13 @@ export function AutonomyControlPanel() {
       </section>
 
       {/* ── S1 · queue census + interrupt budget ─────────────────────────── */}
-      <div style={head}>QUEUE CENSUS · GET {STATUS_PATH}</div>
+      <div style={head}>QUEUE CENSUS · <span style={IDENT}>GET {STATUS_PATH}</span></div>
       <State e={status.e} loading={status.loading} n={sd ? 1 : 0} />
       {status.e && readHint(status.e, ORCH_503) && (
         <div style={amber}>{readHint(status.e, ORCH_503)}</div>
       )}
       {sd && ordered.length === 0 && (
-        <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>
+        <div style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>
           queue empty · stats {'{}'} — no rows in the tasks table. A true zero, not an outage.
         </div>
       )}
@@ -226,7 +253,7 @@ export function AutonomyControlPanel() {
       {sd && (
         <>
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>interrupt budget</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>interrupt budget</span>
             <span style={{ marginLeft: 'auto' }}>
               <Tag c={remaining === 0 ? 'var(--amber)' : 'var(--ink-2)'}>
                 {remaining == null ? '—' : String(remaining)} / {perDay == null ? '—' : String(perDay)} interrupts left today
@@ -241,11 +268,11 @@ export function AutonomyControlPanel() {
           </div>
           <div style={head}>AWAITING A DECISION · {pending.length} row(s)</div>
           {pending.length === 0 && (
-            <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>nothing blocked or proposed.</div>
+            <div style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>nothing blocked or proposed.</div>
           )}
           {pending.slice(0, 8).map((t: any, i: number) => (
             <Row key={t.id ?? i}>
-              <span style={{ ...mono, color: 'var(--ink-2)' }}>#{t.id} · {t.title || t.kind || 'task'}</span>
+              <span style={{ ...kitNote, color: 'var(--ink-2)' }}>#{t.id} · {t.title || t.kind || 'task'}</span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
                 <Tag c={t.status === 'proposed' ? 'var(--amber)' : 'var(--ink-2)'}>{t.status}</Tag>
                 {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
@@ -266,7 +293,7 @@ export function AutonomyControlPanel() {
       )}
 
       {/* ── S2 · proactive OS observer ────────────────────────────────────── */}
-      <div style={head}>OS OBSERVER · POST {OBSERVER_RUN_PATH}</div>
+      <div style={head}>OS OBSERVER · <span style={IDENT}>POST {OBSERVER_RUN_PATH}</span></div>
       {obs.e && (
         <>
           <div style={amber}>observer state unavailable · {obs.e}</div>
@@ -299,24 +326,24 @@ export function AutonomyControlPanel() {
       {od && arr(od, 'unhealthy').map((u: any, i: number) => (
         <Row key={(u && u.key) || i}>
           <span style={{ ...mono, color: 'var(--amber)' }}>{u && u.key}</span>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{u && u.detail}</span>
+          <span style={{ ...kitNote, color: 'var(--ink-2)' }}>{u && u.detail}</span>
           {u && u.severity && <span style={{ marginLeft: 'auto' }}><Tag c="var(--amber)">{u.severity}</Tag></span>}
         </Row>
       ))}
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>sample the host now (admin)</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>sample the host now (admin)</span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={busy} onClick={sample}>
           {busy ? 'sampling…' : 'sample now'}
         </button>
       </Row>
       {busy && (
-        <div style={{ color: 'var(--ink-2)', fontSize: 11 }}>
+        <div style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>
           sampling… every probe is a live TCP connect (Qdrant, Neo4j, n8n, LM Studio, Ollama) — this can take
           several seconds against a box where they are down.
         </div>
       )}
       {runErr && (
-        <div style={{ color: 'var(--red)', fontSize: 11 }}>
+        <div style={{ color: 'var(--red)', fontSize: 'var(--n-fs-meta)' }}>
           run refused · HTTP {String(runErr.status ?? '?')}
           {runErr.body && runErr.body.error != null
             ? <> · {String(runErr.body.error)}</>
@@ -353,7 +380,7 @@ export function AutonomyControlPanel() {
       </div>
 
       {/* ── S3 · autonomy-raise suggestions ──────────────────────────────── */}
-      <div style={head}>AUTONOMY-RAISE SUGGESTIONS · GET {SUGGESTIONS_PATH}</div>
+      <div style={head}>AUTONOMY-RAISE SUGGESTIONS · <span style={IDENT}>GET {SUGGESTIONS_PATH}</span></div>
       <State e={sug.e} loading={sug.loading} n={gd ? 1 : 0} />
       {sug.e && readHint(sug.e, ORCH_503) && <div style={amber}>{readHint(sug.e, ORCH_503)}</div>}
       {gd && suggestions.length === 0 && (
@@ -373,7 +400,7 @@ export function AutonomyControlPanel() {
               <Tag>approval_rate {String(s.approval_rate)} over {s.samples} sample(s)</Tag>
             </span>
           </Row>
-          <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)', padding: '0 0 4px' }}>{s.suggestion}</div>
+          <div style={{ ...kitNote, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', padding: '0 0 4px' }}>{s.suggestion}</div>
         </div>
       ))}
       {gd && (
@@ -387,7 +414,7 @@ export function AutonomyControlPanel() {
       )}
 
       {/* ── S4 · governed outbound-call request ──────────────────────────── */}
-      <div style={head}>REQUEST A GOVERNED CALL · POST {CALL_PATH}</div>
+      <div style={head}>REQUEST A GOVERNED CALL · <span style={IDENT}>POST {CALL_PATH}</span></div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', margin: '2px 0 6px' }}>
         <input style={{ ...inpS, flex: '1 1 150px' } as any} maxLength={40} placeholder="to (number, ≤ 40 chars)"
           value={to} onChange={(ev) => setTo(ev.target.value)} />
@@ -402,7 +429,7 @@ export function AutonomyControlPanel() {
       <textarea style={taS as any} maxLength={2000} placeholder="message to be spoken on the call (≤ 2000 chars)"
         value={message} onChange={(ev) => setMessage(ev.target.value)} />
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>
+        <span style={{ ...kitNote, color: 'var(--ink-2)' }}>
           {to.trim() === '' || message.trim() === '' ? 'to + message are required by the broker' : `provider ${provider} · credential ${cred}`}
         </span>
         <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!canCall} onClick={request}>
@@ -417,9 +444,9 @@ export function AutonomyControlPanel() {
         secret exists, so this states the condition rather than guessing which side of it this instance is on.
       </div>
       {res && res.queued === true && (
-        <div style={{ color: 'var(--green)', fontSize: 11, marginTop: 6 }}>
+        <div style={{ color: 'var(--green)', fontSize: 'var(--n-fs-meta)', marginTop: 6 }}>
           queued for approval · task #{String(res.task_id)} · kind {String(res.kind)}
-          <div style={{ ...mono, color: 'var(--ink-2)' }}>{String(res.title || '')}</div>
+          <div style={{ ...kitNote, color: 'var(--ink-2)' }}>{String(res.title || '')}</div>
           {res.preview && (
             <div style={{ display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
               <Tag c={tierColor(res.preview.risk_tier)}>tier {String(res.preview.risk_tier)}</Tag>
@@ -428,7 +455,7 @@ export function AutonomyControlPanel() {
             </div>
           )}
           {res.preview && res.preview.summary && (
-            <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10.5 }}>{String(res.preview.summary)}</div>
+            <div style={{ ...kitNote, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>{String(res.preview.summary)}</div>
           )}
         </div>
       )}
@@ -444,7 +471,7 @@ export function AutonomyControlPanel() {
       )}
       {callErr && (
         <div style={{ marginTop: 6 }}>
-          <div style={{ color: 'var(--red)', fontSize: 11 }}>
+          <div style={{ color: 'var(--red)', fontSize: 'var(--n-fs-meta)' }}>
             refused · HTTP {String(callErr.status ?? '?')}
             {callErr.body && callErr.body.reason != null
               ? <> · reason: {String(callErr.body.reason)}</>
@@ -454,10 +481,10 @@ export function AutonomyControlPanel() {
             {callErr.body && callErr.body.kind != null && <> · kind {String(callErr.body.kind)}</>}
           </div>
           {callErr.body && Array.isArray(callErr.body.supported) && (
-            <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>supported: {callErr.body.supported.join(' · ')}</div>
+            <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>supported: {callErr.body.supported.join(' · ')}</div>
           )}
           {callErr.body && Array.isArray(callErr.body.missing) && (
-            <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>missing: {callErr.body.missing.join(' · ')}</div>
+            <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>missing: {callErr.body.missing.join(' · ')}</div>
           )}
           {callErr.body && callErr.body.detail !== undefined && <Json v={callErr.body.detail} />}
           <div style={note}>
@@ -468,9 +495,108 @@ export function AutonomyControlPanel() {
         </div>
       )}
 
+      {/* ── S5 · governed Kanban board intake ────────────────────────────── */}
+      <div style={head}>GOVERNED KANBAN DISPATCH · <span style={IDENT}>POST {KANBAN_DISPATCH_PATH}</span></div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', margin: '2px 0 6px' }}>
+        <input
+          aria-label="Kanban dispatch board"
+          style={{ ...inpS, flex: '1 1 160px' } as any}
+          maxLength={64}
+          placeholder="board slug (default)"
+          value={kbBoard}
+          disabled={kbBusy}
+          onChange={(ev) => { setKbBoard(ev.target.value); setKbRes(null); setKbErr(null); }}
+        />
+        <input
+          aria-label="Kanban dispatch limit"
+          type="number"
+          min={1}
+          max={16}
+          style={{ ...inpS, width: 96 } as any}
+          placeholder="limit (1–16)"
+          value={kbLimit}
+          disabled={kbBusy}
+          onChange={(ev) => { setKbLimit(ev.target.value); setKbRes(null); setKbErr(null); }}
+        />
+      </div>
+      <Row>
+        <span style={{ ...kitNote, color: 'var(--ink-2)' }}>
+          {!validKbBoard || !validKbLimit
+            ? 'board slug (^[a-z0-9][a-z0-9_-]{0,63}$) and integer limit 1–16 required'
+            : `board ${trimmedKbBoard} · max ${parsedKbLimit} proposal(s) (admin)`}
+        </span>
+        <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!canDispatchKanban} onClick={dispatchKanban}>
+          {kbBusy ? 'dispatching…' : 'intake ready cards'}
+        </button>
+      </Row>
+      <div style={note}>
+        Intakes tier-2 (<code>kanban.worker</code>) ASK tasks onto the signed autonomy queue. This request does not
+        claim or start a worker run; returned items may already have advanced. Approvals happen in DECISION INBOX, and worker execution runs
+        only when <code>llm.kanban</code>, <code>llm.kanban_dispatch</code>, <code>llm.tool_loop_enabled</code>{' '}
+        and <code>enforce</code> mediation are active.
+      </div>
+      {kbRes && kbRes.ok === true && kbRes.status === 'busy' && (
+        <div role="status" style={{ ...amber, marginTop: 6 }}>
+          dispatch busy · another host or board dispatch pass holds the lock; 0 proposals enqueued.
+        </div>
+      )}
+      {kbRes && kbRes.ok === true && kbRes.status === 'queued' && Array.isArray(kbRes.queued) && kbRes.queued.length === 0 && (
+        <div role="status" style={{ ...amber, marginTop: 6 }}>
+          0 queue items returned — no ready, review or continuation cards matched an active agent profile within
+          worker caps (or kernel/policy refused intake).
+        </div>
+      )}
+      {kbRes && kbRes.ok === true && kbRes.status === 'queued' && Array.isArray(kbRes.queued) && kbRes.queued.length > 0 && (
+        <div role="status" style={{ marginTop: 6 }}>
+          <div style={{ color: 'var(--green)', fontSize: 'var(--n-fs-meta)' }}>
+            {kbRes.queued.length} queue item(s) returned — check each status; approved or running items may have advanced earlier:
+          </div>
+          {kbRes.queued.map((item: any, idx: number) => (
+            <Row key={`${item?.queue_id ?? idx}-${item?.task_id ?? idx}`}>
+              <span style={{ ...mono, color: 'var(--ink-2)' }}>
+                card {String(item?.task_id ?? '?')} · queue #{String(item?.queue_id ?? '?')}
+              </span>
+              <span style={{ marginLeft: 'auto' }}>
+                <Tag c={item?.status === 'proposed' || item?.status === 'blocked' ? 'var(--amber)' : 'var(--ink-2)'}>
+                  {String(item?.status ?? 'unknown')}
+                </Tag>
+              </span>
+            </Row>
+          ))}
+        </div>
+      )}
+      {kbRes && !(kbRes.ok === true && (kbRes.status === 'busy' || (kbRes.status === 'queued' && Array.isArray(kbRes.queued)))) && (
+        <div style={{ marginTop: 6 }}>
+          <div style={amber}>unexpected dispatch response — nothing confirmed queued.</div>
+          <Json v={kbRes} />
+        </div>
+      )}
+      {kbErr && (
+        <div role="alert" style={{ marginTop: 6 }}>
+          <div style={{ color: 'var(--red)', fontSize: 'var(--n-fs-meta)' }}>
+            dispatch refused · HTTP {String(kbErr.status ?? '?')}
+            {kbErr.body && kbErr.body.reason != null
+              ? <> · reason: {String(kbErr.body.reason)}</>
+              : kbErr.body && typeof kbErr.body.error === 'string'
+                ? <> · {kbErr.body.error}</>
+                : (!kbErr.body || kbErr.body.detail === undefined)
+                  ? <> · {String(kbErr.message || 'refused')}</>
+                  : null}
+          </div>
+          {kbErr.body && kbErr.body.detail !== undefined && <Json v={kbErr.body.detail} />}
+          {kbErr.body && kbErr.body.reason === 'governed_worker_unavailable' && (
+            <div style={note}>
+              governed_worker_unavailable: orch._autonomy.kanban_dispatcher is absent or KanbanDispatcher._runtime()
+              is disabled (requires default-off llm.kanban, llm.kanban_dispatch and llm.tool_loop_enabled plus
+              kernel_enabled() and enforce mediation).
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ ...note, borderTop: '1px solid var(--panel-line)', paddingTop: 6, marginTop: 8 }}>
         admin reads: {STATUS_PATH} · {SUGGESTIONS_PATH} · {OBSERVER_PATH} (X-Admin-Token) ·
-        admin write: POST {OBSERVER_RUN_PATH} · user-tier write: POST {CALL_PATH}.
+        admin writes: POST {OBSERVER_RUN_PATH} · POST {KANBAN_DISPATCH_PATH} · user-tier write: POST {CALL_PATH}.
       </div>
     </Card>
   );

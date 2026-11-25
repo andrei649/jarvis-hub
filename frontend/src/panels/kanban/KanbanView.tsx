@@ -49,14 +49,17 @@ function moveCard(board: KanbanBoard, id: string, status: string): KanbanBoard {
   return { ...board, columns: board.columns.map(c => ({ ...c, tasks: c.name === status ? [moved!, ...c.tasks.filter(t => t.id !== id)] : c.tasks.filter(t => t.id !== id) })) };
 }
 
-export function KanbanView() {
+export function KanbanView({ onDiscussResult }: { onDiscussResult?: (ref: { board: string; taskId: string }) => void } = {}) {
   const [slug, setSlugState] = useState(initialSlug);
   const [boards, setBoards] = useState<BoardsResponse | null>(null);
   const [board, setBoard] = useState<KanbanBoard | null>(null);
   const [profiles, setProfiles] = useState<KanbanProfile[]>([]);
+  const [profilesEditable, setProfilesEditable] = useState(true);
+  const [profilesError, setProfilesError] = useState('');
   const [knownAssignees, setKnownAssignees] = useState<KanbanAssignee[]>([]);
   const [stats, setStats] = useState<KanbanStats | null>(null);
   const [activeWorkers, setActiveWorkers] = useState<ActiveWorkersResponse | null>(null);
+  const [workersState, setWorkersState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [boardDiagnostics, setBoardDiagnostics] = useState<BoardDiagnosticsResponse | null>(null);
   const [diagSeverity, setDiagSeverity] = useState('');
   const [showOps, setShowOps] = useState(false);
@@ -74,6 +77,9 @@ export function KanbanView() {
   const [addStatus, setAddStatus] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const generation = useRef(0);
+  const boardRequest = useRef(0);
+  const workersRequest = useRef(0);
+  const profilesRequest = useRef(0);
   const boardRef = useRef<KanbanBoard | null>(null);
   const cursorRef = useRef(0);
   const socketRef = useRef<{close: () => void} | null>(null);
@@ -85,7 +91,8 @@ export function KanbanView() {
   severityRef.current = diagSeverity;
   const setSlug = (next: string) => {
     slugRef.current = next; saveSlug(next); setSlugState(next);
-    setBoard(null); setStats(null); setActiveWorkers(null); setBoardDiagnostics(null);
+    boardRequest.current++; workersRequest.current++;
+    setBoard(null); setKnownAssignees([]); setStats(null); setActiveWorkers(null); setWorkersState('loading'); setBoardDiagnostics(null);
     setSelected(new Set()); setOpenId(null); setAddStatus(null); setError(''); setNotice('');
   };
   const sameScope = (forSlug: string, forGeneration: number) =>
@@ -97,11 +104,18 @@ export function KanbanView() {
     return result;
   }, []);
   const reloadProfiles = useCallback(async () => {
+    const request = ++profilesRequest.current;
     try {
       const r = await api.fetchProfiles();
+      if (request !== profilesRequest.current) return;
       setProfiles(r.profiles || []);
+      setProfilesEditable(r.editable !== false);
+      setProfilesError('');
     } catch (e) {
-      setAuxiliaryError(errText(e));
+      if (request !== profilesRequest.current) return;
+      setProfiles([]);
+      setProfilesEditable(false);
+      setProfilesError(errText(e));
     }
   }, []);
   const reloadModelOptions = useCallback(async () => {
@@ -121,7 +135,7 @@ export function KanbanView() {
       if (!slug || !result.boards.some(b => b.slug === slug)) setSlug(result.current || result.boards[0]?.slug || 'default');
     }).catch(e => live && setError(errText(e)));
     api.fetchProjects().then(r => { if (live) setProjects(r.projects || []); }).catch(e => { if (live) setAuxiliaryError(errText(e)); });
-    api.fetchProfiles().then(r => { if (live) setProfiles(r.profiles || []); }).catch(e => { if (live) setAuxiliaryError(errText(e)); });
+    void reloadProfiles();
     api.fetchOrchestration().then(r => { if (live) setOrchestration(r); }).catch(e => { if (live) setAuxiliaryError(errText(e)); });
     if ('fetchConfig' in api) {
       api.fetchConfig().then(r => { if (live) { setConfig(r); setConfigError(''); } }).catch(e => { if (live) setConfigError(errText(e)); });
@@ -129,7 +143,7 @@ export function KanbanView() {
     if ('fetchModelOptions' in api) {
       api.fetchModelOptions().then(r => { if (live) { setModelOptions(r); setModelOptionsError(''); } }).catch(e => { if (live) setModelOptionsError(errText(e)); });
     }
-    return () => { live = false; };
+    return () => { live = false; profilesRequest.current++; };
   // Initial metadata; board refreshes below.
   }, []);
 
@@ -144,11 +158,19 @@ export function KanbanView() {
         if (sameScope(forSlug, requestGeneration)) setStats(r);
       }).catch(() => {});
     }
+    const workerRequest = ++workersRequest.current;
+    if (!boardRef.current) setWorkersState('loading');
     if ('fetchActiveWorkers' in api) {
       void api.fetchActiveWorkers(forSlug).then(r => {
-        if (sameScope(forSlug, requestGeneration)) setActiveWorkers(r);
-      }).catch(() => {});
-    }
+        if (!sameScope(forSlug, requestGeneration) || workerRequest !== workersRequest.current) return;
+        if (!Array.isArray(r.workers)) throw new Error('Invalid workers response');
+        setActiveWorkers(r); setWorkersState('ready');
+      }).catch(() => {
+        if (sameScope(forSlug, requestGeneration) && workerRequest === workersRequest.current) {
+          setActiveWorkers(null); setWorkersState('error');
+        }
+      });
+    } else setWorkersState('error');
     if ('fetchDiagnostics' in api) {
       void api.fetchDiagnostics(forSlug, severity || undefined).then(r => {
         if (sameScope(forSlug, requestGeneration)) setBoardDiagnostics(r);
@@ -158,16 +180,25 @@ export function KanbanView() {
 
   const loadBoard = useCallback(async (forSlug = slugRef.current, includeArchived = archived) => {
     const requestGeneration = generation.current;
+    const request = ++boardRequest.current;
+    ++workersRequest.current;
+    if (!boardRef.current) setWorkersState('loading');
     try {
       const result = await api.fetchBoard(forSlug, includeArchived);
-      if (requestGeneration !== generation.current || forSlug !== slugRef.current) return null;
+      if (requestGeneration !== generation.current || forSlug !== slugRef.current || request !== boardRequest.current) return null;
       setBoard(result);
+      const running = new Map(result.columns.flatMap(column => column.tasks)
+        .filter(task => task.status === 'running').map(task => [task.id, task.current_run_id]));
+      setActiveWorkers(previous => previous ? { ...previous, workers: previous.workers.filter(worker =>
+        running.has(worker.task_id) && (running.get(worker.task_id) == null || running.get(worker.task_id) === worker.run_id)) } : null);
       cursorRef.current = Math.max(cursorRef.current, result.latest_event_id || 0);
       setError('');
       loadBoardTelemetry(forSlug, requestGeneration);
       return result;
     } catch (e) {
-      if (requestGeneration === generation.current && forSlug === slugRef.current) setError(errText(e));
+      if (requestGeneration === generation.current && forSlug === slugRef.current && request === boardRequest.current) {
+        setError(errText(e)); setActiveWorkers(null); setWorkersState('error');
+      }
       return null;
     }
   }, [archived, loadBoardTelemetry]);
@@ -175,6 +206,9 @@ export function KanbanView() {
   useEffect(() => {
     if (!slug) return;
     const currentGeneration = ++generation.current;
+    const request = ++boardRequest.current;
+    ++workersRequest.current;
+    setActiveWorkers(null); setWorkersState('loading');
     cursorRef.current = 0;
     if (reconnectRef.current) clearTimeout(reconnectRef.current);
     socketRef.current?.close(); socketRef.current = null;
@@ -192,11 +226,15 @@ export function KanbanView() {
     };
     void api.fetchBoard(slug, archived).then(result => {
       if (cancelled || generation.current !== currentGeneration || slugRef.current !== slug) return;
-      setBoard(result); setError('');
-      cursorRef.current = result.latest_event_id || 0;
-      loadBoardTelemetry(slug, currentGeneration);
+      if (request === boardRequest.current) {
+        setBoard(result); setError('');
+        cursorRef.current = result.latest_event_id || 0;
+        loadBoardTelemetry(slug, currentGeneration);
+      }
       openSocket(cursorRef.current);
-    }).catch(e => { if (!cancelled && generation.current === currentGeneration) setError(errText(e)); });
+    }).catch(e => { if (!cancelled && generation.current === currentGeneration && request === boardRequest.current) {
+      setError(errText(e)); setActiveWorkers(null); setWorkersState('error');
+    } });
     const poll = setInterval(() => { void loadBoard(slug, archived); }, POLL_MS);
     return () => { cancelled = true; generation.current++; clearInterval(poll); if (reconnectRef.current) clearTimeout(reconnectRef.current); socketRef.current?.close(); socketRef.current = null; };
   }, [slug, archived, loadBoard, loadBoardTelemetry]);
@@ -267,10 +305,10 @@ export function KanbanView() {
       } else if (result.status === 'busy') {
         setError(''); setNotice('Dispatch is busy; no new request was queued.');
       } else if (result.status === 'queued' && Array.isArray(result.queued) && result.queued.length === 0) {
-        setError(''); setNotice('No eligible tasks were queued.');
+        setError(''); setNotice('No queue items returned.');
       } else if (result.status === 'queued' && Array.isArray(result.queued) && result.queued.length > 0) {
-        const requests = result.queued.map(item => `queue ${item.queue_id} (${item.status})`).join(', ');
-        setError(''); setNotice(`${result.queued.length} signed request${result.queued.length === 1 ? '' : 's'} queued · ${requests}. Worker completion has not been observed.`);
+        const requests = result.queued.map(item => `card ${item.task_id} · queue ${item.queue_id} (${item.status})`).join(', ');
+        setError(''); setNotice(`${result.queued.length} signed queue item${result.queued.length === 1 ? '' : 's'} returned · ${requests}. Approved or running items may have advanced earlier.`);
       } else {
         setNotice(''); setError(`Unexpected dispatch response: ${result.status || 'missing status'}`);
       }
@@ -282,24 +320,26 @@ export function KanbanView() {
     <div className="kb-header">
       <div><span className="kb-eyebrow">NERVA · KANBAN</span><h2>Kanban</h2></div>
       <BoardSwitcher boards={boards?.boards || []} current={activeSlug} projects={projects} onSwitch={setSlug} onRefresh={refresh} onError={setError} onNotice={setNotice} />
-      <button type="button" onClick={() => setShowOps(v => !v)}>Workers & diagnostics{activeWorkers ? ` · ${activeWorkers.count}` : ''}{boardDiagnostics?.count ? ` · ⚠ ${boardDiagnostics.count}` : ''}</button>
+      <button type="button" onClick={() => setShowOps(v => !v)}>Stats & diagnostics{boardDiagnostics?.count ? ` · ⚠ ${boardDiagnostics.count}` : ''}</button>
       <button type="button" onClick={() => setAddStatus('triage')}>New task</button>
     </div>
     {error && <div className="kb-alert" role="alert">{error}<button type="button" aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}
     {notice && <div className="kb-notice" role="status">{notice}</div>}
-    {showOps && <div className="kb-ops-panel" aria-label="Workers and diagnostics">
+    <section className="kb-active-workers" aria-label="Active workers" aria-live="polite">
+      <h3>Active workers{workersState === 'ready' && activeWorkers?.workers.length ? ` (${activeWorkers.workers.length})` : ''}</h3>
+      {workersState === 'loading' ? <span className="kb-muted">Loading active workers…</span>
+        : workersState === 'error' ? <span className="kb-muted">Active workers unavailable.</span>
+        : activeWorkers?.workers.length ? <ul>{activeWorkers.workers.map(w => <li key={w.run_id}>
+          <strong>{w.profile || w.task_assignee || 'worker'}</strong><button type="button" onClick={() => setOpenId(w.task_id)}>{w.task_title || w.task_id}</button>
+        </li>)}</ul> : <span className="kb-muted">No active running workers</span>}
+    </section>
+    {showOps && <div className="kb-ops-panel" aria-label="Stats and diagnostics">
       <div className="kb-ops-col">
         <h4>Board stats</h4>
         {stats ? <>
           <div className="kb-inline-actions">{Object.entries(stats.by_status).map(([st, count]) => <span key={st} className="kb-chip">{st}: {count}</span>)}</div>
           <p className="kb-muted">Oldest ready wait: {stats.oldest_ready_age_seconds != null ? `${stats.oldest_ready_age_seconds}s` : 'none'}</p>
         </> : <span className="kb-muted">No stats loaded</span>}
-      </div>
-      <div className="kb-ops-col">
-        <h4>Active workers ({activeWorkers?.count ?? 0})</h4>
-        {activeWorkers?.workers.length ? <ul className="kb-ops-list">{activeWorkers.workers.map(w => <li key={w.run_id}>
-          <strong>{w.profile || 'worker'}</strong> · pid {w.worker_pid ?? '—'} · <button type="button" onClick={() => setOpenId(w.task_id)}>{w.task_title || w.task_id}</button>
-        </li>)}</ul> : <span className="kb-muted">No active running workers</span>}
       </div>
       <div className="kb-ops-col">
         <div className="kb-inline-actions">
@@ -317,9 +357,9 @@ export function KanbanView() {
         </li>)}</ul> : <span className="kb-muted">No active diagnostics</span>}
       </div>
     </div>}
-    <BoardCanvas board={board} meta={activeMeta} profiles={profiles} knownAssignees={knownAssignees} orchestration={orchestration} config={config} configError={configError} auxiliaryError={auxiliaryError} selected={selected} onSelect={setSelected} onOpen={setOpenId} onAdd={setAddStatus} onMove={onMove} onDelete={onDelete} onBulk={onBulk} onBulkDelete={onBulkDelete} onDispatch={onDispatch} archived={archived} onArchived={setArchived} onRefreshProfiles={reloadProfiles} />
-    {addStatus && <NewTaskDialog target={addStatus} board={activeMeta} slug={activeSlug} profiles={profiles} knownAssignees={knownAssignees} orchestration={orchestration} modelOptions={modelOptions} modelOptionsError={modelOptionsError} parents={allTasks} onClose={() => { if (sameScope(activeSlug, viewGeneration)) setAddStatus(null); }} onCreated={async () => { if (sameScope(activeSlug, viewGeneration)) { setAddStatus(null); await loadBoard(activeSlug); } }} />}
-    {openId && <TaskDrawer slug={activeSlug} id={openId} columns={columns} profiles={profiles} knownAssignees={knownAssignees} allTasks={allTasks} modelOptions={modelOptions} modelOptionsError={modelOptionsError} onRefreshModelOptions={reloadModelOptions} onOpen={id => { if (sameScope(activeSlug, viewGeneration)) setOpenId(id); }} onClose={() => { if (sameScope(activeSlug, viewGeneration)) setOpenId(current => current === openId ? null : current); }} onChanged={() => sameScope(activeSlug, viewGeneration) ? loadBoard(activeSlug) : undefined} />}
+    <BoardCanvas board={board} meta={activeMeta} profiles={profiles} profilesEditable={profilesEditable} profilesError={profilesError} knownAssignees={knownAssignees} orchestration={orchestration} config={config} configError={configError} auxiliaryError={auxiliaryError} selected={selected} onSelect={setSelected} onOpen={setOpenId} onAdd={setAddStatus} onMove={onMove} onDelete={onDelete} onBulk={onBulk} onBulkDelete={onBulkDelete} onDispatch={onDispatch} archived={archived} onArchived={setArchived} onRefreshProfiles={reloadProfiles} />
+    {addStatus && <NewTaskDialog target={addStatus} board={activeMeta} slug={activeSlug} profiles={profiles} knownAssignees={knownAssignees} existingAssignees={board?.assignees} orchestration={orchestration} modelOptions={modelOptions} modelOptionsError={modelOptionsError} parents={allTasks} onClose={() => { if (sameScope(activeSlug, viewGeneration)) setAddStatus(null); }} onCreated={async () => { if (sameScope(activeSlug, viewGeneration)) { setAddStatus(null); await loadBoard(activeSlug); } }} />}
+    {openId && <TaskDrawer slug={activeSlug} id={openId} columns={columns} profiles={profiles} knownAssignees={knownAssignees} allTasks={allTasks} modelOptions={modelOptions} modelOptionsError={modelOptionsError} onRefreshModelOptions={reloadModelOptions} onOpen={id => { if (sameScope(activeSlug, viewGeneration)) setOpenId(id); }} onClose={() => { if (sameScope(activeSlug, viewGeneration)) setOpenId(current => current === openId ? null : current); }} onChanged={() => sameScope(activeSlug, viewGeneration) ? loadBoard(activeSlug) : undefined} onDiscussResult={onDiscussResult} />}
   </section>;
 }
 export default KanbanView;

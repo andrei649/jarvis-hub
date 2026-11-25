@@ -14,7 +14,8 @@
      renew the grant, or leave. Grants and keys are never shown. */
 import React, { useState } from 'react';
 import { apiDelete, apiPost } from '../api/client';
-import { Card, Tag, inpS, mono, refusalReason, useApi } from '../panel-kit';
+// The panel keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { Card, Tag, inpS, mono, note as noteS, refusalReason, useApi } from '../panel-kit';
 
 export const ROOM_PEERS_PATH = '/api/room-peers';
 
@@ -42,6 +43,8 @@ export function RoomPeersPanel() {
   const [callTool, setCallTool] = useState('');
   const [callArgs, setCallArgs] = useState('{}');
   const [answer, setAnswer] = useState<string | null>(null);
+  // The answer is the hub's JSON, or a refusal sentence; each keeps its own face.
+  const [answerRefused, setAnswerRefused] = useState(false);
 
   const invite = () => {
     apiPost('/api/room-peers/invitations', { room_id: room.trim(), member_id: member.trim(), tools: tools(toolList), target_url: url.trim() }, { admin: true })
@@ -74,8 +77,8 @@ export function RoomPeersPanel() {
     let args: unknown = {};
     try { args = JSON.parse(callArgs || '{}'); } catch { setNote('arguments must be JSON'); return; }
     apiPost(`/api/room-peers/links/${encodeURIComponent(lk.id)}/call`, { op: 'dispatch', tool: callTool.trim(), args }, { admin: true })
-      .then((r: any) => { setAnswer(JSON.stringify(r, null, 2)); st.reload(); })
-      .catch((x: any) => setAnswer(`refused · ${why(x)}`));
+      .then((r: any) => { setAnswer(JSON.stringify(r, null, 2)); setAnswerRefused(false); st.reload(); })
+      .catch((x: any) => { setAnswer(`refused · ${why(x)}`); setAnswerRefused(true); });
   };
   const renew = (lk: Link) => {
     apiPost(`/api/room-peers/links/${encodeURIComponent(lk.id)}/renew`, {}, { admin: true })
@@ -91,19 +94,19 @@ export function RoomPeersPanel() {
   return (
     <Card title="REMOTE MEMBERS" live={st.d ? 'live' : undefined} onReload={st.reload}
       sub={st.d ? `${members.length} members · ${links.length} links` : null}>
-      {st.e && <div role="status" style={{ color: 'var(--amber)', fontSize: 11 }}>not loaded · {String(st.e)}</div>}
-      {st.d && d.enabled === false && <div role="status" style={{ fontSize: 11 }}>Off on this hub (<span style={mono}>JARVIS_ROOM_PEERS</span>).</div>}
-      {d.key_fingerprint && <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginBottom: 6 }}>This hub's key · <span style={mono}>{d.key_fingerprint}</span>. Compare it with the other owner before you accept a bundle.</div>}
-      {note && <div role="status" style={{ color: 'var(--ink-2)', fontSize: 11, marginBottom: 4 }}>{note}</div>}
+      {st.e && <div role="status" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>not loaded · {String(st.e)}</div>}
+      {st.d && d.enabled === false && <div role="status" style={{ fontSize: 'var(--n-fs-meta)' }}>Off on this hub (<span style={mono}>JARVIS_ROOM_PEERS</span>).</div>}
+      {d.key_fingerprint && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>This hub's key · <span style={mono}>{d.key_fingerprint}</span>. Compare it with the other owner before you accept a bundle.</div>}
+      {note && <div role="status" style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', marginBottom: 4 }}>{note}</div>}
 
       <div aria-label="invite" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
-        <label htmlFor="rp-room" style={{ fontSize: 10.5 }}>Room</label>
+        <label htmlFor="rp-room" style={{ fontSize: 'var(--n-fs-meta)' }}>Room</label>
         <input id="rp-room" value={room} onChange={(ev) => setRoom(ev.target.value)} style={{ ...inpS, width: 110 }} />
-        <label htmlFor="rp-member" style={{ fontSize: 10.5 }}>Member</label>
+        <label htmlFor="rp-member" style={{ fontSize: 'var(--n-fs-meta)' }}>Member</label>
         <input id="rp-member" value={member} onChange={(ev) => setMember(ev.target.value)} style={{ ...inpS, width: 90 }} />
-        <label htmlFor="rp-tools" style={{ fontSize: 10.5 }}>Tools</label>
+        <label htmlFor="rp-tools" style={{ fontSize: 'var(--n-fs-meta)' }}>Tools</label>
         <input id="rp-tools" value={toolList} onChange={(ev) => setToolList(ev.target.value)} style={{ ...inpS, width: 160 }} />
-        <label htmlFor="rp-url" style={{ fontSize: 10.5 }}>This hub's address</label>
+        <label htmlFor="rp-url" style={{ fontSize: 'var(--n-fs-meta)' }}>This hub's address</label>
         <input id="rp-url" value={url} onChange={(ev) => setUrl(ev.target.value)} style={{ ...inpS, width: 180 }} />
         <button className="tool-btn" onClick={invite} disabled={!room.trim() || !member.trim() || !toolList.trim() || !url.trim()}>invite…</button>
       </div>
@@ -112,20 +115,20 @@ export function RoomPeersPanel() {
         {invitations.map((inv) => (
           <li key={inv.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '3px 0', flexWrap: 'wrap' }}>
             <Tag>{inv.status}</Tag>
-            <span style={{ ...mono, fontSize: 11 }}>{inv.member_id} → {inv.room_id}</span>
-            <span style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>{inv.policy?.tools?.join(', ')}</span>
+            <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{inv.member_id} → {inv.room_id}</span>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{inv.policy?.tools?.join(', ')}</span>
             {inv.status === 'approved' && <button className="tool-btn" onClick={() => takeBundle(inv)}>bundle</button>}
           </li>
         ))}
       </ul>
-      {shown && <pre aria-label="bundle" style={{ ...mono, fontSize: 10, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', background: 'var(--surface)', padding: 6 }}>{shown}</pre>}
+      {shown && <pre aria-label="bundle" style={{ ...mono, fontSize: 'var(--n-fs-meta)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', background: 'var(--surface)', padding: 6 }}>{shown}</pre>}
 
       <ul aria-label="members" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {members.map((m) => (
           <li key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '3px 0', borderBottom: '1px solid var(--panel-line)', flexWrap: 'wrap' }}>
             <Tag c={m.status === 'active' ? 'var(--accent-light)' : 'var(--amber)'}>{m.status}</Tag>
-            <span style={{ ...mono, fontSize: 11 }}>{m.principal}</span>
-            <span style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>{m.policy?.tools?.join(', ')} · key {m.key_fingerprint}</span>
+            <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{m.principal}</span>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{m.policy?.tools?.join(', ')} · key {m.key_fingerprint}</span>
             {m.status === 'active' && <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
               <button className="tool-btn" onClick={() => narrow(m)}>tools…</button>
               <button className="tool-btn" onClick={() => revoke(m)}>revoke</button>
@@ -135,7 +138,7 @@ export function RoomPeersPanel() {
       </ul>
 
       <div aria-label="join" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
-        <label htmlFor="rp-bundle" style={{ fontSize: 10.5 }}>Bundle</label>
+        <label htmlFor="rp-bundle" style={{ fontSize: 'var(--n-fs-meta)' }}>Bundle</label>
         <input id="rp-bundle" value={bundle} onChange={(ev) => setBundle(ev.target.value)} style={{ ...inpS, flex: 1 }} />
         <button className="tool-btn" onClick={join} disabled={!bundle.trim()}>join</button>
       </div>
@@ -143,12 +146,12 @@ export function RoomPeersPanel() {
         {links.map((lk) => (
           <li key={lk.id} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '3px 0', borderBottom: '1px solid var(--panel-line)', flexWrap: 'wrap' }}>
             <Tag c={lk.status === 'active' ? 'var(--accent-light)' : 'var(--amber)'}>{lk.status}</Tag>
-            <span style={{ ...mono, fontSize: 11 }}>{lk.member_id} in {lk.room_name || lk.room_id}</span>
-            <span style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>target key {lk.target_key_fingerprint}{lk.last_reason ? ` · ${lk.last_reason}` : ''}</span>
+            <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)' }}>{lk.member_id} in {lk.room_name || lk.room_id}</span>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>target key {lk.target_key_fingerprint}{lk.last_reason ? ` · ${lk.last_reason}` : ''}</span>
             {lk.status === 'active' && <>
-              <label htmlFor={`rp-tool-${lk.id}`} style={{ fontSize: 10.5 }}>tool</label>
+              <label htmlFor={`rp-tool-${lk.id}`} style={{ fontSize: 'var(--n-fs-meta)' }}>tool</label>
               <input id={`rp-tool-${lk.id}`} value={callTool} onChange={(ev) => setCallTool(ev.target.value)} style={{ ...inpS, width: 100 }} />
-              <label htmlFor={`rp-args-${lk.id}`} style={{ fontSize: 10.5 }}>args</label>
+              <label htmlFor={`rp-args-${lk.id}`} style={{ fontSize: 'var(--n-fs-meta)' }}>args</label>
               <input id={`rp-args-${lk.id}`} value={callArgs} onChange={(ev) => setCallArgs(ev.target.value)} style={{ ...inpS, width: 120 }} />
               <button className="tool-btn" onClick={() => call(lk)} disabled={!callTool.trim()}>call</button>
               <button className="tool-btn" onClick={() => renew(lk)}>renew</button>
@@ -157,7 +160,8 @@ export function RoomPeersPanel() {
           </li>
         ))}
       </ul>
-      {answer && <pre aria-label="answer" style={{ ...mono, fontSize: 10, whiteSpace: 'pre-wrap', background: 'var(--surface)', padding: 6 }}>{answer}</pre>}
+      {/* A <pre> defaults to the browser's monospace, so a refusal sentence inherits the interface face explicitly. */}
+      {answer && <pre aria-label="answer" style={{ ...(answerRefused ? { ...noteS, fontFamily: 'inherit' } : mono), fontSize: 'var(--n-fs-meta)', whiteSpace: 'pre-wrap', background: 'var(--surface)', padding: 6 }}>{answer}</pre>}
     </Card>
   );
 }

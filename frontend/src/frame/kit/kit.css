@@ -1,0 +1,460 @@
+/* =====================================================================================
+   frame/kit — Phase B building blocks (PHASE_B_PLAN.md §1.3, §2.2)
+   -------------------------------------------------------------------------------------
+   Drawn as docs/design/hud-next/ledger/ledger.css draws them, through the --n-* roles only:
+   no colour literal, nothing below --n-fs-meta (12px), labels in the theme's label voice.
+   Phase A's primitives (n-btn, n-seg, n-field, n-link, n-kbd, n-tag, n-row, n-state, n-card)
+   live in src/theme/kit.css and are not redefined here. The classes this file owns:
+
+     n-mk (--sm --md --lg, --hand, --chain), n-mk-word   marks: a shape and a word
+     n-tier, n-tier__glyph, n-tier__word                  risk: three bars and a word
+     n-src (--<state>), n-src__word, __asof, __why        where a section's data comes from
+     n-register, __head, __title, __meta, __main,         a ruled column of a page (__main holds
+       __body, __foot                                       the body and the foot)
+     n-sec, n-sec__title, n-sec__aside                    a section head
+     n-total, n-total__main, n-total__aside               single rule above, double below
+     n-consequence                                        a written-out consequence (dl)
+     n-disclosure, __button, __panel                      the detail behind a reading
+     n-key, __title, __list, __item, __sources            the marks' key
+
+   Local custom properties (not roles): --mk-knock (the ground a seal's N is knocked out of),
+   --register-head-h and --register-strut (the register head; step with the width), --register-pad
+   (a register's inner margin: the look's --n-register-pad, at most --n-s-2 below 1100px, 0 below 760px),
+   --consequence-term-max (how far a consequence's term column may grow: a page opts in with the look's
+   --n-term-max; unset, 0px, the column keeps its width).
+   ===================================================================================== */
+
+/* ---- marks: state is a shape and a word, never a hue -------------------------------- */
+.n-mk {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  overflow: visible;
+}
+.n-mk--sm { width: 12px; height: 12px; vertical-align: -1px; }
+.n-mk--lg { width: 20px; height: 20px; vertical-align: -4px; }
+/* the owner's hand (asked for, given): the only marks in the accent */
+.n-mk--hand { color: var(--n-accent); }
+/* the chain's seal on every record entry: ink, never the accent */
+.n-mk--chain { color: var(--n-text-2); }
+.n-mk-word {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.5);
+  white-space: nowrap;
+}
+
+/* ---- risk tier: three bars and a word ------------------------------------------------- */
+.n-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.75);
+  white-space: nowrap;
+}
+.n-tier__glyph { flex: none; width: 20px; height: 12px; }
+
+/* ---- source label: live, stale, unknown, refused, offline, demo, empty, off ------------- */
+.n-src {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.25);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--n-text-2);
+  white-space: nowrap;
+}
+.n-src__asof, .n-src__why { color: var(--n-text-3); }
+.n-src--stale, .n-src--disabled { color: var(--n-text-3); }
+.n-src--unknown, .n-src--refused, .n-src--offline { color: var(--n-text); }
+/* a demo sample is labelled at section level in a dashed frame, never mixed in unlabelled */
+.n-src--demo {
+  padding: 1px calc(var(--n-s-1) * 1.5);
+  border: var(--n-hair) dashed var(--n-rule-field);
+  color: var(--n-text);
+}
+
+/* ---- register: a ruled column of a page -------------------------------------------------
+   Drawn with the look's panel treatment (--n-panel-*): Ledger, Briefing and Presence open it with a
+   rule and draw no box; a card look (Atlas, Console, Threshold, Workbench, Classic) frames and fills
+   it. In a card look the column keeps off the frame by the look's inner margin, --n-register-pad
+   (contract §3; 0 in the rule looks, so nothing moves there), on the sides and at the bottom, so the
+   last row or the foot never sits on the frame. Not at the top: the head's strut already sets the
+   title well under the top edge (and a figure in it 5px or more).
+   The margin is the register's own padding, so what it holds is drawn as Ledger draws it, one rule
+   in every card look: the rule under the head, every row's hairline and a total's rules end where
+   the column's words do, and a scrolling body's scrollbar sits at the column's edge, as in every
+   look, with the frame's margin outside it. Home's spread shares its heads' row through the
+   register (a subgrid, home/home.css): with no padding at the top, that row is as it was.
+   A register with a foot leaves the bottom margin to its foot, where it collapses with a margin the
+   foot's last part keeps of its own (the docket's total 16px under its double rule, the composer
+   16px under its frame) instead of adding to it: the larger of the two, not their sum. Added, they
+   took 16 to 20px from the docket's body at 1280×800, and the open entry's sign line went below
+   what the body shows (in Atlas, Romanian, where it had been whole).
+   The margin is taken from the column, and a page's columns are drawn for the width they had
+   without it: below 1100px (one column) it is at most --n-s-2, and below 760px (a phone) a register
+   is drawn with rules in every look, its column as wide as the rule looks give it. At a phone's
+   280px there is no room for a frame and its margin: 12px a side cut words that were whole (Work's
+   "switched off on the hub" at 320px), ran Timeline's source labels 27px past the frame and squeezed
+   Trust's capabilities into overlapping columns; at 760px 16px a side made Health's figures 7px
+   wider than their register. */
+.n-register {
+  --register-head-h: 58px;
+  --register-strut: 36px;
+  --register-pad: var(--n-register-pad, 0px);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 var(--register-pad) var(--register-pad);
+  background: var(--n-panel-bg);
+  border: var(--n-panel-border);
+  border-top: var(--n-panel-top);
+  border-radius: var(--n-panel-radius);
+  box-shadow: var(--n-panel-shadow);
+  color: var(--n-text);
+}
+/* The head: the title, then the meta (a source label, a count, a link), on one line where they fit.
+   Where they do not, the meta takes the line under the title and the title keeps the whole row: it is
+   never cut or squeezed to make room for the meta, and a title wider than the row wraps as it would
+   alone (its first line on the strut). The title grows on its line, so a meta beside it ends at the
+   row's end, and a meta on the line below starts under the title (the flow, below). One rule at every
+   width. The bottom padding sits inside the head's minimum height: a head that fits is as tall as
+   before.
+   Registers side by side share one head height, so the rules under their heads lie on one line whatever
+   wraps: on Home by a shared grid row (home/home.css), elsewhere by `useHeadRow` (Register.tsx), which
+   sets --register-head-row on each head to the height of the tallest head beside it, only while one is
+   taller. A head is never shorter than its own minimum. The head does not transition (calm motion gives
+   every element a 0.01ms transition on `all`): `useHeadRow` reads a head's own height right after it
+   takes --register-head-row away, and a min-height in transition is read at its old value. */
+.n-register__head {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: calc(var(--n-s-3) + 2px);
+  row-gap: var(--n-s-1);
+  min-height: max(var(--register-head-h), var(--register-head-row, 0px));
+  padding: var(--n-s-1) 0;
+  border-bottom: var(--n-hair) solid var(--n-rule-2);
+  transition-property: none;
+}
+/* a strut: every register title sits on the same line */
+.n-register__head::before {
+  content: "";
+  width: 0;
+  height: var(--register-strut);
+  margin-right: calc(-1 * (var(--n-s-3) + 2px));
+}
+.n-register__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overflow-wrap: break-word;
+  font-family: var(--n-font-title);
+  font-weight: var(--n-w-bold);
+  font-size: var(--n-fs-title);
+  line-height: var(--n-lh-title);
+  letter-spacing: var(--n-title-track);
+  color: var(--n-text);
+}
+/* Nothing set inside a title makes its line taller than a title's: a figure larger than the title (the
+   docket's count of what awaits a signature, --n-fs-figure) keeps its size and its baseline, and takes
+   the title's line height, so the title stays on the strut's line with every register title, and the
+   head is as tall as a head whose title is words alone. With its own line height (--n-lh-figure) the
+   docket's title sat 8px under the strut (13px in Presence at 2200px and wider) and its head was 1 to 8px
+   taller with nothing wrapping, which the heads beside it on Home then took too (one row, home/home.css).
+   The figure's ink stays inside the head, under its top edge. */
+.n-register__head > .n-register__title * { line-height: inherit; }
+.n-register__meta {
+  column-gap: var(--n-s-3);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-register__meta b, .n-register__meta strong { color: var(--n-text); font-weight: var(--n-w-semi); }
+/* what follows the head: the body and, pinned under it, the foot. One box, so a page that lines
+   registers up side by side can give the heads one row and the rest another (home/home.css) */
+.n-register__main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+/* `position: relative` makes the scrolling body the containing block of what is positioned inside
+   it: a visually hidden word (data-visually-hidden is absolute) in an entry far down the list is
+   then clipped by the body, instead of stretching the cell and the page below the viewport (the
+   1280×800 page-scroll gate caught a docket entry's hidden hint 59px under the fold) */
+.n-register__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--n-rule-2) transparent;
+}
+.n-register__body:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-register__foot { flex: none; }
+/* the bottom margin of a register with a foot: an empty block after the foot's last part, whose top
+   margin collapses with that part's own bottom margin (the foot is a flex item, so it holds the
+   collapsed margin inside itself). In the rule looks it is 0 and changes nothing. */
+.n-register:has(> .n-register__main > .n-register__foot) { padding-bottom: 0; }
+.n-register__foot::after { content: ""; display: block; margin-top: var(--register-pad); }
+
+@media (min-width: 2200px) { .n-register { --register-head-h: 66px; --register-strut: 42px; } }
+@media (max-width: 1339px) { .n-register { --register-head-h: 52px; --register-strut: 34px; } }
+@media (max-width: 1099px) { .n-register { --register-pad: min(var(--n-register-pad, 0px), var(--n-s-2)); } }
+/* a phone: a register is drawn with rules in every look (its top rule stays; no frame, no fill, no margin) */
+@media (max-width: 759px) {
+  .n-register {
+    --register-pad: 0px;
+    background: none;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+/* ---- section head ------------------------------------------------------------------------
+   The title in the label voice over a quiet rule, its aside (a source label, a count, a link) in the
+   meta voice, on one line where they fit. One rule at every width, no breakpoint: where they do not
+   fit, the aside takes its own line under the title, over the same rule, and the title keeps the
+   whole row (never squeezed to make room: a title wider than the row wraps as it would alone).
+   The aside's line starts under the title, not at the row's end (the title grows on its line, so an
+   aside beside it still ends at the row's end): dropped, the aside reads as the title's second line,
+   and an aside wider than the row wraps between its parts (the flow, below) into lines that start
+   where the eye returns, in order in both languages; at the row's end they would be ragged on the
+   left, the parts' order harder to follow. */
+.n-sec {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--n-s-3);
+  row-gap: calc(var(--n-s-1) / 2);
+  padding: var(--n-s-3) 0 calc(var(--n-s-2) - 1px);
+  border-top: var(--n-hair) solid var(--n-rule-2);
+}
+.n-sec__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overflow-wrap: break-word;
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text);
+}
+.n-sec__aside {
+  column-gap: var(--n-s-3);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-3);
+}
+
+/* ---- a head's flow: an aside, a register's meta, a total's halves ---------------------------
+   Its parts (each child) sit on one line while they fit, each keeping its words together. A flow wider
+   than its row wraps between its parts; a part wider than the row alone is cut with an ellipsis (a
+   source label at its reason: its state word and mark stay), and Register.tsx gives a cut part its
+   whole text in a tooltip, its title; its accessible name is its text, which an ellipsis does not
+   shorten. Links and buttons are not cut: they are short, and a cut destination is not one to trust. */
+:is(.n-sec__aside, .n-register__meta, .n-total__main, .n-total__aside) {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  row-gap: calc(var(--n-s-1) / 2);
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+:is(.n-sec__aside, .n-register__meta, .n-total__main, .n-total__aside) > * { min-width: 0; max-width: 100%; }
+:is(.n-sec__aside, .n-register__meta, .n-total__main, .n-total__aside) > :not(a, button, .n-src) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:is(.n-sec__aside, .n-register__meta, .n-total__main, .n-total__aside) > .n-src > :last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- total: a single rule above, a double rule below ---------------------------------------
+   The sentence, then its aside (a link, the friction mix), on one line where they fit; where they do
+   not, the aside takes the line under the sentence, from its start, as a section head's aside does
+   (the sentence grows on its line). */
+.n-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: var(--n-s-3);
+  row-gap: var(--n-s-1);
+  padding: calc(var(--n-s-2) - 1px) 0 calc(var(--n-s-2) - 2px);
+  border-top: var(--n-hair) solid var(--n-text-3);
+  border-bottom: 3px double var(--n-text-3);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-label);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--n-text-2);
+  white-space: nowrap;
+}
+.n-total b, .n-total strong { color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-total__main, .n-total__aside { column-gap: calc(var(--n-s-3) + 2px); }
+.n-total__main { flex: 1 1 auto; }
+
+/* ---- consequence: what happens, written out ------------------------------------------------
+   The term column is 74px (82px from 2200px), drawn for a label voice in sentence case. A page that needs
+   its terms on one line in every look opts in by setting --consequence-term-max (this kit's hook, not a
+   role) to the look's --n-term-max: the column then grows to it. 0px in every Nerva look, so the column
+   stays 74px (a minmax() whose maximum is below its minimum is its minimum); max-content in Classic, whose
+   mono capitals tracked .1em never fit 74px. The docket opts in (docket/docket.css); a page that does not
+   keeps the fixed column. */
+.n-consequence {
+  display: grid;
+  grid-template-columns: minmax(74px, var(--consequence-term-max, 0px)) minmax(0, 1fr);
+  column-gap: var(--n-s-3);
+  row-gap: var(--n-s-1);
+  margin: calc(var(--n-s-2) + 2px) 0 0;
+}
+.n-consequence > dt {
+  margin: 0;
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-own);
+  color: var(--n-text-2);
+}
+.n-consequence > dd {
+  margin: 0;
+  font-family: var(--n-font-text);
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+  color: var(--n-text);
+  text-wrap: pretty;
+}
+@media (min-width: 2200px) { .n-consequence { grid-template-columns: minmax(82px, var(--consequence-term-max, 0px)) minmax(0, 1fr); } }
+
+/* ---- disclosure: the detail behind a reading ------------------------------------------------- */
+.n-disclosure { position: relative; display: inline-flex; align-items: stretch; min-width: 0; }
+.n-disclosure__button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.5);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--n-r-1);
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.n-disclosure__button:hover { color: var(--n-text); }
+.n-disclosure__button:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-disclosure__panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + var(--n-s-2));
+  left: 0;
+  box-sizing: border-box;
+  min-width: 240px;
+  max-width: min(380px, 90vw);
+  padding: calc(var(--n-s-2) + 2px) var(--n-s-3);
+  border-radius: var(--n-r-2);
+  /* opaque: the sheet over the page's own ground. A look whose sheet is translucent (Classic's
+     --surface, rgba(10, 22, 38, .55) in Obsidian) would otherwise draw the page's words through the
+     popover; in a Nerva theme the sheet is opaque and covers the ground, so nothing changes there */
+  background-color: var(--n-bg);
+  background-image: linear-gradient(var(--n-sheet), var(--n-sheet));
+  box-shadow: var(--n-shadow-2);
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+}
+.n-disclosure__panel[hidden] { display: none; }
+.n-disclosure--end .n-disclosure__panel { left: auto; right: 0; }
+/* kept inside the window (Disclosure `contain`, placeInside): above its button where below would
+   leave the window, and moved in sideways by a translation (nothing around it moves) */
+.n-disclosure__panel[data-place="above"] { top: auto; bottom: calc(100% + var(--n-s-2)); }
+.n-disclosure__panel[data-shift] { transform: translateX(var(--n-disclosure-shift, 0px)); }
+/* A popover never reaches past the window. The day band's ask for at least 320px (home/day/day.css) and
+   open from their cell's edge, which below 1100px is the page's margin: below a window of 340px (the
+   320px and the margin) they reached past it, and the window cut the words of their section heads with no
+   ellipsis (the first letters of "While you were away", the end of Today's "· checked 10:50", at 320px).
+   There a popover takes at most its cell and the margin on the side it opens towards. */
+@media (max-width: 339.98px) {
+  .n-disclosure > .n-dayband__panel { min-width: 0; max-width: calc(100% + var(--n-page-x)); }
+}
+
+/* ---- key: every mark with its word ------------------------------------------------------------ */
+.n-key {
+  margin-top: auto;
+  padding-top: calc(var(--n-s-2) + 2px);
+  border-top: var(--n-hair) solid var(--n-rule-2);
+}
+.n-key__title {
+  margin: 0 0 calc(var(--n-s-1) * 1.5);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text);
+}
+.n-key__list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px calc(var(--n-s-2) + 2px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.n-key__item {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.75);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-2);
+  white-space: nowrap;
+}
+.n-key__item--wide { grid-column: 1 / -1; }
+.n-key__item > .n-mk { width: 12px; height: 12px; color: var(--n-text); }
+.n-key__item > .n-mk--hand { color: var(--n-accent); }
+.n-key__item > .n-mk--chain { color: var(--n-text-2); }
+.n-key__sources { gap: var(--n-s-3); margin-top: var(--n-s-1); }
+@media (max-width: 1339px) {
+  .n-key__list { grid-template-columns: 1fr; }
+  .n-key__item--wide { grid-column: auto; }
+}

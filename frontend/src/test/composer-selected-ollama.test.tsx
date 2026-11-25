@@ -3,8 +3,11 @@ import {render,screen,fireEvent,waitFor,cleanup,act} from '@testing-library/reac
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {InputBar} from '../cockpit';
 import {describeImages} from '../vision-turn';
+import {openComposerMenu} from '../home/talk/test-support';
 
 const t={channel:'NERVA',placeholder:'Ask Nerva',transmit:'Send'};
+// "Use previous image" is in the composer's Options menu since the re-lay (PHASE_B_PLAN.md §5.3)
+const usePreviousImage=()=>{openComposerMenu('options');fireEvent.click(screen.getByRole('button',{name:'Use previous image'}));};
 const token='review-token-'.repeat(4);
 const active='active-handle-'.repeat(3);
 let requests:{path:string;body?:string}[]=[];
@@ -36,7 +39,7 @@ it('reviews the selected agent, session, question and exact image digest before 
 
 it('requires a fresh selected review for a previous image',async()=>{
   const submit=vi.fn();render(<InputBar onSubmit={submit} t={t} agent="jarvis" sessionId="selected_s" selectedTurn/>);
-  fireEvent.click(screen.getByRole('button',{name:'Use previous image'}));
+  usePreviousImage();
   fireEvent.click(await screen.findByLabelText(/Earlier question/));
   await waitFor(()=>expect(requests.some(row=>row.path.endsWith('/selected-prepare'))).toBe(true));
   const review=requests.find(row=>row.path.endsWith('/selected-prepare'))!;
@@ -79,7 +82,7 @@ it('does not show images loaded for a previous session after switching topics',a
     return new Response('{}',{status:404});
   }));
   const view=render(<InputBar onSubmit={vi.fn()} t={t} agent="jarvis" sessionId="old_session" selectedTurn/>);
-  fireEvent.click(screen.getByRole('button',{name:'Use previous image'}));
+  usePreviousImage();
   await waitFor(()=>expect(releaseOld).toBeTruthy());
   view.rerender(<InputBar onSubmit={vi.fn()} t={t} agent="jarvis" sessionId="new_session" selectedTurn/>);
   await act(async()=>releaseOld(new Response(JSON.stringify({session_id:'old_session',images:[{handle:active,count:1,question:'Old image'}]}))));

@@ -31,7 +31,12 @@ from typing import Optional
 
 from ..env_config import env_flag, env_str
 from . import model_config
-from .base import LLMBackend, OllamaBackend
+from .base import (
+    CLOUD_SELECTION_UNAVAILABLE_REPLY,
+    LOCAL_SELECTION_UNAVAILABLE_REPLY,
+    LLMBackend,
+    OllamaBackend,
+)
 from .router import LLMRouter
 from .tokenizer import estimate_tokens
 
@@ -199,6 +204,17 @@ class ModelNotApprovedError(PermissionError):
 
 class LocalBackendUnavailableError(RuntimeError):
     """A strict-local agent could not select an available local backend."""
+
+    public_reply = LOCAL_SELECTION_UNAVAILABLE_REPLY
+
+
+class CloudBackendUnavailableError(LocalBackendUnavailableError):
+    """A cloud-only agent could not select an eligible cloud backend."""
+
+    public_reply = CLOUD_SELECTION_UNAVAILABLE_REPLY
+
+    def __init__(self):
+        super().__init__("No eligible cloud backend is available for Athena (strict-cloud)")
 
 
 class HybridRouter(LLMRouter):
@@ -710,6 +726,8 @@ class HybridRouter(LLMRouter):
         # Security floor first: code-enforced, the registry cannot override it.
         if agent_id in LOCAL_ONLY_AGENTS:
             return POLICY_LOCAL
+        if agent_id in CLOUD_ONLY_AGENTS:
+            return POLICY_CLOUD
         # agents.yaml is the canonical registry (ARCHITECTURE §3) — honor its
         # llm_policy before the in-code sets, which act as fallback defaults.
         registry = _registry_policies().get(agent_id, "")
@@ -752,7 +770,9 @@ class HybridRouter(LLMRouter):
     def resolve_moa_preset(self, agent_id: str, name_or_model: str) -> tuple[LLMBackend, str, str]:
         """Resolve a Mixture-of-Agents preset (`moa:<name>` or `<name>`) for *agent_id* (H032)."""
         from .moa import build_moa_backend
-        return build_moa_backend(self, agent_id, name_or_model)
+        backend, model, route = build_moa_backend(self, agent_id, name_or_model)
+        self._enforce_cloud_only_route(agent_id, backend, route)
+        return backend, model, route
 
     def preview_backend(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
         """Read-only route preview; no job pin resolution or provider dispatch."""
@@ -760,6 +780,7 @@ class HybridRouter(LLMRouter):
         compatible = getattr(self, "_compatible_backend", None)
         if compatible is not None and route.startswith("cloud"):
             backend, model, route = compatible, self._compatible_model, "cloud-compatible"
+        self._enforce_cloud_only_route(agent_id, backend, route)
         self._check_selected_cloud_route(backend, model, route)
         if (getattr(self, "_compatible_provider_id", "") == "deepinfra"
                 and route.startswith("cloud") and compatible is None):
@@ -777,6 +798,7 @@ class HybridRouter(LLMRouter):
             backend, model, route = compatible, self._compatible_model, "cloud-compatible"
         from .job_selection import apply_selection
         backend, model, route = apply_selection(self, agent_id, backend, model, route)
+        self._enforce_cloud_only_route(agent_id, backend, route)
         self._check_selected_cloud_route(backend, model, route)
         if (getattr(self, "_compatible_provider_id", "") == "deepinfra"
                 and route.startswith("cloud")
@@ -786,6 +808,46 @@ class HybridRouter(LLMRouter):
         if route not in ("local-moa", "hybrid-moa"):
             self._enforce_approved_models(agent_id, model, route)
         return backend, model, route
+
+    def _enforce_cloud_only_route(self, agent_id, backend, route):
+        if agent_id not in CLOUD_ONLY_AGENTS:
+            return
+        if route in ("local-moa", "hybrid-moa"):
+            members = [(member[1], member[-1]) for member in getattr(backend, "_proposers", ())]
+            members.append((getattr(backend, "_agg_backend", None), getattr(backend, "_agg_route", "")))
+            if all(member_route.startswith(("cloud", "claude"))
+                   and not self._known_local_compatible(member_backend, member_route)
+                   for member_backend, member_route in members):
+                return
+        elif route.startswith(("cloud", "claude")) and not self._known_local_compatible(backend, route):
+            return
+        raise CloudBackendUnavailableError()
+
+    def _known_local_compatible(self, backend, route):
+        if route != "cloud-compatible":
+            return False
+        effective = getattr(backend, "_backend", backend)
+        runtime = getattr(effective, "_custom_endpoint_runtime", None)
+        if runtime is not None:
+            return runtime.endpoint.destination_class != "public"
+        if (effective is self._compatible_backend
+                and getattr(self, "_compatible_provider_id", "") in {"openai-compatible", "openrouter"}):
+            from urllib.parse import urlsplit, urlunsplit
+
+            from .custom_endpoints import CustomEndpointInvalid, classify_url
+
+            try:
+                original = getattr(effective, "base_url", None)
+                if not isinstance(original, str) or not original:
+                    return True
+                parts = urlsplit(original)
+                if parts.query or parts.fragment:
+                    return True
+                origin = urlunsplit((parts.scheme, parts.netloc, "/v1", "", ""))
+                return classify_url(origin) != "public"
+            except (CustomEndpointInvalid, TypeError, ValueError):
+                return True
+        return False
 
     def _check_selected_cloud_route(self, backend, model, route):
         """A changed cross-process selection cannot fall through a stale router."""
@@ -854,6 +916,9 @@ class HybridRouter(LLMRouter):
 
         policy = self.get_agent_policy(agent_id)
 
+        if agent_id in CLOUD_ONLY_AGENTS and not self._cloud_permitted():
+            raise CloudBackendUnavailableError()
+
         # H032 — Mixture-of-Agents committee preset routing (`moa:<name>` or active preset).
         if isinstance(self._local_model, str) and self._local_model.startswith("moa:"):
             return self.resolve_moa_preset(agent_id, self._local_model)
@@ -900,6 +965,8 @@ class HybridRouter(LLMRouter):
         if policy == POLICY_CLOUD:
             if self._cloud_permitted():
                 return self._gemini_backend, self._gemini_model, "cloud"
+            if agent_id in CLOUD_ONLY_AGENTS:
+                raise CloudBackendUnavailableError()
             logger.warning(
                 f"Cloud backend unavailable for {agent_id} (policy=cloud), falling back to local"
             )

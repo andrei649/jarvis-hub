@@ -121,6 +121,11 @@ html, body {
   font-weight: 600;
 }
 
+.top-pill-btn:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
 /* Left Sidebar */
 #left-sidebar {
   position: fixed;
@@ -564,6 +569,63 @@ html, body {
   left: 50%;
   transform: translateX(-50%);
   z-index: 42;
+  max-width: calc(100vw - 24px);
+  flex-wrap: wrap;
+  justify-content: center;
+  border-radius: 18px;
+}
+
+#workshop-top-bar .top-pill-btn { white-space: nowrap; }
+#workshop-export-status { flex-basis: 100%; text-align: center; font-size: 12px; color: #e2e8f0; }
+#workshop-export-status:empty { display: none; }
+
+#workshop-projects {
+  position: fixed;
+  z-index: 60;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 24px));
+  padding: 16px;
+  max-height: calc(100dvh - 96px);
+  overflow: auto;
+  color: #e2e8f0;
+}
+#workshop-projects.hidden { display: none; }
+.workshop-projects-heading, .workshop-projects-form-row, .workshop-project-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workshop-projects-heading { justify-content: space-between; }
+.workshop-projects-heading h2 { margin: 0; font-size: 17px; }
+#workshop-projects p { margin: 8px 0; color: #cbd5e1; font-size: 13px; line-height: 1.45; }
+#workshop-projects label { display: block; margin: 12px 0 5px; font-size: 12px; }
+#workshop-projects input { min-width: 0; flex: 1; padding: 9px; color: #f1f5f9; background: #0d1822; border: 1px solid #64748b; border-radius: 7px; font: inherit; }
+#workshop-projects :focus-visible { outline: 2px solid #6ee7b7; outline-offset: 2px; }
+#workshop-projects button { cursor: pointer; }
+#workshop-projects button:disabled { cursor: wait; opacity: .6; }
+#workshop-projects-close { min-width: 32px; min-height: 32px; background: transparent; border: 0; color: inherit; font-size: 24px; }
+#workshop-project-save, #workshop-project-refresh, .workshop-project-row button {
+  padding: 8px 10px; border: 1px solid #64748b; border-radius: 7px;
+  background: #183449; color: #fff;
+}
+#workshop-projects-status { min-height: 18px; }
+#workshop-project-save { background: #167047; border-color: #46ab87; }
+#workshop-projects-list { margin-top: 12px; }
+.workshop-project-row { justify-content: space-between; padding: 8px 0; border-top: 1px solid #475569; font-size: 12px; }
+.workshop-project-row span { flex: 1; overflow-wrap: anywhere; }
+.workshop-project-row a { color: #9ae6da; }
+@media (max-width: 600px) {
+  #workshop-projects { top: 145px; max-height: calc(100dvh - 158px); }
+  #workshop-projects button, #workshop-projects input { min-height: 44px; }
+  #workshop-projects-close { min-width: 44px; }
+  .workshop-project-row a { display: inline-flex; align-items: center; min-height: 44px; }
+}
+
+@media (max-width: 1100px) {
+  #workshop-top-bar { top: 70px; }
 }
 
 .crafting-badge {
@@ -1592,6 +1654,14 @@ body[data-brain="fable-5.2"] .brain-pill {
   word-break: break-all;
 }
 
+.inspector-source-link {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: var(--emerald);
+  font-size: 12px;
+  text-underline-offset: 3px;
+}
+
 .brain-menu-footer {
   margin-top: 6px;
   padding: 7px 10px 4px;
@@ -1884,4 +1954,78 @@ body.hide-filter-legend #filter-card {
 /* `hidden` must win over component display rules (hub mode hides standalone-only controls). */
 [hidden] {
   display: none !important;
+}
+#vault-grounding-choice {
+  padding: 5px 12px;
+  border-radius: 12px;
+  background: rgba(9, 18, 27, .96);
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+}
+#vault-grounding-choice input { accent-color: #6ee7b7; vertical-align: middle; }
+
+@media (max-width: 600px) {
+  body[data-view="robot"] #workshop-top-bar,
+  body[data-view="house"] #workshop-top-bar {
+    top: 58px;
+    width: calc(100vw - 16px);
+    max-width: none;
+    box-sizing: border-box;
+  }
+
+  body[data-view="robot"] #workshop-top-bar .top-pill-btn,
+  body[data-view="house"] #workshop-top-bar .top-pill-btn {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+
+  body[data-view="robot"] #workshop-header-left,
+  body[data-view="house"] #workshop-header-left { left: 8px; top: 12px; }
+  body[data-view="robot"] #workshop-title,
+  body[data-view="house"] #workshop-title { font-size: 14px; max-width: calc(100vw - 110px); }
+  body[data-view="robot"] #workshop-top-right,
+  body[data-view="house"] #workshop-top-right { right: 8px; top: 10px; }
+  body[data-view="house"] #your-picture-card {
+    position: fixed;
+    top: 205px;
+    right: 8px;
+    width: 104px;
+  }
+
+  body[data-view="robot"] #bottom-hud-bar,
+  body[data-view="house"] #bottom-hud-bar {
+    width: calc(100vw - 16px);
+    bottom: 8px;
+    box-sizing: border-box;
+  }
+  body[data-view="robot"] .bottom-bar-inner,
+  body[data-view="house"] .bottom-bar-inner {
+    width: 100%;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+  }
+  body[data-view="robot"] .prompt-pill,
+  body[data-view="house"] .prompt-pill { width: 100%; min-width: 0; box-sizing: border-box; }
+  body[data-view="robot"] .dock-buttons,
+  body[data-view="house"] .dock-buttons { width: 100%; justify-content: center; flex-wrap: wrap; gap: 5px; }
+  body[data-view="robot"] #jarvis-subtitle-toast,
+  body[data-view="house"] #jarvis-subtitle-toast { max-width: 100%; box-sizing: border-box; }
+  body[data-view="robot"] #vault-grounding-choice,
+  body[data-view="house"] #vault-grounding-choice { max-width: 100%; box-sizing: border-box; }
+
+  body[data-view="robot"] #jarvis-ring-container,
+  body[data-view="house"] #jarvis-ring-container { display: none; }
+  body[data-view="robot"] #jarvis-hud-dock,
+  body[data-view="house"] #jarvis-hud-dock { top: auto; bottom: 146px; right: 8px; transform: none; }
+  body[data-view="robot"] #build-status-card,
+  body[data-view="house"] #build-status-card {
+    left: 8px;
+    bottom: 180px;
+    width: min(272px, calc(100vw - 16px));
+    max-height: 28vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+  }
 }

@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Nerva — Trust · Overview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<script>
+  /* theme before first paint: ?theme=dark|light, default dark */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.dataset.theme = (t === 'light' || t === 'dark') ? t : 'dark';
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="threshold.css">
+<style>
+/* ==========================================================================
+   Trust — the record on Nerva's side, your standing authority on yours
+   ========================================================================== */
+.trust-body { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 0; }
+
+/* ---- second-level navigation: the area's 21 panels -------------------------- */
+.subnav { min-height: 0; overflow-y: auto; border-right: 1px solid var(--nv-rule); padding: 16px 12px 16px 14px; font-stretch: var(--nv-width-scan); }
+.subnav-h { display: flex; align-items: baseline; gap: 8px; padding: 0 8px; }
+.subnav-h h2 { font-size: var(--nv-fs-title); font-weight: var(--nv-w-strong); }
+.subnav-h span { margin-left: auto; font-size: var(--nv-fs-micro); color: var(--nv-ink-3); font-weight: var(--nv-w-small); }
+.subsearch { display: flex; align-items: center; gap: 7px; width: 100%; height: 32px; margin: 12px 0 6px; padding: 0 6px 0 9px; border: 1px solid var(--nv-rule-strong); border-radius: var(--nv-r-1); color: var(--nv-ink-2); font-size: var(--nv-fs-meta); }
+.subsearch .ico { width: 14px; height: 14px; color: var(--nv-ink-3); }
+.subsearch .kbd { margin-left: auto; }
+.sub-g { margin: 14px 8px 4px; font-size: var(--nv-fs-micro); line-height: 16px; font-weight: var(--nv-w-strong); color: var(--nv-ink-3); letter-spacing: 0.02em; }
+.sub { position: relative; display: flex; align-items: center; gap: 8px; height: 29px; padding: 0 8px; border-radius: var(--nv-r-1); font-size: var(--nv-fs-ui); color: var(--nv-ink-2); font-weight: var(--nv-w-small); }
+.sub:hover { background: var(--nv-raise-2); color: var(--nv-ink); }
+.sub.is-here { background: var(--nv-raise-2); color: var(--nv-ink); font-weight: var(--nv-w-strong); }
+.sub.is-here::before { content: ""; position: absolute; left: -6px; top: 7px; bottom: 7px; width: 2px; border-radius: 1px; background: var(--nv-ink); }
+.sub-n { margin-left: auto; font-size: var(--nv-fs-micro); color: var(--nv-ink-3); font-weight: var(--nv-w-small); }
+.sub-n.toline { font-size: var(--nv-fs-micro); font-weight: var(--nv-w-strong); }
+.sub--more { margin-top: 8px; color: var(--nv-ink-3); }
+.sub--more .ico { width: 12px; height: 12px; }
+
+/* ---- the pane ------------------------------------------------------------------ */
+.pane { min-height: 0; overflow-y: auto; padding: 16px 24px 18px; display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); grid-auto-rows: min-content; gap: 14px; align-content: start; }
+.pane-h { grid-column: 1 / -1; display: grid; gap: 6px; padding: 0 2px 2px; }
+.crumb { display: flex; align-items: center; gap: 6px; font-size: var(--nv-fs-meta); color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.crumb b { color: var(--nv-ink-2); font-weight: var(--nv-w-small); }
+.crumb .ico { width: 12px; height: 12px; }
+.crumb .src { margin-left: auto; }
+.headline { display: flex; align-items: center; gap: 10px; font-size: var(--nv-fs-verdict); line-height: 28px; font-weight: var(--nv-w-strong); font-stretch: var(--nv-width-scan); }
+.headline .mark { width: 20px; height: 20px; color: var(--nv-ink); }
+.headline span { color: var(--nv-ink-2); font-weight: var(--nv-w-small); }
+
+.card { min-width: 0; background: var(--nv-raise); border: 1px solid var(--nv-rule); border-radius: var(--nv-r-2); padding: 13px 16px 15px; }
+.card-h { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.card-h .src { margin-left: auto; }
+.card--wide { grid-column: 1 / -1; }
+
+.big { display: flex; align-items: center; gap: 9px; font-size: 19px; line-height: 24px; font-stretch: var(--nv-width-scan); }
+.big b { font-size: 28px; line-height: 30px; font-weight: var(--nv-w-strong); }
+.big .ico { width: 20px; height: 20px; }
+.lede { margin-top: 3px; font-size: var(--nv-fs-meta); line-height: 18px; color: var(--nv-ink-2); }
+
+/* 41 runs, each one tick, drawn inside the machine's outline; a cloud run would be drawn outside it */
+.runs { margin-top: 14px; display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 12px; align-items: stretch; }
+.runs-box, .runs-out { border-radius: var(--nv-r-1); padding: 7px 10px 9px; display: grid; gap: 7px; align-content: start; }
+.runs-box { border: 1.5px solid var(--nv-ink-2); }
+.runs-out { border: 1.5px dashed var(--nv-rule-strong); }
+.runs-l { font-size: var(--nv-fs-micro); color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.runs-l b { color: var(--nv-ink); font-size: var(--nv-fs-meta); }
+.ticks { display: flex; gap: 3px; height: 20px; }
+.ticks i { flex: 0 0 3px; border-radius: 1px; background: var(--nv-ink-3); }
+.runs-out .ticks { align-items: center; color: var(--nv-ink-3); font-size: var(--nv-fs-micro); }
+
+.basis { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--nv-rule); display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 4px 10px; font-size: var(--nv-fs-meta); line-height: 18px; }
+.basis dt { color: var(--nv-ink-3); padding-top: 4px; }
+.ladder { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ladder li { display: inline-flex; align-items: center; height: 26px; padding: 0 9px; border-radius: 5px; border: 1.5px solid var(--nv-rule-strong); color: var(--nv-ink-3); font-size: var(--nv-fs-micro); font-stretch: var(--nv-width-scan); white-space: nowrap; }
+.ladder .b-unknown { border-style: dotted; }
+.ladder .b-derived { border-style: dashed; }
+.ladder .b-route { border-color: var(--nv-ink); color: var(--nv-ink); font-weight: var(--nv-w-strong); font-size: var(--nv-fs-meta); }
+.ladder .b-verified { background: var(--nv-raise-2); border-color: var(--nv-raise-2); }
+.ladder .sep { width: 10px; height: 1.5px; padding: 0; border: 0; background: var(--nv-rule-strong); }
+.basis-note { grid-column: 2; color: var(--nv-ink-2); }
+
+.egress-states { margin-top: 12px; display: grid; gap: 6px; font-size: var(--nv-fs-meta); line-height: 18px; color: var(--nv-ink-2); }
+.egress-states li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 0 10px; align-items: center; }
+.edge { height: 18px; border-radius: 4px; border: 1.5px solid var(--nv-ink-2); }
+.edge--hybrid { border-style: dashed; border-color: var(--nv-line-ink); }
+.edge--unknown { border-style: dotted; border-color: var(--nv-ink-3); }
+.egress-states li.is-now { color: var(--nv-ink); }
+.egress-states li.is-now b { font-weight: var(--nv-w-strong); }
+.local { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--nv-rule); display: grid; grid-template-columns: 124px minmax(0, 1fr); gap: 6px 10px; font-size: var(--nv-fs-meta); line-height: 18px; }
+.local dt { color: var(--nv-ink-3); }
+.local dd { color: var(--nv-ink); }
+.local dd span { color: var(--nv-ink-2); }
+
+/* the audit table: a sealed record, newest first */
+.atable { width: 100%; border-collapse: collapse; font-size: var(--nv-fs-meta); line-height: 18px; }
+.atable th { text-align: left; font-size: var(--nv-fs-micro); font-weight: var(--nv-w-strong); color: var(--nv-ink-3); padding: 0 10px 7px 0; border-bottom: 1px solid var(--nv-rule-strong); font-stretch: var(--nv-width-scan); white-space: nowrap; }
+.atable td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--nv-rule); vertical-align: top; color: var(--nv-ink-2); }
+.atable tr:last-child td { border-bottom: 0; }
+.atable td:first-child { color: var(--nv-ink-3); width: 44px; }
+.atable td:nth-child(2) { width: 62px; }
+.atable td:nth-child(2) b { color: var(--nv-ink); }
+.atable td:nth-child(3) { color: var(--nv-ink); }
+.atable .tiercell { white-space: nowrap; width: 150px; font-stretch: var(--nv-width-scan); }
+.atable .tiercell .tierglyph { margin-right: 6px; color: var(--nv-ink-2); }
+.atable .mono { color: var(--nv-ink-3); white-space: nowrap; }
+.atable .seal { white-space: nowrap; width: 76px; text-align: right; padding-right: 0; color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.atable .seal .mark { width: 12px; height: 12px; margin-right: 3px; color: var(--nv-ink-2); }
+.atable .toline { margin-left: 8px; font-size: var(--nv-fs-micro); }
+.card-f { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--nv-rule); font-size: var(--nv-fs-meta); color: var(--nv-ink-3); }
+.card-f span { min-width: 0; }
+.card-f a { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; color: var(--nv-ink-2); font-weight: var(--nv-w-strong); white-space: nowrap; }
+.card-f a .ico { width: 12px; height: 12px; }
+
+.ptable { width: 100%; border-collapse: collapse; font-size: var(--nv-fs-meta); line-height: 18px; }
+.ptable td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--nv-rule); color: var(--nv-ink-2); vertical-align: middle; }
+.ptable tr:last-child td { border-bottom: 0; }
+.ptable td:first-child { width: 70px; }
+.ptable td:nth-child(2) { width: 220px; }
+.ptable td:first-child b { color: var(--nv-ink); }
+.ptable .amt { width: 90px; text-align: right; color: var(--nv-ink); font-size: var(--nv-fs-ui); font-weight: var(--nv-w-strong); font-stretch: var(--nv-width-scan); }
+.ptable .st { padding-left: 24px; }
+.ptable .st .mark { margin-right: 6px; }
+.ptable .toline { margin-left: 8px; font-size: var(--nv-fs-micro); }
+
+/* ==========================================================================
+   Your side on Trust: the stop, where the line is drawn, what waits at it
+   ========================================================================== */
+.side-h { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 8px; font-size: var(--nv-fs-meta); color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.side-h b { color: var(--nv-ink); font-size: var(--nv-fs-ui); font-weight: var(--nv-w-strong); }
+.side-h a { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; color: var(--nv-ink-2); font-weight: var(--nv-w-strong); white-space: nowrap; }
+.side-h a .ico { width: 12px; height: 12px; }
+
+.estop { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 18px; padding: 13px 16px 14px; border: 1px solid var(--nv-rule-strong); border-radius: var(--nv-r-2); background: var(--nv-raise); }
+.estop h2 { font-size: var(--nv-fs-title); line-height: 22px; font-weight: var(--nv-w-strong); font-stretch: var(--nv-width-scan); display: flex; align-items: center; gap: 10px; }
+.estop-state { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px 0 6px; border: 1px solid var(--nv-rule-strong); border-radius: 10px; font-size: var(--nv-fs-micro); font-weight: var(--nv-w-small); color: var(--nv-ink-2); }
+.estop-state .mark { width: 12px; height: 12px; }
+.estop p { grid-column: 1; font-size: var(--nv-fs-meta); line-height: 18px; color: var(--nv-ink-2); }
+.estop .btn--stop { grid-column: 2; grid-row: 1 / 3; height: 44px; padding: 0 18px 0 15px; font-size: var(--nv-fs-ui); }
+
+/* the capability chart: each grant sits on a track; the yellow rail is the line */
+.grants { width: 100%; border-collapse: collapse; font-size: var(--nv-fs-meta); line-height: 17px; }
+.grants th, .grants td { padding: 0; }
+.grants thead th { height: 26px; font-size: var(--nv-fs-micro); font-weight: var(--nv-w-strong); color: var(--nv-ink-3); text-align: center; font-stretch: var(--nv-width-scan); vertical-align: bottom; padding-bottom: 6px; }
+.grants thead th:first-child { text-align: left; }
+.grants thead th.yours-h { color: var(--nv-line-ink); }
+.grants tbody th { text-align: left; font-weight: var(--nv-w-small); padding: 6px 12px 6px 0; width: 46%; }
+.grants tbody th .mono { display: block; color: var(--nv-ink); font-size: var(--nv-fs-micro); line-height: 17px; }
+.grants tbody th .g-what { display: block; color: var(--nv-ink-3); font-size: var(--nv-fs-micro); font-stretch: var(--nv-width-scan); }
+.grants tbody th { padding-block: 7px; }
+.grants td { text-align: center; width: 12%;
+  background: linear-gradient(var(--nv-rule-strong), var(--nv-rule-strong)) center / 100% 1px no-repeat; }
+.grants td:nth-child(2) { background-size: 50% 1px; background-position: right center; }
+.grants td:last-child { background-size: 50% 1px; background-position: left center; }
+.grants .g-line { width: 14px; padding: 0; border-top: 0 !important;
+  background:
+    linear-gradient(var(--nv-rail), var(--nv-rail)) center / 3px 100% no-repeat,
+    linear-gradient(var(--nv-rule-strong), var(--nv-rule-strong)) center / 100% 1px no-repeat; }
+.grants thead .g-line { background: none; }
+.grants td i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--nv-ink); box-shadow: 0 0 0 3px var(--nv-raise); vertical-align: middle; }
+.grants td.is-yours i { background: var(--nv-line); border: 1px solid var(--nv-line-key); box-shadow: 0 0 0 3px var(--nv-ground); }
+.grants-f { margin-top: 8px; font-size: var(--nv-fs-micro); color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); }
+.grantcard { padding: 10px 16px 12px; border: 1px solid var(--nv-rule); border-radius: var(--nv-r-2); background: var(--nv-raise); }
+
+/* the queue in compact rows: the same nodes on the same line as on Home */
+.q-list { display: grid; gap: 6px; }
+.q { position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 0 10px; min-height: 46px; padding: 6px 10px 6px 12px; background: var(--nv-raise); border: 1px solid var(--nv-rule); border-radius: var(--nv-r-2); }
+.q::before { content: ""; position: absolute; top: 50%; left: -30px; width: 29px; height: 1px; background: var(--nv-line-mark); }
+.q::after { content: ""; position: absolute; top: 50%; margin-top: -5px; left: -35px; width: 11px; height: 11px; border-radius: 50%; background: var(--nv-line); border: 1px solid var(--nv-line-key); box-shadow: 0 0 0 2px var(--nv-ground); }
+.q-t { min-width: 0; display: grid; }
+.q-t b { font-size: var(--nv-fs-ui); line-height: 19px; font-weight: var(--nv-w-strong); font-stretch: var(--nv-width-scan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-t span { font-size: var(--nv-fs-micro); line-height: 16px; color: var(--nv-ink-3); font-stretch: var(--nv-width-scan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-a { display: inline-flex; gap: 6px; }
+
+/* the owner's screen: the pane keeps a readable measure instead of stretching its tables */
+@media (min-width: 2200px) {
+  .pane { grid-template-columns: minmax(0, 860px) minmax(0, 560px); }
+}
+@media (max-width: 1599px) {
+  .trust-body { grid-template-columns: 200px minmax(0, 1fr); }
+  .pane { grid-template-columns: minmax(0, 1fr); }
+  .atable .tiercell span { display: none; }
+  .atable .tiercell { width: 34px; }
+  .estop { grid-template-columns: minmax(0, 1fr); }
+  .estop .btn--stop { grid-column: 1; grid-row: auto; justify-self: start; margin-top: 8px; }
+}
+@media (max-width: 1359px) {
+  .trust-body { grid-template-columns: minmax(0, 1fr); }
+  .subnav { display: none; }
+  .crumb .w { display: inline; }
+}
+</style>
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="nerva" viewBox="26 22 76 84">
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M40 92V36L88 92" stroke="currentColor" stroke-width="10"/>
+        <path d="M88 92V36" style="stroke:var(--nv-line-key)" stroke-width="14"/>
+        <path d="M88 92V36" style="stroke:var(--nv-line)" stroke-width="10"/>
+      </g>
+      <circle cx="40" cy="36" r="9" fill="currentColor"/><circle cx="40" cy="92" r="9" fill="currentColor"/>
+      <circle cx="88" cy="36" r="11" style="fill:var(--nv-line-key)"/><circle cx="88" cy="92" r="11" style="fill:var(--nv-line-key)"/>
+      <circle cx="88" cy="36" r="9" style="fill:var(--nv-line)"/><circle cx="88" cy="92" r="9" style="fill:var(--nv-line)"/>
+    </symbol>
+    <symbol id="m-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.4" fill="currentColor"/></symbol>
+    <symbol id="m-problem" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="m-done" viewBox="0 0 16 16"><path d="M3.5 8.6l3 3 6-7.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="m-held" viewBox="0 0 16 16"><rect x="1.25" y="1.25" width="13.5" height="13.5" rx="3.5" style="fill:var(--nv-mark-fill)"/><path d="M5.9 4.4v7.2M10.1 4.4v7.2" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/></symbol>
+    <symbol id="m-armed" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="2.4" fill="currentColor"/></symbol>
+    <symbol id="t0" viewBox="0 0 24 12"><circle cx="3.5" cy="6" r="2.1" fill="currentColor"/><rect x="8.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/></symbol>
+    <symbol id="t1" viewBox="0 0 24 12"><rect x="1.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/><circle cx="9.5" cy="6" r="2.1" fill="currentColor"/></symbol>
+    <symbol id="t2" viewBox="0 0 24 12"><rect x="1.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/><circle cx="9.5" cy="6" r="2.1" fill="currentColor"/><circle cx="15.5" cy="6" r="2.1" fill="currentColor"/></symbol>
+    <symbol id="t3" viewBox="0 0 24 12"><rect x="1.4" y="0.6" width="3" height="10.8" rx="1.2" style="fill:var(--nv-line);stroke:var(--nv-line-key)" stroke-width="0.9"/><circle cx="9.5" cy="6" r="2.1" fill="currentColor"/><circle cx="15.5" cy="6" r="2.1" fill="currentColor"/><circle cx="21.5" cy="6" r="2.1" fill="currentColor"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.2 10.2l3.3 3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-sealed" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 16 16"><rect x="5.75" y="1.75" width="4.5" height="8" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 16 16"><path d="M2.5 8h10.5M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 16 16"><path d="M6 3.5l4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-down" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></symbol>
+    <symbol id="i-glance" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 13.75h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<div class="page">
+
+  <!-- ================= bar · Nerva's side ================= -->
+  <header class="bar bar-nerva">
+    <a class="brand" href="cockpit.html" aria-label="Nerva — home">
+      <svg class="brand-mark" aria-hidden="true"><use href="#nerva"/></svg>
+      <span class="brand-name">Nerva</span>
+    </a>
+    <nav class="areas" aria-label="Areas">
+      <a class="area" href="cockpit.html">Home</a>
+      <a class="area" href="#work" title="Work — decisions, missions, projects board, scheduled jobs, sessions, activity">Work
+        <span class="area-flag area-flag--yours"><svg class="mark" aria-hidden="true"><use href="#m-held"/></svg>9<span class="w">&nbsp;need you</span></span></a>
+      <a class="area" href="#agents">Agents</a>
+      <a class="area" href="#memory">Memory</a>
+      <a class="area is-here" href="secondary.html" aria-current="page">Trust</a>
+      <a class="area" href="#build">Build</a>
+      <a class="area" href="#connect">Connect</a>
+      <a class="area" href="#observe">Observe
+        <span class="area-flag"><svg class="mark mark--problem" aria-hidden="true"><use href="#m-problem"/></svg>4<span class="w">&nbsp;services down</span></span></a>
+      <a class="area" href="#settings">Settings</a>
+    </nav>
+    <button class="search" type="button" aria-keyshortcuts="Control+K" title="Search and command — finds every area, panel, agent and action">
+      <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+      <span class="search-t">Search and command</span>
+      <kbd class="kbd">Ctrl K</kbd>
+    </button>
+  </header>
+
+  <div class="line" data-state="waiting" role="separator" aria-orientation="vertical"
+       aria-label="The line. Mode Ask: anything with a side effect waits for you. 9 actions are waiting."></div>
+
+  <!-- ================= bar · your side ================= -->
+  <header class="bar bar-you">
+    <span class="owner">Andrei</span>
+    <a class="waiting" href="#line">
+      <span class="waiting-n">9</span>
+      <span class="waiting-t"><b><span class="w">actions </span>wait for you</b><span>6 groups · from 18 requests · live</span></span>
+    </a>
+    <div class="prefs">
+      <div class="seg" role="group" aria-label="Language">
+        <button type="button" aria-pressed="true">EN</button><button type="button" aria-pressed="false">RO</button>
+      </div>
+      <button class="icon-btn lang" type="button" aria-label="Language: English. Switch to Romanian">EN</button>
+      <button class="icon-btn" type="button" data-theme-toggle aria-label="Theme: switch between dark and light"><svg class="ico" aria-hidden="true"><use href="#i-theme"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="Glance mode (idle or second screen)"><svg class="ico" aria-hidden="true"><use href="#i-glance"/></svg></button>
+      <button class="icon-btn more-prefs" type="button" aria-label="Language, theme and glance mode"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg></button>
+    </div>
+    <button class="btn btn--stop" type="button" title="One click. Halts every agent and the job queue until you resume.">
+      <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents
+    </button>
+  </header>
+
+  <!-- ================= this machine · the record ================= -->
+  <main class="machine" data-egress="sealed" aria-label="This machine — Nerva's side">
+    <h1 class="vh">Trust — Overview</h1>
+
+    <div class="lintel" role="group" aria-label="This machine — trust signals">
+      <div class="sig"><span class="sig-k">Egress</span>
+        <span class="sig-v"><svg class="ico" aria-hidden="true"><use href="#i-sealed"/></svg><b>Sealed</b><span class="sig-x">— nothing can leave this machine</span></span></div>
+      <div class="sig"><span class="sig-k">Runs on this machine</span>
+        <span class="sig-v"><b>100%</b><span class="sig-x">· 41 of 41 runs today</span><span class="tag" title="The hub counts which route each run used. It is not a verified network measurement.">by route</span></span></div>
+      <div class="sig"><span class="sig-k">Microphone</span>
+        <span class="sig-v"><svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg><b>On</b></span></div>
+      <div class="sig"><span class="sig-k">Model</span>
+        <span class="sig-v"><b class="mono">gemma-4-31b</b><span class="sig-x">· loaded on Ollama</span></span></div>
+      <div class="sig"><span class="sig-k">Data on screen</span>
+        <span class="sig-v"><b>Live</b><span>· checked <time>10:50</time></span></span></div>
+    </div>
+
+    <div class="trust-body">
+
+      <!-- second level: every Trust panel, grouped by which side of the line it describes -->
+      <nav class="subnav" aria-label="Trust — 21 panels">
+        <div class="subnav-h"><h2>Trust</h2><span>21 panels</span></div>
+        <button class="subsearch" type="button" aria-keyshortcuts="Control+K"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>Find a panel<kbd class="kbd">Ctrl K</kbd></button>
+
+        <h3 class="sub-g">The record</h3>
+        <ul>
+          <li><a class="sub is-here" href="secondary.html" aria-current="page">Overview</a></li>
+          <li><a class="sub" href="#audit">Audit chain<span class="sub-n">921</span></a></li>
+          <li><a class="sub" href="#anchors">Audit anchors</a></li>
+          <li><a class="sub" href="#retention">Retention</a></li>
+          <li><a class="sub" href="#trustops">Trust ops</a></li>
+        </ul>
+        <h3 class="sub-g">The line</h3>
+        <ul>
+          <li><a class="sub" href="#estop">Emergency stop<span class="sub-n">Armed</span></a></li>
+          <li><a class="sub" href="#caps">Capabilities<span class="sub-n">6</span></a></li>
+          <li><a class="sub" href="#permissions">Permissions</a></li>
+          <li><a class="sub" href="#payments">Payments<span class="sub-n toline">1 waits</span></a></li>
+          <li><a class="sub" href="#skills">Skill switches</a></li>
+          <li><a class="sub" href="#allow">Desktop allowlist</a></li>
+        </ul>
+        <h3 class="sub-g">The machine</h3>
+        <ul>
+          <li><a class="sub" href="#posture">Posture</a></li>
+          <li><a class="sub" href="#data">Data handling</a></li>
+          <li><a class="sub" href="#secrets">Secrets</a></li>
+          <li><a class="sub" href="#shares">Credential shares</a></li>
+          <li><a class="sub" href="#pairing">Pairing</a></li>
+          <li><a class="sub" href="#secskills">Security skills</a></li>
+          <li><a class="sub" href="#signals">Signal governance</a></li>
+        </ul>
+        <a class="sub sub--more" href="#all"><svg class="ico" aria-hidden="true"><use href="#i-down"/></svg>3 more panels</a>
+      </nav>
+
+      <div class="pane">
+        <header class="pane-h">
+          <p class="crumb"><span>Trust</span><svg class="ico" aria-hidden="true"><use href="#i-chev"/></svg><b>Overview</b><span class="src">Live · verified 10:50</span></p>
+          <h2 class="headline"><svg class="mark" aria-hidden="true"><use href="#m-done"/></svg>Chain intact <span>· 921 sealed entries · verified 10:50</span></h2>
+        </header>
+
+        <!-- where it ran -->
+        <section class="card" aria-labelledby="h-where">
+          <header class="card-h"><h3 class="label" id="h-where">Where it ran · today</h3><span class="src">Live</span></header>
+          <p class="big"><b>100%</b>on this machine<span class="tag">by route</span></p>
+          <p class="lede">41 of 41 runs today used a local route. None used a cloud route.</p>
+          <div class="runs" role="img" aria-label="41 runs drawn inside this machine; none outside it">
+            <div class="runs-box"><span class="runs-l"><b>41</b> · this machine</span>
+              <span class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+            <div class="runs-out"><span class="runs-l"><b>0</b> · left this machine</span><span class="ticks">none today</span></div>
+          </div>
+          <dl class="basis">
+            <dt>Basis</dt>
+            <dd><ol class="ladder" aria-label="How sure the figure is, weakest to strongest">
+              <li class="b-unknown">Unknown</li><li class="sep" aria-hidden="true"></li>
+              <li class="b-derived">Derived</li><li class="sep" aria-hidden="true"></li>
+              <li class="b-route" aria-current="true">By route · today</li><li class="sep" aria-hidden="true"></li>
+              <li class="b-verified">Verified · not yet</li>
+            </ol></dd>
+            <dd class="basis-note">By route: the hub counts which route each run used; it is not a verified network measurement. Derived would come from the local-only switch alone.</dd>
+          </dl>
+        </section>
+
+        <!-- egress and locality by code -->
+        <section class="card" aria-labelledby="h-egress">
+          <header class="card-h"><h3 class="label" id="h-egress">Egress</h3><span class="src">Live · 10:50</span></header>
+          <p class="big"><svg class="ico" aria-hidden="true"><use href="#i-sealed"/></svg><b>Sealed</b></p>
+          <p class="lede">Nothing can leave this machine.</p>
+          <ul class="egress-states" aria-label="How the machine's outline is drawn">
+            <li class="is-now"><span class="edge" aria-hidden="true"></span><span><b>Sealed</b> — the outline is closed, as now</span></li>
+            <li><span class="edge edge--hybrid" aria-hidden="true"></span><span>Hybrid — a cloud route is reachable</span></li>
+            <li><span class="edge edge--unknown" aria-hidden="true"></span><span>Unknown</span></li>
+          </ul>
+          <dl class="local">
+            <dt>Local only, by code</dt><dd>Frigga · Ultron · Howard · Hestia</dd>
+            <dt>Cloud only</dt><dd>Athena <span>— unavailable while egress is sealed</span></dd>
+          </dl>
+        </section>
+
+        <!-- the audit chain -->
+        <section class="card card--wide" id="audit" aria-labelledby="h-audit">
+          <header class="card-h"><h3 class="label" id="h-audit">Audit chain · latest 8 of 921</h3><span class="src">Live · every entry sealed</span></header>
+          <table class="atable">
+            <thead><tr><th scope="col">Time</th><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Tier</th><th scope="col">Entry</th><th scope="col" style="text-align:right">Seal</th></tr></thead>
+            <tbody>
+              <tr><td><time>10:49</time></td><td><b>Jarvis</b></td><td>Routed your question to Pepper and Stark</td><td class="tiercell"><svg class="tierglyph" aria-hidden="true"><use href="#t0"/></svg><span>Read only</span></td><td class="mono">9f2c…a41b</td><td class="seal"><svg class="mark" aria-hidden="true"><use href="#m-done"/></svg>sealed</td></tr>
+              <tr><td><time>09:40</time></td><td><b>Vision</b></td><td>Indexed 17 sources into memory</td><td class="tiercell"><svg class="tierglyph" aria-hidden="true"><use href="#t0"/></svg><span>Read only</span></td><td class="mono">5ad1…77e0</td><td class="seal"><svg class="mark" aria-hidden="true"><use href="#m-done"/></svg>sealed</td></tr>
+              <tr><td><time>08:14</time></td><td><b>Steve</b></td><td>Proposed restart of 4 services — waiting for approval<a class="toline" href="cockpit.html#g1">at the line<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></td><td class="tiercell"><svg class="tierglyph" aria-hidden="true"><use href="#t3"/></svg><span>Irreversible or money</span></td><td class="mono">c03e…1d9f</td><td class="seal"><svg class="mark" aria-hidden="true"><use href="#m-done"/></svg>sealed</td></tr>
+              <tr><td><time>08:07</time></td><td><b>Gecko</b></td><td>Proposed transfer of €4,200 — waiting for approval<a class="toline" href="cockpit.html#g2">at the line<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></td><td class="tiercell"><svg class="tierglyph" aria-hidden="true"><use href="#t3"/></svg><span>Irreversible or money</span></td><td class="mono">71bb…e2c4</td><td class="seal"><svg class="mark" aria-hidden="true"><use href="#m-done"/></svg>sealed</td></tr>
+              <tr><td><time>08:05</time></td><td><b>Stark</b></td><td><span class="mono">file_write</span> failed — nothing was changed</td><td class="tiercell"><svg class="tierglyph" aria-hidden="true"><use href="#t1"/></svg><span>Reversible</span></td><td class="mono">2e90…0b6a</td><td class="seal"><svg class="mark" aria-hidden="true"><use href="#m-done"/></svg>sealed</td></tr>
+              <tr><td><time>08:01</time></td><td><b>Ultron</b></td><td>Blocked an outbound request to 10.0.0.x (SSRF rule)</td><td class="tiercell"><svg class="tierglyph" aria-hidden="true"><use href="#t2"/></svg><span>External</span></td><td class="mono">aa47…93f1</td><td class="seal"><svg class="mark" aria-hidden="true"><use href="#m-done"/></svg>sealed</td></tr>
+              <tr><td><time>07:48</time></td><td><b>Ultron</b></td><td>Redacted 2 PII spans in an outbound draft and held it</td><td class="tiercell"><svg class="tierglyph" aria-hidden="true"><use href="#t2"/></svg><span>External</span></td><td class="mono">0d3f…5c82</td><td class="seal"><svg class="mark" aria-hidden="true"><use href="#m-done"/></svg>sealed</td></tr>
+              <tr><td><time>07:14</time></td><td><b>Pepper</b></td><td>Resolved 1 calendar conflict</td><td class="tiercell"><svg class="tierglyph" aria-hidden="true"><use href="#t1"/></svg><span>Reversible</span></td><td class="mono">b6e2…4a10</td><td class="seal"><svg class="mark" aria-hidden="true"><use href="#m-done"/></svg>sealed</td></tr>
+            </tbody>
+          </table>
+          <footer class="card-f"><span>Newest first. Tamper-evident: a changed or missing entry breaks the chain, and the break would be the first line on this page.</span><a href="#audit">Open the audit chain · 921 entries<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></footer>
+        </section>
+
+        <!-- payments -->
+        <section class="card card--wide" id="payments" aria-labelledby="h-pay">
+          <header class="card-h"><h3 class="label" id="h-pay">Payments</h3><span class="src">Live</span></header>
+          <table class="ptable">
+            <tbody>
+              <tr><td><b>Gecko</b></td><td>Savings ladder sweep</td><td class="amt">€4,200</td><td class="st"><svg class="mark mark--held" aria-hidden="true"><use href="#m-held"/></svg>Waiting for approval<a class="toline" href="cockpit.html#g2">at the line<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></td></tr>
+              <tr><td><b>Pepper</b></td><td>Conf Room A booking</td><td class="amt">€35</td><td class="st"><svg class="mark mark--quiet" aria-hidden="true"><use href="#m-done"/></svg>Settled 07:20</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= your side · your standing authority ================= -->
+  <aside class="yours" id="line" aria-label="Your side — your authority and what waits for you">
+
+    <section class="mode" aria-label="Where the line is set">
+      <div class="mode-row">
+        <div class="seg seg--mode" role="radiogroup" aria-label="Approval mode">
+          <button type="button" role="radio" aria-checked="false" title="Auto — Safe and reversible actions run on their own; risky ones wait.">Auto</button>
+          <button type="button" role="radio" aria-checked="true" title="Ask — Anything with a side effect waits for you.">Ask</button>
+          <button type="button" role="radio" aria-checked="false" title="Off — Agents may read and think, nothing acts.">Off</button>
+        </div>
+        <p class="mode-means">Anything with a side effect waits for you.</p>
+        <span class="budget" title="The product budgets how often it may interrupt you: 4 a day."><span>Interrupts today</span><span class="pips" aria-hidden="true"><i class="is-used"></i><i class="is-used"></i><i class="is-used"></i><i></i></span><b>3 of 4</b></span>
+      </div>
+    </section>
+
+    <!-- the stop: one click, from every page; this is its home panel -->
+    <section class="estop" id="estop" aria-labelledby="h-estop">
+      <h2 id="h-estop">Emergency stop <span class="estop-state"><svg class="mark" aria-hidden="true"><use href="#m-armed"/></svg>Armed</span></h2>
+      <p>One click. Halts every agent and the job queue until you resume.</p>
+      <button class="btn btn--stop" type="button"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents</button>
+    </section>
+
+    <!-- capability grants: where the line is drawn for each one -->
+    <h2 class="side-h" id="caps"><b>Where the line is drawn</b> · 6 capabilities<a href="#caps">Capabilities<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></h2>
+    <div class="grantcard">
+      <table class="grants" aria-describedby="grants-f">
+        <thead><tr><th scope="col">Capability</th><th scope="col">Allow</th><th scope="col">Scoped</th><th scope="col">Gated</th><th class="g-line" aria-hidden="true"></th><th scope="col" class="yours-h">Approval</th></tr></thead>
+        <tbody>
+          <tr><th scope="row"><span class="mono">fs.read</span><span class="g-what">Read workspace files</span></th><td><i></i><span class="vh">Allow</span></td><td></td><td></td><td class="g-line"></td><td></td></tr>
+          <tr><th scope="row"><span class="mono">fs.write</span><span class="g-what">Modify files in /work</span></th><td></td><td><i></i><span class="vh">Scoped</span></td><td></td><td class="g-line"></td><td></td></tr>
+          <tr><th scope="row"><span class="mono">net.outbound</span><span class="g-what">External HTTP via plugins</span></th><td></td><td></td><td><i></i><span class="vh">Gated</span></td><td class="g-line"></td><td></td></tr>
+          <tr><th scope="row"><span class="mono">payments.execute</span><span class="g-what">Move money</span></th><td></td><td></td><td></td><td class="g-line"></td><td class="is-yours"><i></i><span class="vh">Approval</span></td></tr>
+          <tr><th scope="row"><span class="mono">shell.exec</span><span class="g-what">Run shell commands</span></th><td></td><td></td><td></td><td class="g-line"></td><td class="is-yours"><i></i><span class="vh">Approval</span></td></tr>
+          <tr><th scope="row"><span class="mono">memory.write</span><span class="g-what">Persist facts to the knowledge graph</span></th><td><i></i><span class="vh">Allow</span></td><td></td><td></td><td class="g-line"></td><td></td></tr>
+        </tbody>
+      </table>
+      <p class="grants-f" id="grants-f">Left of the line runs on its own and is recorded. Right of the line waits for you.</p>
+    </div>
+
+    <!-- the queue, compact: the same six groups as on Home -->
+    <h2 class="side-h"><b>At the line</b> · 9 actions in 6 groups<a href="cockpit.html#line">Open on Home<svg class="ico" aria-hidden="true"><use href="#i-arrow"/></svg></a></h2>
+    <ol class="q-list">
+      <li class="q"><svg class="tierglyph" aria-label="Irreversible or money"><use href="#t3"/></svg><span class="q-t"><b>Restart 4 local services that stopped responding</b><span>Steve · Irreversible · 08:14, repeated 3 times</span></span><span class="q-a"><a class="btn btn--sm" href="cockpit.html#g1">Review</a></span></li>
+      <li class="q"><svg class="tierglyph" aria-label="Irreversible or money"><use href="#t3"/></svg><span class="q-t"><b>Sweep €4,200 of idle cash to the savings ladder</b><span>Gecko · Money · 08:07, from your conversation</span></span><span class="q-a"><a class="btn btn--sm" href="cockpit.html#g2">Review</a></span></li>
+      <li class="q"><svg class="tierglyph" aria-label="Irreversible or money"><use href="#t3"/></svg><span class="q-t"><b>Delete logs older than 14 days</b><span>Jarvis · Irreversible · 07:30, repeated once</span></span><span class="q-a"><a class="btn btn--sm" href="cockpit.html#g3">Review</a></span></li>
+      <li class="q"><svg class="tierglyph" aria-label="External"><use href="#t2"/></svg><span class="q-t"><b>Veronica's LinkedIn draft names a client flagged as sensitive</b><span>Ultron · External · 07:48</span></span><span class="q-a"><a class="btn btn--sm" href="cockpit.html#g4">Review</a></span></li>
+      <li class="q"><svg class="tierglyph" aria-label="Reversible"><use href="#t1"/></svg><span class="q-t"><b>Draft a reply to Raiffeisen with the QBR agenda</b><span>Stark · Reversible · Undo: Delete the draft.</span></span><span class="q-a"><button class="btn btn--soft btn--sm" type="button">Approve</button><button class="btn btn--sm" type="button">Reject</button></span></li>
+      <li class="q"><svg class="tierglyph" aria-label="Reversible"><use href="#t1"/></svg><span class="q-t"><b>Move the research sync from 16:30 to 17:15</b><span>Pepper · Reversible · Undo: Move it back.</span></span><span class="q-a"><button class="btn btn--soft btn--sm" type="button">Approve</button><button class="btn btn--sm" type="button">Reject</button></span></li>
+    </ol>
+  </aside>
+</div>
+
+<script>
+  document.querySelectorAll('[data-theme-toggle]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var r = document.documentElement;
+      r.dataset.theme = r.dataset.theme === 'light' ? 'dark' : 'light';
+    });
+  });
+</script>
+</body>
+</html>

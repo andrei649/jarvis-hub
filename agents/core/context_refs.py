@@ -64,6 +64,10 @@ class Expansion:
     attached: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     block: str = ""             # the "--- Attached Context ---" section; empty without a reference
+    history_source: dict | None = None
+    history_destination: str | None = None
+    board_sources: list[dict] | None = None
+    board_sources_recorded: bool = False
 
     @property
     def any_attached(self) -> bool:
@@ -305,6 +309,17 @@ def reset_attached(token) -> None:
 def attached() -> bool:
     expansion = _ATTACHED.get()
     return expansion is not None and expansion.any_attached
+
+
+def pending_history_source(session_id: str, message: str) -> Expansion | None:
+    """Return the source scope that the destination may acknowledge after appending."""
+    expansion = _ATTACHED.get()
+    if (not session_id or expansion is None
+            or (expansion.history_source is None and expansion.board_sources is None)
+            or expansion.history_destination != session_id):
+        return None
+    from .session_titles import own_words
+    return expansion if own_words(message) == expansion.message else None
 
 
 def attached_block() -> str:

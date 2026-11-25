@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Optional
 
 from agents.core.paths import data_root
+from agents.core.turn_usage import validated_model_calls
+from agents.core.validation import is_valid_session_id
 
 from .persistence import RewindPersistenceError, list_sessions, load_memory_snapshot, save_memory
 
@@ -52,11 +54,13 @@ _memory_dir = memory_dir   # internal alias, kept so use sites read tersely
 
 
 class Turn:
-    __slots__ = ("role", "content", "agent_id", "timestamp", "token_count", "tools", "media", "foreign_origin")
+    __slots__ = ("role", "content", "agent_id", "timestamp", "token_count", "tools", "media", "foreign_origin", "model_calls", "tool_activity", "history_source", "board_sources")
 
     def __init__(self, role: str, content: str, agent_id: str = None, token_count: int = 0,
                  tools: list[str] | None = None, media: dict | None = None,
-                 foreign_origin: str | None = None):
+                 foreign_origin: str | None = None, model_calls: list[dict] | None = None,
+                 tool_activity: dict | None = None, history_source: dict | None = None,
+                 board_sources: list[dict] | None = None):
         if foreign_origin is not None and foreign_origin not in {"claude", "codex"}:
             raise ValueError("invalid foreign origin")
         self.role = role
@@ -68,6 +72,10 @@ class Turn:
         self.tools = _tool_names(tools)
         self.media = validated_media(media) if media is not None else None
         self.foreign_origin = foreign_origin
+        self.model_calls = validated_model_calls(model_calls) if role == "assistant" and foreign_origin is None else None
+        self.tool_activity = validated_tool_activity(tool_activity) if role == "assistant" and foreign_origin is None else None
+        self.history_source = validated_history_source(history_source) if role == "user" and foreign_origin is None else None
+        self.board_sources = validated_board_sources(board_sources) if role == "user" and foreign_origin is None else None
 
     def to_dict(self):
         out = {
@@ -83,7 +91,69 @@ class Turn:
             out["media"] = dict(self.media)
         if self.foreign_origin is not None:
             out["foreign_origin"] = self.foreign_origin
+        if self.model_calls:
+            out["model_calls"] = [dict(row) for row in self.model_calls]
+        if self.tool_activity is not None:
+            out["tool_activity"] = dict(self.tool_activity)
+        if self.history_source is not None:
+            out["history_source"] = dict(self.history_source)
+        if self.board_sources is not None:
+            out["board_sources"] = [dict(row) for row in self.board_sources]
         return out
+
+
+def validated_history_source(value: object) -> dict | None:
+    """Only inert location metadata can survive a reload as a source citation."""
+    if (not isinstance(value, dict) or set(value) != {"session_id", "turn", "revision", "role"}
+            or not is_valid_session_id(value["session_id"]) or type(value["turn"]) is not int
+            or not 0 <= value["turn"] < 100 or value["role"] not in ("user", "assistant")
+            or not isinstance(value["revision"], str) or not re.fullmatch("[a-f0-9]{64}", value["revision"])):
+        return None
+    return dict(value)
+
+
+def validated_board_sources(value: object) -> list[dict] | None:
+    """Keep only the route-verified, inert identifiers and full-source digests."""
+    if type(value) is not list or not value or len(value) > 8:
+        return None
+    seen = set()
+    for row in value:
+        if (type(row) is not dict or set(row) != {"board", "task_id", "source", "sha256"}
+                or type(row["board"]) is not str
+                or re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", row["board"]) is None
+                or type(row["task_id"]) is not str
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", row["task_id"]) is None
+                or row["source"] not in ("result", "latest_summary")
+                or type(row["sha256"]) is not str
+                or re.fullmatch(r"[a-f0-9]{64}", row["sha256"]) is None):
+            return None
+        key = row["board"], row["task_id"]
+        if key in seen:
+            return None
+        seen.add(key)
+    return [dict(row) for row in value]
+
+
+def validated_tool_activity(value: object) -> dict | None:
+    """Accept only the bounded count and uncertainty shape emitted by turn_outcome."""
+    if type(value) is not dict or set(value) != {"proposed", "queued", "executed", "failures", "basis"}:
+        return None
+    def count(field):
+        number = value[field]
+        return type(number) is int and 0 <= number <= 1_000_000
+
+    if not count("proposed") or not count("queued"):
+        return None
+    basis = value["basis"]
+    if basis == "observed":
+        if not count("executed") or not count("failures"):
+            return None
+    elif basis == "unknown":
+        if (value["executed"] is not None and not count("executed")) or value["failures"] is not None:
+            return None
+    else:
+        return None
+    return {name: value[name] for name in ("proposed", "queued", "executed", "failures", "basis")}
 
 
 def _tool_names(value) -> list[str]:
@@ -169,7 +239,12 @@ class ConversationMemory:
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
                                 tools=t.get("tools"), media=restored_media(t.get("media")),
-                                foreign_origin=t.get("foreign_origin"))
+                                foreign_origin=t.get("foreign_origin"),
+                                history_source=t.get("history_source") if snapshot.get("instance_id") and "foreign_history" not in snapshot else None,
+                                board_sources=t.get("board_sources") if snapshot.get("instance_id") and "foreign_history" not in snapshot else None,
+                                model_calls=t.get("model_calls") if "foreign_history" not in snapshot else None,
+                                tool_activity=t.get("tool_activity") if snapshot.get("instance_id")
+                                and "foreign_history" not in snapshot else None)
                     turn.timestamp = t.get("timestamp") or turn.timestamp
                     self.sessions[sid].append(turn)
                 self.current_session_id = sid
@@ -225,7 +300,12 @@ class ConversationMemory:
                 for t in turns_data:
                     turn = Turn(t["role"], t["content"], t.get("agent_id"), t.get("token_count", 0),
                                 tools=t.get("tools"), media=restored_media(t.get("media")),
-                                foreign_origin=t.get("foreign_origin"))
+                                foreign_origin=t.get("foreign_origin"),
+                                history_source=t.get("history_source") if snapshot.get("instance_id") and "foreign_history" not in snapshot else None,
+                                board_sources=t.get("board_sources") if snapshot.get("instance_id") and "foreign_history" not in snapshot else None,
+                                model_calls=t.get("model_calls") if "foreign_history" not in snapshot else None,
+                                tool_activity=t.get("tool_activity") if snapshot.get("instance_id")
+                                and "foreign_history" not in snapshot else None)
                     turn.timestamp = t.get("timestamp") or turn.timestamp
                     self.sessions[session_id].append(turn)
                 logger.info(f"Resumed session {session_id} ({len(turns_data)} turns)")
@@ -247,7 +327,11 @@ class ConversationMemory:
         for value in rows:
             turn = Turn(value["role"], value["content"], value.get("agent_id"),
                         value.get("token_count", 0), tools=value.get("tools"),
-                        media=restored_media(value.get("media")), foreign_origin=value.get("foreign_origin"))
+                        media=restored_media(value.get("media")), foreign_origin=value.get("foreign_origin"),
+                        history_source=value.get("history_source") if marker is None else None,
+                        board_sources=value.get("board_sources") if marker is None else None,
+                        model_calls=value.get("model_calls") if marker is None else None,
+                        tool_activity=value.get("tool_activity") if marker is None else None)
             turn.timestamp = value.get("timestamp") or turn.timestamp
             restored.append(turn)
         self.invalidate_active_images(session_id)
@@ -260,7 +344,8 @@ class ConversationMemory:
 
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
                        tools: list[str] | None = None, media: dict | None = None,
-                       channel: str | None = None):
+                       channel: str | None = None, model_calls: list[dict] | None = None,
+                       tool_activity: dict | None = None):
         guard = self.write_guard
         if guard is not None:
             # H443: before the turn joins the history, outside the lock (the guard may
@@ -274,8 +359,18 @@ class ConversationMemory:
             prior_turns = list(self.sessions[session_id])
             prior_revision = self.revisions.get(session_id, 0)
             was_dirty = session_id in self._dirty
+            source_scope = None
+            if role == "user" and channel == "web" and session_id not in self.foreign_origins:
+                from ..context_refs import pending_history_source
+                source_scope = pending_history_source(session_id, content)
             turn = Turn(role, content, agent_id, token_count=len(content) // 4,
-                        tools=tools, media=media)
+                        history_source=source_scope.history_source if source_scope else None,
+                        board_sources=source_scope.board_sources if source_scope else None,
+                        tools=tools, media=media,
+                        model_calls=model_calls if session_id not in self.foreign_origins else None,
+                        tool_activity=tool_activity if session_id not in self.foreign_origins else None)
+            if source_scope and source_scope.board_sources is not None and turn.board_sources is None:
+                raise ValueError("invalid reviewed board sources")
             self.sessions[session_id].append(turn)
             if len(self.sessions[session_id]) > self.max_turns:
                 self.sessions[session_id].pop(0)
@@ -294,6 +389,8 @@ class ConversationMemory:
                         self._persist_turn, session_id, turn_dict, turns_data,
                         self.instances.get(session_id), self.revisions[session_id],
                         session_id in self.rewound_sessions)
+                    if source_scope and not saved:
+                        raise OSError("sourced question snapshot was not saved")
                 except Exception:
                     self.sessions[session_id] = prior_turns
                     self.revisions[session_id] = prior_revision
@@ -307,6 +404,11 @@ class ConversationMemory:
                         session_id, self.instances.get(session_id),
                         self.revisions[session_id], len(turns_data), _digest(turn_dict),
                     )
+            if source_scope:
+                source_scope.history_source = None
+                if source_scope.board_sources is not None and self.persist and saved:
+                    source_scope.board_sources_recorded = True
+                    source_scope.board_sources = None
             return None
 
     def _persist_turn(self, session_id: str, turn_dict: dict, turns_data: list[dict],
@@ -315,7 +417,10 @@ class ConversationMemory:
         """Blocking persistence, run off the event loop (see add_turn). Per-turn
         durability is unchanged: the snapshot is still written every turn — only the
         thread it runs on differs."""
-        self._append_log_dict(session_id, turn_dict)
+        # A refused sourced question must not leave a journal entry that a retry duplicates.
+        sourced = "history_source" in turn_dict or "board_sources" in turn_dict
+        if not sourced:
+            self._append_log_dict(session_id, turn_dict)
         try:
             if instance_id:
                 save_memory(session_id, turns_data, instance_id=instance_id, revision=revision,
@@ -334,6 +439,8 @@ class ConversationMemory:
                 raise RewindPersistenceError("foreign conversation append not persisted") from e
             logger.warning(f"Snapshot save failed: {e}")
             return False
+        if sourced:
+            self._append_log_dict(session_id, turn_dict)
         return True
 
     def _save_snapshot(self, session_id: str):
@@ -357,14 +464,19 @@ class ConversationMemory:
         except Exception as e:
             logger.warning(f"Snapshot save failed: {e}")
 
-    async def get_history(self, session_id: str, last_n: int = None) -> list[dict]:
+    async def get_history(self, session_id: str, last_n: int = None,
+                          *, include_board_sources: bool = False) -> list[dict]:
         async with self._lock:
             if session_id in self.pending_rewinds:
                 raise UnverifiedRewind("conversation rewind head unverified")
             turns = self.sessions.get(session_id, [])
             if last_n is not None:
                 turns = turns[-last_n:] if last_n > 0 else []
-            return [t.to_dict() for t in turns]
+            rows = [t.to_dict() for t in turns]
+            if not include_board_sources:
+                for row in rows:
+                    row.pop("board_sources", None)
+            return rows
 
     async def get_context(self, session_id: str, last_n: int = 10) -> str:
         turns = await self.get_history(session_id, last_n)

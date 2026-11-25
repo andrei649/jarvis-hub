@@ -14,6 +14,21 @@ import { V2 } from '../data';
 
 const t = V2.I18N.en;
 
+it('hands only a chosen Blender file to the live composer and preserves a busy draft', async () => {
+  const fetcher = vi.fn(async () => ({ ok: true, json: async () => ({ elements: [], items: [] }) }));
+  vi.stubGlobal('fetch', fetcher);
+  const inspect = vi.fn(() => false);
+  render(<ArtifactsPanel lang="en" onInspectBlend={inspect}/>);
+  const picker = screen.getByLabelText('Choose a Blender project');
+  fireEvent.change(picker, { target: { files: [new File(['sample'], 'plan.xlsx')] } });
+  expect(inspect).not.toHaveBeenCalled();
+  const blend = new File(['synthetic'], 'design.blend');
+  fireEvent.change(picker, { target: { files: [blend] } });
+  expect(inspect).toHaveBeenCalledExactlyOnceWith(blend);
+  expect(screen.getByText(/finish or remove the current attachment/i)).toBeTruthy();
+  expect(fetcher.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+});
+
 const ok = (data) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
 const fail = (status = 500) => Promise.resolve({ ok: false, status, json: () => Promise.resolve({}) });
 
@@ -45,6 +60,7 @@ describe('ArtifactsPanel — governed Canvas rendering', () => {
   it('fetches /api/canvas and renders every existing canvas type with agent + time', async () => {
     mockCanvas(ELS);
     const { container } = render(<ArtifactsPanel refreshKey={0} lang="en" />);
+    expect(screen.getByRole('link', { name: 'Open 3D workshop' }).getAttribute('href')).toBe('/os/?studio=robot');
 
     expect(await screen.findByText('plain text body')).toBeTruthy();       // text
     expect(screen.getByText('Heading line')).toBeTruthy();                 // markdown heading

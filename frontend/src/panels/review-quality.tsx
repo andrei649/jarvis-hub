@@ -76,7 +76,9 @@
    Tier: /api/review/stats is OPEN; the other three reads and the write are user_guard. There
    is no admin call on this panel — no actA, no useApi(..., true). */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, inpS, Json } from '../panel-kit';
+/* The kit's words style is imported as noteS: `note` is this file's own line style. */
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, act, inpS, Json } from '../panel-kit';
+import { IDENT, LABEL } from '../theme/type';
 
 const STATS_PATH = '/api/review/stats';          // open route
 const SCORES_PATH = '/api/quality/scores?limit=50';
@@ -112,9 +114,11 @@ const ROLLUP = [
   ['in_dataset', 'in dataset'],
 ];
 
-const label = { ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', marginTop: 10 };
-const note = { ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 };
-const amber = { ...mono, fontSize: 10.5, color: 'var(--amber)', marginTop: 4 };
+const label = { ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10 };
+/* A route inside a head is an IDENT span (theme/type.ts): the mono face, in its own case and
+   spacing (contract §5). */
+const note = { ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 };
+const amber = { ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 };
 
 export function ReviewQualityPanel() {
   const s = useApi(STATS_PATH);          // OPEN — no guard on this one (review.py:25)
@@ -202,13 +206,13 @@ export function ReviewQualityPanel() {
       <State e={s.e} loading={s.loading} n={null} />
 
       {/* ── 1 · QUEUE ROLLUP — GET /api/review/stats ───────────────────────── */}
-      <div style={{ ...label, marginTop: 0 }}>QUEUE ROLLUP · /api/review/stats</div>
+      <div style={{ ...label, marginTop: 0 }}>QUEUE ROLLUP · <span style={IDENT}>/api/review/stats</span></div>
 
       {queueWired && (
         <>
           {ROLLUP.map(([k, lbl]) => (
             <Row key={k}>
-              <span style={{ ...mono, color: 'var(--ink-2)' }}>{lbl}</span>
+              <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{lbl}</span>
               <span style={{ marginLeft: 'auto', ...mono, color: 'var(--accent-light)' }}>
                 {num(st[k]) != null ? st[k] : '—'}
               </span>
@@ -216,7 +220,7 @@ export function ReviewQualityPanel() {
           ))}
           {arr(st, 'rubric_criteria').length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-              <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>rubric:</span>
+              <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>rubric:</span>
               {arr(st, 'rubric_criteria').map((c, i) => <Tag key={i} c="var(--ink-2)">{String(c)}</Tag>)}
             </div>
           )}
@@ -246,7 +250,7 @@ export function ReviewQualityPanel() {
       )}
 
       {/* ── 2 · RECENT QUALITY SCORES — GET /api/quality/scores ────────────── */}
-      <div style={label}>RECENT SCORES · /api/quality/scores</div>
+      <div style={label}>RECENT SCORES · <span style={IDENT}>/api/quality/scores</span></div>
       <State e={q.e} loading={q.loading} n={null} />
 
       {scores.slice(0, 8).map((e, i) => {
@@ -254,7 +258,8 @@ export function ReviewQualityPanel() {
         const below = thr != null && sc != null && sc < thr;
         return (
           <Row key={(e && e.trace_id) || i}>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>
+            {/* A trace id is an identifier; its absence is said in words. */}
+            <span style={{ ...(str(e && e.trace_id) ? mono : noteS), color: 'var(--ink-2)' }}>
               {str(e && e.trace_id) ? String(e.trace_id).slice(0, 12) : '(no trace id)'}
             </span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -327,7 +332,7 @@ export function ReviewQualityPanel() {
       ))}
 
       {/* ── 3 · FLAG A TRACE — POST /api/review/flag ───────────────────────── */}
-      <div style={label}>FLAG A TRACE FOR REVIEW · POST /api/review/flag</div>
+      <div style={label}>FLAG A TRACE FOR REVIEW · <span style={IDENT}>POST /api/review/flag</span></div>
       <State e={t.e} loading={t.loading} n={null} />
 
       {tracerMsg && (
@@ -351,7 +356,7 @@ export function ReviewQualityPanel() {
             >
               {sel ? '◉' : '○'}
             </button>
-            <span style={{ fontSize: 11, color: sel ? 'var(--accent-light)' : 'var(--ink-2)' }}>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: sel ? 'var(--accent-light)' : 'var(--ink-2)' }}>
               {(str(tr && tr.text_preview) || '(no preview)').slice(0, 40)}
             </span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -390,7 +395,7 @@ export function ReviewQualityPanel() {
       {res && res.ok && <FlagOutcome res={res} />}
       {res && !res.ok && <FlagFailure res={res} />}
 
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 10, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         {STATS_PATH} is unauthenticated; {SCORES_PATH.split('?')[0]}, {TRACES_PATH.split('?')[0]}{' '}
         and POST {FLAG_PATH} are user-tier (X-User-Token when the instance is network-exposed).
         No admin call on this panel. Voting, promote-to-dataset and the alert-threshold control
@@ -411,7 +416,7 @@ function FlagOutcome({ res }: { res: any }) {
   if (!item || typeof item !== 'object') {
     return (
       <div role="alert" style={{ marginTop: 8, padding: 6, border: '1px solid var(--amber)', borderRadius: 4 }}>
-        <div style={{ ...mono, fontSize: 10.5, color: 'var(--amber)' }}>
+        <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
           the response carried no `item` — shown raw rather than interpreted.
         </div>
         <Json v={res.raw} />
@@ -426,11 +431,11 @@ function FlagOutcome({ res }: { res: any }) {
 
   return (
     <div role="alert" style={{ marginTop: 8, padding: 6, border: `1px solid ${c}`, borderRadius: 4 }}>
-      <div style={{ ...mono, fontSize: 10.5, color: c }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: c }}>
         {preexisting ? 'already queued' : 'flagged'} · item {str(item.id) || '(no id)'} · status{' '}
         {str(item.status) || '(none)'}
       </div>
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
         trace_id {str(item.trace_id) || '(none)'} · reason: {str(item.reason) || '(null)'} · score{' '}
         {sc != null ? sc : '—'} · created {when(item.created_at) || '(none)'}
       </div>
@@ -473,10 +478,10 @@ function FlagOutcome({ res }: { res: any }) {
 function FlagFailure({ res }: { res: any }) {
   return (
     <div role="alert" style={{ marginTop: 8, padding: 6, border: '1px solid var(--red)', borderRadius: 4 }}>
-      <div style={{ ...mono, fontSize: 10.5, color: 'var(--red)' }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--red)' }}>
         refused · HTTP {res.status != null ? res.status : '?'} · {res.msg}
       </div>
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
         Nothing was flagged. The line above is the backend's own string, printed as sent.
       </div>
       {res.detail != null && <Json v={res.detail} />}
