@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPost, apiPut } from '../api/client';
 import { Card } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export type AgentPetState = 'idle' | 'thinking' | 'tool' | 'finishing' | 'failing';
 
@@ -75,7 +76,7 @@ type DoctorReport = {
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 function safeColor(c: unknown): string {
-  return typeof c === 'string' && HEX_RE.test(c) ? c : '#0d1b2a';
+  return typeof c === 'string' && HEX_RE.test(c) ? c : 'var(--void-2)';
 }
 
 export function SpriteGrid({
@@ -219,9 +220,9 @@ export function PetCompanionOverlay({
         gap: 8,
         padding: '6px 10px',
         borderRadius: 8,
-        background: 'rgba(10, 16, 28, 0.92)',
+        background: 'var(--void-2)',
         border: '1px solid var(--panel-line)',
-        boxShadow: '0 6px 20px rgba(0,0,0,0.45)',
+        boxShadow: 'var(--n-shadow-2)',
         transition: 'right 0.6s ease',
         pointerEvents: 'auto',
       }}
@@ -231,7 +232,7 @@ export function PetCompanionOverlay({
         pixelSize={px}
         label={`${info.active_pet?.name || info.active_id} (${agentState})`}
       />
-      <div style={{ fontSize: 10.5, lineHeight: 1.35 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', lineHeight: 1.35 }}>
         <div style={{ fontWeight: 700, color: 'var(--ink)' }}>
           {info.active_pet?.name || info.active_id}{' '}
           <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent-light)' }}>
@@ -523,8 +524,8 @@ export function PetsPanel() {
           pixelSize={Math.max(5, Math.round(7 * scale))}
           label={info?.active_pet?.name || 'active companion'}
         />
-        <div style={{ flex: 1, minWidth: 180, fontSize: 11 }}>
-          <div style={{ fontWeight: 700, fontSize: 12.5 }}>
+        <div style={{ flex: 1, minWidth: 180, fontSize: 'var(--n-fs-meta)' }}>
+          <div style={{ fontWeight: 700, fontSize: 'var(--n-fs-label)' }}>
             {info?.active_pet?.name || 'Spark Owl'}{' '}
             <span style={{ color: 'var(--ink-2)', fontWeight: 400 }}>
               ({info?.active_pet?.species || 'Strigiformes Arc'})
@@ -566,7 +567,7 @@ export function PetsPanel() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gap: 4, fontSize: 10.5 }}>
+        <div style={{ display: 'grid', gap: 4, fontSize: 'var(--n-fs-meta)' }}>
           <label>
             scale ({scale.toFixed(1)}x)
             <input
@@ -611,12 +612,12 @@ export function PetsPanel() {
           marginBottom: 12,
         }}
       >
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-2)', marginBottom: 6 }}>
+        <div style={{ ...LABEL, textTransform: 'none', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
           HATCH-A-PET · concept prompt, candidate grid, confirmed remix & adoption
         </div>
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
           {examples.map((ex) => (
-            <button key={ex} className="tool-btn" style={{ fontSize: 10 }} onClick={() => setConceptPrompt(ex)}>
+            <button key={ex} className="tool-btn" style={{ fontSize: 'var(--n-fs-meta)' }} onClick={() => setConceptPrompt(ex)}>
               {ex.slice(0, 32)}…
             </button>
           ))}
@@ -640,7 +641,7 @@ export function PetsPanel() {
               </option>
             ))}
           </select>
-          <input aria-label="Reference image" type="file" accept="image/*" onChange={onRefFile} style={{ width: 150, fontSize: 10 }} />
+          <input aria-label="Reference image" type="file" accept="image/*" onChange={onRefFile} style={{ width: 150, fontSize: 'var(--n-fs-meta)' }} />
           <button className="tool-btn" onClick={generateDrafts}>
             generate 4 looks
           </button>
@@ -648,7 +649,7 @@ export function PetsPanel() {
 
         {activeJob && (
           <div style={{ marginTop: 8 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, marginBottom: 6 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 'var(--n-fs-meta)', marginBottom: 6 }}>
               <code>{activeJob.job_id}</code>
               <span>status: <strong>{activeJob.status}</strong></span>
               <button className="tool-btn" onClick={() => pollJobStatus(activeJob.job_id)}>
@@ -661,7 +662,7 @@ export function PetsPanel() {
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 11 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 'var(--n-fs-meta)' }}>
               <input
                 aria-label="Hatchling name"
                 value={adoptName}
@@ -694,7 +695,7 @@ export function PetsPanel() {
                     padding: 8,
                     border: '1px solid var(--panel-line)',
                     borderRadius: 6,
-                    fontSize: 10.5,
+                    fontSize: 'var(--n-fs-meta)',
                     display: 'grid',
                     gap: 6,
                   }}
@@ -724,7 +725,7 @@ export function PetsPanel() {
       </div>
 
       {/* Petdex Gallery */}
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-2)', marginBottom: 6 }}>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
         PETDEX GALLERY ({gallery.length})
       </div>
       <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
@@ -737,7 +738,7 @@ export function PetsPanel() {
               gap: 8,
               padding: '6px 8px',
               borderBottom: '1px solid var(--panel-line)',
-              fontSize: 11,
+              fontSize: 'var(--n-fs-meta)',
               flexWrap: 'wrap',
             }}
           >
@@ -745,7 +746,7 @@ export function PetsPanel() {
             <span style={{ color: 'var(--ink-2)' }}>
               ({pet.id} · {pet.rarity} · {pet.vibe})
             </span>
-            {pet.active && <span style={{ color: 'var(--green)', fontFamily: 'var(--font-mono)' }}>ACTIVE</span>}
+            {pet.active && <span style={{ ...LABEL, color: 'var(--green)' }}>ACTIVE</span>}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
               {!pet.active && (
                 <button className="tool-btn" onClick={() => selectPet(pet.id)}>
@@ -763,7 +764,7 @@ export function PetsPanel() {
                 value={renameValues[pet.id] || ''}
                 onChange={(ev) => setRenameValues((prev) => ({ ...prev, [pet.id]: ev.target.value }))}
                 placeholder="new name"
-                style={{ width: 90, padding: '2px 5px', fontSize: 10.5 }}
+                style={{ width: 90, padding: '2px 5px', fontSize: 'var(--n-fs-meta)' }}
               />
               <button className="tool-btn" onClick={() => renamePet(pet.id)}>
                 rename
@@ -790,13 +791,13 @@ export function PetsPanel() {
           value={importB64}
           onChange={(ev) => setImportB64(ev.target.value)}
           placeholder="paste .pet.zip base64 archive..."
-          style={{ flex: 1, padding: '4px 6px', fontSize: 10.5 }}
+          style={{ flex: 1, padding: '4px 6px', fontSize: 'var(--n-fs-meta)' }}
         />
         <button className="tool-btn" onClick={importPetZip}>
           import .pet.zip
         </button>
       </div>
-      {exportNote && <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginBottom: 6 }}>{exportNote}</div>}
+      {exportNote && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>{exportNote}</div>}
 
       {thumbUri && (
         <div style={{ marginBottom: 6 }}>
@@ -804,10 +805,10 @@ export function PetsPanel() {
         </div>
       )}
       {inspectDetail && (
-        <pre style={{ fontSize: 10, padding: 6, overflowX: 'auto', marginBottom: 6 }}>{inspectDetail}</pre>
+        <pre style={{ fontSize: 'var(--n-fs-meta)', padding: 6, overflowX: 'auto', marginBottom: 6 }}>{inspectDetail}</pre>
       )}
       {doctor && (
-        <div style={{ fontSize: 10.5, marginBottom: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', marginBottom: 6 }}>
           {doctor.checks.map((c) => (
             <div key={c.name}>
               {c.ok ? '✓' : '✗'} <code>{c.name}</code>: {c.detail}
@@ -815,7 +816,7 @@ export function PetsPanel() {
           ))}
         </div>
       )}
-      {statusNote && <div style={{ fontSize: 11, color: 'var(--accent-light)' }}>{statusNote}</div>}
+      {statusNote && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)' }}>{statusNote}</div>}
     </Card>
   );
 }

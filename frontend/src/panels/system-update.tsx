@@ -10,7 +10,8 @@
    again; a hub that was not started by serve.py says it cannot. */
 import React, { useEffect, useRef, useState } from 'react';
 import { apiGet, apiPost } from '../api/client';
-import { Card, Tag, mono, refusalReason, useApi } from '../panel-kit';
+// The panel keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { Card, Tag, mono, note as noteS, refusalReason, useApi } from '../panel-kit';
 
 export const OPS_UPDATE_PATH = '/api/admin/ops/update';
 
@@ -109,15 +110,16 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
   return (
     <Card title="RESTART / UPDATE" live={c ? 'live' : undefined} onReload={reload}
       sub={c ? `v${c.version}${c.commit ? ` · ${c.commit}` : ''}` : null}>
-      {e && <div role="status" style={{ color: 'var(--amber)', fontSize: 11 }}>not loaded · {String(e)}</div>}
+      {e && <div role="status" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>not loaded · {String(e)}</div>}
       {c && (
-        <dl style={{ margin: 0, fontSize: 11, display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 8px' }}>
+        <dl style={{ margin: 0, fontSize: 'var(--n-fs-meta)', display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 8px' }}>
           <dt>Install</dt><dd style={{ margin: 0 }}>{c.install}</dd>
           <dt>Branch</dt><dd style={{ margin: 0, ...mono }}>{c.branch || '—'}{c.upstream ? ` → ${c.upstream}` : ''}</dd>
           <dt>Behind</dt><dd style={{ margin: 0 }}>{c.behind == null ? 'unknown' : `${c.behind} commit(s)`}{c.ahead ? ` · ${c.ahead} ahead` : ''} · as of the last fetch, {ago(c.fetched_seconds_ago)}</dd>
           <dt>Working tree</dt><dd style={{ margin: 0 }}>{c.dirty == null ? 'unknown' : c.dirty ? <Tag c="var(--amber)">uncommitted changes</Tag> : 'clean'}</dd>
           <dt>Restart</dt><dd style={{ margin: 0 }}>{c.restart === 'self' ? 'Nerva can restart itself' : 'restart it the way it was started'}</dd>
-          <dt>Trust</dt><dd style={{ margin: 0, ...mono }}>{c.trust?.configured ? `${c.trust.mode} · ${c.trust.commit ? short(c.trust.commit) : (c.trust.fingerprints || []).join(', ')}` : 'none pinned (nerva update trust)'}</dd>
+          {/* Pinned trust is identifiers (the mode, a commit or key fingerprints); the fallback is a sentence. */}
+          <dt>Trust</dt><dd style={{ margin: 0, ...(c.trust?.configured ? mono : noteS) }}>{c.trust?.configured ? `${c.trust.mode} · ${c.trust.commit ? short(c.trust.commit) : (c.trust.fingerprints || []).join(', ')}` : 'none pinned (nerva update trust)'}</dd>
           {c.target?.commit && <><dt>Target</dt><dd style={{ margin: 0 }}><span style={mono}>{short(c.target.commit)}</span> ({c.target.ref}) · signature {c.target.signature === 'verified'
             ? <Tag c="var(--green)">verified</Tag> : <Tag c="var(--amber)">{c.target.signature}{c.target.reason ? `: ${c.target.reason}` : ''}</Tag>}</dd></>}
           {flight && <><dt>In progress</dt><dd style={{ margin: 0 }}><Tag c="var(--amber)">{flight.kind} {flight.phase}</Tag> {short(flight.from)} → {short(flight.to)}</dd></>}
@@ -130,7 +132,7 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
           ? <button className="tool-btn" disabled={busy || c?.restart !== 'self'} onClick={() => setConfirming(true)}>restart…</button>
           : (
             <span role="alertdialog" aria-label="confirm restart" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span style={{ fontSize: 11 }}>Restart Nerva now? Chats in progress are interrupted.</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)' }}>Restart Nerva now? Chats in progress are interrupted.</span>
               <button className="tool-btn" onClick={restart}>restart now</button>
               <button className="tool-btn" onClick={() => setConfirming(false)}>cancel</button>
             </span>
@@ -139,7 +141,7 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
       {(c?.can_apply || (c?.trust?.configured && c?.install === 'git')) && (
         <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <input aria-label="update target" placeholder="tag or commit (blank: default target)" value={ref}
-            onChange={(ev) => { setRef(ev.target.value); setPlan(null); }} style={{ ...mono, fontSize: 11, minWidth: 0, flex: '1 1 160px' }} />
+            onChange={(ev) => { setRef(ev.target.value); setPlan(null); }} style={{ ...mono, fontSize: 'var(--n-fs-meta)', minWidth: 0, flex: '1 1 160px' }} />
           <button className="tool-btn" disabled={busy} onClick={showPlan}>plan</button>
           {plan?.can_apply && <button className="tool-btn" disabled={busy} onClick={() => queueCard('/api/admin/ops/update/apply', ref.trim() ? { ref: ref.trim() } : {}, `update to ${short(plan.to)}`)}>request update</button>}
         </div>
@@ -148,7 +150,7 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
         <button className="tool-btn" style={{ marginTop: 6 }} disabled={busy} onClick={() => queueCard('/api/admin/ops/update/rollback', {}, `roll back to ${short(last.from)}`)}>request rollback</button>
       )}
       {plan && (
-        <div aria-label="update plan" style={{ fontSize: 11, marginTop: 6 }}>
+        <div aria-label="update plan" style={{ fontSize: 'var(--n-fs-meta)', marginTop: 6 }}>
           <div>{short(plan.from)} ({plan.from_version || '?'}) → {short(plan.to)} ({plan.to_version || '?'}) · {plan.commit_count} commit(s), {plan.file_count} file(s)</div>
           <div>signature: {plan.verdict?.trusted ? `verified (${plan.verdict.how}${plan.verdict.signer ? ` · ${plan.verdict.signer}` : ''})` : `unverified${plan.verdict?.reason ? ` (${plan.verdict.reason})` : ''}`}</div>
           <div>dependencies: {plan.dependencies.refused ? `lock refused: ${plan.dependencies.refused}` : plan.dependencies.command || 'lock unchanged'} · data: {plan.migrations_uncertain
@@ -159,14 +161,14 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
         </div>
       )}
       {flight?.log && flight.log.length > 0 && log.length === 0 && (
-        <pre aria-label="update log" style={{ ...mono, fontSize: 10.5, maxHeight: 220, overflow: 'auto', background: 'var(--surface)', padding: 6, marginTop: 6 }}>{flight.log.join('\n')}</pre>
+        <pre aria-label="update log" style={{ ...mono, fontSize: 'var(--n-fs-meta)', maxHeight: 220, overflow: 'auto', background: 'var(--surface)', padding: 6, marginTop: 6 }}>{flight.log.join('\n')}</pre>
       )}
-      {note && <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{note}</div>}
+      {note && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{note}</div>}
       {log.length > 0 && (
-        <pre aria-label="action log" style={{ ...mono, fontSize: 10.5, maxHeight: 220, overflow: 'auto', background: 'var(--surface)', padding: 6, marginTop: 6 }}>{log.join('\n')}</pre>
+        <pre aria-label="action log" style={{ ...mono, fontSize: 'var(--n-fs-meta)', maxHeight: 220, overflow: 'auto', background: 'var(--surface)', padding: 6, marginTop: 6 }}>{log.join('\n')}</pre>
       )}
       {c && !c.can_apply && (
-        <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           Updating from here is not available: {c.apply_refused.join('; ')}.
         </div>
       )}

@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<meta name="color-scheme" content="dark light">
+<title>Nerva — Home · the hub is not answering</title>
+<script>
+  /* Theme before first paint. ?theme=dark|light; the default of this direction is dark. */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.dataset.theme = (t === 'light' || t === 'dark') ? t : 'dark';
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="workbench.css">
+</head>
+<body>
+
+<!-- Extra frame: the same bench three minutes later, when the hub has stopped answering.
+     Every reading keeps its place and says when it was last read; nothing that needs the hub
+     pretends to work. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="mark" viewBox="0 0 24 24">
+      <path d="M6 18V6l12 12V6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="6" cy="18" r="2.6" fill="currentColor"/><circle cx="6" cy="6" r="2.6" fill="currentColor"/>
+      <circle cx="18" cy="18" r="2.6" fill="currentColor"/><circle cx="18" cy="6" r="2.6" fill="currentColor"/>
+    </symbol>
+    <symbol id="gates-1" viewBox="0 0 18 12"><rect width="4" height="12" rx="1" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"><rect x="7.6" y=".6" width="2.8" height="10.8" rx=".6"/><rect x="14.6" y=".6" width="2.8" height="10.8" rx=".6"/></g></symbol>
+    <symbol id="gates-2" viewBox="0 0 18 12"><rect width="4" height="12" rx="1" fill="currentColor"/><rect x="7" width="4" height="12" rx="1" fill="currentColor"/><rect x="14.6" y=".6" width="2.8" height="10.8" rx=".6" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/></symbol>
+    <symbol id="gates-3" viewBox="0 0 18 12"><rect width="4" height="12" rx="1" fill="currentColor"/><rect x="7" width="4" height="12" rx="1" fill="currentColor"/><rect x="14" width="4" height="12" rx="1" fill="currentColor"/></symbol>
+
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.2 10.2 13.6 13.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1.75" fill="currentColor"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev-l" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8 10 12.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chev-d" viewBox="0 0 16 16"><path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.25v9.5M3.25 8h9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 16 16"><rect x="5.75" y="1.75" width="4.5" height="8" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-send" viewBox="0 0 16 16"><path d="M8 13V3.5M4 7.5l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 2.25h5l3 3v8.5H4z M9 2.25v3h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="12.5" cy="8" r="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></symbol>
+    <symbol id="i-glance" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8.5" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 14h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-view" viewBox="0 0 16 16"><path d="M2.5 5h7M12.5 5h1M2.5 11h1M6.5 11h7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="11" cy="5" r="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="11" r="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 16 16"><path d="M12.75 8a4.75 4.75 0 1 1-1.4-3.36M12.75 2.75v3h-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+
+    <symbol id="g-ok" viewBox="0 0 16 16"><path d="M3.25 8.5 6.5 11.75 12.75 4.75" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="g-problem" viewBox="0 0 16 16"><path d="M8 2 14 8 8 14 2 8z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></symbol>
+    <symbol id="g-held-was" viewBox="0 0 16 16"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2.4 1.8"/><path d="M8.5 5.5v5M11 5.5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="g-blocked" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 8h6" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></symbol>
+    <symbol id="g-unavailable" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4.2 11.8 11.8 4.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="g-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.3 2.02"/></symbol>
+    <symbol id="g-stale" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.75V8l2.25 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="g-here" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2.5" fill="currentColor"/></symbol>
+    <symbol id="g-offline" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.75" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  </defs>
+</svg>
+
+<div class="app app--notice">
+
+  <header class="bar">
+    <a class="brand" href="cockpit.html" aria-label="Nerva, home">
+      <svg class="mark" aria-hidden="true"><use href="#mark"/></svg>
+      <span class="brand-name">Nerva</span>
+    </a>
+
+    <nav class="areas" aria-label="Areas">
+      <a class="area is-here" href="cockpit.html" aria-current="page">Home</a>
+      <!-- Not yellow: nobody knows whether these are still held. -->
+      <a class="area" href="#work">Work <span class="chip chip--stale" aria-label="9 at 10:50, may have changed">9<span class="w-wide">&nbsp;at 10:50</span></span></a>
+      <a class="area" href="#agents">Agents</a>
+      <a class="area" href="#memory">Memory</a>
+      <a class="area" href="secondary.html">Trust</a>
+      <a class="area" href="#build">Build</a>
+      <a class="area" href="#connect">Connect</a>
+      <a class="area" href="#observe">Observe <span class="chip chip--stale" aria-label="4 services down at 10:50">4<span class="w-wide">&nbsp;at 10:50</span></span></a>
+      <a class="area" href="#settings">Settings</a>
+    </nav>
+
+    <button class="find" type="button" aria-label="Search and command. Control K">
+      <svg aria-hidden="true"><use href="#i-search"/></svg>
+      <span class="w-wide">Search every area, panel, agent and action</span>
+      <span class="lt-wide">Search and command</span>
+      <kbd>Ctrl K</kbd>
+    </button>
+
+    <div class="view w-wide" role="group" aria-label="View">
+      <div class="seg" role="group" aria-label="Language">
+        <button type="button" aria-pressed="true">EN</button>
+        <button type="button" aria-pressed="false">RO</button>
+      </div>
+      <button class="icon-btn" type="button" data-theme-switch aria-label="Switch theme, dark or light"><svg aria-hidden="true"><use href="#i-theme"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="Glance mode, for an idle or second screen"><svg aria-hidden="true"><use href="#i-glance"/></svg></button>
+    </div>
+    <button class="icon-btn lt-wide" type="button" aria-haspopup="menu" aria-label="View: language, theme, glance mode"><svg aria-hidden="true"><use href="#i-view"/></svg></button>
+
+    <time class="now meta" datetime="2026-11-23T10:54"><span class="w-wide">Monday 23 November&ensp;</span><b>10:54</b></time>
+
+    <button class="stop" type="button"><svg aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents</button>
+  </header>
+
+  <!-- The one sentence this state exists to say. -->
+  <div class="notice" role="status">
+    <svg class="g" aria-hidden="true"><use href="#g-unknown"/></svg>
+    <p><b>The hub is not answering.</b> <span class="meta">No answer since 10:51. Everything below is shown as it was last read, with the time it was read. Anything that needs the hub to act is withdrawn until it answers.</span></p>
+    <button class="btn btn--line" type="button"><svg aria-hidden="true"><use href="#i-retry"/></svg>Try again</button>
+  </div>
+
+  <main class="bench">
+
+    <section class="spine" aria-label="Work, sorted by what needs you">
+      <div class="mode">
+        <div class="mode-row">
+          <span class="meta" id="mode-l">Approval mode</span>
+          <div class="seg" role="radiogroup" aria-labelledby="mode-l" aria-disabled="true">
+            <button type="button" role="radio" aria-checked="false" disabled>Auto</button>
+            <button type="button" role="radio" aria-checked="true" disabled>Ask</button>
+            <button type="button" role="radio" aria-checked="false" disabled>Off</button>
+          </div>
+          <span class="meta budget stamp"><svg class="g" aria-hidden="true"><use href="#g-stale"/></svg>read 10:50</span>
+        </div>
+        <p class="meta">Changing the mode needs the hub.</p>
+      </div>
+
+      <div class="grp is-stale">
+        <header class="hero hero--unknown">
+          <h2><svg class="g" aria-hidden="true"><use href="#g-unknown"/></svg>Unknown — the hub is not answering</h2>
+          <span class="meta note">At 10:50: 9 actions in 6 decisions, from 18 requests. Some may have been decided since; none can be approved here until the hub answers.</span>
+        </header>
+        <ol class="rows">
+          <li class="row">
+            <svg class="gates gates--3" role="img" aria-label="Three gates"><use href="#gates-3"/></svg>
+            <div>
+              <a class="row-title" href="#d-g1" aria-current="true">Restart 4 local services that stopped responding</a>
+              <p class="meta row-meta"><span>Irreversible · Steve · 08:14</span></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates gates--3" role="img" aria-label="Three gates"><use href="#gates-3"/></svg>
+            <div>
+              <a class="row-title" href="#d-g2">Sweep €4,200 of idle cash to the savings ladder</a>
+              <p class="meta row-meta"><span>Money · Gecko · 08:07</span></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates gates--3" role="img" aria-label="Three gates"><use href="#gates-3"/></svg>
+            <div>
+              <a class="row-title" href="#d-g3">Delete logs older than 14 days</a>
+              <p class="meta row-meta"><span>Irreversible · Jarvis · 07:30</span></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates" role="img" aria-label="Two gates"><use href="#gates-2"/></svg>
+            <div>
+              <a class="row-title" href="#d-g4">Veronica's LinkedIn draft names a client flagged as sensitive</a>
+              <p class="meta row-meta"><span>External · Ultron · 07:48</span></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates" role="img" aria-label="One gate"><use href="#gates-1"/></svg>
+            <div>
+              <a class="row-title" href="#d-g5">Draft a reply to Raiffeisen with the QBR agenda</a>
+              <p class="meta row-meta"><span>Reversible · Stark · 08:05</span></p>
+            </div>
+          </li>
+          <li class="row">
+            <svg class="gates" role="img" aria-label="One gate"><use href="#gates-1"/></svg>
+            <div>
+              <a class="row-title" href="#d-g6">Move the research sync from 16:30 to 17:15</a>
+              <p class="meta row-meta"><span>Reversible · Pepper · 07:14</span></p>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="grp">
+        <header class="grp-h">
+          <h2>Running</h2>
+          <span class="meta note stamp"><svg class="g" aria-hidden="true"><use href="#g-unknown"/></svg>unknown since 10:51</span>
+        </header>
+        <ol class="rows">
+          <li class="row">
+            <svg class="g g--ink" role="img" aria-label="Unknown"><use href="#g-unknown"/></svg>
+            <div>
+              <a class="row-title" href="#thread">Answering you — the reply stopped arriving at Gather</a>
+              <p class="meta row-meta"><span><b>Jarvis</b> with Pepper, Stark · this conversation · state unknown</span></p>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="grp">
+        <header class="grp-h">
+          <h2>Finished while you were away</h2>
+          <span class="meta note">sealed · as of 10:50</span>
+        </header>
+        <ol class="rows">
+          <li class="row row--log"><svg class="g g--quiet" role="img" aria-label="Done"><use href="#g-ok"/></svg><span class="meta who">Vision</span><span>Indexed 17 sources on competitor pricing</span><time>09:40</time></li>
+          <li class="row row--log"><svg class="g g--stop" role="img" aria-label="Problem"><use href="#g-problem"/></svg><span class="meta who">Steve</span><span>lmstudio, qdrant, neo4j and n8n stopped responding</span><time>08:14</time></li>
+          <li class="row row--log"><svg class="g" role="img" aria-label="Blocked"><use href="#g-blocked"/></svg><span class="meta who">Ultron</span><span>SSRF attempt blocked · 1 request denied</span><time>08:01</time></li>
+          <li class="row row--log"><svg class="g g--quiet" role="img" aria-label="Done"><use href="#g-ok"/></svg><span class="meta who">Stark</span><span>KPI snapshot cached for the Raiffeisen review</span><time>08:00</time></li>
+          <li class="row row--log"><svg class="g" role="img" aria-label="Was held"><use href="#g-held-was"/></svg><span class="meta who">Ultron</span><span>2 PII findings redacted, outbound held</span><time>07:48</time></li>
+          <li class="row row--log"><svg class="g g--quiet" role="img" aria-label="Done"><use href="#g-ok"/></svg><span class="meta who">Pepper</span><span>Calendar synced · 1 conflict auto-resolved</span><time>07:14</time></li>
+          <li class="row row--log"><svg class="g g--quiet" role="img" aria-label="Done"><use href="#g-ok"/></svg><span class="meta who">Friday</span><span>Morning brief generated — 6 items ranked</span><time>06:00</time></li>
+        </ol>
+      </div>
+
+      <footer class="agents" aria-label="Agents">
+        <p class="meta"><b>18 agents</b> · states unknown since 10:51</p>
+        <p class="meta ex"><svg class="g g--quiet" role="img" aria-label="Unavailable"><use href="#g-unavailable"/></svg><span><b>Athena</b> · Cloud only — unavailable while egress is sealed (read 10:50)</span></p>
+      </footer>
+    </section>
+
+    <section class="sheet sheet--solo" aria-label="Conversation with Jarvis">
+      <header class="sheet-h">
+        <h1>Jarvis</h1>
+        <span class="meta">Prime Orchestrator · Orchestrated · today since 08:02</span>
+        <div class="acts">
+          <button class="btn btn--quiet" type="button"><svg aria-hidden="true"><use href="#i-plus"/></svg>New conversation</button>
+        </div>
+      </header>
+
+      <div class="thread" id="thread" tabindex="0" aria-label="Messages">
+        <div class="turns">
+          <article class="turn turn--you">
+            <time>08:02</time>
+            <div class="you"><svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg><p><span class="vh">You: </span>Morning Jarvis — what does my day look like?</p></div>
+          </article>
+
+          <article class="turn">
+            <time>08:02</time>
+            <div>
+              <header class="reply-h"><b>Jarvis</b><span class="meta">Prime Orchestrator</span></header>
+              <div class="reply-body"><p>Good morning, Andrei. Three meetings today; the Raiffeisen review at 14:00 is the one that matters. Pepper holds your calendar, Stark prepped the KPI deltas. Weather is clear — good day to cycle in.</p></div>
+              <footer class="reply-f">
+                <span class="runplate"><span class="where"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg>On this machine</span><span class="id">gemma-4-31b</span><span class="basis">by route</span></span>
+              </footer>
+            </div>
+          </article>
+
+          <article class="turn turn--you">
+            <time>08:05</time>
+            <div class="you"><svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg><p><span class="vh">You: </span>draft the churn slide <span class="file id"><svg aria-hidden="true"><use href="#i-file"/></svg>QBR-deck.docx</span></p></div>
+          </article>
+
+          <article class="turn">
+            <time>08:05</time>
+            <div>
+              <header class="reply-h"><b>Stark</b><span class="meta">Biz Intel</span></header>
+              <div class="reply-body"><p>Stark pulled the numbers — <strong>Digitaholic MRR is +6.2% WoW</strong>; I flagged the missing churn-cohort slide for the review.</p></div>
+              <footer class="reply-f">
+                <span class="runplate"><span class="where"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg>On this machine</span><span class="id">gemma-4-31b</span><span class="basis">by route</span></span>
+              </footer>
+            </div>
+          </article>
+
+          <article class="turn turn--you">
+            <time>08:07</time>
+            <div class="you"><svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg><p><span class="vh">You: </span>sweep idle cash</p></div>
+          </article>
+
+          <article class="turn">
+            <time>08:07</time>
+            <div>
+              <header class="reply-h"><b>Gecko</b><span class="meta">Markets &amp; Capital</span></header>
+              <div class="reply-body"><p>Gecko's watching the markets — EUR/RON steady at 4.97; idle cash is <strong>€4.2k over buffer</strong>, sweep available.</p></div>
+              <div class="hold">
+                <span class="stamp-tag"><svg class="g" aria-hidden="true"><use href="#g-stale"/></svg>Held at 10:50</span>
+                <p>1 action was waiting for your decision — <b>Sweep €4,200 to the savings ladder</b></p>
+                <span class="tier meta"><svg class="gates gates--3" aria-hidden="true"><use href="#gates-3"/></svg><b>Money</b></span>
+              </div>
+              <footer class="reply-f">
+                <span class="runplate"><span class="where"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg>On this machine</span><span class="id">gemma-4-31b</span><span class="basis">by route</span></span>
+              </footer>
+            </div>
+          </article>
+
+          <article class="turn turn--you">
+            <time>10:48</time>
+            <div class="you"><svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg><p lang="ro"><span class="vh" lang="en">You: </span>Ce proiecte sunt de terminat acum?</p></div>
+          </article>
+
+          <article class="turn">
+            <time>10:51</time>
+            <div>
+              <header class="reply-h"><b>Jarvis</b><span class="meta">Prime Orchestrator</span></header>
+              <div class="stopped" role="status">
+                <svg class="g" aria-hidden="true"><use href="#g-unknown"/></svg>
+                <p><b>The reply stopped arriving at Gather</b> — the hub is not answering.</p>
+                <p class="meta">Last step: asking Pepper and Stark · last text at 10:51. What arrived is kept below.</p>
+                <button class="btn btn--line" type="button"><svg aria-hidden="true"><use href="#i-retry"/></svg>Ask again</button>
+              </div>
+              <div class="reply-body"><p lang="ro">Trei proiecte au termene săptămâna aceasta: prezentarea pentru Raiffeisen (azi, 14:00), raportul lunar Digitaholic și<span class="cut" lang="en">stopped here</span></p></div>
+              <footer class="reply-f">
+                <span class="runplate"><span class="where"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg>Sent to this machine</span><span class="id">gemma-4-31b</span><span class="basis">by route</span></span>
+              </footer>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <form class="composer" action="#" onsubmit="return false">
+        <div class="composer-box">
+          <div class="composer-top">
+            <button class="pick" type="button"><span class="meta">To</span><b>Jarvis</b><span class="meta">orchestrated</span><svg aria-hidden="true"><use href="#i-chev-d"/></svg></button>
+            <span class="pick"><span class="meta">Approval mode</span><b>Ask</b><span class="meta">read 10:50</span></span>
+          </div>
+          <div class="composer-in">
+            <svg class="prompt" aria-hidden="true"><use href="#i-chev"/></svg>
+            <textarea rows="2" placeholder="Message Jarvis…" aria-label="Message Jarvis"></textarea>
+          </div>
+          <div class="composer-tools">
+            <button class="btn btn--quiet" type="button" aria-haspopup="menu"><svg aria-hidden="true"><use href="#i-plus"/></svg>Attach</button>
+            <span class="hint meta">Sending needs the hub; what you type stays here.</span>
+            <span class="voice"><span class="meta">Voice unknown</span></span>
+            <button class="btn btn--send" type="submit" disabled>Send<svg aria-hidden="true"><use href="#i-send"/></svg></button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <aside class="rail" aria-label="Inspector">
+      <section class="card is-stale" id="d-g1" aria-labelledby="d-g1-t">
+        <header class="card-h">
+          <span class="stamp-tag"><svg class="g" aria-hidden="true"><use href="#g-stale"/></svg>As read at 10:50</span>
+          <span class="of meta"><span>Decision 1 of 6</span>
+            <button type="button" aria-label="Previous decision"><svg aria-hidden="true"><use href="#i-chev-l"/></svg></button>
+            <button type="button" aria-label="Next decision"><svg aria-hidden="true"><use href="#i-chev"/></svg></button>
+          </span>
+        </header>
+        <div class="card-b">
+          <p class="tier-line"><svg class="gates gates--3" aria-hidden="true"><use href="#gates-3"/></svg><b>Irreversible</b><span class="meta">typed confirmation<span class="w-mid"> · cannot be bulk-approved</span></span></p>
+          <h2 id="d-g1-t">Restart 4 local services that stopped responding</h2>
+          <p class="meta from"><b>Steve</b> · CTO / Builds · raised 08:14, repeated 3 times</p>
+
+          <div class="members">
+            <p class="members-h meta"><b>12 requests</b> grouped into 4 actions</p>
+            <div class="member"><span class="id num">#402</span><span class="what"><span class="id">lmstudio</span><span class="id">127.0.0.1:1234</span></span></div>
+            <div class="member"><span class="id num">#409</span><span class="what"><span class="id">qdrant</span><span class="id">127.0.0.1:6333</span></span></div>
+            <div class="member"><span class="id num">#410</span><span class="what"><span class="id">neo4j</span><span class="id">127.0.0.1:7474</span></span></div>
+            <div class="member"><span class="id num">#411</span><span class="what"><span class="id">n8n</span><span class="id">127.0.0.1:5678</span></span></div>
+          </div>
+
+          <dl class="facts">
+            <dt class="meta">Undo</dt>
+            <dd>None — a restart interrupts anything the service is doing.</dd>
+            <dt class="meta">Deadline</dt>
+            <dd>tomorrow 08:14 — then it is blocked, never auto-approved</dd>
+          </dl>
+
+          <p class="withdrawn"><b>Approve, Edit, Defer and Reject are withdrawn.</b><span class="meta">They need the hub. The typed confirmation comes back when it answers; nothing is approved by waiting.</span></p>
+        </div>
+      </section>
+
+      <section class="sec" aria-labelledby="today-h">
+        <header class="sec-h">
+          <h2 id="today-h">Today</h2>
+          <span class="meta note stamp"><svg class="g" aria-hidden="true"><use href="#g-stale"/></svg>calendar read 10:50</span>
+        </header>
+        <ol class="day">
+          <li class="is-past"><time>09:30</time><span class="ev">Standup — Digitaholic<span class="meta">Google Meet</span></span></li>
+          <li class="is-now"><time>10:54</time><span class="line meta">now</span></li>
+          <li class="is-next"><time>11:00</time><span class="ev">1:1 with Cosmina<span class="meta">Office</span></span><span class="chip chip--note">in 6 min</span></li>
+          <li class="is-key"><time>14:00</time><span class="ev"><b>Raiffeisen quarterly review</b><span class="meta">Conf Room A · prep 13:15</span></span></li>
+          <li><time>16:30</time><span class="ev">Vision research sync<span class="meta">Async</span></span></li>
+          <li><time>19:00</time><span class="ev">Gym — Hercules plan<span class="meta">Personal</span></span></li>
+        </ol>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="plate" aria-label="State of this machine">
+    <div class="cell cell--state">
+      <span class="cell-k">State · last answer 10:51</span>
+      <span class="cell-v"><svg class="g g--plate-ink" role="img" aria-label="Unknown"><use href="#g-unknown"/></svg><b>Unknown</b><span><span class="w-mid">the hub is not answering · </span>was Degraded at 10:50</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Runs on this machine</span>
+      <span class="cell-v"><svg class="g" aria-hidden="true"><use href="#g-here"/></svg><span class="was">100%</span><span class="stamp"><svg class="g" aria-hidden="true"><use href="#g-stale"/></svg>10:50</span><span class="basis">by route</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Egress</span>
+      <span class="cell-v"><svg class="g g--unknown" aria-hidden="true"><use href="#g-unknown"/></svg><b>Unknown</b></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Microphone</span>
+      <span class="cell-v"><svg class="g g--unknown" aria-hidden="true"><use href="#g-unknown"/></svg><b>Unknown</b></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Model</span>
+      <span class="cell-v"><span class="id">gemma-4-31b</span><span class="stamp"><svg class="g" aria-hidden="true"><use href="#g-stale"/></svg>10:50</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Data on screen</span>
+      <span class="cell-v"><svg class="g" aria-hidden="true"><use href="#g-offline"/></svg><b>Offline</b><span class="w-mid">as last read</span></span>
+    </div>
+    <div class="cell">
+      <span class="cell-k">Latency p50</span>
+      <span class="cell-v"><svg class="g g--unknown" aria-hidden="true"><use href="#g-unknown"/></svg><span>— unknown</span></span>
+    </div>
+    <div class="cell cell--meters w-wide">
+      <div class="meter"><span class="cell-k">RAM · 10:50</span><span class="cell-v"><span class="was">19%</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:19%"></span></span></span></div>
+      <div class="meter"><span class="cell-k">VRAM · 10:50</span><span class="cell-v"><span class="was">96%</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:96%"></span></span></span></div>
+      <div class="meter"><span class="cell-k">GPU load · 10:50</span><span class="cell-v"><span class="was">3%</span><span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:3%"></span></span></span></div>
+    </div>
+  </footer>
+</div>
+
+<script>
+  document.querySelectorAll('[data-theme-switch]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var r = document.documentElement;
+      r.dataset.theme = r.dataset.theme === 'light' ? 'dark' : 'light';
+    });
+  });
+</script>
+</body>
+</html>

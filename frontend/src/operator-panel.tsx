@@ -12,6 +12,8 @@ import {
   type DesktopOutcome,
   type SafeDesktopResult,
 } from './operator-contract';
+import { note } from './panel-kit';
+import { LABEL, LABEL_STRONG } from './theme/type';
 
 type BrowserAction = 'navigate' | 'extract' | 'click' | 'type' | 'submit';
 type BrowserStep =
@@ -141,7 +143,9 @@ const approvalQueued = (status: number, body: unknown): boolean =>
 const MAX_REASON = 240;
 const BROWSER_DECISIONS = new Set(['run', 'approve', 'block']);
 
-const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 11 };
+/* Identifiers only (contract §5): domains, URLs, selectors, plan steps, console records.
+   Messages, statuses and explanations take panel-kit's `note`. */
+const mono: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 'var(--n-fs-meta)' };
 const inputStyle: React.CSSProperties = {
   background: 'var(--surface)',
   color: 'var(--ink)',
@@ -269,7 +273,7 @@ function sanitizeDesktopPreview(value: unknown, snapshot: CanonicalDesktopStep[]
 }
 
 function Alert({ value }: { value: string | null }) {
-  return value ? <div role="alert" style={{ ...mono, color: 'var(--red)', marginTop: 8 }}>{value}</div> : null;
+  return value ? <div role="alert" style={{ ...note, color: 'var(--red)', marginTop: 8 }}>{value}</div> : null;
 }
 
 function BrowserResult({ check, preview }: {
@@ -279,16 +283,16 @@ function BrowserResult({ check, preview }: {
   return (
     <>
       {check && (
-        <div role="status" aria-label="browser check result" style={{ ...mono, marginTop: 8, color: check.allowed ? 'var(--green)' : 'var(--amber)' }}>
+        <div role="status" aria-label="browser check result" style={{ ...note, marginTop: 8, color: check.allowed ? 'var(--green)' : 'var(--amber)' }}>
           {check.allowed ? 'Allowed' : 'Blocked'}{check.reason ? <> · <span>{check.reason}</span></> : null}
         </div>
       )}
       {preview && (
         <div role="status" style={{ marginTop: 8 }}>
-          <div style={{ ...mono, color: 'var(--ink-2)' }}>Policy dry run · preview only</div>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>Policy dry run · preview only</div>
           <ol aria-label="browser preview result" style={{ margin: '4px 0 0', paddingLeft: 22 }}>
             {preview.map((row) => (
-              <li key={`${row.index}:${row.action}`} style={mono}>
+              <li key={`${row.index}:${row.action}`} style={note}>
                 {[row.action || 'unknown', row.decision || row.kind || 'previewed'].filter(Boolean).join(' · ')}
                 {row.reason ? <> · <span>{row.reason}</span></> : null}
               </li>
@@ -314,29 +318,29 @@ function DesktopOutcomeRegion({ value }: { value: DesktopOutcomeView | null }) {
 
   return (
     <div role={outcome === 'unknown' ? 'alert' : 'status'} aria-label="desktop outcome" style={{ marginTop: 8 }}>
-      <div style={{ ...mono, color: outcome === 'executed' ? 'var(--green)' : outcome === 'unknown' ? 'var(--red)' : 'var(--amber)' }}>{headline}</div>
+      <div style={{ ...note, color: outcome === 'executed' ? 'var(--green)' : outcome === 'unknown' ? 'var(--red)' : 'var(--amber)' }}>{headline}</div>
       {outcome === 'unknown' && (
         <>
-          <div aria-label="submission error detail" style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+          <div aria-label="submission error detail" style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
             {value.error || 'request_failed'}
           </div>
-          <div style={{ ...mono, color: 'var(--amber)', marginTop: 4 }}>
+          <div style={{ ...note, color: 'var(--amber)', marginTop: 4 }}>
             Check Decision Inbox before any retry
           </div>
-          <div style={{ ...mono, color: 'var(--red)', marginTop: 4 }}>
+          <div style={{ ...note, color: 'var(--red)', marginTop: 4 }}>
             Do not resubmit until the prior attempt is checked
           </div>
         </>
       )}
       {outcome === 'partial' && (
-        <div style={{ ...mono, color: 'var(--red)', marginTop: 4 }}>
+        <div style={{ ...note, color: 'var(--red)', marginTop: 4 }}>
           Do not retry the whole plan: some steps already ran
         </div>
       )}
       {result.ran.length > 0 && (
         <ol aria-label="desktop outcome steps" style={{ margin: '5px 0 0', paddingLeft: 22 }}>
           {result.ran.map((step, index) => (
-            <li key={`${index}:${step.action || 'unknown'}`} style={mono}>
+            <li key={`${index}:${step.action || 'unknown'}`} style={note}>
               <span>{[step.action || 'unknown', step.status, step.reason].filter(Boolean).join(' · ')}</span>
               {step.result?.text && <div style={{ color: 'var(--ink-2)' }}>{step.result.text}</div>}
               {step.result?.element && (
@@ -808,11 +812,11 @@ export function OperatorPanel() {
       <div className="panel-head"><span className="ttl">OPERATOR</span></div>
       <div className="panel-body tight">
         <fieldset style={fieldsetStyle}>
-          <legend style={{ ...mono, color: 'var(--accent-light)' }}>Browser policy dry run</legend>
-          <p style={{ ...mono, color: 'var(--ink-2)' }}>
+          <legend style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)' }}>Browser policy dry run</legend>
+          <p style={{ ...note, color: 'var(--ink-2)' }}>
             Empty allowlist is fail-closed. This checks policy and previews a plan; it does not run a browser.
           </p>
-          <label style={mono} htmlFor="operator-browser-url">Browser URL</label>
+          <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-browser-url">Browser URL</label>
           <input
             id="operator-browser-url"
             value={browserUrl}
@@ -822,7 +826,7 @@ export function OperatorPanel() {
           />
           <div style={{ display: 'flex', gap: 6, alignItems: 'end' }}>
             <div style={{ flex: 1 }}>
-              <label style={mono} htmlFor="operator-domain">Allowlisted domain</label>
+              <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-domain">Allowlisted domain</label>
               <input
                 id="operator-domain"
                 value={domainDraft}
@@ -847,7 +851,7 @@ export function OperatorPanel() {
             ))}
           </ol>
           <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 6 }}>
-            <label style={mono} htmlFor="operator-browser-action">Browser action</label>
+            <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-browser-action">Browser action</label>
             <select
               id="operator-browser-action"
               value={browserAction}
@@ -856,7 +860,7 @@ export function OperatorPanel() {
             >
               {(['navigate', 'extract', 'click', 'type', 'submit'] as BrowserAction[]).map((action) => <option key={action}>{action}</option>)}
             </select>
-            <label style={mono} htmlFor="operator-browser-primary">{browserPrimaryLabel}</label>
+            <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-browser-primary">{browserPrimaryLabel}</label>
             <input
               id="operator-browser-primary"
               aria-label={browserPrimaryLabel}
@@ -867,7 +871,7 @@ export function OperatorPanel() {
             />
             {browserAction === 'type' && (
               <>
-                <label style={mono} htmlFor="operator-browser-type">Browser type text</label>
+                <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-browser-type">Browser type text</label>
                 <input
                   id="operator-browser-type"
                   type="password"
@@ -910,47 +914,47 @@ export function OperatorPanel() {
             <button className="tool-btn" type="button" disabled={browserBusy !== null || !browserAvailable || !browserOwnerAvailable}
               onClick={startBrowserSession}>Start fresh session with approval</button>
           </div>
-          <p style={mono}>{browserAvailable ? 'Browser execution available for server-approved domains' : 'Browser execution unavailable'}</p>
+          <p style={note}>{browserAvailable ? 'Browser execution available for server-approved domains' : 'Browser execution unavailable'}</p>
           {browserRunTaskId && <p role="status">Browser task {browserRunTaskId} {browserTaskOutcome?.status || 'queued'} · <a href={appUrl('/v2/console#decision-inbox')}>Decision Inbox</a></p>}
-          {browserRunTaskId && browserTaskOutcome && <p aria-label="browser task outcome" style={mono}>
+          {browserRunTaskId && browserTaskOutcome && <p aria-label="browser task outcome" style={note}>
             Browser task {browserRunTaskId}: {browserTaskOutcome.status}
             {browserTaskOutcome.ok === true ? ` · ${browserTaskOutcome.steps ?? 0} steps completed` : ''}
             {browserTaskOutcome.ok === false ? ` · ${browserTaskOutcome.reason || 'browser_failed'}` : ''}
           </p>}
           {browserTaskOutcome?.observations && browserTaskOutcome.observations.length > 0 &&
-            <section aria-label="browser observations" style={mono}>
-              <strong>Untrusted browser observations</strong>
+            <section aria-label="browser observations" style={note}>
+              <strong style={LABEL_STRONG}>Untrusted browser observations</strong>
               {browserTaskOutcome.observations.map((observation, index) =>
                 <div key={`${index}:${observation.action}`}>
                   <div>{observation.action === 'console' ? 'Console' : 'Visible images'}
                     {observation.dropped ? ` · ${observation.dropped} dropped` : ''}
                     {observation.truncated ? ' · truncated' : ''}</div>
                   {observation.action === 'console' ?
-                    <ol>{observation.records.map((record, row) =>
+                    <ol style={mono}>{observation.records.map((record, row) =>
                       <li key={row}>{record.level} · {record.source_origin || 'unknown origin'} · {record.text}</li>)}</ol>
-                    : <ol>{observation.images.map((item, row) =>
+                    : <ol style={mono}>{observation.images.map((item, row) =>
                       <li key={row}>{item.alt} · {item.frame_origin} · {item.width}×{item.height}
                         {item.ref ? ` · ${item.ref}` : ''}
                         {item.fetchable ? ` · ${item.source_url}` : ' · source not fetchable'}</li>)}</ol>}
                 </div>)}
               {browserTaskOutcome.observations_truncated && <div>Observation projection truncated</div>}
             </section>}
-          {browserSessions.length > 0 && <div style={{ ...mono, marginTop: 8 }}>
-            <label htmlFor="operator-browser-session">Live fresh-profile session</label>
+          {browserSessions.length > 0 && <div style={{ ...note, marginTop: 8 }}>
+            <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-browser-session">Live fresh-profile session</label>
             <select id="operator-browser-session" value={browserSessionId}
               onChange={(event) => { setBrowserSessionId(event.target.value); setBrowserSessionRef(''); }}>
               {browserSessions.map((session) => <option key={session.id} value={session.id}>
                 {session.origin} · {session.expires_in}s remaining
               </option>)}
             </select>
-            <label htmlFor="operator-browser-session-action">Session action</label>
+            <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-browser-session-action">Session action</label>
             <select id="operator-browser-session-action" value={browserSessionAction}
               onChange={(event) => setBrowserSessionAction(event.target.value as typeof browserSessionAction)}>
               {(['snapshot', 'console', 'get_images', 'click', 'scroll', 'back', 'press'] as const).map((action) =>
                 <option key={action} value={action}>{action}</option>)}
             </select>
             {!['snapshot', 'console', 'get_images', 'back'].includes(browserSessionAction) && <>
-              <label htmlFor="operator-browser-session-ref">Observed element</label>
+              <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-browser-session-ref">Observed element</label>
               <select id="operator-browser-session-ref" value={browserSessionRef}
                 onChange={(event) => setBrowserSessionRef(event.target.value)}>
                 <option value="">Choose a current ref</option>
@@ -978,15 +982,15 @@ export function OperatorPanel() {
         </fieldset>
 
         <fieldset style={fieldsetStyle}>
-          <legend style={{ ...mono, color: 'var(--accent-light)' }}>Governed desktop</legend>
-          <p style={{ ...mono, color: 'var(--ink-2)' }}>
+          <legend style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)' }}>Governed desktop</legend>
+          <p style={{ ...note, color: 'var(--ink-2)' }}>
             Desktop actuation is default-off and requires an explicitly enabled, isolated host.
           </p>
-          <p style={{ ...mono, color: 'var(--ink-2)' }}>
+          <p style={{ ...note, color: 'var(--ink-2)' }}>
             Mutating work is queued through ToolRPC / Decision Inbox; this panel cannot approve it.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 6 }}>
-            <label style={mono} htmlFor="operator-desktop-action">Desktop action</label>
+            <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-desktop-action">Desktop action</label>
             <select
               id="operator-desktop-action"
               value={desktopAction}
@@ -996,7 +1000,7 @@ export function OperatorPanel() {
             >
               {(['read', 'locate', 'click', 'type', 'launch'] as CanonicalDesktopAction[]).map((action) => <option key={action}>{action}</option>)}
             </select>
-            <label style={mono} htmlFor="operator-desktop-primary">{desktopPrimaryLabel}</label>
+            <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-desktop-primary">{desktopPrimaryLabel}</label>
             <input
               id="operator-desktop-primary"
               aria-label={desktopPrimaryLabel}
@@ -1008,7 +1012,7 @@ export function OperatorPanel() {
             />
             {desktopAction === 'type' && (
               <>
-                <label style={mono} htmlFor="operator-desktop-type">Desktop type text</label>
+                <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }} htmlFor="operator-desktop-type">Desktop type text</label>
                 <input
                   id="operator-desktop-type"
                   type="password"
@@ -1047,7 +1051,7 @@ export function OperatorPanel() {
           </ol>
           {desktopPreview && (
             <ol aria-label="desktop preview result" style={{ margin: '5px 0', paddingLeft: 22 }}>
-              {desktopPreview.map((row, index) => <li key={index} style={mono}>{row.action} · {row.decision}</li>)}
+              {desktopPreview.map((row, index) => <li key={index} style={note}>{row.action} · {row.decision}</li>)}
             </ol>
           )}
           <div style={{ display: 'flex', gap: 6 }}>

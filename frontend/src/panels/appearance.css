@@ -1,0 +1,491 @@
+/* =====================================================================================
+   Settings → Personalisation  (theme contract v1, §8)  ·  src/panels/appearance.tsx
+   -------------------------------------------------------------------------------------
+   Styled only from the --n-* roles and the type scale, so the page reads right in every
+   theme and scheme, Classic included.
+     - The page chrome (status line, sections, choices, card text) uses the page theme.
+     - Each `.ap-mini` is also a `.n-theme-scope` with its own data-look / data-scheme: the
+       theme files declare their roles on that selector, so inside it the same role names
+       resolve to the previewed theme. The frame around it stays in the page theme.
+   Rules kept here: nothing below --n-fs-meta (12px); small labels, section heads and
+   choices take the theme's label voice; no colour literal; components never set a role;
+   state is a shape and a word, never a hue alone; page spacing comes from the --n-s-*
+   steps, so it follows the density axis. A hover never relies on a --n-bg-2 fill alone:
+   the Console overlay's ground is --n-bg-2 itself, so a hover inks an edge or a rule.
+   Colour by meaning (contract §3): the emphasis roles mark what is chosen (the chosen word's
+   wash and rule, the frame and "In use" of the theme in use, the miniature's current area;
+   all ink in Ledger), and a word on the emphasis wash stays --n-text, the ink the contract
+   keeps readable there. The accent fills only the owner's signature; the stop is a solid
+   --n-stop fill with an --n-on-stop glyph; buttons take --n-r-control.
+   ===================================================================================== */
+
+/* ---------- the theme's label voice -------------------------------------------------- */
+.ap-section-title, .ap-opt-text, .ap-btn, .ap-card-inuse, .ap-card-meta, .ap-mark,
+.ap-mini-nav, .ap-mini-sign, .ap-mini-open, .ap-mini-who {
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+}
+
+/* ---------- page ---------------------------------------------------------------------- */
+.ap-panel {
+  display: grid;
+  gap: var(--n-s-6);
+  min-width: 0;
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+}
+.ap-intro {
+  margin: 0;
+  max-width: var(--n-measure);
+  color: var(--n-text-2);
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+}
+.ap-hint {
+  margin: 0;
+  max-width: var(--n-measure);
+  color: var(--n-text-2);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+}
+.ap-reason { color: var(--n-text); }
+
+/* ---------- sync status: a mark and a word ------------------------------------------
+   No rules of its own: the Theme section's rule below already closes it. The min-height
+   keeps the line still when the retry button appears. */
+.ap-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--n-s-2) var(--n-s-3);
+  min-height: var(--n-control-h);
+  color: var(--n-text-2);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+}
+.ap-status-text { flex: 1 1 16rem; min-width: 0; }
+.ap-status[data-state="unsynced"] .ap-status-text { color: var(--n-text); }
+
+.ap-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--n-s-2);
+  color: var(--n-text-2);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+}
+
+/* ● saved · ▶ saving · ○ kept here · dashed ○ not read yet · ■ not synced */
+.ap-dot {
+  flex: none;
+  display: inline-block;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-radius: var(--n-r-pill);
+}
+[data-state="synced"] > .ap-dot { background: currentColor; }
+[data-state="loading"] > .ap-dot { border-style: dashed; }
+[data-state="saving"] > .ap-dot {
+  border: 0;
+  border-radius: 0;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+[data-state="unsynced"] > .ap-dot { border-radius: 0; background: currentColor; }
+
+.ap-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--n-control-h-sm);
+  margin: 0;
+  padding: 0 var(--n-s-3);
+  border: 1px solid var(--n-rule-field);
+  border-radius: var(--n-r-control);
+  background: transparent;
+  color: var(--n-text);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  font-weight: var(--n-w-semi);
+  cursor: pointer;
+  transition: border-color var(--n-dur-1) var(--n-ease), background-color var(--n-dur-1) var(--n-ease);
+}
+.ap-btn:hover { border-color: var(--n-text); }
+.ap-btn:active { background: var(--n-bg-3); }
+.ap-btn:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+
+/* ---------- sections ------------------------------------------------------------------- */
+.ap-section {
+  display: grid;
+  gap: var(--n-s-3);
+  min-width: 0;
+  padding-top: var(--n-s-3);
+  border-top: 1px solid var(--n-rule-2);
+}
+.ap-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--n-s-1) var(--n-s-3);
+}
+.ap-section-title {
+  margin: 0;
+  color: var(--n-text);
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+  font-weight: var(--n-w-semi);
+}
+
+/* ---------- a choice among a few words: the chosen one is inked and underlined ----------
+   Native radios stay in place (transparent, over their word) so the keyboard, the label and
+   assistive tech behave as radios; the word beside each draws the state. */
+.ap-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--n-s-1) var(--n-s-2);
+  min-width: 0;
+}
+.ap-opt { position: relative; display: inline-flex; min-width: 0; }
+.ap-opt input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.ap-opt input:disabled { cursor: not-allowed; }
+.ap-opt-text {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--n-control-h-sm);
+  padding: 0 var(--n-s-3);
+  border-bottom: 2px solid transparent;
+  border-radius: var(--n-r-1) var(--n-r-1) 0 0;
+  color: var(--n-text-2);
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+  white-space: nowrap;
+  transition: color var(--n-dur-1) var(--n-ease), border-color var(--n-dur-1) var(--n-ease);
+}
+/* hover: the word inks and a quiet rule appears under it; the chosen word's rule wins. The
+   chosen word sits on the emphasis wash over the emphasis rule (Ledger: bg-3 and ink) and
+   stays in --n-text, the ink the contract keeps at 4.5:1 on that wash. */
+.ap-opt:hover .ap-opt-text { color: var(--n-text); border-bottom-color: var(--n-rule-field); }
+.ap-opt input:checked + .ap-opt-text {
+  color: var(--n-text);
+  background: var(--n-emph-wash);
+  border-bottom-color: var(--n-emph);
+  font-weight: var(--n-w-semi);
+}
+.ap-opt input:focus-visible + .ap-opt-text { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+/* unavailable: dashed underline, quieter word, no hover. A stored choice the theme in use
+   cannot show is never `disabled` (a checked disabled radio either drops its group from the
+   Tab order or hides the stored choice from the keyboard, depending on the browser); it is
+   aria-disabled, stays checked and keeps its semibold word in --n-text-2. */
+.ap-opt input:is(:disabled, [aria-disabled="true"]) { cursor: not-allowed; }
+.ap-opt input:is(:disabled, [aria-disabled="true"]) + .ap-opt-text {
+  color: var(--n-text-3);
+  background: transparent;
+  border-bottom: 2px dashed var(--n-rule-2);
+}
+.ap-opt input[aria-disabled="true"]:checked + .ap-opt-text { color: var(--n-text-2); border-bottom-color: var(--n-text-2); }
+
+/* ---------- theme cards: one to three columns ---------------------------------------- */
+.ap-themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(240px, calc((100% - 2 * var(--n-s-5)) / 3))), 1fr));
+  gap: var(--n-s-6) var(--n-s-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ap-themes > li { display: flex; min-width: 0; margin: 0; padding: 0; }
+
+.ap-card {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--n-s-2);
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--n-r-2);
+  background: transparent;
+  color: var(--n-text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  user-select: none;
+}
+.ap-card:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 4px; }
+
+/* the thumbnail's frame belongs to the page; the theme in use gets a doubled rule in the
+   emphasis ink (Ledger: ink) */
+.ap-frame {
+  display: block;
+  border: 1px solid var(--n-rule-2);
+  border-radius: var(--n-r-2);
+  overflow: hidden;
+  transition: border-color var(--n-dur-1) var(--n-ease), box-shadow var(--n-dur-1) var(--n-ease);
+}
+.ap-card:hover .ap-frame { border-color: var(--n-rule-field); }
+.ap-card[aria-pressed="true"] .ap-frame { border-color: var(--n-emph); box-shadow: 0 0 0 1px var(--n-emph); }
+
+.ap-card-text { display: grid; gap: var(--n-s-1); min-width: 0; }
+.ap-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--n-s-2);
+  min-width: 0;
+}
+.ap-card-name {
+  min-width: 0;
+  color: var(--n-text);
+  font-family: var(--n-font-title);
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+  font-weight: var(--n-w-semi);
+}
+.ap-card-inuse {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--n-s-1);
+  color: var(--n-emph);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  font-weight: var(--n-w-semi);
+}
+.ap-check { flex: none; width: 12px; height: 12px; }
+.ap-card-tagline { color: var(--n-text-2); font-size: var(--n-fs-label); line-height: var(--n-lh-label); }
+.ap-card-meta { color: var(--n-text-3); font-size: var(--n-fs-meta); line-height: var(--n-lh-meta); }
+
+/* ---------- the preview: a miniature of the Ledger home, in the previewed theme ---------
+   Everything below resolves its roles on the .n-theme-scope element (data-look/scheme).
+   Geometry is fixed so the cards line up; text never goes below the theme's meta size. */
+.ap-mini {
+  display: flex;
+  flex-direction: column;
+  height: 200px;
+  overflow: hidden;
+  background: var(--n-bg);
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  font-weight: var(--n-w-reg);
+  font-variant-numeric: var(--n-numerals);
+  text-align: start;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.ap-mini-mast {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--n-rule);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ap-mini-ring {
+  flex: none;
+  align-self: center;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--n-text);
+  border-radius: var(--n-r-pill);
+}
+.ap-mini-brand {
+  flex: none;
+  align-self: center;
+  margin-right: 4px;
+  color: var(--n-text);
+  font-family: var(--n-font-title);
+  font-size: var(--n-fs-label);
+  line-height: 1;
+  font-weight: var(--n-w-bold);
+}
+.ap-mini-nav {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--n-text-2);
+  font-size: var(--n-fs-meta);
+}
+/* the current area, in the emphasis ink the HUD's own current item takes (Ledger: ink) */
+.ap-mini-nav.is-on { color: var(--n-emph); font-weight: var(--n-w-semi); box-shadow: inset 0 -2px 0 var(--n-emph); }
+/* the stop: a solid stop fill with its glyph in on-stop, never stop-coloured marks on a tint.
+   The fill shows through a transparent edge, and the glyph is drawn as a border, so forced
+   colours (which drop fills) still show the stop's shape and its square. */
+.ap-mini-stop {
+  flex: none;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 16px;
+  margin-left: auto;
+  border: 1.5px solid transparent;
+  border-radius: var(--n-r-control);
+  background: var(--n-stop);
+  color: var(--n-on-stop);
+}
+.ap-mini-stop::after { content: ""; box-sizing: border-box; width: 6px; height: 6px; border: 3px solid currentColor; }
+
+.ap-mini-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 0;
+  overflow: hidden;
+}
+
+/* a register, drawn the way the theme draws a panel (Ledger: a heavy rule, no box) */
+.ap-mini-reg {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--n-panel-bg);
+  border: var(--n-panel-border);
+  border-top: var(--n-panel-top);
+  border-radius: var(--n-panel-radius);
+  box-shadow: var(--n-panel-shadow);
+  overflow: hidden;
+}
+.ap-mini-reg-head {
+  display: block;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--n-rule-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--n-text);
+  font-family: var(--n-font-title);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  font-weight: var(--n-w-bold);
+}
+.ap-mini-fig {
+  margin-right: 5px;
+  color: var(--n-accent-text);
+  font-family: var(--n-font-display);
+  font-size: var(--n-fs-own);
+  line-height: 1;
+  font-weight: var(--n-w-reg);
+}
+.ap-mini-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--n-rule);
+}
+.ap-mini-row:last-child { border-bottom: 0; }
+.ap-mini-risk { flex: none; display: inline-flex; gap: 1px; }
+.ap-mini-risk > span {
+  box-sizing: border-box;
+  width: 3px;
+  height: 9px;
+  border: 1px solid var(--n-text-2);
+}
+.ap-mini-risk > .is-on { background: var(--n-text-2); }
+.ap-mini-entry {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--n-text);
+  font-family: var(--n-font-text);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+}
+.ap-mini-sign, .ap-mini-open {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--n-r-control);
+  font-size: var(--n-fs-meta);
+  line-height: 1;
+  white-space: nowrap;
+}
+/* the accent: the owner's signature (Ledger's seal); "Open" is a quiet framed button */
+.ap-mini-sign { background: var(--n-accent); color: var(--n-on-accent); font-weight: var(--n-w-semi); }
+.ap-mini-seal {
+  flex: none;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  border-radius: var(--n-r-pill);
+}
+.ap-mini-open { border: 1px solid var(--n-rule-field); color: var(--n-text); }
+
+/* what Nerva writes is set in the theme's reading face */
+.ap-mini-reply {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--n-text);
+  font-family: var(--n-font-text);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+}
+/* the speaker: a label in the theme's label voice (Ledger: semibold sans in ink) */
+.ap-mini-who {
+  margin-right: 6px;
+  color: var(--n-text);
+  font-size: var(--n-fs-meta);
+  font-weight: var(--n-w-semi);
+}
+
+.ap-mini-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-top: 1px solid var(--n-rule);
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--n-text-2);
+  font-size: var(--n-fs-meta);
+}
+.ap-mini-dot { flex: none; width: 7px; height: 7px; border-radius: var(--n-r-pill); background: var(--n-ok); }
+
+/* ---------- forced colours: backgrounds and shadows are dropped, so state moves to rules -- */
+@media (forced-colors: active) {
+  .ap-opt-text { border-bottom-style: none; padding-bottom: 2px; }
+  .ap-opt input:checked + .ap-opt-text { border-bottom-style: solid; padding-bottom: 0; }
+  /* unavailable stays dashed; a stored-but-unavailable choice keeps its semibold word */
+  .ap-opt input:is(:disabled, [aria-disabled="true"]) + .ap-opt-text { border-bottom-style: dashed; padding-bottom: 0; }
+  .ap-card[aria-pressed="true"] .ap-frame { border-width: 3px; }
+}

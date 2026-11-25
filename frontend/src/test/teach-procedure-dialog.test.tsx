@@ -2,7 +2,9 @@ import React from 'react';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Conversation } from '../cockpit';
-import { ChatMode } from '../modes3';
+import { TalkRegister } from '../home/talk/TalkRegister';
+import { openComposerMenu } from '../home/talk/test-support';
+import { resetPolling } from '../signals/poll';
 import * as ownerSession from '../api/owner-session';
 
 beforeAll(() => {
@@ -17,10 +19,22 @@ const reply = (status: number, body: unknown) => ({
 const message = (text = 'Find the source.\nSummarize the result.') =>
   ({ role: 'agent', who: 'frigga', text, _turnId: 1, _complete: true });
 
+/* "Teach skill" sits in a reply's More menu since the re-lay (PHASE_B_PLAN.md §5.3, §8.3); the
+   menu's items stay mounted while it is closed. `teachItem()` opens the More of the reply that
+   offers it and returns the item; the dialog's opener is that More button, since the picked item
+   hides with its menu. */
+const offered = () => document.querySelectorAll('[data-turn="reply"] [data-act="teach"]').length;
+function teachMenu(): HTMLElement {
+  const turn = Array.from(document.querySelectorAll<HTMLElement>('[data-turn="reply"]')).find(t => t.querySelector('[data-act="teach"]'))!;
+  return openComposerMenu('more', turn);
+}
+const teachItem = (name = 'Teach skill') => within(teachMenu()).getByRole('button', { name });
+
 function open(messages: any[] = [message()], scope = 'frigga:s1') {
   const view = render(<Conversation messages={messages} thinking={null} messageActionsAllowed messageScope={scope} lang="en" />);
-  const trigger = screen.getByRole('button', { name: 'Teach skill' });
-  fireEvent.click(trigger);
+  const menu = teachMenu();
+  const trigger = menu.firstElementChild as HTMLElement;
+  fireEvent.click(within(menu).getByRole('button', { name: 'Teach skill' }));
   return { ...view, trigger, dialog: screen.getByRole('dialog') };
 }
 
@@ -28,7 +42,7 @@ function fill(description = 'Research a question') {
   fireEvent.change(screen.getByRole('textbox', { name: 'When is this skill useful?' }), { target: { value: description } });
 }
 const submitButton = () => within(screen.getByRole('dialog')).getByRole('button', { name: 'Teach skill' });
-const triggerButton = () => within(screen.getByRole('log')).getByRole('button', { name: 'Teach skill' });
+const triggerButton = () => teachItem();
 
 it('offers only completed genuine assistant text on a scoped live Chat/Cockpit, with no request on open or cancel', () => {
   const fetchMock = vi.fn();
@@ -42,7 +56,9 @@ it('offers only completed genuine assistant text on a scoped live Chat/Cockpit, 
     { role: 'vision', text: 'Vision output' },
   ];
   const { dialog, trigger, rerender } = open(messages);
-  expect(within(screen.getByRole('log')).getAllByRole('button', { name: 'Teach skill' })).toHaveLength(1);
+  // one reply offers it: the completed, attributed one (not the system line, the reply still being
+  // written, the unattributed import or the vision analysis)
+  expect(offered()).toBe(1);
   expect(within(dialog).getByRole('textbox', { name: "Steps from frigga's reply" })).toHaveProperty('value', done.text);
   expect(document.activeElement).toBe(within(dialog).getByRole('textbox', { name: 'When is this skill useful?' }));
   expect(fetchMock).not.toHaveBeenCalled();
@@ -55,15 +71,26 @@ it('offers only completed genuine assistant text on a scoped live Chat/Cockpit, 
   rerender(<Conversation messages={messages} messageActionsAllowed messageScope="frigga:s2" />);
   expect(screen.queryByRole('dialog')).toBeNull();
   rerender(<Conversation messages={messages} messageActionsAllowed={false} messageScope="frigga:s2" />);
+  expect(offered()).toBe(0);
   expect(screen.queryByRole('button', { name: 'Teach skill' })).toBeNull();
 });
 
-it('uses the shared Chat live gate', () => {
-  const props = { messages: [message()], thinking: null, onSubmit: () => {}, t: { channel: 'Chat', transmit: 'Send', placeholder: 'Message' }, agent: 'frigga', sessionId: 's1' };
-  const view = render(<ChatMode {...props} selectedTurn />);
-  expect(screen.getByRole('button', { name: 'Teach skill' })).toBeTruthy();
-  view.rerender(<ChatMode {...props} selectedTurn={false} />);
+it('uses the shared live gate on the conversation page', () => {
+  resetPolling();
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({})));
+  // the conversation page as App draws it: message actions are live unless the demo sample is on
+  const page = (demo: boolean) => <TalkRegister variant="chat" turns={[]} messages={[message()]} thinking={null} onSubmit={() => true} onStop={() => {}} onProv={() => {}}
+    t={{ channel: 'Chat', transmit: 'Send', placeholder: 'Message' }} agent="frigga" agents={[]} sessionId="s1" lang="en"
+    messageScope="frigga:s1" recipientStatus="ready" demo={demo} messageActionsAllowed={!demo} exportAllowed={!demo} selectedTurn={!demo}
+    onSelectAgent={() => {}} />;
+  const view = render(page(false));
+  expect(offered()).toBe(1);
+  expect(teachItem()).toBeTruthy();
+  view.rerender(page(true));
+  expect(offered()).toBe(0);
   expect(screen.queryByRole('button', { name: 'Teach skill' })).toBeNull();
+  view.unmount();
+  resetPolling();
 });
 
 it('keeps the entire raw text and gives actionable limits without posting or truncating', () => {
@@ -162,7 +189,7 @@ it('shows the Romanian action and review copy', async () => {
   const fetchMock = vi.fn().mockResolvedValue(reply(202, { ok: true, pending: true, skill: 'rezumat' }));
   vi.stubGlobal('fetch', fetchMock);
   render(<Conversation messages={[message('Primul pas')]} thinking={null} messageActionsAllowed messageScope="frigga:s1" lang="ro" />);
-  fireEvent.click(screen.getByRole('button', { name: 'Învață abilitate' }));
+  fireEvent.click(teachItem('Învață abilitate'));
   expect(screen.getByRole('dialog', { name: 'Învață o abilitate din răspunsul lui frigga' })).toBeTruthy();
   fireEvent.change(screen.getByRole('textbox', { name: 'Când este utilă această abilitate?' }), { target: { value: 'Rezumat de cercetare' } });
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Învață abilitatea' }));

@@ -357,13 +357,13 @@ export function MemoryGraphExplorer() {
   const btn: React.CSSProperties = { padding: '4px 8px' };
   return <section aria-label="Memory graph" style={{ border: '1px solid var(--panel-line)', borderRadius: 'var(--radius)', padding: 14, marginBottom: 14 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <h3 style={{ fontSize: 13, margin: 0 }}>Memory graph</h3>
-      {imported && <span style={{ fontSize: 10, border: '1px solid var(--amber)', color: 'var(--amber)', borderRadius: 3, padding: '1px 5px' }}>imported map</span>}
+      <h3 style={{ fontSize: 'var(--n-fs-ui)', margin: 0 }}>Memory graph</h3>
+      {imported && <span style={{ fontSize: 'var(--n-fs-meta)', border: '1px solid var(--amber)', color: 'var(--amber)', borderRadius: 3, padding: '1px 5px' }}>imported map</span>}
       {imported && <button className="tool-btn" style={btn} onClick={backToMine}>Back to my map</button>}
       {focusId && <button className="tool-btn" style={btn} onClick={() => setFocusId(null)}>Show whole map</button>}
       <button className="tool-btn" style={{ ...btn, marginLeft: 'auto' }} aria-expanded={shareOpen} onClick={() => setShareOpen(open => !open)}>Share / import map</button>
     </div>
-    <p style={{ fontSize: 11, color: 'var(--ink-2)', margin: '6px 0' }}>
+    <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '6px 0' }}>
       {imported ? 'Showing someone else\'s map. Its labels are text they wrote: shown as plain text, never fetched, run or saved.'
         : 'What Nerva has stored: entities, relations and installed skills. Right-click a node for actions.'}
     </p>
@@ -427,7 +427,7 @@ export function MemoryGraphExplorer() {
           <button className="tool-btn" style={btn} aria-label="Zoom out" onClick={() => setCam(zoomBy(cam, 0.8))}>−</button>
           <button className="tool-btn" style={btn} aria-label="Reset view" onClick={reset}>⌂</button>
         </div>
-        <ul aria-label="Legend" style={{ position: 'absolute', left: 8, bottom: 8, margin: 0, padding: '6px 8px', listStyle: 'none', fontSize: 10, background: 'rgba(0,0,0,.45)', borderRadius: 4, maxWidth: '55%', maxHeight: '60%', overflowY: 'auto', pointerEvents: 'none' }}>
+        <ul aria-label="Legend" style={{ position: 'absolute', left: 8, bottom: 8, margin: 0, padding: '6px 8px', listStyle: 'none', fontSize: 'var(--n-fs-meta)', background: 'color-mix(in srgb, var(--n-bg) 60%, transparent)', borderRadius: 4, maxWidth: '55%', maxHeight: '60%', overflowY: 'auto', pointerEvents: 'none' }}>
           {types.map(([type, count]) => <li key={type} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
             <i style={{ width: 8, height: 8, transform: 'rotate(45deg)', background: typeColour(type), display: 'inline-block' }} /><span>{type}</span> <b>{count}</b></li>)}
           {skillCount > 0 && <li style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -464,19 +464,19 @@ export function MemoryGraphExplorer() {
       </div>}
       <input type="range" aria-label="Timeline scrubber" min={tl.lo} max={tl.hi} step={1} value={tl.value} disabled={timelineOff}
         onChange={event => { setPlaying(false); setPosition(Number(event.target.value)); }} />
-      <span className="asof" style={{ fontSize: 11, whiteSpace: 'normal' }}>{timelineText}</span>
+      <span className="asof" style={{ fontSize: 'var(--n-fs-meta)', whiteSpace: 'normal' }}>{timelineText}</span>
       {at !== null && !imported && <button className="tool-btn" style={btn} onClick={() => { setPlaying(false); setAt(null); }}>Back to now</button>}
-      {at !== null && !imported && <span style={{ flexBasis: '100%', fontSize: 11, color: 'var(--ink-2)' }}>
+      {at !== null && !imported && <span style={{ flexBasis: '100%', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
         The past view draws ingested facts only. Entities and relations written directly (starter entities, edits in this editor) have no fact, so they are not on the scrubber.</span>}
     </div>}
 
-    <div role="status" aria-live="polite" style={{ fontSize: 11, color: 'var(--accent-light)', minHeight: 14, marginTop: 6, overflowWrap: 'anywhere' }}>{note}</div>
-    {phase === 'ready' && map?.clipped && !imported && <p style={{ fontSize: 11, margin: '4px 0' }}>Showing the first {500} entities. More are stored.</p>}
-    {phase === 'ready' && map?.relationsClipped && !imported && <p style={{ fontSize: 11, margin: '4px 0' }}>Some relations are not drawn: the relation read is capped.</p>}
-    {phase === 'ready' && map && map.skipped > 0 && !imported && <p style={{ fontSize: 11, margin: '4px 0' }}>{map.skipped} stored entr{map.skipped === 1 ? 'y' : 'ies'} could not be shown (names with control characters or over 256 characters).</p>}
-    {skillsFailed && !imported && <p style={{ fontSize: 11, margin: '4px 0' }}>Skills could not be read, so they are not on the map.</p>}
+    <div role="status" aria-live="polite" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', minHeight: 14, marginTop: 6, overflowWrap: 'anywhere' }}>{note}</div>
+    {phase === 'ready' && map?.clipped && !imported && <p style={{ fontSize: 'var(--n-fs-meta)', margin: '4px 0' }}>Showing the first {500} entities. More are stored.</p>}
+    {phase === 'ready' && map?.relationsClipped && !imported && <p style={{ fontSize: 'var(--n-fs-meta)', margin: '4px 0' }}>Some relations are not drawn: the relation read is capped.</p>}
+    {phase === 'ready' && map && map.skipped > 0 && !imported && <p style={{ fontSize: 'var(--n-fs-meta)', margin: '4px 0' }}>{map.skipped} stored entr{map.skipped === 1 ? 'y' : 'ies'} could not be shown (names with control characters or over 256 characters).</p>}
+    {skillsFailed && !imported && <p style={{ fontSize: 'var(--n-fs-meta)', margin: '4px 0' }}>Skills could not be read, so they are not on the map.</p>}
 
-    {selected && <div role="region" aria-label="Selected node" style={{ fontSize: 12, borderTop: '1px solid var(--panel-line)', paddingTop: 8, marginTop: 6 }}>
+    {selected && <div role="region" aria-label="Selected node" style={{ fontSize: 'var(--n-fs-label)', borderTop: '1px solid var(--panel-line)', paddingTop: 8, marginTop: 6 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <strong style={{ color: 'var(--accent-light)', overflowWrap: 'anywhere' }}>{selected.label}</strong>
         <span style={{ color: 'var(--ink-2)' }}>{selected.kind === 'skill' ? `skill${selected.type !== 'skill' ? ' · ' + selected.type : ''}${selected.state === 'disabled' ? ' · disabled' : ''}${selected.essential ? ' · essential' : ''}` : selected.type}</span>
@@ -497,7 +497,7 @@ export function MemoryGraphExplorer() {
     </div>}
 
     {shareOpen && <div style={{ borderTop: '1px solid var(--panel-line)', marginTop: 8, paddingTop: 8 }}>
-      <p style={{ fontSize: 11, color: 'var(--ink-2)', margin: '0 0 6px' }}>
+      <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '0 0 6px' }}>
         Copy the code to share this map, or paste one to load. It holds entity names, relation names, skill names and rough timing, not property values or memory text.
         A map you load is shown read-only and replaces the view until you go back.</p>
       <textarea aria-label="Map code" value={codeText} spellCheck={false} placeholder="Paste a map code…" rows={4}
@@ -506,13 +506,13 @@ export function MemoryGraphExplorer() {
         <button className="tool-btn" onClick={copyCode}>Copy map code</button>
         <button className="tool-btn" onClick={importCode}>Load</button>
       </div>
-      {shareMsg && <div role="status" style={{ fontSize: 11, color: 'var(--accent-light)', marginTop: 4 }}>{shareMsg}</div>}
-      {shareError && <div role="alert" style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>{shareError}</div>}
+      {shareMsg && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 4 }}>{shareMsg}</div>}
+      {shareError && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>{shareError}</div>}
     </div>}
   </section>;
 }
 
 const overlay: React.CSSProperties = {
   position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-  gap: 8, textAlign: 'center', padding: 16, fontSize: 12, zIndex: 5,
+  gap: 8, textAlign: 'center', padding: 16, fontSize: 'var(--n-fs-label)', zIndex: 5,
 };

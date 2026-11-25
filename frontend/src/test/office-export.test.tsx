@@ -1,9 +1,11 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Conversation } from '../cockpit';
 import { ArtifactsPanel } from '../artifacts';
-import { ChatMode } from '../modes3';
+import { TalkRegister } from '../home/talk/TalkRegister';
+import { openComposerMenu } from '../home/talk/test-support';
+import { resetPolling } from '../signals/poll';
 import { _resetOwnerSessionForTests, signIn } from '../api/owner-session';
 
 const file = new Blob(['office-bytes'], { type: 'application/octet-stream' });
@@ -40,15 +42,31 @@ afterEach(() => {
 
 const reply = { role: 'agent', who: 'jarvis', text: 'Full **reply**\n\n| a | b |\n| --- | --- |\n| one | 1 |\n\n| x | y |\n| --- | --- |\n| two | 2 |', _turnId: 1, _complete: true };
 
+/* Since the re-lay (PHASE_B_PLAN.md §5.3, §8.3) "Download Word" and "Photoshop" sit in a reply's
+   More menu, whose items stay mounted while it is closed; a table's "Download Excel" stays beside
+   its table in the reply's words. `more()` opens the first reply's More and returns it. */
+const more = () => openComposerMenu('more', document.querySelector('[data-turn="reply"]') as HTMLElement);
+const offered = (key: 'word' | 'photoshop') => document.querySelectorAll(`[data-turn="reply"] [data-act="${key}"]`).length;
+
 describe('Office export from normal chat', () => {
-  it('shows exports in the focused chat only for a live selected turn', () => {
-    const props = { messages: [reply], thinking: null, onSubmit: () => {}, t: { channel: 'Chat', transmit: 'Send', placeholder: 'Message' }, lang: 'en', agent: 'jarvis', sessionId: 's' };
-    const view = render(<ChatMode {...props} selectedTurn />);
-    expect(screen.getByRole('button', { name: 'Download Word' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Photoshop' })).toBeTruthy();
-    view.rerender(<ChatMode {...props} selectedTurn={false} />);
+  it('shows exports on the conversation page only for a live turn, never in the demo sample', () => {
+    resetPolling();
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({})));
+    // the conversation page as App draws it: exports and message actions are live unless the demo sample is on
+    const page = (demo: boolean) => <TalkRegister variant="chat" turns={[]} messages={[reply]} thinking={null} onSubmit={() => true} onStop={() => {}} onProv={() => {}}
+      t={{ channel: 'Chat', transmit: 'Send', placeholder: 'Message' }} lang="en" agent="jarvis" agents={[]} sessionId="s"
+      messageScope="jarvis:s" recipientStatus="ready" demo={demo} exportAllowed={!demo} messageActionsAllowed={!demo} selectedTurn={!demo}
+      onSelectAgent={() => {}} />;
+    const view = render(page(false));
+    expect(within(more()).getByRole('button', { name: 'Download Word' })).toBeTruthy();
+    expect(within(more()).getByRole('button', { name: 'Photoshop' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Download Excel' })).toHaveLength(2);
+    view.rerender(page(true));
+    expect(offered('word')).toBe(0);
+    expect(offered('photoshop')).toBe(0);
     expect(screen.queryByRole('button', { name: 'Download Word' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Photoshop' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Download Excel' })).toBeNull();
+    resetPolling();
   });
 
   it('posts the full reply and each distinct table, then downloads fixed filenames with the user token', async () => {
@@ -58,7 +76,7 @@ describe('Office export from normal chat', () => {
     render(<Conversation messages={[{ role: 'user', text: 'private prompt' }, reply]} thinking={null} exportAllowed lang="en" />);
     const buttons = screen.getAllByRole('button', { name: 'Download Excel' });
     expect(buttons).toHaveLength(2);
-    fireEvent.click(screen.getByRole('button', { name: 'Download Word' }));
+    fireEvent.click(within(more()).getByRole('button', { name: 'Download Word' }));
     fireEvent.click(buttons[0]);
     fireEvent.click(buttons[1]);
     await waitFor(() => expect(clicked).toHaveLength(3));
@@ -82,7 +100,7 @@ describe('Office export from normal chat', () => {
     vi.stubGlobal('fetch', fetchMock);
     expect(await signIn('test-secret')).toEqual({ ok: true });
     render(<Conversation messages={[reply]} thinking={null} exportAllowed lang="en" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Download Word' }));
+    fireEvent.click(within(more()).getByRole('button', { name: 'Download Word' }));
     await waitFor(() => expect(clicked).toHaveLength(1));
     const [, init] = fetchMock.mock.calls.find(([path]) => String(path) === '/api/canvas/export')!;
     expect(init.credentials).toBe('same-origin');
@@ -98,11 +116,12 @@ describe('Office export from normal chat', () => {
       { ...reply, _complete: false },
     ];
     const view = render(<Conversation messages={messages} thinking={null} exportAllowed messageActionsAllowed lang="en" />);
-    expect(screen.queryByRole('button', { name: 'Download Word' })).toBeNull();
+    expect(offered('word')).toBe(0);
+    expect(offered('photoshop')).toBe(0);
     expect(screen.queryByRole('button', { name: 'Download Excel' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Photoshop' })).toBeNull();
     view.rerender(<Conversation messages={[reply]} thinking={null} exportAllowed={false} lang="en" />);
-    expect(screen.queryByRole('button', { name: 'Download Word' })).toBeNull();
+    expect(offered('word')).toBe(0);
+    expect(screen.queryByRole('button', { name: 'Download Excel' })).toBeNull();
   });
 
   it('shows a translated, retryable refusal and locks duplicate requests while pending', async () => {
@@ -111,8 +130,9 @@ describe('Office export from normal chat', () => {
       .mockImplementationOnce(async () => ok());
     vi.stubGlobal('fetch', fetchMock);
     render(<Conversation messages={[reply]} thinking={null} exportAllowed lang="ro" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Descarcă Word' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Descarcă Word' }));
+    const menu = more();
+    fireEvent.click(within(menu).getByRole('button', { name: 'Descarcă Word' }));
+    fireEvent.click(within(menu).getByRole('button', { name: 'Descarcă Word' }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     resolve({ ok: false, status: 403, json: async () => ({ detail: 'denied' }) });
     const retry = await screen.findByRole('button', { name: 'Descarcă Word — eșuat, reîncearcă' });
@@ -127,7 +147,7 @@ describe('Office export from normal chat', () => {
       .mockResolvedValueOnce({ ok: false, status: 413, json: async () => ({ detail: 'too large' }) });
     vi.stubGlobal('fetch', fetchMock);
     render(<Conversation messages={[reply]} thinking={null} exportAllowed lang="en" />);
-    fireEvent.click(screen.getByRole('button', { name: 'Download Word' }));
+    fireEvent.click(within(more()).getByRole('button', { name: 'Download Word' }));
     const retry = await screen.findByRole('button', { name: 'Download Word — failed, retry' });
     expect(URL.createObjectURL).not.toHaveBeenCalled();
     fireEvent.click(retry);

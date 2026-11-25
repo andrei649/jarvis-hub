@@ -1,0 +1,989 @@
+/* =====================================================================================
+   frame.css — the Ledger frame's shared breakpoints and visibility helpers
+   (PHASE_B_PLAN.md §1.3; widths from docs/design/hud-next/ledger/ledger.css)
+   -------------------------------------------------------------------------------------
+   The shared breakpoints. Every Phase B stylesheet uses exactly these numbers, written in
+   its own @media blocks (a custom property cannot be used in a media query):
+
+     name  width            layout
+     xl    >= 2200px        four registers on Home; reading sizes step up one (Phase A,
+                            themes/ledger.css); the owner's 2560 x 1353 screen at 1.5x
+     l     1680 – 2199px    three registers; long labels (1920 x 1080)
+     m     1340 – 1679px    the day folds into a band; two registers; short labels (1440 x 900)
+     s     1100 – 1339px    the two-register layout, tighter; compact running head (1280 x 800)
+     xs     760 – 1099px    one column; the running head wraps to two lines
+     xxs        <= 759px    masthead areas move into a drawer; running head as marks;
+                            also the 420 x 620 floating window
+     height    <= 1199px    items marked "tall" are hidden
+
+     @media (min-width: 2200px)  xl          @media (max-width: 2199px)  below xl
+     @media (min-width: 1680px)  l and up    @media (max-width: 1679px)  m and down
+     @media (min-width: 1340px)  m and up    @media (max-width: 1339px)  s and down
+     @media (min-width: 1100px)  s and up    @media (max-width: 1099px)  xs and down
+     @media (min-width:  760px)  xs and up   @media (max-width:  759px)  xxs
+     @media (max-height: 1199px) short screens
+
+   Visibility helpers. Long and short label variants are rendered side by side and switched
+   here, so tests never assume a single text match (use getAllBy… or a data-* hook):
+
+     data-show-from="xl | l | m | s | xs"      shown from that width up
+     data-show-upto="l | m | s | xs | xxs"     shown up to the top of that width
+     (both on one element: shown inside the range only)
+     data-tall                                  hidden when the viewport is 1199px tall or less
+     data-visually-hidden                       read by assistive tech, not drawn
+
+     <span data-show-from="l">Sent to local runners</span><span data-show-upto="m">Local route</span>
+   ===================================================================================== */
+
+@media (max-width: 2199px) { [data-show-from="xl"] { display: none !important; } }
+@media (max-width: 1679px) { [data-show-from="l"]  { display: none !important; } }
+@media (max-width: 1339px) { [data-show-from="m"]  { display: none !important; } }
+@media (max-width: 1099px) { [data-show-from="s"]  { display: none !important; } }
+@media (max-width: 759px)  { [data-show-from="xs"] { display: none !important; } }
+
+@media (min-width: 2200px) { [data-show-upto="l"]   { display: none !important; } }
+@media (min-width: 1680px) { [data-show-upto="m"]   { display: none !important; } }
+@media (min-width: 1340px) { [data-show-upto="s"]   { display: none !important; } }
+@media (min-width: 1100px) { [data-show-upto="xs"]  { display: none !important; } }
+@media (min-width: 760px)  { [data-show-upto="xxs"] { display: none !important; } }
+
+@media (max-height: 1199px) { [data-tall] { display: none !important; } }
+
+[data-visually-hidden] {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* =====================================================================================
+   The frame on every page (PHASE_B_PLAN.md §4; ledger.css "page frame")
+   -------------------------------------------------------------------------------------
+   Drawn through the --n-* roles only, so every theme renders the same structure; nothing
+   under --n-fs-meta; labels in the theme's label voice. Classes owned here (§1.3):
+
+     n-frame (__skip, __page)                     the page: masthead, running head, notices,
+                                                  the page region, running foot
+     n-masthead (__brand __mark __name __areas __find __find-words __key __tools __tool
+                 __icon __lang __glance-word __stop __stop-icon __halted __alert), and its fit:
+                 [data-fit~=<step>], from 1100px (Masthead.tsx FIT_STEPS)
+     n-areas (__link __label __note --hand __words __count, --drawer)   the nine areas
+     n-areadrawer (__open __root __backdrop __sheet __close)   the areas below 760px
+     n-runhead (--full --marks --compact, __controls __mode (+ [data-readonly], [data-open]) __seg
+                __key __source __said __sep __interrupts __figure __button __pop --note __fold
+                __box __box-title), and its fit: [data-fit~=<step>], from 1100px (RunningHead.tsx
+                RUNHEAD_FIT_STEPS)   the running head
+     n-signals (__item __label __value __button __ident __text __detail-title __said __detail)
+     n-notices, n-notice (--alarm, __text __lead __list __why __addr __pieces __acts)
+     n-runfoot (__group __item __key __figure __words __detail __meter __ver)
+     n-areapage (--wide, __contents __main __head __title __meta __tools __body __empty
+                 __empty-text __slot __mode __panel); the contents column inside __contents
+                 and the All pages site map are nav/contents.css's
+   ===================================================================================== */
+
+.n-frame {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--n-text);
+}
+
+.n-frame__skip {
+  position: absolute;
+  z-index: 60;
+  left: var(--n-s-2);
+  top: -64px;
+  padding: var(--n-s-2) var(--n-s-3);
+  background: var(--n-text);
+  color: var(--n-bg);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+  text-decoration: none;
+}
+.n-frame__skip:focus { top: var(--n-s-2); }
+
+.n-frame__page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- masthead: the name, the nine areas, Find, the tools, the stop ---------------------- */
+.n-masthead {
+  flex: none;
+  position: relative;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: auto auto minmax(96px, 1fr) auto;
+  align-items: stretch;
+  column-gap: var(--n-s-6);
+  min-height: 56px;
+  padding: 0 var(--n-page-x);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+  color: var(--n-text);
+}
+.n-masthead__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--n-s-2) + 2px);
+  color: var(--n-text);
+  text-decoration: none;
+}
+.n-masthead__mark { flex: none; width: 28px; height: 28px; }
+.n-masthead__name {
+  padding-top: 2px;
+  font-family: var(--n-font-title);
+  font-weight: var(--n-w-bold);
+  font-size: var(--n-fs-title);
+  line-height: var(--n-lh-title);
+  letter-spacing: var(--n-title-track);
+}
+.n-masthead__areas { display: flex; align-items: stretch; min-width: 0; margin-left: var(--n-s-2); }
+
+.n-areas { display: flex; align-items: stretch; min-width: 0; }
+.n-areas__link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.75);
+  padding: 0 var(--n-s-3);
+  color: var(--n-text-2);
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color var(--n-dur-1) var(--n-ease);
+}
+.n-areas__link:hover { color: var(--n-text); }
+/* the kit's ring: 2px with a 2px offset (CONTRACT §8b); inset only where the areas row scrolls */
+.n-areas__link:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-areas__link[aria-current="page"] { color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-areas__link[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: var(--n-s-3);
+  right: var(--n-s-3);
+  bottom: -1px;
+  height: 2px;
+  background: var(--n-text-2);
+}
+.n-areas__note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--n-s-1);
+  color: var(--n-text-2);
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+/* the owner's hand: what waits for a signature takes the accent, and nothing else does */
+.n-areas__note--hand { color: var(--n-accent-text); font-weight: var(--n-w-semi); }
+/* a note's count alone: drawn only when the masthead runs out of room (the fit steps below) */
+.n-areas__count { display: none; }
+
+.n-masthead__find {
+  appearance: none;
+  justify-self: center;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--n-s-2);
+  box-sizing: border-box;
+  width: min(100%, 460px);
+  min-width: 0;
+  height: 32px;
+  margin: 0;
+  padding: 0 calc(var(--n-s-1) * 1.5) 0 calc(var(--n-s-2) + 2px);
+  border: var(--n-hair) solid var(--n-rule-field);
+  border-radius: var(--n-r-1);
+  background: var(--n-sheet);
+  color: var(--n-text-3);
+  font-family: var(--n-font-ui);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  text-align: left;
+  cursor: text;
+}
+.n-masthead__find:hover { border-color: var(--n-text-3); }
+.n-masthead__find:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-masthead__find-words { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.n-masthead__key { flex: none; margin-left: auto; }
+/* Find's key cap is drawn from data-key, not written as text: the button's name already ends
+   with the key, and on-screen text after the words would break label-in-name (WCAG 2.5.3) */
+.n-masthead__key::before { content: attr(data-key); }
+.n-masthead__icon { flex: none; width: 16px; height: 16px; }
+
+.n-masthead__tools { display: flex; align-items: center; justify-content: flex-end; gap: calc(var(--n-s-1) * 1.5); }
+.n-masthead__lang { flex: none; }
+.n-masthead__tool {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.5);
+  box-sizing: border-box;
+  height: 30px;
+  margin: 0;
+  padding: 0 var(--n-s-2);
+  border: 0;
+  border-radius: var(--n-r-control);
+  background: transparent;
+  color: var(--n-text-2);
+  font-family: var(--n-font-ui);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--n-dur-1) var(--n-ease), color var(--n-dur-1) var(--n-ease);
+}
+.n-masthead__tool:hover { background: var(--n-bg-2); color: var(--n-text); }
+.n-masthead__tool:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-masthead__tool[aria-disabled="true"] { background: transparent; color: var(--n-text-3); cursor: not-allowed; }
+.n-masthead__stop { margin-left: calc(var(--n-s-2) + 2px); }
+.n-masthead__stop-icon { flex: none; width: 10px; height: 10px; }
+.n-masthead__halted {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--n-s-1) * 1.5);
+  box-sizing: border-box;
+  min-height: var(--n-control-h-sm);
+  margin-left: calc(var(--n-s-2) + 2px);
+  padding: 0 var(--n-s-2);
+  border: var(--n-hair) solid var(--n-rule-field);
+  border-radius: var(--n-r-control);
+  color: var(--n-text);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  white-space: nowrap;
+  text-decoration: none;
+}
+.n-masthead__halted:hover { background: var(--n-bg-2); }
+.n-masthead__halted:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-masthead__alert {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: calc(var(--n-s-1) * 1.5) 0;
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text);
+}
+
+/* ---- fitting the row (from 1100px): the steps Masthead.tsx measures its way through --------
+   data-fit lists the steps taken, in this order, the least loss first; each word a step takes off
+   the screen stays in its control's name and tooltip. Find's placeholder is never cut: it gives
+   way at its own steps ("search" its short form from 1680px, "find" the icon alone). Below 1100px
+   no step is written.
+
+   The masthead measures itself right after it changes a step, so none of its boxes may transition:
+   a padding or a gap in transition is read at its old value. Calm motion (theme/overrides.css) gives
+   every element a 0.01ms transition, and the initial transition-property is `all`, so a width step
+   or a band change would otherwise be measured a frame late. :where() weighs nothing: a control's
+   own declared transitions (its colours on hover) are kept. */
+:where(.n-masthead, .n-masthead *) { transition-property: none; }
+:where(.n-masthead *)::before, :where(.n-masthead *)::after { transition-property: none; }
+@media (min-width: 1100px) {
+  /* search: Find's placeholder in its short form ("Search"; below 1680px it is drawn so already) */
+  .n-masthead[data-fit~="search"] .n-masthead__find-words > [data-show-from="l"] { display: none !important; }
+  .n-masthead[data-fit~="search"] .n-masthead__find-words > [data-show-upto="m"] { display: inline !important; }
+  /* notes, hand: a note keeps its mark and its count (a broken record, its mark) */
+  .n-masthead[data-fit~="notes"] .n-masthead__areas .n-areas__note:not(.n-areas__note--hand) > .n-areas__words,
+  .n-masthead[data-fit~="hand"] .n-masthead__areas .n-areas__note--hand > .n-areas__words { display: none !important; }
+  .n-masthead[data-fit~="notes"] .n-masthead__areas .n-areas__note:not(.n-areas__note--hand) > .n-areas__count,
+  .n-masthead[data-fit~="hand"] .n-masthead__areas .n-areas__note--hand > .n-areas__count { display: inline; }
+  /* glance: the icon */
+  .n-masthead[data-fit~="glance"] .n-masthead__glance-word { display: none; }
+  /* tight: the areas, the gaps and the switches closer */
+  .n-masthead[data-fit~="tight"] { column-gap: var(--n-s-2); }
+  .n-masthead[data-fit~="tight"] .n-masthead__areas { margin-left: 0; }
+  .n-masthead[data-fit~="tight"] .n-areas__link { padding: 0 calc(var(--n-s-1) * 1.5); }
+  .n-masthead[data-fit~="tight"] .n-areas__link[aria-current="page"]::after { left: calc(var(--n-s-1) * 1.5); right: calc(var(--n-s-1) * 1.5); }
+  .n-masthead[data-fit~="tight"] .n-masthead__tools { gap: var(--n-s-1); }
+  .n-masthead[data-fit~="tight"] .n-masthead__tool { padding: 0 calc(var(--n-s-1) * 1.5); }
+  .n-masthead[data-fit~="tight"] .n-masthead__lang > * { padding: 0 var(--n-s-2); }
+  .n-masthead[data-fit~="tight"] :is(.n-masthead__stop, .n-masthead__halted) { margin-left: calc(var(--n-s-1) * 1.5); }
+  /* brand: the ring and N (the link is still named "Nerva — today's page") */
+  .n-masthead[data-fit~="brand"] .n-masthead__name { display: none; }
+  /* stop: its short word; the button's name stays "Stop all agents" */
+  .n-masthead[data-fit~="stop"] :is(.n-masthead__stop, .n-masthead__halted) > [data-show-from="s"] { display: none !important; }
+  .n-masthead[data-fit~="stop"] :is(.n-masthead__stop, .n-masthead__halted) > [data-show-upto="xs"] { display: inline !important; }
+  /* find: the icon, so its box can narrow (its name keeps the words and the key) */
+  .n-masthead[data-fit~="find"] { grid-template-columns: auto auto minmax(40px, 1fr) auto; }
+  .n-masthead[data-fit~="find"] :is(.n-masthead__find-words, .n-masthead__key) { display: none; }
+  /* tighter: the areas and the margins closer still */
+  .n-masthead[data-fit~="tighter"] { padding: 0 var(--n-s-3); column-gap: calc(var(--n-s-1) * 1.5); }
+  .n-masthead[data-fit~="tighter"] .n-areas__link { padding: 0 var(--n-s-1); }
+  .n-masthead[data-fit~="tighter"] .n-areas__link[aria-current="page"]::after { left: var(--n-s-1); right: var(--n-s-1); }
+  .n-masthead[data-fit~="tighter"] .n-masthead__lang > * { padding: 0 calc(var(--n-s-1) * 1.5); }
+  /* scroll: the last resort, the areas row scrolls rather than spill under Find; the ring goes inside */
+  .n-masthead[data-fit~="scroll"] .n-masthead__areas { overflow-x: auto; overflow-y: hidden; }
+  .n-masthead[data-fit~="scroll"] .n-masthead__areas .n-areas__link:focus-visible { outline-offset: -2px; }
+}
+
+/* the areas as a drawer, below 760px */
+.n-areadrawer { display: flex; align-items: center; }
+.n-areadrawer__root { position: fixed; inset: 0; z-index: 80; }
+.n-areadrawer__backdrop { position: absolute; inset: 0; background: var(--n-scrim); }
+.n-areadrawer__sheet {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--n-s-2);
+  box-sizing: border-box;
+  width: min(300px, 86vw);
+  padding: var(--n-s-3) var(--n-s-4);
+  overflow-y: auto;
+  /* opaque, as every surface laid over the page: the sheet over the page's ground (Classic's sheet
+     is translucent, and its scrim too) */
+  background-color: var(--n-bg);
+  background-image: linear-gradient(var(--n-sheet), var(--n-sheet));
+  box-shadow: var(--n-shadow-2);
+}
+.n-areadrawer__close { align-self: flex-end; }
+.n-areas--drawer { flex-direction: column; align-items: stretch; }
+.n-areas--drawer .n-areas__link { min-height: 40px; padding: 0 var(--n-s-2); }
+.n-areas--drawer .n-areas__link[aria-current="page"]::after { left: 0; right: auto; top: var(--n-s-2); bottom: var(--n-s-2); width: 2px; height: auto; }
+
+/* ---- running head: the trust signals, the approval mode, the interrupts ---------------- */
+.n-runhead {
+  flex: none;
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: space-between;
+  column-gap: var(--n-s-6);
+  min-height: 34px;
+  padding: 0 var(--n-page-x);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+  color: var(--n-text-2);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  white-space: nowrap;
+}
+.n-signals { display: flex; flex-wrap: wrap; align-items: stretch; min-width: 0; margin: 0; }
+.n-signals__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--n-s-2);
+  min-height: 34px;
+  padding: 0 calc(var(--n-s-4) + 2px);
+  border-left: var(--n-hair) solid var(--n-rule);
+}
+.n-signals__item:first-child { padding-left: 0; border-left: 0; }
+.n-signals__label { margin: 0; color: var(--n-text-3); }
+.n-signals__value { display: inline-flex; align-items: center; min-width: 0; margin: 0; color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-signals__button { gap: calc(var(--n-s-1) * 1.5); }
+.n-signals__item:is([data-state="unknown"], [data-state="offline"], [data-state="refused"]) .n-signals__value { font-weight: var(--n-w-reg); }
+.n-signals__item[data-state="stale"] .n-signals__value { color: var(--n-text-3); font-weight: var(--n-w-reg); }
+.n-signals__ident { font-family: var(--n-font-mono); font-size: var(--n-fs-meta); line-height: var(--n-lh-meta); }
+.n-signals__detail-title { margin: 0 0 var(--n-s-1); font-weight: var(--n-w-semi); }
+/* the value a mark stands for, whole, at the top of its popover (below 760px) */
+.n-signals__said { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--n-s-1) * 1.5); margin: 0 0 var(--n-s-1); }
+.n-signals__detail { margin: 0; padding-left: var(--n-s-4); color: var(--n-text-2); }
+.n-signals__link { display: inline-block; margin-top: var(--n-s-1); }
+
+.n-runhead__controls { display: inline-flex; flex: none; align-items: center; gap: var(--n-s-2); min-height: 34px; margin-left: auto; }
+.n-runhead__mode { position: relative; display: inline-flex; align-items: center; gap: var(--n-s-2); }
+.n-runhead__key { color: var(--n-text-3); }
+.n-runhead__sep { align-self: stretch; width: 1px; margin: 0 calc(var(--n-s-2) + 2px); background: var(--n-rule); }
+.n-runhead__interrupts { display: inline-flex; align-items: center; gap: calc(var(--n-s-1) * 1.5); }
+.n-runhead__figure { color: var(--n-text); font-weight: var(--n-w-semi); font-variant-numeric: lining-nums tabular-nums; }
+/* The approval mode's confirmation and the hub's answer, drawn under the mode while it is in the
+   line. Like every surface laid over the page it is opaque: the sheet over the page's own ground,
+   so a look whose sheet is translucent (Classic's --surface) still covers the words beneath it. Kept
+   inside the window by RunningHead.tsx (kit placeInside: above where below would leave the window,
+   moved in from an edge by a translation). */
+.n-runhead__pop {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + var(--n-s-2));
+  right: 0;
+  box-sizing: border-box;
+  min-width: 280px;
+  max-width: min(380px, 90vw);
+  padding: calc(var(--n-s-2) + 2px) var(--n-s-3);
+  border-radius: var(--n-r-2);
+  background-color: var(--n-bg);
+  background-image: linear-gradient(var(--n-sheet), var(--n-sheet));
+  box-shadow: var(--n-shadow-2);
+  color: var(--n-text);
+  font-weight: var(--n-w-reg);
+  white-space: normal;
+}
+.n-runhead__pop[data-place="above"] { top: auto; bottom: calc(100% + var(--n-s-2)); }
+:is(.n-runhead__pop, .n-runhead__box)[data-shift] { transform: translateX(var(--n-disclosure-shift, 0px)); }
+.n-runhead__pop--note { display: flex; align-items: baseline; gap: var(--n-s-3); }
+
+/* The running head measures itself right after it writes a fit step (RunningHead.tsx), so, as in
+   the masthead, none of its boxes may transition: calm motion gives every element a 0.01ms
+   transition on `all`, and a padding, a gap or a flex weight a step changes would be measured at
+   its old value, a frame late (the walk would then take a costlier step for nothing). :where()
+   weighs nothing, so a control's own declared transitions (its colours on hover) are kept. */
+:where(.n-runhead, .n-runhead *) { transition-property: none; }
+:where(.n-runhead *)::before, :where(.n-runhead *)::after { transition-property: none; }
+
+/* The approval mode folded into its word (the "mode" fit step, below): a button, and the same
+   choice, source and friction in its popover. Until the step is taken the button is not drawn and
+   the box lays its parts out in the line (display: contents). */
+.n-runhead__fold {
+  appearance: none;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 24px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 calc(var(--n-s-1) + 1px);
+  border: 0;
+  border-radius: var(--n-r-1);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.n-runhead__fold:hover { color: var(--n-text); }
+.n-runhead__fold:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-runhead__box { display: contents; }
+/* below 760px, closed (RunningHead.tsx says hidden there, so it is out of the reading order too) */
+.n-runhead__box[hidden] { display: none; }
+.n-runhead__box-title { display: none; }
+
+/* From 1100px the running head is one line (§4.2) and fits itself: RunningHead.tsx takes
+   RUNHEAD_FIT_STEPS in order, the least loss first, and writes them in data-fit; the rules after
+   this block draw each one.
+
+   Overlap is impossible by construction, whatever a measurement says: no item is narrower than
+   what it draws. Every item keeps its automatic minimum (its label when drawn, its mark, its
+   value: none of them wraps), and so does the signals' list. Only the two free-length values, the
+   egress statement and the model id, may narrow, each inside its own button and down to its mark
+   and an ellipsis: their item is a grid whose value track never goes below that floor
+   (--n-runhead-floor: the mark, the gaps and 1.25em of each value part, the part's own minimum).
+   Narrower than every floor, the line overflows the head, which the fit measures (and answers with
+   two lines at the last); it never runs one item into another. Before the "cut" step a value cut
+   this way is a spill the fit answers with an earlier step; the cut is a safety net until then. */
+@media (min-width: 1100px) {
+  .n-runhead { flex-wrap: nowrap; }
+  .n-signals { flex: 0 1 auto; flex-wrap: nowrap; min-width: auto; }
+  .n-signals__label { flex: none; }
+  .n-signals__ident, .n-signals__text { white-space: nowrap; }
+  .n-signals__item:is([data-signal="egress"], [data-signal="model"]) {
+    --n-runhead-floor: calc(12px + var(--n-s-1) * 1.5 + 1.25em);
+    display: inline-grid;
+    grid-template-columns: auto minmax(var(--n-runhead-floor), max-content);
+    column-gap: 0;
+    flex: 0 1 auto;
+  }
+  .n-signals__item[data-signal="model"] { --n-runhead-floor: calc(12px + var(--n-s-1) * 3 + 2.5em); }
+  .n-signals__item:is([data-signal="egress"], [data-signal="model"]) > .n-signals__label { grid-column: 1; margin-right: var(--n-s-2); }
+  /* (the value's disclosure and button narrow with it as flex items with no minimum, kit.css; a
+     max-width: 100% here would be read as 0 while the track's max-content is measured, and the
+     value would be cut with the whole line to spare) */
+  .n-signals__item:is([data-signal="egress"], [data-signal="model"]) > .n-signals__value { grid-column: 2; }
+  .n-signals__item:is([data-signal="egress"], [data-signal="model"]) :is(.n-signals__ident, .n-signals__text) {
+    flex: 0 1 auto;
+    min-width: 1.25em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* the model id gives way before its backend does: a shrink weight so much larger that the
+     backend's share of a cut rounds below a layout unit (1/64px) until the id reaches its floor */
+  .n-signals__item[data-signal="model"] .n-signals__ident { flex-shrink: 100000; }
+
+  /* source: a source label's reason and time are read, not drawn, as below 1680px (its title says them) */
+  .n-runhead[data-fit~="source"] .n-runhead__said :is(.n-src__why, .n-src__asof) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* short: the short labels and the interrupts' count alone, as 1340–1679px */
+  .n-runhead[data-fit~="short"] :is(.n-signals__label, .n-runhead__key, .n-runhead__figure) > [data-show-from="l"] { display: none !important; }
+  .n-runhead[data-fit~="short"] :is(.n-signals__label, .n-runhead__key, .n-runhead__figure) > [data-show-upto="m"] { display: inline !important; }
+  /* egress: the egress value's short form, as below 2200px */
+  .n-runhead[data-fit~="egress"] [data-signal="egress"] .n-signals__text[data-show-from="xl"] { display: none !important; }
+  .n-runhead[data-fit~="egress"] [data-signal="egress"] .n-signals__text[data-show-upto="l"] { display: inline !important; }
+  /* values: every value's short form, as below 2200px (the route without its window, the data and
+     the chain without the time they were checked: their names and popovers say both) */
+  .n-runhead[data-fit~="values"] .n-signals__text[data-show-from="xl"] { display: none !important; }
+  .n-runhead[data-fit~="values"] .n-signals__text[data-show-upto="l"] { display: inline !important; }
+  /* labels: the six signals' labels are read, not drawn, as 1100–1339px */
+  .n-runhead--full[data-fit~="labels"] .n-signals__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  /* tight: the items closer */
+  .n-runhead[data-fit~="tight"] { column-gap: var(--n-s-2); }
+  .n-runhead[data-fit~="tight"] .n-signals__item { gap: calc(var(--n-s-1) * 1.5); padding: 0 calc(var(--n-s-1) * 1.5); }
+  .n-runhead[data-fit~="tight"] .n-signals__item:first-child { padding-left: 0; }
+  .n-runhead[data-fit~="tight"] .n-signals__item:is([data-signal="egress"], [data-signal="model"]) > .n-signals__label { margin-right: calc(var(--n-s-1) * 1.5); }
+  .n-runhead[data-fit~="tight"] :is(.n-runhead__controls, .n-runhead__mode) { gap: calc(var(--n-s-1) * 1.5); }
+  .n-runhead[data-fit~="tight"] .n-runhead__sep { margin: 0 var(--n-s-1); }
+  /* mode: the approval mode is its word; its key, choice and source move into the popover */
+  .n-runhead[data-fit~="mode"] .n-runhead__mode > .n-runhead__key { display: none; }
+  .n-runhead[data-fit~="mode"] .n-runhead__fold { display: inline-flex; }
+  .n-runhead[data-fit~="mode"] .n-runhead__box { display: none; }
+  .n-runhead[data-fit~="mode"] .n-runhead__mode[data-open] > .n-runhead__box {
+    display: block;
+    position: absolute;
+    z-index: 50;
+    top: calc(100% + var(--n-s-2));
+    right: 0;
+    box-sizing: border-box;
+    min-width: 280px;
+    max-width: min(380px, 90vw);
+    padding: calc(var(--n-s-2) + 2px) var(--n-s-3);
+    border-radius: var(--n-r-2);
+    background-color: var(--n-bg);
+    background-image: linear-gradient(var(--n-sheet), var(--n-sheet));
+    box-shadow: var(--n-shadow-2);
+    color: var(--n-text);
+    font-weight: var(--n-w-reg);
+    white-space: normal;
+  }
+  .n-runhead[data-fit~="mode"] .n-runhead__mode[data-open] > .n-runhead__box[data-place="above"] { top: auto; bottom: calc(100% + var(--n-s-2)); }
+  .n-runhead[data-fit~="mode"] .n-runhead__box-title { display: block; }
+  .n-runhead[data-fit~="mode"] .n-runhead__box .n-runhead__seg { margin: var(--n-s-1) 0; }
+  .n-runhead[data-fit~="mode"] .n-runhead__box .n-runhead__said { display: block; margin-top: var(--n-s-1); white-space: normal; }
+  .n-runhead[data-fit~="mode"] .n-runhead__box .n-runhead__said :is(.n-src__why, .n-src__asof) {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+  .n-runhead[data-fit~="mode"] .n-runhead__box .n-runhead__pop {
+    position: static;
+    min-width: 0;
+    max-width: none;
+    margin-top: var(--n-s-2);
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
+  /* cut: the walk accepts a cut value from here; the model id gives way first, down to its floor,
+     and only then the egress statement (the same rounding as inside the model's button) */
+  .n-runhead[data-fit~="cut"] .n-signals__item[data-signal="model"] { flex-shrink: 100000; }
+  /* lines: the last resort, the items take two lines */
+  .n-runhead[data-fit~="lines"], .n-runhead[data-fit~="lines"] .n-signals { flex-wrap: wrap; }
+}
+/* Below 1100px no fit step is drawn, with one exception: a looser choice asked in a popover (the
+   fold's, or the marks' below 760px) keeps its popover from 760px until it is answered: the mode is
+   folded there (RunningHead.tsx writes "mode" in data-fit only while such a choice waits), so the
+   confirmation is never moved out from under the owner. Below 760px the head is the marks, whose
+   popover holds it (RunningHead.tsx writes nothing there). The same rules as the "mode" step's. */
+@media (max-width: 1099px) {
+  .n-runhead[data-fit~="mode"] .n-runhead__mode > .n-runhead__key { display: none; }
+  .n-runhead[data-fit~="mode"] .n-runhead__fold { display: inline-flex; }
+  .n-runhead[data-fit~="mode"] .n-runhead__box { display: none; }
+  .n-runhead[data-fit~="mode"] .n-runhead__mode[data-open] > .n-runhead__box {
+    display: block;
+    position: absolute;
+    z-index: 50;
+    top: calc(100% + var(--n-s-2));
+    right: 0;
+    box-sizing: border-box;
+    min-width: 280px;
+    max-width: min(380px, 90vw);
+    padding: calc(var(--n-s-2) + 2px) var(--n-s-3);
+    border-radius: var(--n-r-2);
+    background-color: var(--n-bg);
+    background-image: linear-gradient(var(--n-sheet), var(--n-sheet));
+    box-shadow: var(--n-shadow-2);
+    color: var(--n-text);
+    font-weight: var(--n-w-reg);
+    white-space: normal;
+  }
+  .n-runhead[data-fit~="mode"] .n-runhead__mode[data-open] > .n-runhead__box[data-place="above"] { top: auto; bottom: calc(100% + var(--n-s-2)); }
+  .n-runhead[data-fit~="mode"] .n-runhead__box-title { display: block; }
+  .n-runhead[data-fit~="mode"] .n-runhead__box .n-runhead__seg { margin: var(--n-s-1) 0; }
+  .n-runhead[data-fit~="mode"] .n-runhead__box .n-runhead__said { display: block; margin-top: var(--n-s-1); white-space: normal; }
+  .n-runhead[data-fit~="mode"] .n-runhead__box .n-runhead__said :is(.n-src__why, .n-src__asof) {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+  .n-runhead[data-fit~="mode"] .n-runhead__box .n-runhead__pop {
+    position: static;
+    min-width: 0;
+    max-width: none;
+    margin-top: var(--n-s-2);
+    padding: 0;
+    background: none;
+    box-shadow: none;
+  }
+}
+/* compact (1100–1339px): the signals' labels are read, not drawn; each value keeps its mark */
+@media (min-width: 1100px) and (max-width: 1339px) {
+  .n-runhead--full .n-signals__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+/* below 1680px a source label's reason and time are read, not drawn: its title says them */
+@media (max-width: 1679px) {
+  .n-runhead__said .n-src__why, .n-runhead__said .n-src__asof {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+.n-runhead__said { display: inline-flex; align-items: center; min-width: 0; }
+
+/* the marks sit in other pages' layouts (Glance's foot is a wrapping row): never wider than the
+   room they are given, so a line too long for it shows as a spill the fit can see, not as a head
+   running past the window */
+.n-runhead--marks { box-sizing: border-box; max-width: 100%; min-width: 0; column-gap: var(--n-s-3); padding: 0 var(--n-s-3); }
+.n-runhead--marks .n-signals__item { padding: 0 var(--n-s-2); }
+.n-runhead--marks .n-signals__item:first-child { padding-left: 0; }
+/* the approval mode read (not changed) and the interrupts, after the six signals */
+.n-runhead--marks .n-runhead__controls { min-height: 30px; gap: calc(var(--n-s-1) * 1.5); }
+.n-runhead--marks .n-runhead__sep { margin: 0 var(--n-s-1); }
+.n-runhead__mode[data-readonly] { gap: calc(var(--n-s-1) * 1.5); }
+
+/* below 760px (RunningHead.tsx sets n-runhead--compact there): one line of marks, §4.2 and §5.1.
+   Each signal is its mark, the approval mode its word, the interrupts their count; every button
+   is named "Label: value" and opens its popover, which drops below the whole running head (its
+   containing block), inside the window's margins, wherever the item sits. The approval mode is
+   still changed here, in its popover. Each button is at least 24px wide (WCAG 2.5.8). */
+.n-runhead--compact { flex-wrap: nowrap; column-gap: var(--n-s-2); padding: 0 var(--n-s-2); }
+.n-runhead--compact .n-signals { flex: none; flex-wrap: nowrap; }
+.n-runhead--compact .n-signals__item { gap: 0; padding: 0; }
+.n-runhead--compact .n-runhead__controls { gap: 0; margin-left: auto; }
+.n-runhead--compact .n-runhead__sep { margin: 0 var(--n-s-1); }
+.n-runhead--compact :is(.n-disclosure, .n-runhead__mode, .n-runhead__interrupts) { position: static; }
+.n-runhead--compact .n-runhead__button {
+  box-sizing: border-box;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 28px;
+  padding: 0 calc(var(--n-s-1) + 1px);
+}
+.n-runhead--compact .n-disclosure__panel {
+  top: calc(100% + var(--n-s-1));
+  left: var(--n-s-2);
+  right: var(--n-s-2);
+  min-width: 0;
+  max-width: none;
+}
+/* where below would leave the window (Glance's foot is at its bottom), above the whole head */
+.n-runhead--compact .n-disclosure__panel[data-place="above"] { top: auto; bottom: calc(100% + var(--n-s-1)); }
+/* The main window's approval mode (RunningHead.tsx ApprovalMode, one tree in every form) is here
+   its button, the mode's word or mark (the fold's own button, drawn as a mark), and its box the
+   popover under the whole head, as the signals' are: the same choice, source and friction. */
+.n-runhead--compact .n-runhead__fold { display: inline-flex; }
+.n-runhead--compact .n-runhead__box { display: none; }
+.n-runhead--compact .n-runhead__mode[data-open] > .n-runhead__box {
+  display: block;
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + var(--n-s-1));
+  left: var(--n-s-2);
+  right: var(--n-s-2);
+  box-sizing: border-box;
+  padding: calc(var(--n-s-2) + 2px) var(--n-s-3);
+  border-radius: var(--n-r-2);
+  background-color: var(--n-bg);
+  background-image: linear-gradient(var(--n-sheet), var(--n-sheet));
+  box-shadow: var(--n-shadow-2);
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+}
+.n-runhead--compact .n-runhead__mode[data-open] > .n-runhead__box[data-place="above"] { top: auto; bottom: calc(100% + var(--n-s-1)); }
+.n-runhead--compact .n-runhead__box-title { display: block; }
+.n-runhead--compact :is(.n-disclosure__panel, .n-runhead__box) .n-runhead__seg { margin: var(--n-s-1) 0; }
+.n-runhead--compact :is(.n-disclosure__panel, .n-runhead__box) .n-runhead__said { display: block; margin-top: var(--n-s-1); white-space: normal; }
+/* in the popover the source label says all of it (narrower than 1680px it is otherwise read, not drawn) */
+.n-runhead--compact :is(.n-disclosure__panel, .n-runhead__box) .n-runhead__said :is(.n-src__why, .n-src__asof) {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+}
+/* the looser mode's two steps and a refused write sit in the popover's flow */
+.n-runhead--compact .n-runhead__pop {
+  position: static;
+  min-width: 0;
+  max-width: none;
+  margin-top: var(--n-s-2);
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* ---- notices: ruled lines with a mark and a sentence ------------------------------------ */
+.n-notices { flex: none; display: flex; flex-direction: column; }
+.n-notice {
+  display: flex;
+  align-items: baseline;
+  gap: var(--n-s-2);
+  padding: calc(var(--n-s-1) * 1.5) var(--n-page-x);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+  color: var(--n-text);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+}
+.n-notice > .n-mk { flex: none; align-self: center; }
+.n-notice--alarm { font-weight: var(--n-w-semi); }
+.n-notice__text { flex: 1 1 auto; min-width: 0; }
+.n-notice__text p { margin: 0; }
+.n-notice__lead { font-weight: var(--n-w-semi); }
+.n-notice__list { margin: 2px 0 0; padding: 0; list-style: none; color: var(--n-text-2); font-weight: var(--n-w-reg); font-size: var(--n-fs-meta); line-height: var(--n-lh-meta); }
+.n-notice__list code { font-family: var(--n-font-mono); }
+.n-notice__why { margin-left: calc(var(--n-s-1) * 1.5); color: var(--n-text-3); }
+.n-notice__addr { font-family: var(--n-font-mono); }
+.n-notice__pieces { display: flex; flex-wrap: wrap; column-gap: var(--n-s-3); }
+.n-notice__acts { flex: none; align-self: center; display: inline-flex; gap: calc(var(--n-s-1) * 1.5); }
+
+/* ---- running foot: agents, the machine, channels, the key hint, the version ------------- */
+.n-runfoot {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: calc(var(--n-s-6) + 4px);
+  min-height: 32px;
+  padding: 0 var(--n-page-x);
+  border-top: var(--n-hair) solid var(--n-rule);
+  color: var(--n-text-2);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  white-space: nowrap;
+}
+.n-runfoot__group { display: inline-flex; align-items: center; gap: var(--n-s-4); min-width: 0; min-height: 32px; }
+.n-runfoot__group:not(:first-child) { padding-left: calc(var(--n-s-6) + 4px); border-left: var(--n-hair) solid var(--n-rule); }
+.n-runfoot__item { display: inline-flex; align-items: center; gap: calc(var(--n-s-1) * 1.5); }
+.n-runfoot__lead { color: var(--n-text); font-variant-numeric: lining-nums tabular-nums; }
+.n-runfoot__key { color: var(--n-text-3); }
+.n-runfoot__figure { color: var(--n-text); font-weight: var(--n-w-semi); font-variant-numeric: lining-nums tabular-nums; }
+.n-runfoot__detail { color: var(--n-text-3); }
+.n-runfoot__meter { position: relative; display: inline-block; width: 36px; height: 6px; background: var(--n-bg-3); }
+.n-runfoot__meter > i { position: absolute; inset: 0 auto 0 0; min-width: 1px; background: var(--n-text-2); }
+.n-runfoot__ver { margin-left: auto; color: var(--n-text-3); }
+
+/* ---- the area page: contents column, the page head, the body ----------------------------- */
+.n-areapage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: var(--n-col-gap);
+  padding: var(--n-s-5) var(--n-page-x) 0;
+}
+.n-areapage__contents { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
+/* the column fills its cell, so its own head stays put and its list scrolls */
+.n-areapage__contents > * { flex: 1 1 auto; }
+/* The page's column is not a card: it opens with the look's top rule (--n-panel-top) and draws no fill,
+   no side or bottom border, no radius and no shadow, in every look. The page's title and head stand on the
+   page's own ground, as Home's do, and the registers under them are the cards in a look that draws its
+   panels as cards, their outer edges in line with the title. Drawn with the panel treatment, it framed a
+   card around the registers' cards in every card look (Atlas, Console, Threshold, Workbench, Classic): the
+   two frames lay on one edge and the title sat on the outer one (0px from it at every width). In the
+   looks that draw with rules (Ledger, Briefing, Presence) the panel treatment was already these values
+   (no fill, a 0 border, no radius, no shadow), so nothing moves there. */
+.n-areapage__main {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  border: 0 solid transparent;
+  border-top: var(--n-panel-top);
+  border-radius: 0;
+  box-shadow: none;
+}
+.n-areapage__main::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--n-col-gap) / -2);
+  width: 1px;
+  background: var(--n-rule);
+}
+.n-areapage__head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--n-s-3) + 2px);
+  min-height: 58px;
+  padding-top: var(--n-s-1);
+  border-bottom: var(--n-hair) solid var(--n-rule-2);
+}
+.n-areapage__head::before { content: ""; width: 0; height: 36px; margin-right: calc(-1 * (var(--n-s-3) + 2px)); }
+.n-areapage__title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--n-text);
+  font-family: var(--n-font-title);
+  font-weight: var(--n-w-bold);
+  font-size: var(--n-fs-title);
+  line-height: var(--n-lh-title);
+  letter-spacing: var(--n-title-track);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.n-areapage__title:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-areapage__meta { display: inline-flex; align-items: center; gap: var(--n-s-3); min-width: 0; margin-left: auto; color: var(--n-text-2); font-size: var(--n-fs-label); line-height: var(--n-lh-label); }
+.n-areapage__tools { display: inline-flex; align-items: center; min-width: 0; }
+/* position: the scrolling body is the containing block of what is positioned inside it (a visually
+   hidden word far down a page is clipped with the scroll, not drawn past the page's foot) */
+.n-areapage__body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; padding: var(--n-s-3) 0 var(--n-s-4); }
+/* the body focused as a whole (it overflows with no control in it, AreaPage.tsx): the ring is drawn
+   inside it, where its own scroll clip cannot cut it */
+.n-areapage__body[data-scroll-focus]:focus-visible { outline: 2px solid var(--n-focus); outline-offset: -2px; }
+.n-areapage__mode, .n-areapage__panel { flex: none; min-width: 0; }
+.n-areapage__empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: calc(var(--n-s-2) + 2px);
+  max-width: var(--n-measure);
+  padding: var(--n-s-4) 0;
+  color: var(--n-text);
+  font-family: var(--n-font-text);
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+}
+.n-areapage__empty > .n-mk { flex: none; align-self: center; }
+.n-areapage__slot { margin: 0; color: var(--n-text-3); font-size: var(--n-fs-label); line-height: var(--n-lh-label); }
+.n-areapage__empty-text { flex: 1 1 320px; margin: 0; text-wrap: pretty; }
+
+/* ---- widths ---------------------------------------------------------------------------------- */
+@media (min-width: 2200px) {
+  .n-masthead { min-height: 60px; }
+  .n-masthead__mark { width: 30px; height: 30px; }
+  .n-masthead__find { height: 34px; }
+  .n-runhead, .n-signals__item, .n-runhead__controls { min-height: 36px; }
+  .n-runfoot, .n-runfoot__group { min-height: 34px; }
+  .n-areapage { grid-template-columns: 264px minmax(0, 1fr); padding-top: var(--n-s-6); }
+  .n-areapage__head { min-height: 66px; }
+  .n-areapage__head::before { height: 42px; }
+}
+/* 1680–2199px: long labels, so the items sit closer than at 2200px */
+@media (min-width: 1680px) and (max-width: 2199px) {
+  .n-signals__item { padding: 0 calc(var(--n-s-3) + 2px); }
+}
+@media (max-width: 1679px) {
+  .n-masthead { column-gap: var(--n-s-4); }
+  .n-masthead__areas { margin-left: var(--n-s-1); }
+  .n-signals__item { padding: 0 calc(var(--n-s-2) + 2px); }
+  .n-runfoot { column-gap: calc(var(--n-s-5) + 2px); }
+  /* the machine's figures stay, their meters go: below 1680px the foot carries the channels too */
+  .n-runfoot__meter { display: none; }
+  .n-runfoot__group { gap: calc(var(--n-s-3) + 2px); }
+  .n-runfoot__group:not(:first-child) { padding-left: calc(var(--n-s-5) + 2px); }
+  .n-areapage { grid-template-columns: 200px minmax(0, 1fr); }
+}
+@media (max-width: 1339px) {
+  .n-masthead { column-gap: var(--n-s-3); min-height: 50px; }
+  .n-areas__link { padding: 0 var(--n-s-2); }
+  .n-areas__link[aria-current="page"]::after { left: var(--n-s-2); right: var(--n-s-2); }
+  .n-runhead { column-gap: var(--n-s-3); min-height: 32px; }
+  .n-signals__item { gap: calc(var(--n-s-1) * 1.5); min-height: 32px; padding: 0 calc(var(--n-s-2) + 1px); }
+  .n-runhead__controls { min-height: 32px; }
+  .n-runhead__sep { margin: 0 calc(var(--n-s-1) * 1.5); }
+  .n-runfoot, .n-runfoot__group { min-height: 30px; }
+  .n-areapage { grid-template-columns: 176px minmax(0, 1fr); padding-top: var(--n-s-3); }
+  .n-areapage__head { min-height: 52px; }
+  .n-areapage__head::before { height: 34px; }
+}
+/* one column: the masthead takes two rows (the areas below), the page scrolls as a whole */
+@media (max-width: 1099px) {
+  .n-masthead { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: 50px auto; }
+  .n-masthead__brand { grid-column: 1; grid-row: 1; }
+  .n-masthead__find { grid-column: 2; grid-row: 1; }
+  .n-masthead__tools { grid-column: 3; grid-row: 1; }
+  .n-masthead__areas { grid-column: 1 / -1; grid-row: 2; margin: 0 calc(-1 * var(--n-page-x)); padding: 0 var(--n-page-x); min-height: 40px; overflow-x: auto; border-top: var(--n-hair) solid var(--n-rule); }
+  /* the row scrolls sideways here and would clip an outer ring: the ring goes inside the link */
+  .n-masthead__areas .n-areas__link:focus-visible { outline-offset: -2px; }
+  .n-frame__page { overflow-y: auto; }
+  .n-areapage { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; row-gap: var(--n-s-4); padding-bottom: var(--n-s-6); }
+  .n-areapage__contents { max-height: 30vh; }
+  .n-areapage__main::before { display: none; }
+  .n-areapage__body { overflow: visible; }
+}
+/* the narrowest: the areas move into the drawer, the masthead wraps rather than overflows */
+@media (max-width: 759px) {
+  .n-masthead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--n-s-2); min-height: 0; padding-block: var(--n-s-2); }
+  .n-masthead__name { font-size: var(--n-fs-prose); line-height: var(--n-lh-prose); }
+  .n-masthead__find { flex: 1 1 48px; width: auto; }
+  .n-masthead__tools { flex: 1 1 auto; flex-wrap: wrap; }
+  .n-signals__item { padding: 0 var(--n-s-2); }
+  /* the foot folds onto lines rather than run off the window: each group wraps its items, and no
+     rule stands before a group (one that wraps would stand at the start of a line) */
+  .n-runfoot { column-gap: var(--n-s-4); row-gap: 0; padding-block: 2px; }
+  .n-runfoot__group { flex-wrap: wrap; column-gap: var(--n-s-3); row-gap: 0; min-height: 28px; }
+  .n-runfoot__group:not(:first-child) { padding-left: 0; border-left: 0; }
+  /* an unknown machine reading is its label and its mark: its words are read, and in its title */
+  .n-runfoot__item[data-machine][data-state="unknown"] > .n-runfoot__words {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* a page with no contents column (All pages) */
+.n-areapage.n-areapage--wide { grid-template-columns: minmax(0, 1fr); }
+.n-areapage--wide .n-areapage__main::before { display: none; }

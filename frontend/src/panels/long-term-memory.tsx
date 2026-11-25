@@ -24,6 +24,7 @@
 import React, { useState } from 'react';
 import { ConfirmAction, RISK_TIER } from '../confirm';
 import { Card, Row, State, Tag, actA, arr, asLive, inpS, mono, refusalReason, useApi } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export const CORE_PATH = '/api/memory/core';
 export const UNDO_PATH = '/api/memory/core/undo';
@@ -81,10 +82,10 @@ const n = (v: any): string => num(v).toLocaleString('en-US');
 function Facts({ title, facts }: { title: string; facts: string[] }) {
   return (
     <div style={{ marginBottom: 8 }}>
-      <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em' }}>{title} · {facts.length}</div>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{title} · {facts.length}</div>
       {facts.length === 0
-        ? <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>nothing saved</div>
-        : facts.map((fact, i) => <Row key={i}><span style={{ fontSize: 12 }}>{fact}</span></Row>)}
+        ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>nothing saved</div>
+        : facts.map((fact, i) => <Row key={i}><span style={{ fontSize: 'var(--n-fs-label)' }}>{fact}</span></Row>)}
     </div>
   );
 }
@@ -97,8 +98,8 @@ function Usage({ ring, store }: { ring: string; store: any }) {
   const pct = budget > 0 ? Math.min(100, Math.round((chars / budget) * 100)) : 0;
   return (
     <div style={{ marginBottom: 6 }}>
-      <div style={{ ...mono, fontSize: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ color: 'var(--ink-2)', letterSpacing: '.08em' }}>{RING_TITLES[ring]}</span>
+      <div style={{ ...mono, fontSize: 'var(--n-fs-meta)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ ...LABEL, color: 'var(--ink-2)' }}>{RING_TITLES[ring]}</span>
         <span aria-label={`${RING_LABELS[ring]} size`}>
           {n(chars)}/{n(budget)} chars · {n(store?.entries)}/{n(store?.cap)} entries · {n(store?.bytes)} bytes on disk
         </span>
@@ -107,12 +108,12 @@ function Usage({ ring, store }: { ring: string; store: any }) {
         <div style={{ width: `${pct}%`, height: '100%', borderRadius: 2, background: over ? 'var(--amber)' : 'var(--accent-light)' }} />
       </div>
       {num(store?.omitted) > 0 && (
-        <div style={{ fontSize: 10, color: 'var(--amber)' }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
           {n(store.omitted)} older {num(store.omitted) === 1 ? 'entry' : 'entries'} left out of the prompt: over the budget
         </div>
       )}
       {num(store?.blocked) > 0 && (
-        <div style={{ fontSize: 10, color: 'var(--amber)' }}>{n(store.blocked)} blocked as prompt-injection</div>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>{n(store.blocked)} blocked as prompt-injection</div>
       )}
     </div>
   );
@@ -196,13 +197,13 @@ export function LongTermMemoryPanel() {
       <State e={e} loading={loading} n={d ? 1 : 0} />
       {s && (
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 11, marginBottom: 4 }}>
-            <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em' }}>CURATED MEMORY</span>{' '}
+          <div style={{ fontSize: 'var(--n-fs-meta)', marginBottom: 4 }}>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>CURATED MEMORY</span>{' '}
             <span>{memoryState(s)}</span>
           </div>
           {s.available !== false && ['memory', 'user'].map((ring) => stores[ring]
             ? <Usage key={ring} ring={ring} store={stores[ring]} /> : null)}
-          {s.drift && <div style={{ fontSize: 10, color: 'var(--amber)' }}>{String(s.drift)}</div>}
+          {s.drift && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>{String(s.drift)}</div>}
           {s.available !== false && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 4 }}>
               <ConfirmAction tier={RISK_TIER.REVERSIBLE}
@@ -228,7 +229,7 @@ export function LongTermMemoryPanel() {
         </div>
       )}
       {d && !enabled && (
-        <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           Memory is switched off (cognition.enabled and cognition.memory_enabled).
         </div>
       )}
@@ -236,8 +237,8 @@ export function LongTermMemoryPanel() {
         <>
           <Facts title="AGENT NOTES" facts={arr(d, 'memory')} />
           <Facts title="USER PROFILE" facts={arr(d, 'user')} />
-          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em', marginTop: 6 }}>RECENT WRITES</div>
-          {undoable.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>none to undo</div>}
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>RECENT WRITES</div>
+          {undoable.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>none to undo</div>}
           {undoable.map((w: any) => (
             <Row key={w.ref}>
               <span style={{ ...mono }}>{w.ref}</span>
@@ -249,21 +250,21 @@ export function LongTermMemoryPanel() {
         </>
       )}
       {held.e && (
-        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>
           held memory writes could not be read ({String(held.e)}); nothing here says none are waiting
         </div>
       )}
       {h && (
         <div style={{ marginTop: 8 }}>
-          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em' }}>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             HELD MEMORY WRITES · {pending.length}
           </div>
           {heldStats(h.stats) && (
-            <div aria-label="held writes status" style={{ fontSize: 10, color: num(h.stats?.dropped_at_cap) > 0 ? 'var(--amber)' : 'var(--ink-2)' }}>
+            <div aria-label="held writes status" style={{ fontSize: 'var(--n-fs-meta)', color: num(h.stats?.dropped_at_cap) > 0 ? 'var(--amber)' : 'var(--ink-2)' }}>
               {heldStats(h.stats)}
             </div>
           )}
-          <div style={{ fontSize: 11, margin: '2px 0 4px' }}>
+          <div style={{ fontSize: 'var(--n-fs-meta)', margin: '2px 0 4px' }}>
             {h.write_approval === true
               ? 'write approval is on: the post-turn review and /refine ask before they write.'
               : 'write approval is off: the post-turn review and /refine write on their own, except from a conversation that read untrusted content or was not watched from its start.'}
@@ -275,26 +276,26 @@ export function LongTermMemoryPanel() {
             prompt={h.write_approval === true ? 'let the post-turn review write memory on its own again?'
               : 'hold the post-turn review\'s and /refine\'s memory writes for your approval?'}
             onConfirm={() => gate(h.write_approval !== true)} />
-          {h.available === false && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>not available on this hub</div>}
-          {h.available !== false && pending.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>none waiting</div>}
+          {h.available === false && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>not available on this hub</div>}
+          {h.available !== false && pending.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>none waiting</div>}
           {pending.map((p: any) => (
             <div key={p.id} style={{ borderTop: '1px solid var(--panel-line)', marginTop: 6, paddingTop: 4 }}>
-              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+              <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
                 <span style={{ ...mono }}>{p.id}</span>{' · '}
                 {p.origin === 'refine' ? '/refine' : 'background review'}{' · '}
                 {HELD_REASONS[String(p.reason)] || String(p.reason || 'held')}
                 {p.status === 'applying' ? ' · approved, not written yet (retried)' : ''}
               </div>
               {p.tainted === true && (
-                <div style={{ fontSize: 10, color: 'var(--amber)' }}>
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
                   from a conversation that read untrusted content (a message from outside, a guest, web text, an attached file) or was not watched from its start: read each fact as a claim, not as yours
                 </div>
               )}
               {arr(p, 'operations').map((op: any, i: number) => (
                 <Row key={i}>
                   <Tag>{RING_LABELS[String(op.target)] || String(op.target)}</Tag>
-                  <span style={{ fontSize: 12 }}>{String(op.text)}</span>
-                  {op.outcome && <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{OUTCOMES[String(op.outcome)] || String(op.outcome)}</span>}
+                  <span style={{ fontSize: 'var(--n-fs-label)' }}>{String(op.text)}</span>
+                  {op.outcome && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{OUTCOMES[String(op.outcome)] || String(op.outcome)}</span>}
                 </Row>
               ))}
               {p.status === 'pending' && (
@@ -309,7 +310,7 @@ export function LongTermMemoryPanel() {
           ))}
         </div>
       )}
-      {msg && <div role="status" style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      {msg && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
     </Card>
   );
 }

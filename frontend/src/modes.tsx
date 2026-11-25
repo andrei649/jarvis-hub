@@ -1,12 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { V2, Conversation, InputBar } from './ui';
-import { Icon, ICONS, Glyph, statusClass } from './ui';
-import { getKillSwitch, setKillSwitch, getAgentSoul, getAgentHistory, memorySearch, decidePayment, getAuditVerify } from './api/actions';
+import { V2 } from './ui';
+import { Glyph, statusClass } from './ui';
+import { getAgentSoul, getAgentHistory, memorySearch } from './api/actions';
 import { MemoryNeighborhood } from './panels/memory-neighborhood';
 import { SavedFacts } from './panels/saved-facts';
 import { SoulEditor } from './soul-edit';
 import { AgentProfileControls, NewAgentDialog, RetiredAgents } from './agent-roster';
-/* HUD v2 · MODES — Agents, Trust, Memory */
+import { LABEL } from './theme/type';
+import { PageSection } from './pages/PageSection';
+import { fmt } from './frame/strings';
+import { talkStrings } from './home/talk/strings';
+/* HUD v2 · MODES — Agents, Memory. (Trust, TrustMode, was deleted at the Phase B cleanup: /v2/trust
+   is pages/TrustOverview.tsx, with the typed resume and the graded payment decisions.) */
 
 // Bolt Optimization: Precompute O(1) agent map for Dossier lookups
 const V2_AGENTS_MAP = new Map(V2.AGENTS.map((a: any) => [a.id, a]));
@@ -37,14 +42,15 @@ function AgentsMode({ agents, onOpen, t, onChanged = undefined }) {
   }, [agents]);
 
   return (
-    <div className="panel scroll" style={{flex:1}}>
-      <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Icon d={ICONS.agents} size={14}/><span className="ttl">{t.roster}</span><span className="st">{agents.length} agents · {liveCount} live</span>
-        {!creating && <button className="tool-btn" onClick={()=>{ setCreating(true); setCreatedNote(''); }}>+ New agent</button>}</div>
-      {creating && <div style={{padding:'0 14px'}}><NewAgentDialog
-        onCreated={(a)=>{ setCreating(false); setCreatedNote(`created ${a.name || a.id} · kept across restarts`); setRosterTick((n)=>n+1); onChanged?.(); }}
-        onCancel={()=>setCreating(false)}/></div>}
-      {createdNote && <div role="status" style={{padding:'4px 14px',fontSize:10,color:'var(--green)'}}>{createdNote}</div>}
+    <PageSection title={t.roster} meta={<>{agents.length} agents · {liveCount} live</>}
+      headExtra={!creating && <button className="tool-btn" onClick={()=>{ setCreating(true); setCreatedNote(''); }}>+ New agent</button>}
+      lead={<>
+        {creating && <div style={{padding:'0 14px'}}><NewAgentDialog
+          onCreated={(a)=>{ setCreating(false); setCreatedNote(`created ${a.name || a.id} · kept across restarts`); setRosterTick((n)=>n+1); onChanged?.(); }}
+          onCancel={()=>setCreating(false)}/></div>}
+        {createdNote && <div role="status" style={{padding:'4px 14px',fontSize:'var(--n-fs-meta)',color:'var(--green)'}}>{createdNote}</div>}
+      </>}
+      bodyProps={{ tabIndex: 0, role: 'group', 'aria-label': t.roster }}>
       {/* `overflow-y:auto` with no focusable child is WCAG 2.1.1: the agent cards are
           `<div className="acard" onClick=…>`, so there is nothing to tab to and the roster
           scrolls past the fold unreachable by keyboard (measured 774px of content in a
@@ -58,7 +64,8 @@ function AgentsMode({ agents, onOpen, t, onChanged = undefined }) {
           the minimal role that PERMITS a name (unlike `region` it adds no landmark), and it is the
           same shape as the `.convo` fix one commit earlier, which paired `role="log"` with its
           label for exactly this reason. */}
-      <div className="panel-body" tabIndex={0} role="group" aria-label={t.roster}>
+      {/* (the body's tabIndex, role and name are the PageSection's bodyProps above) */}
+      <>
         {TIERS.map(tier=>{
           const list = agentsByTier.get(tier.id) || [];
           if(!list.length) return null;
@@ -84,12 +91,16 @@ function AgentsMode({ agents, onOpen, t, onChanged = undefined }) {
           );
         })}
         <RetiredAgents refresh={rosterTick} onRestored={()=>{ setRosterTick((n)=>n+1); onChanged?.(); }}/>
-      </div>
-    </div>
+      </>
+    </PageSection>
   );
 }
 
-function Dossier({ id, onClose, onOpen, agents = undefined, onChanged = undefined }) {
+/* `onWriteTo` (PHASE_B_PLAN.md §2.1, §6): App passes it only for an agent it takes as the recipient.
+   "Write to <Agent>" makes that agent the one the owner writes to and closes the Dossier; opening
+   the Dossier itself never changes the recipient. Its words are the conversation's own
+   (home/talk/strings.ts `writeTo`), in the owner's language (`lang`). */
+function Dossier({ id, onClose, onOpen, agents = undefined, onChanged = undefined, onWriteTo = undefined, lang = 'en' }) {
   // Soul + run-history are LIVE (as v1 does): GET /api/agents/{id}/soul reads the
   // on-disk SOUL.md, /api/agents/{id}/history rolls up recent runs. The seed dossier
   // (archetype/personality/runtime) is the static fallback for fields with no single
@@ -126,7 +137,9 @@ function Dossier({ id, onClose, onOpen, agents = undefined, onChanged = undefine
         <div className="dossier-head">
           <span className="big-glyph"><Glyph id={id} size={46}/></span>
           <div><div className="nm">{renamed || a.name}</div><div className="ar">{d.archetype || a.role} · {a.tier}</div></div>
-          <button className="close" onClick={onClose} aria-label="Close dossier">✕</button>
+          {onWriteTo && <button type="button" className="tool-btn" data-dossier="write-to" style={{ marginLeft: 'auto' }}
+            onClick={() => { onWriteTo(id); onClose(); }}>{fmt(talkStrings(lang).writeTo, { agent: renamed || a.name })}</button>}
+          <button className="close" onClick={onClose} aria-label="Close dossier" style={onWriteTo ? { marginLeft: 0 } : undefined}>✕</button>
         </div>
         <div className="dossier-body">
           {/* H202: rename for good, or retire (nothing deleted), beside the persona editor. */}
@@ -146,8 +159,8 @@ function Dossier({ id, onClose, onOpen, agents = undefined, onChanged = undefine
           <div className="dsec"><div className="dl">Runtime</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 16px'}}>
               {[['Model',d.model||a.model],['Channel',d.channel],['Heartbeat',d.heartbeat],['Policy',d.policy||a.policy],['Skills',d.skills],['Memory facts',d.memory_facts]].map(([k,v])=>(
-                <div key={k} style={{fontFamily:'var(--font-mono)',fontSize:12}}>
-                  <span style={{color:'var(--ink-2)',fontSize:9,letterSpacing:'.1em',textTransform:'uppercase',display:'block'}}>{k}</span>
+                <div key={k} style={{fontFamily:'var(--font-mono)',fontSize:'var(--n-fs-label)'}}>
+                  <span style={{...LABEL, color:'var(--ink-2)',fontSize:'var(--n-fs-meta)',display:'block'}}>{k}</span>
                   <span style={{color:'var(--accent-light)'}}>{v != null && v !== '' ? v : '—'}</span>
                 </div>
               ))}
@@ -158,7 +171,7 @@ function Dossier({ id, onClose, onOpen, agents = undefined, onChanged = undefine
           {runs != null && runs.length > 0 && (
             <div className="dsec"><div className="dl">Recent runs · {runs.length}</div>
               {runs.slice(0,5).map((r,i)=>(
-                <div key={i} style={{display:'flex',justifyContent:'space-between',fontFamily:'var(--font-mono)',fontSize:11,color:'var(--ink-2)',padding:'3px 0',borderBottom:'1px solid var(--panel-line)'}}>
+                <div key={i} style={{display:'flex',justifyContent:'space-between',fontFamily:'var(--font-mono)',fontSize:'var(--n-fs-meta)',color:'var(--ink-2)',padding:'3px 0',borderBottom:'1px solid var(--panel-line)'}}>
                   <span>{r.kind || r.title || r.action || 'run'}</span>
                   <span style={{color:(r.ok===false||r.status==='error')?'var(--red)':'var(--green)'}}>{r.status || (r.ok===false?'fail':'ok')}{r.latency_ms!=null?' · '+r.latency_ms+'ms':''}</span>
                 </div>
@@ -172,160 +185,6 @@ function Dossier({ id, onClose, onOpen, agents = undefined, onChanged = undefine
         </div>
       </div>
     </>
-  );
-}
-
-/* ============ TRUST ============ */
-function TrustMode({ t, localPct = null }) {
-  // Kill-switch is a REAL operator control: GET /api/security/kill-switch reflects
-  // live state, POST engages/disengages (admin-guarded). Re-read the aggregate
-  // after an action so a remaining scoped halt stays visible.
-  const [killed,setKilled]=useState(false); // global switch only
-  const [scopedHaltCount,setScopedHaltCount]=useState(0);
-  const [killKnown,setKillKnown]=useState(false);
-  const [busy,setBusy]=useState(false);
-  const [killErr,setKillErr]=useState(false);
-  const [,payTick]=useState(0);
-  // Live tamper-evidence: GET /api/security/audit/verify actually re-checks the
-  // Merkle chain, so the "verified" badge reflects a real result instead of a
-  // static claim. {valid, first_invalid_id, entries} — null while loading.
-  const [audit,setAudit]=useState(null);
-  const [auditErr,setAuditErr]=useState(false);
-  useEffect(()=>{
-    let alive=true;
-    getAuditVerify().then(r=>{ if(alive&&r) setAudit(r); }).catch(()=>{ if(alive) setAuditErr(true); });
-    return ()=>{ alive=false; };
-  },[]);
-  const D = V2;
-  // Payment lifecycle (H16.3): act on the broker, then reflect its returned state in
-  // the shared ledger — live.ts re-syncs from /api/payments on its next poll.
-  const payAct = (p, action) => {
-    if (!p.id) return;
-    decidePayment(p.id, action)
-      .then((r: any) => { p.state = (r && (r.state || r.status)) || (action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'cleared'); payTick((n) => n + 1); })
-      .catch(() => {});
-  };
-  useEffect(() => {
-    let alive = true;
-    getKillSwitch().then((s) => { if (alive) { setKilled(s.global); setScopedHaltCount(!s.global && s.any_halted ? s.halted_count : 0); setKillKnown(true); } })
-      .catch(() => { if (alive) setKillErr(true); });
-    return () => { alive = false; };
-  }, []);
-  const toggleKill = () => {
-    if (busy) return;
-    const next = !(killKnown && !killErr && killed); // unknown always offers global engage
-    setBusy(true); setKilled(next); setKillKnown(false);
-    setKillSwitch(next)
-      .then(() => getKillSwitch().then(
-        (s) => { setKilled(s.global); setScopedHaltCount(!s.global && s.any_halted ? s.halted_count : 0); setKillKnown(true); setKillErr(false); },
-        () => { setKillKnown(false); setKillErr(true); }, // POST succeeded; verification is unavailable
-      ))
-      .catch(() => { setKillKnown(false); setKillErr(true); }) // POST outcome is unknown
-      .finally(() => setBusy(false));
-  };
-  const globalHalted = killKnown && !killErr && killed;
-  return (
-    <div className="panel scroll" style={{flex:1}}>
-      <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Icon d={ICONS.trust} size={14}/><span className="ttl">{t.trust} Center</span>
-        <span className="st" style={audit&&!audit.valid?{color:'var(--red)'}:undefined}>{
-          auditErr ? 'audit unavailable'
-          : audit==null ? 'verifying…'
-          : audit.valid ? `Merkle-verified · ${audit.entries} entries`
-          : `chain broken @ #${audit.first_invalid_id}`
-        }</span></div>
-      <div className="panel-body">
-        <div className="trust-grid">
-          {/* left: audit chain */}
-          <div>
-            <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:10}}>{t.auditTitle}</div>
-            {/* Live chain-verification result (real GET /api/security/audit/verify),
-                replacing the static badge. Falls back to the demo chain visual below. */}
-            <div className="verified-row" style={audit&&!audit.valid?{color:'var(--red)'}:undefined}>
-              <Icon d={ICONS.trust} size={13}/> {
-                auditErr ? t.verified
-                : audit==null ? 'verifying chain…'
-                : audit.valid ? `chain intact · ${audit.entries} sealed entries`
-                : `TAMPER DETECTED · first bad row #${audit.first_invalid_id}`
-              }</div>
-            {D.AUDIT_CHAIN.map((b,i)=>(
-              <div className="audit-block" key={i}>
-                <div className="anchor"><div className="hash-dot"></div><div className="vline"></div></div>
-                <div className="audit-card">
-                  <div className="at"><span className="verb">{b.verb}</span><span>{b.t}</span><span className="ok">✓ sealed</span></div>
-                  <div className="ax">{b.x}</div>
-                  <div className="ahash"><b>sha256:</b>{b.hash}…&nbsp;&nbsp;<span style={{color:'var(--ink-4)'}}>prev:{b.prev}</span></div>
-                </div>
-              </div>
-            ))}
-          </div>
-          {/* right: kill + locality + caps + payments */}
-          <div className="col">
-            <div className="killbox panel" style={{borderRadius:'var(--radius)',background:'var(--surface-2)'}}>
-              <button className={'killbtn'+(globalHalted?' engaged':'')} onClick={toggleKill} disabled={busy} title={busy?'updating…':globalHalted?'disengage kill-switch':'halt all agents'}>
-                <Icon d={ICONS.shield} size={26}/>
-                <span className="kt">{globalHalted?'HALTED':'STOP'}</span>
-                <span className="ks">{t.killSub}</span>
-              </button>
-              <div className={'kill-status'+(killErr || !killKnown ? '' : globalHalted || scopedHaltCount ? ' engaged' : ' armed')}>
-                {killErr || !killKnown ? 'kill-switch status unknown'
-                  : globalHalted ? t.engaged
-                  : scopedHaltCount ? `${scopedHaltCount} scoped halt${scopedHaltCount === 1 ? '' : 's'} active · global switch off`
-                  : t.armed}
-              </div>
-            </div>
-
-            {/* Locality is shown ONLY when a real source backs it (strict-local proof
-                → 100%, or DEMO sample). Unknown → the whole block is hidden, never a
-                fabricated split. localPct comes from /api/trust/status via app.tsx. */}
-            {localPct != null && (
-            <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
-              <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:10}}>{t.locality}</div>
-              <div className="loc-ring-wrap">
-                <div className="loc-pct">{localPct}%</div>
-                <div className="loc-legend">
-                  <div className="ll"><span className="sw" style={{background:'var(--green)'}}></span> on-device · {localPct}%</div>
-                  <div className="ll"><span className="sw" style={{background:'var(--violet)'}}></span> cloud · {100-localPct}%</div>
-                </div>
-              </div>
-              <div className="loc-bar"><div className="seg local" style={{width:localPct+'%'}}></div><div className="seg cloud" style={{width:(100-localPct)+'%'}}></div></div>
-            </div>
-            )}
-
-            <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
-              <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:6}}>{t.capsTitle}</div>
-              {D.CAPABILITIES.map((c,i)=>(
-                <div className="cap-row" key={i}><div><div className="cn">{c.cn}</div><div className="cd">{c.cd}</div></div><span className={'cap-tag '+c.tag}>{c.tagLabel}</span></div>
-              ))}
-            </div>
-
-            <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
-              <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:6}}>{t.payTitle}</div>
-              {D.PAYMENTS.map((p: { pcap: string; desc: string; amt: string; state: string; id?: string }, i)=>(
-                <div className="pay-row" key={i}><span className="pcap">{p.pcap}</span><span style={{color:'var(--ink-2)'}}>{p.desc}</span>
-                  <span style={{textAlign:'right',color:p.state==='pending'?'var(--amber)':p.state==='cleared'?'var(--green)':'var(--ink-2)'}}>{p.amt}</span>
-                  {/* Lifecycle controls only when the row carries a real broker id (live data). */}
-                  {p.id && p.state==='pending' && (
-                    <span style={{display:'flex',gap:4,marginLeft:6}}>
-                      <button className="tool-btn" title="approve payment" onClick={()=>payAct(p,'approve')}>✓</button>
-                      <button className="tool-btn" title="reject payment" onClick={()=>payAct(p,'reject')}>✕</button>
-                    </span>
-                  )}
-                  {p.id && p.state==='approved' && (
-                    <button className="tool-btn" style={{marginLeft:6}} title="settle approved payment" onClick={()=>payAct(p,'settle')}>settle</button>
-                  )}
-                </div>
-              ))}
-              {/* Pending count is computed from the REAL ledger (PAYMENTS ← /api/payments),
-                  not a hardcoded "€4,200 sweep" claim. Hidden when nothing is pending. */}
-              {D.PAYMENTS.filter(p=>p.state==='pending').length>0 && (
-                <div className="pay-pending"><span style={{color:'var(--amber)',fontFamily:'var(--font-mono)',fontSize:11}}>⏳ {D.PAYMENTS.filter(p=>p.state==='pending').length} payment{D.PAYMENTS.filter(p=>p.state==='pending').length===1?'':'s'} awaiting your approval</span></div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -366,10 +225,8 @@ function MemoryMode({ t, demo = false }) {
   const visNodes = D.KG.nodes.filter(n=>n.born<=born);
   const visIds = new Set(visNodes.map(n=>n.id));
   return (
-    <div className="panel scroll" style={{flex:1}}>
-      <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Icon d={ICONS.memory} size={14}/><span className="ttl">{t.memTitle}</span><span className="st">{demo ? 'DEMO · sample memory' : 'stored memory'}</span></div>
-      <div className="panel-body">
+    <PageSection title={t.memTitle} meta={demo ? 'DEMO · sample memory' : 'stored memory'}>
+      <>
         {!demo && <SavedFacts />}
         <div className="mem-grid" style={{marginBottom:'var(--gap)'}}>
           {[[M.sessions,'sessions'],[M.vectors,'vectors'],[M.entities,'entities'],[M.relations,'relations']].map(([v,l],i)=>(
@@ -378,15 +235,15 @@ function MemoryMode({ t, demo = false }) {
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'var(--gap)',alignItems:'start'}}>
           <div style={{border:'1px solid var(--panel-line)',borderRadius:'var(--radius)',padding:14,background:'var(--surface-2)'}}>
-            <div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',marginBottom:8}}>{t.recall}</div>
-            {!demo && <div role="status" style={{fontSize:12,color:'var(--ink-2)'}}>{recallState}</div>}
+            <div className="dl" style={{...LABEL,fontSize:'var(--n-fs-meta)',color:'var(--ink-2)',marginBottom:8}}>{t.recall}</div>
+            {!demo && <div role="status" style={{fontSize:'var(--n-fs-label)',color:'var(--ink-2)'}}>{recallState}</div>}
             {RECALLS.map((r,i)=>(
               <div className="recall-row" key={i}><div><div className="rx">{r.rx}</div><div className="rsrc">{r.rsrc}</div></div><span className="recall-score">{r.score}</span></div>
             ))}
-            {demo && <><div className="dl" style={{fontFamily:'var(--font-mono)',fontSize:9.5,letterSpacing:'.16em',textTransform:'uppercase',color:'var(--ink-2)',margin:'16px 0 8px'}}>{t.spaces}</div>
+            {demo && <><div className="dl" style={{...LABEL,fontSize:'var(--n-fs-meta)',color:'var(--ink-2)',margin:'16px 0 8px'}}>{t.spaces}</div>
             {D.TOPICS.map((tp,i)=>(
               <div key={i} style={{marginBottom:8}}>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--ink-2)'}}><span>{tp.t}</span><span style={{fontFamily:'var(--font-mono)',color:'var(--ink-2)'}}>{100-tp.d}% fresh</span></div>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:'var(--n-fs-meta)',color:'var(--ink-2)'}}><span>{tp.t}</span><span style={{fontFamily:'var(--font-mono)',color:'var(--ink-2)'}}>{100-tp.d}% fresh</span></div>
                 <div className="decay-bar"><i style={{width:(100-tp.d)+'%'}}></i></div>
               </div>
             ))}</>}
@@ -426,13 +283,13 @@ function MemoryMode({ t, demo = false }) {
                      aria-label={t.timeTravel} onChange={e=>setTi(+e.target.value)}/>
               <span className="asof">{marks[ti]}</span>
             </div>
-            <div style={{fontFamily:'var(--font-mono)',fontSize:9.5,color:'var(--ink-4)',marginTop:8,textAlign:'center'}}>bitemporal · drag to travel through what Nerva knew</div>
+            <div style={{fontSize:'var(--n-fs-meta)',color:'var(--ink-2)',marginTop:8,textAlign:'center'}}>bitemporal · drag to travel through what Nerva knew</div>
           </div>);
           })() : <MemoryNeighborhood />}
         </div>
-      </div>
-    </div>
+      </>
+    </PageSection>
   );
 }
 
-export { AgentsMode, Dossier, TrustMode, MemoryMode };
+export { AgentsMode, Dossier, MemoryMode };

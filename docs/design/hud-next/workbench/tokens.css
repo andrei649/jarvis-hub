@@ -1,0 +1,153 @@
+/*
+ * Nerva Workbench — tokens.css
+ *
+ * One token set, two grounds. Every colour token is a light-dark() pair that resolves through
+ * `color-scheme`, which follows html[data-theme]. Signals keep their meaning in both themes; the
+ * ground, the ink and the signal's lightness are tuned per theme, not inverted. Nothing in a
+ * component stylesheet may name a raw colour or a raw font size.
+ *
+ * Naming is role-first so the Workspace app's --ws-* set and the HUD's 29 flat tokens can both
+ * converge on it: ground / line / ink / signal, then a step number. 4px base, radii 3 / 6 / 10.
+ *
+ * The signal code (three colours, three meanings, never decoration):
+ *   yellow  --signal-yours   it is your move: something is held for your decision
+ *   red     --signal-stop    cannot be undone, failed, stopped
+ *   green   --signal-proven  sealed, intact, verified
+ * Everything else — health, progress, locality — is told by shape and by the evidence stroke:
+ *   solid = measured or verified · outline = declared (by route, derived) · dashed = unknown.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ── Type ─────────────────────────────────────────────────────────────────────────────────
+     One family in two widths, plus a mono that is only ever used for what the machine named.
+     Mockup face: Bahnschrift (installed with Windows, DIN 1451 lineage, wdth 75–100).
+     Production face: Barlow + Barlow Semi Condensed (SIL OFL 1.1, self-hosted, Latin Extended
+     with ș ț), same roles. Mono: JetBrains Mono (already vendored, OFL). */
+  --font-ui: "Bahnschrift", "Barlow", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-id: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  --wdth-content: 100%;   /* what was said, what will happen */
+  --wdth-meta: 87.5%;     /* who, when, where, on what basis: the meta voice */
+
+  --wght-text: 350;       /* reading weight (Bahnschrift SemiLight; Barlow 400 in production) */
+  --wght-label: 400;      /* labels, row titles, your own words (Barlow 500) */
+  --wght-strong: 600;     /* headings and the one figure that matters (Barlow 600) */
+
+  /* The scale. Nothing is smaller than --t-micro. The wide tier moves every step up. */
+  --t-micro: 11px;   --lh-micro: 14px;   /* plate cell labels, kbd */
+  --t-meta: 12px;    --lh-meta: 16px;    /* the meta voice */
+  --t-id: 12px;                           /* mono identifiers */
+  --t-small: 13px;   --lh-small: 18px;   /* controls, dense rows */
+  --t-ui: 14px;      --lh-ui: 20px;      /* default */
+  --t-read: 15px;    --lh-read: 24px;    /* conversation */
+  --t-title: 18px;   --lh-title: 24px;
+  --t-head: 22px;    --lh-head: 28px;
+  --t-figure: 34px;  --lh-figure: 36px;
+
+  /* ── Space: 4px base ──────────────────────────────────────────────────────────────────── */
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px;  --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-8: 32px;  --s-10: 40px;
+
+  /* ── Shape: three concentric radii ────────────────────────────────────────────────────── */
+  --r-1: 3px;    /* glyph cells, chips, kbd, the tag */
+  --r-2: 6px;    /* controls, rows, wells */
+  --r-3: 10px;   /* sheets and cards */
+
+  --ctl: 28px;       /* control height */
+  --ctl-sm: 24px;
+  --tag-h: 22px;     /* the hold tag */
+
+  /* ── Ground: lightness carries elevation. The lightest ground is where you work. ───────── */
+  --ground-0: light-dark(oklch(0.938 0.005 88), oklch(0.158 0.004 85));  /* desk */
+  --ground-1: light-dark(oklch(0.995 0.002 90), oklch(0.192 0.004 85));  /* sheet, card */
+  --ground-2: light-dark(oklch(0.962 0.004 90), oklch(0.226 0.005 85));  /* well: your turns, inputs */
+  --ground-3: light-dark(oklch(0.918 0.005 90), oklch(0.268 0.005 85));  /* selected, pressed */
+  --under: var(--ground-0);   /* what shows through the hole punched in a tag; set per surface */
+
+  --line-1: light-dark(oklch(0.892 0.004 90), oklch(0.262 0.005 85));    /* hairline between regions */
+  --line-2: light-dark(oklch(0.835 0.005 90), oklch(0.335 0.006 85));    /* divider inside a surface */
+  --line-3: light-dark(oklch(0.60 0.006 90), oklch(0.53 0.006 85));      /* control boundary, 3:1 */
+
+  /* ── Ink: all text is ink. Three steps, each ≥ 4.5:1 on every ground. ──────────────────── */
+  --ink-1: light-dark(oklch(0.2 0.006 80), oklch(0.945 0.006 90));
+  --ink-2: light-dark(oklch(0.39 0.006 80), oklch(0.80 0.006 90));
+  --ink-3: light-dark(oklch(0.47 0.006 80), oklch(0.68 0.006 90));
+
+  /* ── Signals: three, with fixed meanings. A signal is a fill or a mark, never a text colour. */
+  --signal-yours: oklch(0.865 0.17 92);                                /* safety yellow: your move */
+  --signal-yours-edge: light-dark(oklch(0.58 0.12 85), oklch(0.865 0.17 92));
+  --on-signal-yours: oklch(0.2 0.03 85);
+  --tag-eyelet: oklch(0.6 0.12 84);                                    /* the pressed ring of the tag's hole */
+
+  --signal-stop: light-dark(oklch(0.53 0.2 27), oklch(0.7 0.19 27));   /* red: cannot be undone, failed, stopped */
+  --signal-stop-fill: oklch(0.5 0.2 27);
+  --on-signal-stop: oklch(0.985 0.004 90);
+
+  --signal-proven: light-dark(oklch(0.48 0.13 152), oklch(0.77 0.15 152)); /* green: sealed, intact, verified */
+
+  /* ── The plate: the state of this machine. Same dark ground in both themes, on purpose:
+        it is the machine's nameplate, not part of the page. ───────────────────────────────── */
+  --plate-ground: light-dark(oklch(0.225 0.005 85), oklch(0.118 0.004 85));
+  --plate-line: light-dark(oklch(0.34 0.006 85), oklch(0.25 0.005 85));
+  --plate-ink-1: oklch(0.945 0.006 90);
+  --plate-ink-2: oklch(0.80 0.006 90);
+  --plate-ink-3: oklch(0.70 0.006 90);
+  --plate-stop: oklch(0.7 0.19 27);
+  --plate-proven: oklch(0.77 0.15 152);
+
+  /* ── Focus: where your hand is ─────────────────────────────────────────────────────────── */
+  --focus: light-dark(oklch(0.2 0.006 80), oklch(0.865 0.17 92));
+
+  /* ── Elevation: hairlines do the work; shadow only where a light sheet leaves the desk ─── */
+  --shadow-sheet: light-dark(0 1px 2px oklch(0.2 0.01 80 / 0.06), none);
+  --shadow-float: 0 12px 32px oklch(0 0 0 / 0.28), 0 2px 6px oklch(0 0 0 / 0.18);   /* transient layers only */
+
+  /* ── Motion: still by default; one short ease-out when a state changes ─────────────────── */
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* ── Layout ───────────────────────────────────────────────────────────────────────────── */
+  --bar-h: 48px;
+  --col-spine: clamp(296px, 21.6vw, 416px);
+  --col-rail: clamp(340px, 25.4vw, 488px);
+  --col-run: 0px;          /* the run rail inside the sheet; opens on the wide tier */
+  --col-nav: clamp(232px, 15vw, 280px);   /* an area's second-level navigation */
+  --measure: 620px;        /* reading measure of the conversation, ~90 characters */
+  --stamp: 48px;           /* the time column beside each turn */
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+
+/* The wide tier — the owner's own screen (2560 × 1353 at 150%). The room is spent on the run
+   rail (plan, results, provenance of the answer you are reading) and on one step of type,
+   not on stretching the conversation. */
+@media (min-width: 2240px) {
+  :root {
+    --t-micro: 12px;   --lh-micro: 15px;
+    --t-meta: 13px;    --lh-meta: 17px;
+    --t-id: 13px;
+    --t-small: 14px;   --lh-small: 19px;
+    --t-ui: 15px;      --lh-ui: 21px;
+    --t-read: 17px;    --lh-read: 27px;
+    --t-title: 21px;   --lh-title: 27px;
+    --t-head: 25px;    --lh-head: 30px;
+    --tag-h: 24px;
+
+    --ctl: 30px;
+    --ctl-sm: 26px;
+    --bar-h: 52px;
+    --col-spine: 480px;
+    --col-rail: 540px;
+    --col-run: 420px;
+    --col-nav: 296px;
+    --measure: 680px;
+    --stamp: 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-1: 0ms; --dur-2: 0ms; }
+}

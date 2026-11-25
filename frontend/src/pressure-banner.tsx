@@ -64,9 +64,9 @@ export function PressureBanner({ state, onDismiss }: {
   return (
     <div role={alarm ? 'alert' : 'status'} data-testid="pressure-banner"
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap', padding: '4px 12px',
-        borderBottom: `1px solid ${alarm ? 'rgba(239,68,68,.5)' : 'rgba(245,158,11,.45)'}`,
-        fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.04em',
-        color: alarm ? 'var(--red, #ef4444)' : 'var(--amber, #f59e0b)' }}>
+        borderBottom: `1px solid ${alarm ? 'var(--red)' : 'var(--amber)'}`,
+        fontSize: 'var(--n-fs-meta)',
+        color: alarm ? 'var(--red)' : 'var(--amber)' }}>
       <span>{pressureText(w)}</span>
       <button className="tool-btn" onClick={() => onDismiss(w.condition, bootId)}>Dismiss</button>
     </div>

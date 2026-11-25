@@ -8,7 +8,7 @@
    which is the edit that would quietly reopen both defects. */
 import { describe, it, expect } from 'vitest';
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, within } from '@testing-library/react';
 import { AgentsMode, Dossier, MemoryMode } from '../modes';
 import { Card } from '../panel-kit';
 import { V2 } from '../data';
@@ -20,10 +20,16 @@ const AGENTS = [
 
 describe('mode surfaces keep their accessibility contract', () => {
   it('puts the AGENTS roster — a scrollable region whose cards are non-focusable divs — in the tab order, with a name', () => {
+    // Since the cutover the roster is a section of the Agents page (PageSection under the Ledger
+    // frame): its cards sit in the register's body, the column kit.css lets scroll by itself
+    // (`.n-register__body`, overflow-y auto), inside a page body that scrolls too. The contract
+    // moved with the cards; there is no legacy `.panel-body` left to carry it instead.
     const { container } = render(<AgentsMode agents={AGENTS} onOpen={() => {}} t={V2.I18N.en} />);
-    const body = container.querySelector('.panel-body');
+    expect(container.querySelector('.panel-body')).toBeNull();
+    const body = container.querySelector('.n-register__body');
     expect(body).toBeTruthy();
     // The premise: the roster's own children carry click handlers, not focus.
+    expect(body.querySelectorAll('.acard').length).toBe(AGENTS.length);
     expect(container.querySelectorAll('.acard button, .acard a[href], .acard [tabindex]').length).toBe(0);
     expect(body.getAttribute('tabindex')).toBe('0');
     expect(body.getAttribute('aria-label')).toBe(V2.I18N.en.roster);
@@ -32,6 +38,9 @@ describe('mode surfaces keep their accessibility contract', () => {
     // which the mode walk could not fail on because axe files that rule under `incomplete`.
     // Pinned here so the pair cannot drift apart again in the PR lane, without a browser.
     expect(body.getAttribute('role')).toBe('group');
+    // And that named group is the one assistive tech reaches: the cards' own column, not a
+    // second wrapper repeating the label around or inside it.
+    expect(within(container).getByRole('group', { name: V2.I18N.en.roster })).toBe(body);
   });
 
   it('adds an aria-label to the Card reload button', () => {

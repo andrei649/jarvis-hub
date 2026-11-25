@@ -1,5 +1,6 @@
 import React from 'react';
-import { Card, Row, Tag, mono, useApi } from '../panel-kit';
+import { Card, Row, Tag, mono, note, useApi } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export const EXTENSIONS_INSPECTION_PATH = '/api/plugins/extensions';
 const NAME = /^[a-z][a-z0-9_]{0,63}$/;
@@ -130,12 +131,12 @@ function Values({ label, items, requiresArgs = [], emptyLabel = 'none declared' 
   label: string; items: string[]; requiresArgs?: string[]; emptyLabel?: string;
 }) {
   return <section aria-label={label} style={{ marginTop: 8 }}>
-    <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, marginBottom: 3 }}>{label.toUpperCase()}</div>
+    <div style={{ ...LABEL, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', marginBottom: 3 }}>{label.toUpperCase()}</div>
     {items.length ? <ul style={{ margin: '2px 0 0', paddingLeft: 18 }}>
-      {items.map((item) => <li key={item} style={{ ...mono, fontSize: 10.5, padding: '2px 0' }}>
+      {items.map((item) => <li key={item} style={{ ...mono, fontSize: 'var(--n-fs-meta)', padding: '2px 0' }}>
         {item}{requiresArgs.includes(item) && <Tag>requires arguments</Tag>}
       </li>)}
-    </ul> : <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10 }}>{emptyLabel}</div>}
+    </ul> : <div style={{ ...note, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>{emptyLabel}</div>}
   </section>;
 }
 
@@ -171,19 +172,19 @@ export function ExtensionInspectionPanel() {
   const failed = !loading && !!e;
   const malformed = !loading && !failed && d !== null && report === null;
   return <Card title="EXTENSION INSPECTION" sub="read-only · current snapshot" onReload={reload}>
-    <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, marginBottom: 7 }}>
+    <div style={{ ...note, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', marginBottom: 7 }}>
       Inspect declared and currently available tools and commands.
     </div>
-    {loading && <div role="status" style={{ color: 'var(--ink-2)', fontSize: 12 }}>Checking extension state…</div>}
-    {failed && <div role="alert" style={{ color: 'var(--amber)', fontSize: 12 }}>{readFailure(status)}</div>}
-    {malformed && <div role="alert" style={{ color: 'var(--amber)', fontSize: 12 }}>Extension inspection returned invalid data.</div>}
+    {loading && <div role="status" style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-label)' }}>Checking extension state…</div>}
+    {failed && <div role="alert" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-label)' }}>{readFailure(status)}</div>}
+    {malformed && <div role="alert" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-label)' }}>Extension inspection returned invalid data.</div>}
     {report && <>
-      <div role="status" style={{ color: 'var(--ink-2)', fontSize: 11 }}>{reportReason(report.reason)}</div>
-      {report.extensions.length > 0 && <p style={{ color: 'var(--ink-2)', fontSize: 10, margin: '5px 0' }}>
+      <div role="status" style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)' }}>{reportReason(report.reason)}</div>
+      {report.extensions.length > 0 && <p style={{ color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', margin: '5px 0' }}>
         Signature verification, owner approval, and current callability are separate facts.
       </p>}
       {report.extensions.length ? report.extensions.map((row) => <ExtensionCard key={row.id} row={row} />)
-        : <div style={{ ...mono, color: 'var(--ink-2)', fontSize: 10, marginTop: 8 }}>No extensions reported in this inspection.</div>}
+        : <div style={{ ...note, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', marginTop: 8 }}>No extensions reported in this inspection.</div>}
     </>}
   </Card>;
 }

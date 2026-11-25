@@ -6,12 +6,13 @@
    labels the current view LIVE (real backend) or SEED (demo/mock). Pure + unit-tested; the
    live-pixel placement is owner-verified (the CDX-9 live surface). */
 import React from 'react';
+import { LABEL } from './theme/type';
 
 /**
  * Resolve a mode's data provenance from the live-flag map + the demo toggle.
  *   'live' — at least one of the mode's source keys reported live (real backend data)
  *   'seed' — demo is on but no source is live (showing the seeded mock)
- *   null   — the mode has no backend-source mapping, or nothing is showing (ModeEmpty)
+ *   null   — the mode has no backend-source mapping, or nothing is showing (the page's empty state)
  */
 export function liveSourceState(mode, demo, live, keys) {
   const k = (keys || {})[mode];
@@ -28,9 +29,9 @@ export function LiveSourceChip({ state }) {
     <div
       title={isLive ? 'Live data from the backend' : 'Seeded demo data — not live'}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 5, alignSelf: 'flex-start',
-        margin: '0 0 8px', fontFamily: 'var(--font-mono)', fontSize: 9.5,
-        letterSpacing: '.08em', color: c, border: `1px solid ${c}`,
+        ...LABEL, display: 'inline-flex', alignItems: 'center', gap: 5, alignSelf: 'flex-start',
+        margin: '0 0 8px', fontSize: 'var(--n-fs-meta)',
+        color: c, border: `1px solid ${c}`,
         borderRadius: 3, padding: '1px 6px',
       }}
     >

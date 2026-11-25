@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva Console — Home</title>
+<script>
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'light' || t === 'dark' ? t : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="console.css">
+<style>
+/* ── Home: conversation | today over decisions ──────────────────────────────── */
+:root { --c-talk: 568px; --c-sheet: 528px; }
+.home { display: grid; grid-template-columns: var(--c-talk) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.talk { grid-row: 1 / 3; border-right: 1px solid var(--nv-border); }
+.today { background: var(--nv-bg); border-bottom: 1px solid var(--nv-border); }
+
+/* ── Conversation: a transcript, not bubbles ────────────────────────────────── */
+.thread { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column-reverse; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--nv-border-strong) transparent; }
+.turns { padding: 0 0 12px; }
+.day { display: flex; align-items: center; gap: 10px; padding: 10px 16px 6px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); white-space: nowrap; }
+.day::after { content: ""; flex: 1; height: 1px; background: var(--nv-border); }
+.turn { display: grid; grid-template-columns: 38px 48px minmax(0, 1fr); column-gap: 10px; align-items: baseline; padding: 10px 16px; }
+.turn time { font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); }
+.turn .who { font-weight: var(--nv-fw-strong); }
+.turn .body { min-width: 0; max-width: 72ch; font-size: var(--nv-fs-body); line-height: var(--nv-lh-body); font-stretch: var(--nv-wdth-text); letter-spacing: 0; }
+.turn.you { background: var(--nv-surface-2); border-block: 1px solid var(--nv-border); }
+.turn.you .who { color: var(--nv-text-muted); }
+.turn.note { padding-block: 8px; }
+.turn.note .body { font-size: var(--nv-fs-cell); line-height: var(--nv-lh-cell); font-stretch: var(--nv-wdth-data); letter-spacing: 0.01em; color: var(--nv-text-muted); display: flex; align-items: center; gap: 8px; }
+.turn.note .who { font-weight: var(--nv-fw-medium); color: var(--nv-text-muted); }
+.meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; font-size: var(--nv-fs-meta); line-height: 16px; color: var(--nv-text-subtle); font-stretch: var(--nv-wdth-data); letter-spacing: 0.01em; }
+.meta .i { width: 13px; height: 13px; }
+.meta .ran { display: inline-flex; align-items: center; gap: 5px; }
+.chip-file { display: inline-flex; align-items: center; gap: 6px; height: 22px; margin-top: 6px; padding: 0 8px 0 6px; border: 1px solid var(--nv-border-strong); border-radius: var(--nv-r2); color: var(--nv-text-muted); }
+.calls { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding: 4px 8px; font-size: var(--nv-fs-meta); line-height: 16px; font-stretch: var(--nv-wdth-data); letter-spacing: 0.01em; color: var(--nv-text-muted); border: 1px solid var(--nv-border); border-radius: var(--nv-r2); }
+.calls .c { display: inline-flex; align-items: center; gap: 5px; }
+.waits { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 8px; font-size: var(--nv-fs-cell); line-height: 18px; font-stretch: var(--nv-wdth-data); letter-spacing: 0.01em; background: var(--nv-signal-soft); border: 1px solid var(--nv-signal-line); border-radius: var(--nv-r2); }
+.waits .go { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--nv-text-muted); font-size: var(--nv-fs-meta); white-space: nowrap; }
+.acts { display: flex; gap: 2px; margin: 6px 0 0 -8px; font-stretch: var(--nv-wdth-data); }
+
+/* the reply that is still being written: who is working on it, and where */
+.turn.live { box-shadow: inset 3px 0 0 var(--nv-text); background: var(--nv-bg); border-block: 1px solid var(--nv-border); padding-block: 12px 12px; }
+.live-h { display: flex; align-items: center; gap: 8px; font-size: var(--nv-fs-cell); line-height: 18px; font-stretch: var(--nv-wdth-data); letter-spacing: 0.01em; }
+.live-h .btn { margin-left: auto; }
+.live-h .sq { width: 8px; height: 8px; background: currentColor; border-radius: 1px; }
+.turn.live .ladder { margin: 8px 0 8px; font-stretch: var(--nv-wdth-data); letter-spacing: 0.01em; }
+.crew { margin: 0 0 9px; border-left: 1px solid var(--nv-border-strong); font-size: var(--nv-fs-meta); line-height: 20px; font-stretch: var(--nv-wdth-data); letter-spacing: 0.01em; }
+.crew li { display: grid; grid-template-columns: 10px 50px minmax(0, 1fr) auto; column-gap: 8px; align-items: center; padding-left: 10px; color: var(--nv-text-muted); }
+.crew li b { color: var(--nv-text); font-weight: var(--nv-fw-medium); }
+.crew li span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crew li i { color: var(--nv-text-subtle); }
+.caret { display: inline-block; width: 7px; height: 15px; margin-left: 2px; vertical-align: -2px; background: var(--nv-text); }
+
+.composer { flex: none; margin: 0 12px 12px; display: flex; flex-direction: column; background: var(--nv-surface-2); border: 1px solid var(--nv-input-border); border-radius: var(--nv-r3); }
+.composer .to { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); border-bottom: 1px solid var(--nv-border); white-space: nowrap; }
+.composer .to b { color: var(--nv-text); }
+.composer .to .hint { margin-left: auto; color: var(--nv-text-subtle); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.composer textarea { display: block; width: 100%; height: 56px; padding: 8px 10px; resize: none; border: 0; outline-offset: -2px; background: transparent; font-size: var(--nv-fs-body); line-height: var(--nv-lh-body); font-stretch: var(--nv-wdth-text); letter-spacing: 0; }
+.composer textarea::placeholder { color: var(--nv-text-subtle); opacity: 1; }
+.composer .tools { display: flex; align-items: center; gap: 2px; padding: 0 6px 6px; min-width: 0; }
+.composer .tools .push { margin-left: auto; }
+.composer .tools .mode { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); white-space: nowrap; }
+.composer .tools .mode b { color: var(--nv-text); }
+.btn.solid kbd { background: transparent; border-color: color-mix(in oklch, var(--nv-bg) 45%, var(--nv-text)); color: var(--nv-bg); }
+/* Send stays quiet while the box is empty; it fills with ink once there is text */
+.composer .send { color: var(--nv-text-muted); }
+.composer:has(textarea:not(:placeholder-shown)) .send { background: var(--nv-text); border-color: var(--nv-text); color: var(--nv-bg); font-weight: var(--nv-fw-strong); }
+
+/* ── Today: the agenda, then one lane per active agent ──────────────────────── */
+.legend { display: flex; align-items: center; gap: 14px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend b { color: var(--nv-text); font-weight: var(--nv-fw-medium); }
+.legend .k-rail { width: 18px; height: 4px; background: var(--nv-signal-line); }
+.legend .k-run { width: 14px; height: 5px; background: var(--nv-text); }
+.legend .k-lens { width: 14px; height: 12px; background: var(--nv-lens); box-shadow: inset 1px 0 0 var(--nv-border-strong); }
+.legend .sepv { width: 1px; height: 14px; background: var(--nv-border-strong); }
+.nextline { display: none; align-items: center; gap: 8px; min-width: 0; font-size: var(--nv-fs-meta); color: var(--nv-text-muted); overflow: hidden; }
+.nextline b { color: var(--nv-text); font-weight: var(--nv-fw-strong); }
+
+.agenda { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) auto; border-bottom: 1px solid var(--nv-border); }
+.agenda li { min-width: 0; padding: 5px 14px 6px; border-left: 1px solid var(--nv-border); }
+.agenda li:first-child { border-left: 0; padding-left: 16px; }
+.agenda .l1 { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.agenda .l1 b { font-weight: var(--nv-fw-strong); }
+.agenda .l1 span { overflow: hidden; text-overflow: ellipsis; }
+.agenda .l2 { display: flex; align-items: center; gap: 6px; margin-top: 1px; font-size: var(--nv-fs-meta); line-height: 16px; color: var(--nv-text-subtle); white-space: nowrap; overflow: hidden; }
+.agenda .past { color: var(--nv-text-subtle); }
+.agenda .past .l1 b { font-weight: var(--nv-fw-regular); }
+.agenda .next .l1 { font-weight: var(--nv-fw-strong); }
+.agenda .wx { padding-right: 16px; }
+.tag { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; font-size: var(--nv-fs-key); line-height: 1; font-weight: var(--nv-fw-strong); border-radius: var(--nv-r1); white-space: nowrap; color: var(--nv-text); box-shadow: inset 0 0 0 1px var(--nv-text-subtle); }
+.tag.inv { background: var(--nv-text); color: var(--nv-bg); box-shadow: none; }
+
+/* The time axis: 05:45–10:45 at one scale, the last six minutes magnified in
+   the lens so that work that started a minute ago is visible as work. */
+.lanes { --t0: 345; --span: 300; --lens: 96px; --c-agent: 176px; --c-state: 128px; --c-doing: 296px;
+         --lane: 34px; --lane-q: 30px; --lane-s: 26px; --ev-top: 2px; --lo-top: 17px; position: relative; }
+.lane, .lane-head { display: grid; grid-template-columns: var(--c-agent) minmax(0, 1fr) var(--c-state) var(--c-doing); align-items: center; }
+.lane-head { height: 22px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); white-space: nowrap; }
+.lane-head > :first-child { padding-left: 16px; overflow: hidden; text-overflow: ellipsis; }
+.lane-head .nowh { grid-column: 3 / 5; padding-left: 10px; display: flex; align-items: center; gap: 12px; overflow: hidden; }
+.lane-head .nowh b { color: var(--nv-text); font-weight: var(--nv-fw-strong); }
+.axis { position: relative; align-self: stretch; }
+.axis::before, .track::before { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: var(--lens); background: var(--nv-lens); }
+.axis span { position: absolute; top: 3px; padding-left: 5px; }
+.axis .lz { left: calc(100% - var(--lens)); color: var(--nv-text-muted); }
+
+.at { position: absolute; left: calc((100% - var(--lens)) * (var(--t) - var(--t0)) / var(--span)); }
+.at.z { left: calc(100% - var(--lens) + var(--lens) * var(--m) / 6); }
+
+.lane { height: var(--lane); border-top: 1px solid var(--nv-border); }
+.lane .who { display: flex; align-items: baseline; gap: 8px; padding-left: 16px; min-width: 0; white-space: nowrap; }
+.lane .who b { font-weight: var(--nv-fw-strong); }
+.lane .who span { font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); overflow: hidden; text-overflow: ellipsis; }
+.lane .state { padding-left: 10px; display: flex; align-items: center; gap: 7px; white-space: nowrap; color: var(--nv-text-muted); }
+.lane .state.you { color: var(--nv-signal-text); font-weight: var(--nv-fw-medium); }
+.lane .state.work { color: var(--nv-text); font-weight: var(--nv-fw-medium); }
+.lane .doing { padding-right: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lane.quiet { height: var(--lane-q); }
+.lane.quiet .doing { color: var(--nv-text-muted); }
+.lane.quiet .who b { font-weight: var(--nv-fw-medium); }
+.lane.scan { height: var(--lane-s); }
+.track { position: relative; align-self: stretch; min-width: 0; }
+.grid { position: absolute; top: 0; bottom: 0; left: var(--c-agent); right: calc(var(--c-state) + var(--c-doing)); pointer-events: none; }
+.grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--nv-border); }
+.grid .lens0 { left: calc(100% - var(--lens)); background: var(--nv-border-strong); }
+.grid .now { left: auto; right: -1px; top: 4px; background: var(--nv-text-muted); }
+
+/* upper track: what happened (a mark and its words) */
+.ev { top: var(--ev-top); height: 14px; right: 8px; margin-left: -4px; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--nv-fs-meta); line-height: 14px; color: var(--nv-text-muted); white-space: nowrap; }
+.ev .g { width: 8px; height: 8px; color: var(--nv-text-subtle); }
+.ev .g.fault { color: var(--nv-fault-line); }
+.ev .l { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ev .q { color: var(--nv-text); }
+.ev.flip { left: 8px; margin-left: 0; right: calc(100% - (100% - var(--lens)) * (var(--t) - var(--t0)) / var(--span) - 4px); flex-direction: row-reverse; }
+.ev.z.flip { right: calc(var(--lens) * (6 - var(--m)) / 6 - 4px); }
+.ev.fault .l { color: var(--nv-fault-text); }
+/* lower track: what is held for you (pin and a rail to now), what is running (bar) */
+.hold { top: var(--lo-top); height: 16px; right: 0; margin-left: -8px; display: flex; align-items: center; }
+.hold::after { content: ""; flex: 1; height: 4px; background: var(--nv-signal-line); }
+.hold.t2::after { height: 2px; }
+.hold.t1::after { height: 1px; }
+.run { top: calc(var(--lo-top) - 1px); height: 5px; right: -3px; background: var(--nv-text); }
+.lane.sel { background: var(--nv-surface); box-shadow: inset 3px 0 0 var(--nv-text); }
+.lane.gone .track::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px dashed var(--nv-mark); }
+.lane .names { padding: 0 8px 0 calc((100% - var(--lens)) * 15 / 300 + 1px); font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; align-self: center; }
+
+/* ── Decisions: a table sorted by risk, and the one sheet that is open ───────── */
+.decide-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--c-sheet); }
+.dq-wrap { min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--nv-border-strong) transparent; }
+.dq col.c-pin { width: 44px; }
+.dq col.c-scope { width: 116px; }
+.dq col.c-raised { width: 132px; }
+.dq col.c-ctl { width: 140px; }
+.dq thead th { height: 24px; }
+.dq .tier-h th { height: 24px; padding: 0 16px; background: var(--nv-bg); color: var(--nv-text-subtle); border-bottom: 1px solid var(--nv-border); }
+.dq .tier-h .in { display: flex; align-items: center; gap: 10px; }
+.dq .tier-h .cnt { margin-left: auto; }
+.dq tr.d td { height: 40px; }
+.dq tr.d.t3 td { height: 46px; }
+.dq tr.d.t1 td { height: 38px; }
+.dq td.p { padding-right: 0; }
+.dq .ttl { overflow: hidden; text-overflow: ellipsis; font-weight: var(--nv-fw-medium); }
+.dq .t3 .ttl { font-size: var(--nv-fs-body); font-weight: var(--nv-fw-strong); }
+.dq .sb { overflow: hidden; text-overflow: ellipsis; font-size: var(--nv-fs-meta); line-height: 16px; color: var(--nv-text-subtle); }
+.dq .sb b { color: var(--nv-text-muted); font-weight: var(--nv-fw-medium); }
+.dq .sb.run3 { color: var(--nv-text-muted); }
+.dq td.scope { text-align: right; }
+.dq td.scope .v { font-weight: var(--nv-fw-strong); }
+.dq td.scope .v.fig { font-size: var(--nv-fs-figure); line-height: 22px; letter-spacing: 0; }
+.dq td.scope .u, .dq td.raised .u { display: block; font-size: var(--nv-fs-meta); line-height: 16px; color: var(--nv-text-subtle); overflow: hidden; text-overflow: ellipsis; }
+.dq td.ctl { text-align: right; overflow: visible; }
+.dq td.ctl .btn + .btn { margin-left: 2px; }
+.dq tr.sel > td { background: var(--nv-surface-2); }
+.dq tr.sel > td:first-child { box-shadow: inset 3px 0 0 var(--nv-text); }
+.dq .open { display: inline-flex; align-items: center; gap: 4px; font-size: var(--nv-fs-meta); color: var(--nv-text-muted); }
+.dq tr.mem td { height: 22px; border-bottom: 0; font-size: var(--nv-fs-meta); }
+.dq tr.mem td.m { padding-left: 0; }
+.dq .mrow { display: grid; grid-template-columns: 34px 70px 116px minmax(0, 1fr); column-gap: 10px; align-items: center; padding-left: 10px; border-left: 1px solid var(--nv-border-strong); height: 22px; }
+.dq .mrow .imp { overflow: hidden; text-overflow: ellipsis; color: var(--nv-text-muted); }
+.dq .mrow .svc { color: var(--nv-text); display: inline-flex; align-items: center; gap: 6px; }
+.dq .mrow .st { color: var(--nv-fault-text); }
+.dq tr.mem.last td { height: 44px; padding-bottom: 6px; border-bottom: 1px solid var(--nv-border); }
+.dq .mfoot { display: flex; align-items: center; gap: 8px; height: 38px; padding-left: 10px; border-left: 1px solid var(--nv-border-strong); }
+.dq .mfoot .why { color: var(--nv-text-subtle); line-height: 16px; overflow: hidden; text-overflow: ellipsis; margin-right: auto; min-width: 0; }
+.dq tfoot td { height: 34px; padding: 0 16px; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); border-bottom: 0; }
+
+.dp { margin: 12px 12px 12px 4px; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--nv-surface-2); border: 1px solid var(--nv-border-strong); border-top: 3px solid var(--nv-signal-line); border-radius: var(--nv-r3); }
+.dp-top { flex: none; padding-bottom: 12px; border-bottom: 1px solid var(--nv-border); }
+.dp-h { display: flex; align-items: center; gap: 10px; padding: 10px 16px 0; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); white-space: nowrap; }
+.dp-h .nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.dp-title { padding: 8px 16px 0; font-size: var(--nv-fs-lead); line-height: 22px; font-weight: var(--nv-fw-strong); font-stretch: var(--nv-wdth-text); letter-spacing: 0; text-wrap: balance; }
+.dp-stake { display: flex; align-items: flex-end; gap: 18px; padding: 6px 16px 0; }
+.dp-stake .amt { font-size: var(--nv-fs-stake); line-height: 38px; font-weight: var(--nv-fw-strong); font-stretch: var(--nv-wdth-text); letter-spacing: -0.01em; }
+.dp-stake .route { display: flex; align-items: center; gap: 8px; padding-bottom: 6px; color: var(--nv-text-muted); white-space: nowrap; }
+.dp-stake .route b { color: var(--nv-text); font-weight: var(--nv-fw-medium); }
+.dp-body { --kv-l: 92px; --kv-g: 12px; flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--nv-border-strong) transparent; padding: 12px 16px 12px; }
+.dp-kv { display: grid; grid-template-columns: var(--kv-l) minmax(0, 1fr); gap: 6px var(--kv-g); }
+.dp-kv dt { color: var(--nv-text-subtle); }
+.dp-kv dd { min-width: 0; }
+.dp-origin { margin: 5px 0 0 calc(var(--kv-l) + var(--kv-g)); display: grid; gap: 2px; min-width: 0; }
+.dp-origin li { display: grid; grid-template-columns: 38px 44px minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding-left: 10px; border-left: 2px solid var(--nv-border-strong); }
+.dp-origin li time { font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); }
+.dp-origin li b { font-weight: var(--nv-fw-medium); color: var(--nv-text-muted); }
+.dp-origin li q { quotes: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-origin li.mine q { color: var(--nv-text); font-weight: var(--nv-fw-medium); }
+.dp-origin li:not(.mine) q { color: var(--nv-text-muted); }
+.dp-rec { margin-top: 8px; display: grid; grid-template-columns: var(--kv-l) minmax(0, 1fr); column-gap: var(--kv-g); align-items: center; }
+.dp-rec .lbl { color: var(--nv-text-subtle); }
+.dp-rec .v { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--nv-text-muted); white-space: nowrap; }
+.dp-rec .v .i { color: var(--nv-text-subtle); align-self: center; }
+.dp-rec .v span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dp-pay { margin-top: 14px; display: grid; grid-template-columns: var(--kv-l) minmax(0, 1fr); column-gap: var(--kv-g); align-items: start; }
+.dp-pay .lbl { color: var(--nv-text-subtle); padding-top: 5px; }
+.mini { width: 100%; }
+.mini td { height: 28px; padding: 0 10px 0 0; border-top: 1px solid var(--nv-border); white-space: nowrap; }
+.mini tr:last-child td { border-bottom: 1px solid var(--nv-border); }
+.mini .num { text-align: right; padding-right: 16px; }
+.dp .ladder { grid-template-columns: 1fr 1fr 1.15fr 1.5fr; grid-auto-flow: row; margin-bottom: 4px; }
+.dp-verdict { flex: none; padding: 12px 16px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; border-top: 1px solid var(--nv-border); background: var(--nv-surface); }
+.dp-verdict label { font-size: var(--nv-fs-meta); color: var(--nv-text-muted); }
+.dp-verdict label .mono { color: var(--nv-text); font-weight: 600; }
+.dp-verdict .row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dp-verdict .field { flex: 1 1 auto; font-family: var(--nv-font-mono); font-size: 13px; letter-spacing: 0; }
+.dp-verdict .field::placeholder { font-family: var(--nv-font-ui); font-size: var(--nv-fs-cell); letter-spacing: 0.01em; }
+.dp-verdict .note { margin-left: auto; font-size: var(--nv-fs-meta); color: var(--nv-text-subtle); white-space: nowrap; }
+
+/* ── The owner's screen, 2560 × 1353 at 1.5×: more columns and more words,
+      never wider measures ──────────────────────────────────────────────────── */
+@media (min-width: 2200px) {
+  :root { --c-talk: 680px; --c-sheet: 600px; }
+  .lanes { --lens: 128px; --c-agent: 224px; --c-state: 150px; --c-doing: 404px; --lane: 42px; --lane-q: 36px; --lane-s: 30px; --ev-top: 4px; --lo-top: 22px; }
+  .lane-head { height: 26px; }
+  .agenda li { padding: 8px 16px 9px; }
+  .agenda .l2 { margin-top: 3px; }
+  .dq col.c-pin { width: 48px; } .dq col.c-scope { width: 150px; } .dq col.c-raised { width: 190px; } .dq col.c-ctl { width: 170px; }
+  .dq thead th, .dq .tier-h th { height: 28px; }
+  .dq tr.d.t3 td { height: 66px; }
+  .dq tr.d td { height: 48px; }
+  .dq tr.d.t1 td { height: 46px; }
+  .dq tr.mem td { height: 26px; } .dq .mrow { height: 26px; grid-template-columns: 34px 76px 124px 156px minmax(0, 1fr); }
+  .dq tr.mem.last td { height: 52px; } .dq .mfoot { height: 44px; }
+  .dp { margin: 16px 16px 16px 4px; align-self: start; max-height: calc(100% - 32px); }
+  .dp-h { padding: 14px 20px 0; } .dp-title { padding: 10px 20px 0; font-size: 18px; line-height: 24px; } .dp-stake { padding: 8px 20px 0; }
+  .dp-stake .amt { font-size: 44px; line-height: 46px; }
+  .dp-top { padding-bottom: 16px; }
+  .dp-body { padding: 16px 20px; --kv-l: 104px; --kv-g: 14px; }
+  .dp-kv { row-gap: 10px; }
+  .dp-origin { margin-top: 8px; gap: 4px; } .dp-rec { margin-top: 14px; }
+  .dp-verdict { padding: 16px 20px; gap: 10px; }
+  .composer textarea { height: 84px; }
+  .turn { padding: 12px 18px; }
+}
+
+/* ── 1440 × 900: tighter columns, the group's four services fold into its row ── */
+@media (max-width: 1600px) {
+  :root { --c-talk: 448px; --c-sheet: 392px; }
+  .bar { gap: var(--nv-s5); }
+  .areas a { padding: 0 8px; }
+  .areas a[aria-current="page"]::after { left: 8px; right: 8px; }
+  .search { flex-basis: 200px; }
+  .turn { grid-template-columns: 48px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 12px; padding: 9px 14px; }
+  .composer .tools .btn.sm { padding: 0 6px; }
+  .dp-body { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent); }
+  .turn time { grid-column: 1; grid-row: 2; align-self: start; }
+  .turn .who { grid-column: 1; grid-row: 1; }
+  .turn .body { grid-column: 2; grid-row: 1 / 3; }
+  .day { padding-inline: 14px; }
+  .crew li { grid-template-columns: 10px 46px minmax(0, 1fr); }
+  .crew li i { display: none; }
+  .lanes { --lens: 80px; --c-agent: 154px; --c-state: 118px; --c-doing: 232px; --lane: 30px; --lane-q: 28px; --lane-s: 24px; --ev-top: 1px; --lo-top: 14px; }
+  .agenda .wx { display: none; }
+  .agenda { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .agenda li { padding: 4px 12px 5px; }
+  .dq tr.mem { display: none; }
+  .dq col.c-pin { width: 40px; } .dq col.c-scope { width: 96px; } .dq col.c-raised { width: 56px; } .dq col.c-ctl { width: 134px; }
+  .dq td.ctl .btn.sm { padding: 0 7px; }
+  .dq td.raised .u { display: none; }
+  .dq .tier-h .fr { display: none; }
+  .dq tr.d.t3 td { height: 44px; }
+  .dp { margin: 10px 10px 10px 2px; }
+  .dp-h, .dp-title, .dp-stake { padding-left: 14px; padding-right: 14px; }
+  .dp-title { font-size: 15px; line-height: 20px; padding-top: 6px; }
+  .dp-stake .amt { font-size: 30px; line-height: 32px; }
+  .dp-top { padding-bottom: 10px; }
+  .dp-body { padding: 10px 14px; --kv-l: 80px; --kv-g: 10px; }
+  .dp-kv { row-gap: 5px; }
+  .dp .ladder { display: none; }
+  .dp-verdict { padding: 10px 14px; }
+  .dp-verdict .note { display: none; }
+}
+
+/* ── 1280 × 800: the desktop shell's default window ─────────────────────────── */
+@media (max-width: 1340px) {
+  :root { --c-talk: 384px; --c-sheet: 340px; }
+  .bar { gap: var(--nv-s4); padding: 0 var(--nv-s5); }
+  .areas a { padding: 0 6px; }
+  .areas a[aria-current="page"]::after { left: 6px; right: 6px; }
+  .search { flex: 0 0 auto; }
+  .search span:not(.keys) { display: none; }
+  .bar-right { gap: var(--nv-s4); }
+  .stop { padding: 0 10px 0 9px; }
+  .fact { padding: 0 10px; gap: 5px; }
+  .verdict { padding-left: var(--nv-s5); }
+  .v-fix { padding: 0 10px; }
+  .agenda { display: none; }
+  .nextline { display: flex; }
+  .today .legend { display: none; }
+  .lanes { --lens: 72px; --c-agent: 112px; --c-state: 124px; --lane: 29px; --lane-q: 27px; --ev-top: 1px; --lo-top: 13px; }
+  .lane, .lane-head { grid-template-columns: var(--c-agent) minmax(0, 1fr) var(--c-state); }
+  .lane .doing { display: none; }
+  .lane-head .nowh { grid-column: 3 / 4; }
+  .lane .who span { display: none; }
+  .lane.fold { display: none; }
+  .grid { right: var(--c-state); }
+  .ev .l.low { display: none; }
+  .dq col.c-pin { width: 36px; } .dq col.c-scope { width: 84px; } .dq col.c-raised { width: 0; } .dq col.c-ctl { width: 100px; }
+  .dq td.raised, .dq th.raised { padding: 0; font-size: 0; }
+  .dq .hide-s { display: none; }
+  .dq td.ctl .btn.sm { padding: 0 7px; }
+  .dp { margin: 8px 8px 8px 2px; }
+  .dp-h, .dp-title, .dp-stake, .dp-body { padding-left: 12px; padding-right: 12px; }
+  .dp-h { padding-top: 8px; }
+  .dp-stake { gap: 12px; }
+  .dp-stake .amt { font-size: 28px; line-height: 30px; }
+  .dp-stake .route { gap: 6px; padding-bottom: 4px; }
+  .dp-body { --kv-l: 72px; }
+  .dp-origin li { grid-template-columns: 36px minmax(0, 1fr); }
+  .dp-origin li b { display: none; }
+  .dp-verdict { padding: 10px 12px; gap: 6px; }
+  .dp-verdict .row { gap: 4px; }
+  .dp-verdict .btn { padding: 0 8px; }
+  .composer .to .hint { display: none; }
+  .composer .tools .btn.sm { padding: 0 6px; }
+  .keyline { gap: var(--nv-s5); }
+}
+</style>
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true">
+  <defs>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></symbol>
+    <symbol id="i-machine" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 16 16"><rect x="6" y="2" width="4" height="7" rx="2"/><path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5V14"/></symbol>
+    <symbol id="i-model" viewBox="0 0 16 16"><path d="M8 2l5 3v6l-5 3-5-3V5zM3 5l5 3 5-3M8 8v6"/></symbol>
+    <symbol id="i-data" viewBox="0 0 16 16"><path d="M2 8h3l1.5-4 3 8L11 8h3"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-glance" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8.5" rx="1"/><path d="M5 6.2v2.4M8 6.2v2.4M11 6.2v2.4M6 14h4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+    <symbol id="i-options" viewBox="0 0 16 16"><path d="M2.5 5h5M11.5 5h2M2.5 11h2M8.5 11h5"/><circle cx="9.5" cy="5" r="1.7"/><circle cx="6.5" cy="11" r="1.7"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 16 16"><path d="M4 2h5l3 3v9H4zM9 2v3h3"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="12.5" cy="8" r="1" fill="currentColor"/></symbol>
+    <symbol id="i-right" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5"/></symbol>
+    <symbol id="i-left" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8 10 12.5"/></symbol>
+    <symbol id="i-down" viewBox="0 0 16 16"><path d="M3.5 6 8 10.5 12.5 6"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 16 16"><path d="M2 8h11M9.5 4.5 13 8l-3.5 3.5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="1.8"/></symbol>
+    <symbol id="i-chain" viewBox="0 0 16 16"><path d="M6.8 9.2l2.4-2.4"/><path d="M5.3 7.6 3.9 9a2.4 2.4 0 0 0 3.4 3.4l1.4-1.4M10.7 8.4 12.1 7A2.4 2.4 0 0 0 8.7 3.6L7.3 5"/></symbol>
+    <!-- state and event glyphs, 10px -->
+    <symbol id="g-tri" viewBox="0 0 10 10"><path d="M5 .8 9.6 9H.4z"/></symbol>
+    <symbol id="g-diamond" viewBox="0 0 10 10"><path d="M5 .3 9.7 5 5 9.7.3 5z"/></symbol>
+    <symbol id="g-sq" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7"/></symbol>
+    <symbol id="g-dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3"/></symbol>
+    <symbol id="g-bar" viewBox="0 0 10 10"><rect x="0" y="3" width="10" height="4"/></symbol>
+    <symbol id="g-dash" viewBox="0 0 10 10"><rect x="1" y="4.5" width="8" height="1"/></symbol>
+    <symbol id="g-sqo" viewBox="0 0 10 10"><rect x="1.75" y="1.75" width="6.5" height="6.5"/></symbol>
+    <symbol id="g-check" viewBox="0 0 10 10"><path d="M1.5 5.5 4 8l4.5-5.5"/></symbol>
+    <symbol id="g-x" viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8"/></symbol>
+    <symbol id="g-slash" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.75"/><path d="M2.4 7.6 7.6 2.4"/></symbol>
+    <symbol id="g-talk" viewBox="0 0 10 10"><path d="M1.2 1.8h7.6v5H4.6L2.6 8.8v-2H1.2z"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+
+  <!-- ── Top bar: nine areas, search, mode, stop ────────────────────────────── -->
+  <header class="bar">
+    <a class="brand" href="cockpit.html" aria-label="Nerva Console, home. Something is waiting for you.">
+      <svg class="mark" viewBox="20 16 88 96" aria-hidden="true">
+        <path class="s" d="M40 92V36L88 92V36"/>
+        <circle class="n" cx="40" cy="36" r="10"/><circle class="n" cx="40" cy="92" r="10"/><circle class="n" cx="88" cy="92" r="10"/>
+        <circle class="n lit" cx="88" cy="36" r="12"/>
+      </svg>
+      <span>Nerva</span>
+    </a>
+    <nav class="areas" aria-label="Areas">
+      <a href="cockpit.html" aria-current="page">Home</a>
+      <a href="#work" title="9 need you">Work <span class="n you"><svg class="g"><use href="#g-sq"/></svg>9</span><span class="sr">need you</span></a>
+      <a href="#agents">Agents</a>
+      <a href="#memory">Memory</a>
+      <a href="secondary.html">Trust</a>
+      <a href="#build">Build</a>
+      <a href="#connect">Connect</a>
+      <a href="#observe" title="4 services down">Observe <span class="n fault"><svg class="g"><use href="#g-diamond"/></svg>4</span><span class="sr">services down</span></a>
+      <a href="#settings">Settings</a>
+    </nav>
+    <button class="search" type="button" aria-label="Search and command. Finds every area, panel, agent and action.">
+      <svg class="i"><use href="#i-search"/></svg>
+      <span>Search or run a command</span>
+      <span class="keys"><kbd>Ctrl</kbd><kbd>K</kbd></span>
+    </button>
+    <div class="bar-right">
+      <span class="lbl md">Mode</span>
+      <div class="seg" role="radiogroup" aria-label="Approval mode">
+        <button type="button" role="radio" aria-checked="false" title="Safe and reversible actions run on their own; risky ones wait.">Auto</button>
+        <button type="button" role="radio" aria-checked="true" title="Anything with a side effect waits for you.">Ask</button>
+        <button type="button" role="radio" aria-checked="false" title="Agents may read and think, nothing acts.">Off</button>
+      </div>
+      <div class="budget" title="Nerva may interrupt you four times a day. Three used.">
+        <span class="lbl lg">Interrupts</span>
+        <span class="pips" aria-hidden="true"><i></i><i></i><i></i><i class="left"></i></span>
+        <span>3 of 4</span>
+      </div>
+      <span class="bar-sep" aria-hidden="true"></span>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" aria-pressed="true">EN</button><button type="button" aria-pressed="false">RO</button>
+      </div>
+      <button class="icon-btn" type="button" id="theme" aria-label="Theme: dark. Switch to light." title="Theme dark / light"><svg class="i"><use href="#i-theme"/></svg></button>
+      <button class="icon-btn" type="button" aria-label="Glance mode (idle or second screen)" title="Glance mode (idle or second screen)"><svg class="i"><use href="#i-glance"/></svg></button>
+      <span class="bar-sep" aria-hidden="true"></span>
+      <button class="stop" type="button" title="One click. Halts every agent and the job queue until you resume."><span class="sq" aria-hidden="true"></span>Stop all agents</button>
+    </div>
+  </header>
+
+  <!-- ── Status line: one verdict with its fix, then the trust signals ──────── -->
+  <div class="statusline" role="status" aria-label="System status">
+    <a class="verdict attention" href="#observe" title="Not blocking. Last checked 10:50.">
+      <svg class="g" aria-hidden="true"><use href="#g-tri"/></svg>
+      <b>Degraded</b>
+      <span class="v-head"><span class="md">Working, with </span>4 local services down</span>
+      <span class="v-meta"><span class="lg">since 08:14 · </span>checked 10:50</span>
+    </a>
+    <a class="v-fix" href="#d1" title="Restart 4 local services — waits for your decision"><span class="pin t3">1</span><span class="md">Restart waits for you</span></a>
+    <div class="facts">
+      <span class="fact"><svg class="i"><use href="#i-lock"/></svg><i>Egress</i><b>Sealed</b><span class="more xl">— nothing can leave this machine</span></span>
+      <span class="fact"><svg class="i"><use href="#i-machine"/></svg><i><span class="md">Runs on this machine</span><span class="sm-only">On this machine</span></i><b>100%</b><span class="more lg">· 41 of 41 runs today</span><span class="basis" title="The hub counts which route each run used. It is not a network measurement.">by route</span></span>
+      <span class="fact"><svg class="i"><use href="#i-mic"/></svg><i class="md">Microphone</i><b>On</b></span>
+      <span class="fact"><svg class="i"><use href="#i-model"/></svg><i class="md">Model</i><b class="mono">gemma-4-31b</b><span class="more lg">· loaded on Ollama</span></span>
+      <span class="fact"><svg class="i"><use href="#i-data"/></svg><i><span class="md">Data on screen</span><span class="sm-only">Data</span></i><b>Live</b></span>
+    </div>
+  </div>
+
+  <main class="home">
+
+    <!-- ── Conversation ───────────────────────────────────────────────────── -->
+    <section class="pane talk" aria-labelledby="h-talk">
+      <header class="pane-h">
+        <h2 id="h-talk">Conversation</h2>
+        <span class="sub"><span class="muted">Jarvis</span> · Prime Orchestrator · Orchestrated</span>
+        <span class="right"><span class="src">Live</span></span>
+      </header>
+
+      <div class="thread">
+        <div class="turns">
+          <div class="day">Monday, 23 November</div>
+
+          <article class="turn note">
+            <time>06:00</time><span class="who">Friday</span>
+            <div class="body"><svg class="g o" aria-hidden="true"><use href="#g-check"/></svg>Morning brief ready · 6 items ranked</div>
+          </article>
+
+          <article class="turn you">
+            <time>08:02</time><span class="who">You</span>
+            <div class="body"><p>Morning Jarvis — what does my day look like?</p></div>
+          </article>
+          <article class="turn">
+            <time>08:02</time><span class="who">Jarvis</span>
+            <div class="body">
+              <p>Good morning, Andrei. Three meetings today; the Raiffeisen review at 14:00 is the one that matters. Pepper holds your calendar, Stark prepped the KPI deltas. Weather is clear — good day to cycle in.</p>
+              <div class="meta"><span class="ran"><svg class="i"><use href="#i-machine"/></svg>on this machine · <span class="mono">gemma-4-31b</span></span></div>
+            </div>
+          </article>
+
+          <article class="turn you">
+            <time>08:05</time><span class="who">You</span>
+            <div class="body"><p>draft the churn slide</p>
+              <span class="chip-file"><svg class="i s"><use href="#i-doc"/></svg><span class="mono">QBR-deck.docx</span></span></div>
+          </article>
+          <article class="turn">
+            <time>08:05</time><span class="who">Stark</span>
+            <div class="body">
+              <p>Stark pulled the numbers — <strong>Digitaholic MRR is +6.2% WoW</strong>; I flagged the missing churn-cohort slide for the review.</p>
+              <div class="calls"><span>2 tool calls</span>
+                <span class="c"><svg class="g o"><use href="#g-check"/></svg><span class="mono">web_search</span> done</span>
+                <span class="c c-fault"><svg class="g o"><use href="#g-x"/></svg><span class="mono">file_write</span> failed</span></div>
+              <div class="meta"><span class="ran"><svg class="i"><use href="#i-machine"/></svg>on this machine · <span class="mono">gemma-4-31b</span></span></div>
+            </div>
+          </article>
+
+          <article class="turn you">
+            <time>08:07</time><span class="who">You</span>
+            <div class="body"><p>sweep idle cash</p></div>
+          </article>
+          <article class="turn">
+            <time>08:07</time><span class="who">Gecko</span>
+            <div class="body">
+              <p>Gecko's watching the markets — EUR/RON steady at 4.97; idle cash is <strong>€4.2k over buffer</strong>, sweep available.</p>
+              <a class="waits" href="#d2"><span class="pin t3">2</span><span><b>1 action waits for your decision</b> — Sweep €4,200 to the savings ladder</span><span class="go">open <svg class="i s"><use href="#i-right"/></svg></span></a>
+              <div class="meta"><span class="ran"><svg class="i"><use href="#i-machine"/></svg>on this machine · <span class="mono">gemma-4-31b</span></span></div>
+              <div class="acts">
+                <button class="btn sm quiet" type="button">Copy</button>
+                <button class="btn sm quiet" type="button">Save</button>
+                <button class="btn sm quiet" type="button">Read aloud</button>
+                <button class="btn sm quiet" type="button">Create task</button>
+                <button class="btn sm quiet" type="button">More<svg class="i s"><use href="#i-down"/></svg></button>
+              </div>
+            </div>
+          </article>
+
+          <article class="turn you">
+            <time>10:48</time><span class="who">You</span>
+            <div class="body"><p lang="ro">Ce proiecte sunt de terminat acum?</p></div>
+          </article>
+          <article class="turn live" aria-live="polite">
+            <time>10:51</time><span class="who">Jarvis</span>
+            <div class="body">
+              <div class="live-h"><svg class="g"><use href="#g-bar"/></svg><b>Gathering</b><span class="muted md">— asking Pepper and Stark</span>
+                <button class="btn sm" type="button"><span class="sq" aria-hidden="true"></span>Stop reply</button></div>
+              <ol class="ladder" aria-label="Reply progress">
+                <li class="done"><b>Classify</b></li>
+                <li class="done"><b>Route</b></li>
+                <li class="now" aria-current="step"><b>Gather</b></li>
+                <li class="future"><b>Synthesize</b></li>
+              </ol>
+              <ul class="crew" aria-label="Working on this reply">
+                <li><svg class="g" aria-hidden="true"><use href="#g-bar"/></svg><b>Pepper</b><span>Checking this week's deadlines</span><i>since 10:49</i></li>
+                <li><svg class="g" aria-hidden="true"><use href="#g-bar"/></svg><b>Stark</b><span>Pulling project status for Digitaholic</span><i>since 10:49</i></li>
+              </ul>
+              <p lang="ro">Trei proiecte au termene săptămâna aceasta: prezentarea pentru Raiffeisen (azi, 14:00), raportul lunar Digitaholic și<span class="caret" aria-hidden="true"></span></p>
+              <div class="meta"><span class="ran"><svg class="i"><use href="#i-machine"/></svg>running on this machine · <span class="mono">gemma-4-31b</span></span><span>asked 10:48 · 3 min</span></div>
+            </div>
+          </article>
+
+        </div>
+      </div>
+
+      <form class="composer" action="#" aria-label="Message Jarvis">
+        <div class="to"><span>To</span><b>Jarvis</b><span>· orchestrated</span><svg class="i s"><use href="#i-down"/></svg>
+          <span class="hint mono">/new /undo /refine /&lt;skill&gt; @file:path</span></div>
+        <textarea placeholder="Message Jarvis…" aria-label="Message Jarvis" rows="2"></textarea>
+        <div class="tools">
+          <button class="btn sm quiet" type="button" title="Images, Files, Vault note, Board result, Skill"><svg class="i s"><use href="#i-plus"/></svg>Attach</button>
+          <button class="btn sm quiet" type="button" title="Direct reply (skip extended thinking), Search chat history, Compare agents, Use previous image"><svg class="i s"><use href="#i-options"/></svg>Options</button>
+          <button class="btn sm quiet" type="button" title="Voice runs locally"><svg class="i s"><use href="#i-mic"/></svg>Voice ready<span class="dim lg"> · runs locally</span></button>
+          <span class="mode push"><span>Mode</span><b>Ask</b></span>
+          <button class="btn send" type="submit" title="Send (Enter). Lights up once there is something to send.">Send<kbd class="lg">Enter</kbd></button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ── Today: agenda + one lane per active agent ──────────────────────── -->
+    <section class="pane today" aria-labelledby="h-today">
+      <header class="pane-h">
+        <h2 id="h-today">Today</h2>
+        <span class="sub md">Monday, 23 November 2026</span>
+        <span class="nextline"><span>Next</span><b>11:00</b><span>1:1 with Cosmina</span><span class="tag inv">in 9 min</span><span class="dim">·</span><b>14:00</b><span>Raiffeisen quarterly review</span><span class="tag">Important</span></span>
+        <span class="right">
+          <span class="legend" aria-label="Key">
+            <span class="lg">While you were away</span>
+            <span><svg class="g"><use href="#g-dot"/></svg><b>4</b> done</span>
+            <span><svg class="g o"><use href="#g-sqo"/></svg><b>2</b> held or blocked</span>
+            <span><svg class="g fault"><use href="#g-diamond"/></svg><b>1</b> problem</span>
+            <span class="sepv" aria-hidden="true"></span>
+            <span class="lg"><i class="k-rail"></i>held for you since</span>
+            <span class="lg"><i class="k-run"></i>running</span>
+            <span class="lg"><i class="k-lens"></i>last 6 min, magnified</span>
+          </span>
+          <span class="src">Live</span>
+        </span>
+      </header>
+
+      <ol class="agenda" aria-label="Your schedule today">
+        <li class="past"><div class="l1"><b>09:30</b><span>Standup — Digitaholic</span></div><div class="l2">Google Meet · past</div></li>
+        <li class="next"><div class="l1"><b>11:00</b><span>1:1 with Cosmina</span></div><div class="l2"><span class="tag inv">in 9 min</span>Office</div></li>
+        <li><div class="l1"><b>14:00</b><span>Raiffeisen quarterly review</span></div><div class="l2"><span class="tag">Important</span>Conf Room A<span class="lg"> · prep 13:15</span></div></li>
+        <li><div class="l1"><b>16:30</b><span>Vision research sync</span></div><div class="l2"><span class="pin t1">6</span>Async<span class="lg"> · move to 17:15 proposed</span></div></li>
+        <li><div class="l1"><b>19:00</b><span>Gym — Hercules plan</span></div><div class="l2">Personal</div></li>
+        <li class="wx"><div class="l1"><span>București</span></div><div class="l2">9° · Mist</div></li>
+      </ol>
+
+      <div class="lanes" role="table" aria-label="Agents today, 05:45 to now. The last six minutes are magnified.">
+        <div class="grid" aria-hidden="true">
+          <i class="at" style="--t:360"></i><i class="at" style="--t:420"></i><i class="at" style="--t:480"></i><i class="at" style="--t:540"></i><i class="at" style="--t:600"></i><i class="lens0"></i><i class="now"></i>
+        </div>
+        <div class="lane-head" role="row">
+          <span role="columnheader"><span class="md">8 active of 18 agents</span><span class="sm-only">8 of 18 active</span></span>
+          <div class="axis" role="columnheader" aria-label="Time">
+            <span class="at" style="--t:360">06:00</span><span class="at" style="--t:420">07:00</span><span class="at" style="--t:480">08:00</span><span class="at" style="--t:540">09:00</span><span class="at" style="--t:600">10:00</span><span class="lz">10:45</span>
+          </div>
+          <div class="nowh" role="columnheader"><b>Now 10:51</b><span class="md">3 waiting on you · 3 working · 2 finished<span class="lg"> · 9 idle · 1 unavailable</span></span></div>
+        </div>
+
+        <div class="lane" role="row">
+          <div class="who" role="cell"><b>Steve</b><span>CTO / Builds</span></div>
+          <div class="track" role="cell">
+            <div class="ev at fault" style="--t:494"><svg class="g fault"><use href="#g-diamond"/></svg><span class="l">lmstudio, qdrant, neo4j and n8n stopped responding</span></div>
+            <div class="hold at t3" style="--t:494"><span class="pin t3">1</span></div>
+          </div>
+          <div class="state you" role="cell"><svg class="g you"><use href="#g-sq"/></svg>Waiting on you</div>
+          <div class="doing" role="cell">4 restarts wait for your decision</div>
+        </div>
+
+        <div class="lane sel" role="row" aria-selected="true">
+          <div class="who" role="cell"><b>Gecko</b><span>Markets &amp; Capital</span></div>
+          <div class="track" role="cell">
+            <div class="ev at" style="--t:487"><svg class="g o"><use href="#g-talk"/></svg><span class="l"><span class="q">“sweep idle cash”</span><span class="low"> — from your conversation</span></span></div>
+            <div class="hold at t3" style="--t:487"><span class="pin t3">2</span></div>
+          </div>
+          <div class="state you" role="cell"><svg class="g you"><use href="#g-sq"/></svg>Waiting on you</div>
+          <div class="doing" role="cell">Sweep of €4,200 waits for your decision</div>
+        </div>
+
+        <div class="lane" role="row">
+          <div class="who" role="cell"><b>Ultron</b><span>Security &amp; Automation</span></div>
+          <div class="track" role="cell">
+            <div class="ev at flip" style="--t:468"><svg class="g o"><use href="#g-sqo"/></svg><span class="l low">2 PII findings redacted, outbound held</span></div>
+            <div class="ev at" style="--t:481"><svg class="g o"><use href="#g-sqo"/></svg><span class="l">SSRF attempt blocked · 1 request denied</span></div>
+            <div class="hold at t2" style="--t:468"><span class="pin t2">4</span></div>
+          </div>
+          <div class="state you" role="cell"><svg class="g you"><use href="#g-sq"/></svg>Waiting on you</div>
+          <div class="doing" role="cell">Holding an outbound draft for your review</div>
+        </div>
+
+        <div class="lane" role="row">
+          <div class="who" role="cell"><b>Jarvis</b><span>Prime Orchestrator</span></div>
+          <div class="track" role="cell">
+            <div class="ev at z flip" style="--m:4"><svg class="g"><use href="#g-dot"/></svg><span class="l">Routed your question to Pepper and Stark</span></div>
+            <div class="hold at t3" style="--t:450"><span class="pin t3">3</span></div>
+            <div class="run at z" style="--m:3" title="Answering since 10:48"></div>
+          </div>
+          <div class="state work" role="cell"><svg class="g"><use href="#g-bar"/></svg>Working</div>
+          <div class="doing" role="cell">Answering you — gathering from Pepper and Stark</div>
+        </div>
+
+        <div class="lane" role="row">
+          <div class="who" role="cell"><b>Stark</b><span>Biz Intel</span></div>
+          <div class="track" role="cell">
+            <div class="ev at flip" style="--t:480"><svg class="g"><use href="#g-dot"/></svg><span class="l low">KPI snapshot cached for the Raiffeisen review</span></div>
+            <div class="ev at fault" style="--t:485"><svg class="g o fault"><use href="#g-x"/></svg><span class="l"><span class="mono">file_write</span> failed — nothing was changed</span></div>
+            <div class="hold at t1" style="--t:485"><span class="pin t1">5</span></div>
+            <div class="run at z" style="--m:4" title="Working since 10:49"></div>
+          </div>
+          <div class="state work" role="cell"><svg class="g"><use href="#g-bar"/></svg>Working</div>
+          <div class="doing" role="cell">Pulling project status for Digitaholic</div>
+        </div>
+
+        <div class="lane" role="row">
+          <div class="who" role="cell"><b>Pepper</b><span>Chief of Staff</span></div>
+          <div class="track" role="cell">
+            <div class="ev at" style="--t:434"><svg class="g"><use href="#g-dot"/></svg><span class="l">Calendar synced · 1 conflict auto-resolved</span></div>
+            <div class="hold at t1" style="--t:434"><span class="pin t1">6</span></div>
+            <div class="run at z" style="--m:4" title="Working since 10:49"></div>
+          </div>
+          <div class="state work" role="cell"><svg class="g"><use href="#g-bar"/></svg>Working</div>
+          <div class="doing" role="cell">Checking this week's deadlines</div>
+        </div>
+
+        <div class="lane quiet" role="row">
+          <div class="who" role="cell"><b>Friday</b><span>Daily Intel</span></div>
+          <div class="track" role="cell">
+            <div class="ev at" style="--t:360"><svg class="g"><use href="#g-dot"/></svg><span class="l">Morning brief generated — 6 items ranked</span></div>
+          </div>
+          <div class="state" role="cell"><svg class="g o"><use href="#g-check"/></svg>Finished</div>
+          <div class="doing" role="cell">Morning brief ready · 6 items · 06:00</div>
+        </div>
+
+        <div class="lane quiet" role="row">
+          <div class="who" role="cell"><b>Vision</b><span>Deep Research</span></div>
+          <div class="track" role="cell">
+            <div class="ev at flip" style="--t:580"><svg class="g"><use href="#g-dot"/></svg><span class="l">Indexed 17 sources on competitor pricing</span></div>
+          </div>
+          <div class="state" role="cell"><svg class="g o"><use href="#g-check"/></svg>Finished</div>
+          <div class="doing" role="cell">Indexed 17 sources on competitor pricing · 09:40</div>
+        </div>
+
+        <div class="lane scan gone fold" role="row">
+          <div class="who" role="cell"><b>Athena</b><span>External Strategist</span></div>
+          <div class="track" role="cell"></div>
+          <div class="state" role="cell"><svg class="g o"><use href="#g-slash"/></svg>Unavailable</div>
+          <div class="doing" role="cell">Cloud only — unavailable while egress is sealed</div>
+        </div>
+
+        <div class="lane scan quiet fold" role="row">
+          <div class="who" role="cell"><b>9 idle</b><span>no activity today</span></div>
+          <div class="names" role="cell">Jerome · Veronica · Argus · Oracle · Hercules · Hephaestus · Frigga · Hestia · Howard</div>
+          <div class="state" role="cell"><svg class="g idle"><use href="#g-dash"/></svg>Idle</div>
+          <div class="doing" role="cell">Oracle: n8n is down — workflows cannot run</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Decisions ──────────────────────────────────────────────────────── -->
+    <section class="pane decide" aria-labelledby="h-decide">
+      <header class="pane-h">
+        <h2 id="h-decide">Decisions</h2>
+        <span class="sub"><span class="muted">9 actions in 6 groups</span><span class="md"> · grouped from 18 requests</span></span>
+        <span class="right">
+          <span class="sub">Mode <b class="muted">Ask</b><span class="lg"> — anything with a side effect waits for you</span></span>
+          <span class="src">Live</span>
+        </span>
+      </header>
+
+      <div class="decide-body">
+        <div class="dq-wrap">
+          <table class="tbl dq">
+            <colgroup><col class="c-pin"><col><col class="c-scope"><col class="c-raised"><col class="c-ctl"></colgroup>
+            <thead>
+              <tr><th scope="col"><span class="sr">Pin</span></th><th scope="col">Action · who asks · why it waits</th><th scope="col" class="num">Scope</th><th scope="col" class="raised">Raised</th><th scope="col" class="num">Verdict</th></tr>
+            </thead>
+
+            <tbody>
+              <tr class="tier-h"><th colspan="5" scope="rowgroup"><div class="in"><span class="tier t3"><b>3</b>Irreversible or money</span><span class="fr">typed confirmation; cannot be bulk-approved</span><span class="cnt">3 groups</span></div></th></tr>
+
+              <tr class="d t3" id="d1">
+                <td class="p"><span class="pin t3">1</span></td>
+                <td><div class="ttl">Restart 4 local services that stopped responding</div>
+                    <div class="sb"><b>Steve</b><span class="xl"> · Held because the approval mode is Ask.</span> · Deadline tomorrow 08:14 — then it is blocked, never auto-approved</div>
+                    <div class="sb run3 xl">Would run the configured restart command for each service on this machine. · Undo: none — a restart interrupts anything the service is doing.</div></td>
+                <td class="scope"><span class="v">4 services</span><span class="u">12 requests</span></td>
+                <td class="raised">08:14<span class="u">repeated 3 times</span></td>
+                <td class="ctl"><button class="btn sm" type="button">Open<svg class="i s"><use href="#i-right"/></svg></button></td>
+              </tr>
+              <tr class="mem"><td></td><td colspan="4" class="m"><div class="mrow"><span class="mono dim">402</span><span class="mono svc"><svg class="g fault"><use href="#g-diamond"/></svg>lmstudio</span><span class="mono dim">127.0.0.1:1234</span><span class="st xl">not responding · since 08:14</span><span class="imp">Not blocking: the model is being served by Ollama instead.</span></div></td></tr>
+              <tr class="mem"><td></td><td colspan="4" class="m"><div class="mrow"><span class="mono dim">409</span><span class="mono svc"><svg class="g fault"><use href="#g-diamond"/></svg>qdrant</span><span class="mono dim">127.0.0.1:6333</span><span class="st xl">not responding · since 08:14</span><span class="imp">Long-term recall is using the built-in vector store.</span></div></td></tr>
+              <tr class="mem"><td></td><td colspan="4" class="m"><div class="mrow"><span class="mono dim">410</span><span class="mono svc"><svg class="g fault"><use href="#g-diamond"/></svg>neo4j</span><span class="mono dim">127.0.0.1:7474</span><span class="st xl">not responding · since 08:14</span><span class="imp">The knowledge graph is running in memory only.</span></div></td></tr>
+              <tr class="mem"><td></td><td colspan="4" class="m"><div class="mrow"><span class="mono dim">411</span><span class="mono svc"><svg class="g fault"><use href="#g-diamond"/></svg>n8n</span><span class="mono dim">127.0.0.1:5678</span><span class="st xl">not responding · since 08:14</span><span class="imp">Oracle's workflows cannot run.</span></div></td></tr>
+              <tr class="mem last"><td></td><td colspan="4" class="m"><div class="mfoot"><span class="why"><span class="lg">Would run the configured restart command for each service on this machine.<br>Undo: none — a restart interrupts anything the service is doing.</span></span><button class="btn sm" type="button">Approve once for all 4…</button><button class="btn sm" type="button">Reject group…</button></div></td></tr>
+
+              <tr class="d t3 sel" id="d2" aria-selected="true">
+                <td class="p"><span class="pin t3">2</span></td>
+                <td><div class="ttl">Sweep €4,200 of idle cash to the savings ladder</div>
+                    <div class="sb"><b>Gecko</b> · Money always waits for you.<span class="md"> A transfer back takes 1–2 working days.</span></div>
+                    <div class="sb run3 xl">Would move €4,200 from the current account to the savings ladder. · Undo: a transfer back takes 1–2 working days.</div></td>
+                <td class="scope"><span class="v fig">€4,200</span></td>
+                <td class="raised">08:07<span class="u">from your conversation</span></td>
+                <td class="ctl"><span class="open">Shown at right<svg class="i s"><use href="#i-right"/></svg></span></td>
+              </tr>
+
+              <tr class="d t3" id="d3">
+                <td class="p"><span class="pin t3">3</span></td>
+                <td><div class="ttl">Delete logs older than 14 days</div>
+                    <div class="sb"><b>Jarvis</b><span class="xl"> · Held because the approval mode is Ask.</span> · Would delete 312 files, 2.1 GB. Undo: none.</div>
+                    <div class="sb run3 xl">Would delete 312 files, 2.1 GB. · Undo: none.</div></td>
+                <td class="scope"><span class="v">312 files</span><span class="u">2.1 GB · 2 requests</span></td>
+                <td class="raised">07:30<span class="u">repeated once</span></td>
+                <td class="ctl"><button class="btn sm" type="button">Open<svg class="i s"><use href="#i-right"/></svg></button></td>
+              </tr>
+            </tbody>
+
+            <tbody>
+              <tr class="tier-h"><th colspan="5" scope="rowgroup"><div class="in"><span class="tier t2"><b>2</b><span>External<span class="md"> — reaches someone or something outside</span></span></span><span class="fr">two steps: review what will be sent, then confirm</span><span class="cnt">1 group</span></div></th></tr>
+              <tr class="d t2" id="d4">
+                <td class="p"><span class="pin t2">4</span></td>
+                <td colspan="2"><div class="ttl">Veronica's LinkedIn draft names a client flagged as sensitive</div>
+                    <div class="sb"><b>Ultron</b> · Outbound is held until you clear it.</div></td>
+                <td class="raised">07:48</td>
+                <td class="ctl"><button class="btn sm" type="button">Review the draft</button><button class="btn sm sq quiet hide-s" type="button" aria-label="More: Redact and send, Reject" title="Redact and send · Reject"><svg class="i s"><use href="#i-more"/></svg></button></td>
+              </tr>
+            </tbody>
+
+            <tbody>
+              <tr class="tier-h"><th colspan="5" scope="rowgroup"><div class="in"><span class="tier t1"><b>1</b>Reversible</span><span class="fr">one click, undo available</span><span class="cnt">2 groups</span></div></th></tr>
+              <tr class="d t1" id="d5">
+                <td class="p"><span class="pin t1">5</span></td>
+                <td colspan="2"><div class="ttl">Draft a reply to Raiffeisen with the QBR agenda</div>
+                    <div class="sb"><b>Stark</b> · Would save a draft in your mailbox. Nothing is sent. Undo: delete the draft.</div></td>
+                <td class="raised">08:05</td>
+                <td class="ctl"><button class="btn sm" type="button">Approve</button><button class="btn sm sq quiet hide-s" type="button" aria-label="More: Edit then approve, Reject, Defer, Preview" title="Edit then approve · Reject · Defer · Preview"><svg class="i s"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr class="d t1" id="d6">
+                <td class="p"><span class="pin t1">6</span></td>
+                <td colspan="2"><div class="ttl">Move the research sync from 16:30 to 17:15</div>
+                    <div class="sb"><b>Pepper</b> · Your 14:00 and 16:30 leave no lunch gap; Vision is async anyway. Undo: move it back.</div></td>
+                <td class="raised">07:14</td>
+                <td class="ctl"><button class="btn sm" type="button">Approve</button><button class="btn sm sq quiet hide-s" type="button" aria-label="More: Edit then approve, Reject, Defer, Preview" title="Edit then approve · Reject · Defer · Preview"><svg class="i s"><use href="#i-more"/></svg></button></td>
+              </tr>
+            </tbody>
+            <tfoot class="xl">
+              <tr><td colspan="5">18 requests in 6 groups · oldest waiting since 07:14 · next deadline tomorrow 08:14 (restart group) · a request that times out is blocked, never approved</td></tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <!-- the open decision -->
+        <aside class="dp" aria-labelledby="dp-t">
+          <div class="dp-top">
+            <div class="dp-h">
+              <span class="pin t3">2</span>
+              <span class="tier t3"><b>3</b>Money</span>
+              <span><b class="muted">Gecko</b><span class="md"> · Markets &amp; Capital</span></span>
+              <span class="nav"><span>2 of 6</span>
+                <button class="btn sm sq quiet" type="button" aria-label="Previous decision"><svg class="i s"><use href="#i-left"/></svg></button>
+                <button class="btn sm sq quiet" type="button" aria-label="Next decision"><svg class="i s"><use href="#i-right"/></svg></button></span>
+            </div>
+            <h3 class="dp-title" id="dp-t">Sweep €4,200 of idle cash to the savings ladder</h3>
+            <div class="dp-stake">
+              <span class="amt">€4,200</span>
+              <span class="route"><b>Current account</b><svg class="i"><use href="#i-arrow"/></svg><b>Savings ladder</b></span>
+            </div>
+          </div>
+          <div class="dp-body">
+            <dl class="dp-kv">
+              <dt>Context</dt><dd>Idle cash in the current account is €4.2k over your target buffer.</dd>
+              <dt>Would run</dt><dd>Would move €4,200 from the current account to the savings ladder.</dd>
+              <dt>Undo</dt><dd>A transfer back takes 1–2 working days.</dd>
+              <dt>Why it waits</dt><dd>Money always waits for you.</dd>
+              <dt>Raised</dt><dd>08:07, from your conversation</dd>
+            </dl>
+            <ol class="dp-origin" aria-label="The moment that raised it">
+              <li class="mine"><time>08:07</time><b>You</b><q>sweep idle cash</q></li>
+              <li><time>08:07</time><b>Gecko</b><q>… idle cash is €4.2k over buffer, sweep available.</q></li>
+            </ol>
+            <div class="dp-rec">
+              <span class="lbl">Recorded</span>
+              <span class="v"><svg class="i s"><use href="#i-chain"/></svg><span>Sealed in the audit chain · request <span class="mono">408</span> · <span class="mono">71bb…e2c4</span></span></span>
+            </div>
+            <div class="dp-pay xl">
+              <span class="lbl">Payments today</span>
+              <table class="mini">
+                <tr><td>Gecko</td><td>Savings ladder sweep</td><td class="num"><b>€4,200</b></td><td class="c-you">Waiting for approval</td></tr>
+                <tr><td>Pepper</td><td>Conf Room A booking</td><td class="num">€35</td><td class="muted">Settled 07:20</td></tr>
+              </table>
+            </div>
+          </div>
+          <div class="dp-verdict">
+            <ol class="ladder" aria-label="Risk tier and its friction">
+              <li><b>0 Read only</b><span class="xl">none — recorded</span></li>
+              <li><b>1 Reversible</b><span class="xl">one click, undo</span></li>
+              <li><b>2 External</b><span class="xl">review, then confirm</span></li>
+              <li class="now" aria-current="step"><b>3 Irreversible or money</b><span class="xl">typed; never in bulk</span></li>
+            </ol>
+            <label for="confirm"><span class="lg">Tier 3 asks for a typed confirmation. </span>Type <span class="mono">4200</span> to approve the transfer.</label>
+            <div class="row">
+              <input class="field" id="confirm" type="text" inputmode="numeric" autocomplete="off" placeholder="Amount in euros" aria-describedby="rule">
+              <button class="btn" type="button" disabled>Approve transfer</button>
+            </div>
+            <div class="row">
+              <button class="btn" type="button">Edit then approve</button>
+              <button class="btn" type="button">Reject</button>
+              <button class="btn" type="button">Defer</button>
+              <button class="btn quiet" type="button"><svg class="i s"><use href="#i-eye"/></svg>Preview</button>
+              <span class="note" id="rule">No key approves or rejects.</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <!-- ── Key line ───────────────────────────────────────────────────────────── -->
+  <footer class="keyline">
+    <span class="k"><kbd>Ctrl</kbd><kbd>K</kbd>Search or run</span>
+    <span class="k"><kbd>1</kbd>–<kbd>9</kbd>Areas</span>
+    <span class="k"><kbd>J</kbd><kbd>K</kbd>Move</span>
+    <span class="k"><kbd>Enter</kbd>Open</span>
+    <span class="k lg"><kbd>/</kbd>Message Jarvis</span>
+    <span class="k lg"><kbd>Esc</kbd>Back</span>
+    <span class="k"><kbd>?</kbd>All keys</span>
+    <span class="rule">Verdicts take a click or a typed confirmation, never a key.</span>
+    <span class="sys">
+      <span class="lg"><i>Channels</i><b>2 of 2</b> running<span class="xl"> · 1 session in the last 15 min</span></span>
+      <span><i>Latency p50</i><span class="unknown">unknown</span></span>
+      <span><i>RAM</i><b>19%</b><span class="meter" aria-hidden="true"><i style="width:19%"></i></span><span class="lg">36 of 192 GB</span></span>
+      <span><i>VRAM</i><b>96%</b><span class="meter" aria-hidden="true"><i style="width:96%"></i></span><span class="lg">23.0 of 24 GB</span></span>
+      <span><i>GPU</i><b>3%</b><span class="meter" aria-hidden="true"><i style="width:3%"></i></span></span>
+      <span class="xl">Nerva 1.0.0</span>
+    </span>
+  </footer>
+</div>
+
+<script>
+  /* Theme switch: the only behaviour on this page. */
+  document.getElementById('theme').addEventListener('click', function () {
+    var r = document.documentElement, next = r.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    r.setAttribute('data-theme', next);
+    this.setAttribute('aria-label', 'Theme: ' + next + '. Switch to ' + (next === 'light' ? 'dark' : 'light') + '.');
+  });
+</script>
+</body>
+</html>

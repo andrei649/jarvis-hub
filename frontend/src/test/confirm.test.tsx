@@ -4,6 +4,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import { ConfirmAction, RISK_TIER, confirmStyle } from '../confirm';
 
 beforeEach(() => cleanup());
@@ -160,5 +162,151 @@ describe('ConfirmAction — H168', () => {
     fireEvent.click(screen.getByText('<b>x</b>'));
     expect(screen.getByText('type <i>y</i> to confirm')).toBeTruthy();
     expect(document.querySelector('b, i')).toBeNull();
+  });
+});
+
+/* Phase B (PHASE_B_PLAN.md §5.4): the docket's signature line and the Decision Inbox sign through
+   ConfirmAction with additive props; left out, nothing above changes. */
+describe('ConfirmAction — Phase B props', () => {
+  it('enterConfirms={false}: Enter in the phrase box never confirms, even when the phrase matches, and is held there', () => {
+    const go = vi.fn();
+    render(<ConfirmAction tier={3} open enterConfirms={false} label="sign" phrase="restart" armedLabel="Sign" onConfirm={go} />);
+    const box = screen.getByLabelText('type restart to confirm sign');
+    fireEvent.change(box, { target: { value: 'restart' } });
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    box.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(true);
+    expect(go).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Sign'));                                     // only the button signs
+    expect(go).toHaveBeenCalledTimes(1);
+  });
+
+  it('enterConfirms is true by default: a matching phrase and Enter confirm, as before', () => {
+    const go = vi.fn();
+    render(<ConfirmAction tier={2} open label="send" phrase="send" onConfirm={go} />);
+    const box = screen.getByLabelText('type send to confirm send');
+    fireEvent.change(box, { target: { value: 'send' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(go).toHaveBeenCalledTimes(1);
+  });
+
+  it('plain: no inline colour or layout anywhere in a typed confirmation, only the caller\'s classes', () => {
+    const { container } = render(<ConfirmAction tier={3} open plain label="sign" phrase="delete" armedLabel="Sign"
+      groupClassName="sig-group" inputClassName="sig-input" confirmClassName="sig-button" groupLabel="Signature line: Delete logs"
+      prompt="Sign here — type delete" onConfirm={() => {}} />);
+    const group = screen.getByRole('group', { name: 'Signature line: Delete logs' });
+    expect(group.className).toBe('sig-group');
+    expect(screen.getByLabelText('type delete to confirm sign').className).toBe('sig-input');
+    expect(screen.getByText('Sign').className).toBe('sig-button');
+    expect(container.querySelectorAll('[style]')).toHaveLength(0);
+    fireEvent.change(screen.getByLabelText('type delete to confirm sign'), { target: { value: 'delete' } });
+    expect(container.querySelectorAll('[style]')).toHaveLength(0);                 // and none once it matches
+  });
+
+  it('plain: none in a two-step confirmation either', () => {
+    const { container } = render(<ConfirmAction tier={1} plain label="Sign" armedLabel="Confirm signature" cancelLabel="Cancel"
+      groupClassName="two-step" prompt="Sign: Draft a reply" onConfirm={() => {}} />);
+    fireEvent.click(screen.getByText('Sign'));
+    expect(screen.getByRole('group').className).toBe('two-step');
+    expect(container.querySelectorAll('[style]')).toHaveLength(0);
+  });
+
+  it('repeatConfirms={false}, two steps: the press that armed it cannot also confirm — no key repeat, no double-click', () => {
+    const go = vi.fn();
+    render(<ConfirmAction tier={1} repeatConfirms={false} label="Sign" armedLabel="Confirm signature" onConfirm={go} />);
+    fireEvent.click(screen.getByText('Sign'));
+    const confirm = screen.getByText('Confirm signature');
+    expect(document.activeElement).toBe(confirm);                       // focus moved onto it
+    const held = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true });
+    confirm.dispatchEvent(held);
+    expect(held.defaultPrevented).toBe(true);                           // a held Enter does not press it
+    const fresh = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    confirm.dispatchEvent(fresh);
+    expect(fresh.defaultPrevented).toBe(false);                         // a new press still can
+    fireEvent.click(confirm, { detail: 2 });                            // the second click of a double-click
+    expect(go).not.toHaveBeenCalled();
+    fireEvent.click(confirm, { detail: 1 });
+    expect(go).toHaveBeenCalledTimes(1);
+  });
+
+  it('repeatConfirms={false}, typed and one click: the same for the signing button and a one-click action', () => {
+    const typed = vi.fn();
+    const once = vi.fn();
+    render(<>
+      <ConfirmAction tier={3} open repeatConfirms={false} label="sign" phrase="delete" armedLabel="Sign" onConfirm={typed} />
+      <ConfirmAction tier={0} repeatConfirms={false} label="Read" onConfirm={once} />
+    </>);
+    fireEvent.change(screen.getByLabelText('type delete to confirm sign'), { target: { value: 'delete' } });
+    fireEvent.click(screen.getByText('Sign'), { detail: 2 });
+    fireEvent.click(screen.getByText('Read'), { detail: 2 });
+    const held = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true });
+    screen.getByText('Read').dispatchEvent(held);
+    expect(held.defaultPrevented).toBe(true);
+    expect(typed).not.toHaveBeenCalled();
+    expect(once).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Sign'));
+    fireEvent.click(screen.getByText('Read'));
+    expect(typed).toHaveBeenCalledTimes(1);
+    expect(once).toHaveBeenCalledTimes(1);
+  });
+
+  it('repeatConfirms is true by default: every click confirms, as before', () => {
+    const go = vi.fn();
+    render(<ConfirmAction tier={0} label="stop" onConfirm={go} />);
+    fireEvent.click(screen.getByText('stop'), { detail: 2 });
+    const held = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true });
+    screen.getByText('stop').dispatchEvent(held);
+    expect(held.defaultPrevented).toBe(false);
+    expect(go).toHaveBeenCalledTimes(1);
+  });
+
+  it('without the new props, the group keeps its default name and inline look', () => {
+    render(<ConfirmAction tier={3} label="erase" phrase="FORGET" onConfirm={() => {}} />);
+    fireEvent.click(screen.getByText('erase'));
+    const group = screen.getByRole('group', { name: 'confirming erase' });
+    expect(group.getAttribute('style')).toContain('inline-flex');
+    expect(group.className).toBe('');
+    expect(screen.getByLabelText('type FORGET to confirm erase').getAttribute('style')).toContain('var(--surface)');
+  });
+});
+
+/* A controlled confirmation takes the focus in the commit that draws it, so no event can land
+   between the drawing and the focus. When the focus was taken in a passive effect, a commit later,
+   an Escape or a click that landed in between had the page move the focus (RunningHead's approval
+   mode below 760px: back to its button), then the confirmation took it back as React flushed its
+   effects before the next render, and left the screen with it: the focus fell to the page. */
+describe('ConfirmAction — the focus is taken in the commit that draws it', () => {
+  // flushSync outside act(): the commit that draws it and its layout effects run before this
+  // returns; an effect left to a later commit does not
+  const focusWhenDrawn = (element, target) => {
+    const was = globalThis.IS_REACT_ACT_ENVIRONMENT;
+    globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+    const host = document.body.appendChild(document.createElement('div'));
+    const root = createRoot(host);
+    try {
+      flushSync(() => root.render(element));
+      return { active: document.activeElement, target: target(host) };
+    } finally {
+      root.unmount();
+      host.remove();
+      globalThis.IS_REACT_ACT_ENVIRONMENT = was;
+    }
+  };
+
+  it('two steps: the confirm button has the focus as soon as it is drawn', () => {
+    const { active, target } = focusWhenDrawn(
+      <ConfirmAction tier={1} armed block repeatConfirms={false} label="Auto" armedLabel="Switch to Auto" cancelLabel="Cancel"
+        onCancel={() => {}} onConfirm={() => {}} />,
+      (host) => Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Switch to Auto'));
+    expect(target).toBeTruthy();
+    expect(active).toBe(target);
+  });
+
+  it('a typed phrase: the phrase box has the focus as soon as it is drawn', () => {
+    const { active, target } = focusWhenDrawn(
+      <ConfirmAction tier={3} armed label="erase" phrase="FORGET" onCancel={() => {}} onConfirm={() => {}} />,
+      (host) => host.querySelector('input'));
+    expect(target).toBeTruthy();
+    expect(active).toBe(target);
   });
 });

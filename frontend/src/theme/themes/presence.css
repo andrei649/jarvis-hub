@@ -1,0 +1,263 @@
+/* =====================================================================================
+   Theme · Presence
+   -------------------------------------------------------------------------------------
+   Source: docs/design/hud-next/presence/ (README.md identity sheet, tokens.css, presence.css).
+   Idea: Nerva is one calm presence that turns to the owner when it needs him. Large DIN
+   type, few things on screen, structure from hairlines and spacing, opaque surfaces.
+     Dark (default)  a warm near-black (hue 78); tungsten reads as a desk lamp
+     Light           warm paper (hue 85); tungsten turns into a highlighter: ink stays ink
+                     and the marker sits behind it, so --n-accent is the marker fill and
+                     --n-accent-text the amber ink
+   The one accent, TUNGSTEN, means "this is waiting for you". It is never spent on chrome,
+   focus or decoration: focus is ink and selection a neutral. Signal red means "cannot be undone,
+   broken, the emergency stop"; attention (warn) shares tungsten on purpose (README §2).
+   Emphasis and primary actions are ink, as drawn: the current area is ink 1 at weight over an
+   ink bar, the chosen segment is ink 1 at semibold over its bar (on the pressed step, one past
+   the field it is drawn on; see the port notes), and the lit Send is a solid ink-1 fill with
+   the ground as its text. Tungsten stays for what waits on the owner (the --n-accent fill,
+   "Approve once for all 4"), so legacy accent chrome (rail, tabs, names) turns to ink.
+
+   Status. The direction colours nothing else: "OK" is quiet ink plus a glyph, never green, and
+   its own components say a status with a word and a glyph. Legacy screens still tell status,
+   locality and categories apart by hue alone (legends, health rings, the locality bar, meters),
+   so contract §3 (2026-11-23) keeps the five status colours apart. ok, info and cloud therefore
+   take quiet hues at the lightness of ink 2 (sage, slate, lavender, chroma 0.045-0.09), far below
+   tungsten and red in chroma; warn and bad stay the direction's two signals.
+
+   Port notes (what the palette did not name, and what had to move for AA):
+   - bg-2 is Presence's hover fill. Dark: the field step, which Presence's buttons and tools
+     hover to (the plate surface would leave a hovered row invisible on a sheet). Light: the
+     sunken fill (the foot, the sub-navigation), a hair from the field it hovers to.
+   - sheet = the plate surface. Presence marks a chosen item with weight and an ink bar (the
+     kit's segmented control draws it on emph-wash, and its hover takes no fill); a pressed kit
+     button is marked with a fill alone, so bg-3 (pressed, the meter track) is one step past
+     the field (dark 0.290, light 0.918) and sheet-2 (a card inside a panel) sits between page
+     and plate (dark 0.229, light 0.981). With one fill for all three, a pressed button would
+     look hovered and a meter track would vanish on a nested card.
+   - rule-field: Presence draws control edges with --line-strong (2.0:1 / 1.9:1). Lifted in
+     OKLCH lightness only, the least that reaches 3:1 on page and plate: dark 0.390 -> 0.505,
+     light 0.760 -> 0.642. rule-heavy keeps --line-strong, the line under a section head.
+   - stop / on-stop: the HUD draws the emergency stop in --n-stop as a line, a glyph and a word
+     (the Trust kill button's ring, shield and STOP label; the Personalisation preview's
+     outline), and the kit fills it under --n-on-stop. Dark: Presence's text red (0.720), the
+     red of the stop's word and glyph at rest, with the page as on-stop: 7.2:1 as a fill and
+     6.0:1 or more as a mark on every dark ground. The designed pressed fill (0.560 under paper-white)
+     is only 3.1-3.7:1 as a mark there, so the dark block does not use it. Light: the designed
+     fill (0.520) under paper-white, 5.9:1 as a fill and 5.2:1 or more as a mark. Other red
+     text ("failed", "None") is --n-bad.
+   - selection and scrim are not in the palette: neutral values in the same hue family.
+   - status (2026-11-23): ok, info and cloud were all ink 2 (dark 0.800 0.010 82, light
+     0.395 0.012 70), one colour three times. Now dark ok 0.790 0.060 150, info 0.790 0.045 232,
+     cloud 0.780 0.070 295; light ok 0.440 0.070 150, info 0.440 0.055 235, cloud 0.450 0.090 295.
+     Each reads 6.4:1 or more on the four grounds the test reads (bg, bg-2, sheet, sheet-2) and
+     5.8:1 or more on bg-3; the nearest pair (info / cloud, dark) is 0.065 apart in OKLab. The
+     washes stay neutral: ok-wash is the field.
+   - derived roles: emph is the text ink. field-bg is the field (bg-2: dark 0.250 exactly,
+     light the sunken step 0.946, a hair from the drawn field 0.944), where every input sits.
+     emph-wash is the pressed step (bg-3: dark 0.290, light 0.918), not the field the design
+     draws the chosen segment on: the legacy Ctrl K palette and language menu are painted on
+     the field (--void-2) and mark the row the keyboard reaches with --accent-faint (this wash)
+     alone, so on the field that row would not show (1.00:1). On bg-3 it sits a step off the
+     field (1.13:1 dark, 1.09:1 light; Ledger's wash is 1.09:1 / 1.08:1 off its own), and the
+     chosen segment keeps its semibold and ink bar.
+     Text reads 12.4:1 / 13.8:1 on it, text-3 5.1:1 / 4.8:1 (review 2026-11-23: bg-2 -> bg-3).
+     primary is the text ink with the ground on it.
+   - figures are tabular everywhere (README §2, the direction's body style); titles and display
+     sizes take the direction's display tracking, -0.005em.
+   ===================================================================================== */
+
+:is(:root, .n-theme-scope)[data-look="presence"] {
+  color-scheme: dark;
+
+  --n-bg:          oklch(0.165 0.004 78);
+  --n-bg-2:        oklch(0.250 0.005 78);
+  --n-bg-3:        oklch(0.290 0.006 78);
+  --n-sheet:       oklch(0.208 0.005 78);
+  --n-sheet-2:     oklch(0.229 0.005 78);
+  --n-scrim:       oklch(0.120 0.004 78 / 0.64);
+
+  --n-text:        oklch(0.955 0.008 85);
+  --n-text-2:      oklch(0.800 0.010 82);
+  --n-text-3:      oklch(0.690 0.010 80);
+
+  --n-rule:        oklch(0.262 0.005 78);
+  --n-rule-2:      oklch(0.390 0.006 78);
+  --n-rule-field:  oklch(0.535 0.006 78);   /* 0.505 until 2026-11-23: 2.72:1 on bg-2 */
+  --n-rule-heavy:  oklch(0.390 0.006 78);
+
+  --n-accent:      oklch(0.830 0.125 76);
+  --n-accent-text: oklch(0.830 0.125 76);
+  --n-accent-wash: oklch(0.275 0.035 76);
+  --n-on-accent:   oklch(0.185 0.025 70);
+
+  --n-stop:        oklch(0.720 0.170 27);
+  --n-on-stop:     oklch(0.165 0.004 78);
+
+  --n-ok:          oklch(0.790 0.060 150);
+  --n-warn:        oklch(0.830 0.125 76);
+  --n-bad:         oklch(0.720 0.170 27);
+  --n-info:        oklch(0.790 0.045 232);
+  --n-cloud:       oklch(0.780 0.070 295);
+  --n-ok-wash:     oklch(0.250 0.005 78);
+  --n-warn-wash:   oklch(0.275 0.035 76);
+  --n-bad-wash:    oklch(0.255 0.045 27);
+
+  --n-focus:       oklch(0.955 0.008 85);
+  --n-selection:   oklch(0.360 0.010 78);
+
+  /* the current item is ink at weight over an ink bar. A chosen one keeps its semibold and its
+     bar on the pressed step (bg-3), one past the field: the legacy menus and Ctrl K are
+     painted on the field and mark the keyboard's row with this wash alone. Inputs sit on the
+     field; a primary action is a solid ink fill (the lit Send). These follow the scheme. */
+  --n-emph:       var(--n-text);
+  --n-emph-wash:  var(--n-bg-3);
+  --n-primary:    var(--n-text);
+  --n-on-primary: var(--n-bg);
+  --n-field-bg:   var(--n-bg-2);
+
+  /* One DIN family with a width axis, plus a mono for identifiers. Production: Barlow (and
+     Barlow Semi Condensed), SIL OFL, self-hosted once vendored; installed stand-in:
+     Bahnschrift. Statements, the transcript and titles are the same family as the chrome. */
+  --n-font-ui:      "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-label:   var(--n-font-ui);
+  --n-font-text:    "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-title:   "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-display: "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-mono:    "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  /* sentence case everywhere; DIN needs a little air at label sizes */
+  --n-label-case:   none;
+  --n-label-track:  0.03em;
+  --n-label-weight: 500;
+  /* Barlow is self-hosted since 2026-11-23 (src/theme/fonts.css), so the weights are Barlow's
+     static instances: 400 the text weight, 500 the medium (labels), 600 for names and titles;
+     nothing heavier. Drawn with the Bahnschrift stand-in these were 350 / 400 / 600, the same
+     grades on that face. */
+  --n-w-reg:  400;
+  --n-w-med:  500;
+  --n-w-semi: 600;
+  --n-w-bold: 600;
+  /* tabular figures everywhere; titles and the display sizes tighten a little */
+  --n-numerals:    lining-nums tabular-nums;
+  --n-title-track: -0.005em;
+
+  /* Presence's own scale at the 16px root: 12 labels · 13 secondary · 15 body and controls ·
+     16 the transcript and the owner's words · 21 the open decision · 32 the status sentence ·
+     46 the statement */
+  --n-fs-meta:    12px;   --n-lh-meta:    16px;
+  --n-fs-label:   13px;   --n-lh-label:   19px;
+  --n-fs-ui:      15px;   --n-lh-ui:      22px;
+  --n-fs-own:     16px;   --n-lh-own:     24px;
+  --n-fs-prose:   16px;   --n-lh-prose:   24px;
+  --n-fs-title:   21px;   --n-lh-title:   27px;
+  --n-fs-verdict: 32px;   --n-lh-verdict: 36px;
+  --n-fs-figure:  46px;   --n-lh-figure:  52px;
+
+  /* radii 6 (controls) · 10 (plates, menus) · 14 (the composer, large sheets), concentric */
+  --n-r-0: 0;
+  --n-r-1: 6px;
+  --n-r-2: 10px;
+  --n-r-3: 14px;
+
+  /* structure from hairlines and spacing: a section is a quiet head over a hairline, never a
+     box. The plate (a lighter surface) is kept for what holds a decision or the composer. */
+  --n-panel-bg:     transparent;
+  --n-panel-border: 0 solid transparent;
+  --n-panel-top:    1px solid var(--n-rule-heavy);
+  --n-panel-radius: 0;
+  --n-panel-shadow: none;
+
+  /* elevation in the dark is lightness; transient layers get one shadow on an opaque surface */
+  --n-shadow-1:     none;
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 14px 34px -14px oklch(0 0 0 / 0.7);
+  --n-shadow-sheet: 0 0 0 1px var(--n-rule-2), 0 14px 34px -14px oklch(0 0 0 / 0.7);
+
+  --n-control-h:    36px;
+  --n-control-h-sm: 30px;
+  --n-bar-h:        56px;
+  --n-measure:      640px;
+  --n-col-gap:      64px;
+}
+
+:is(:root, .n-theme-scope)[data-look="presence"][data-scheme="light"] {
+  color-scheme: light;
+
+  --n-bg:          oklch(0.968 0.005 85);
+  --n-bg-2:        oklch(0.946 0.007 85);
+  --n-bg-3:        oklch(0.918 0.007 85);
+  --n-sheet:       oklch(0.995 0.002 85);
+  --n-sheet-2:     oklch(0.981 0.004 85);
+  --n-scrim:       oklch(0.215 0.012 70 / 0.32);
+
+  --n-text:        oklch(0.215 0.012 70);
+  --n-text-2:      oklch(0.395 0.012 70);
+  --n-text-3:      oklch(0.495 0.012 72);
+
+  --n-rule:        oklch(0.892 0.007 85);
+  --n-rule-2:      oklch(0.760 0.009 85);
+  --n-rule-field:  oklch(0.622 0.009 85);   /* 0.642 until 2026-11-23: 2.85:1 on bg-2 */
+  --n-rule-heavy:  oklch(0.760 0.009 85);
+
+  /* on paper tungsten is a highlighter: the fill sits behind ink */
+  --n-accent:      oklch(0.860 0.145 84);
+  --n-accent-text: oklch(0.500 0.130 58);
+  --n-accent-wash: oklch(0.925 0.070 85);
+  --n-on-accent:   oklch(0.215 0.030 70);
+
+  --n-stop:        oklch(0.520 0.200 27);
+  --n-on-stop:     oklch(0.990 0.005 85);
+
+  --n-ok:          oklch(0.440 0.070 150);
+  --n-warn:        oklch(0.500 0.130 58);
+  --n-bad:         oklch(0.505 0.190 27);
+  --n-info:        oklch(0.440 0.055 235);
+  --n-cloud:       oklch(0.450 0.090 295);
+  --n-ok-wash:     oklch(0.944 0.006 85);
+  --n-warn-wash:   oklch(0.925 0.070 85);
+  --n-bad-wash:    oklch(0.945 0.030 27);
+
+  --n-focus:       oklch(0.215 0.012 70);
+  --n-selection:   oklch(0.880 0.012 85);
+
+  /* paper sits on the desk with a 1px contact line */
+  --n-shadow-1:     0 1px 0 oklch(0.860 0.008 85);
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 10px 30px -12px oklch(0.400 0.020 70 / 0.35);
+  --n-shadow-sheet: 0 0 0 1px var(--n-rule-2), 0 1px 0 oklch(0.860 0.008 85), 0 10px 30px -12px oklch(0.400 0.020 70 / 0.35);
+}
+
+/* Narrow windows keep the 16px root and step only the display sizes down (README §2). */
+@media (max-width: 1500px) {
+  :root[data-look="presence"] {
+    --n-fs-title: 19px;   --n-lh-title: 25px;
+    --n-fs-verdict: 26px; --n-lh-verdict: 30px;
+    --n-fs-figure: 36px;  --n-lh-figure: 40px;
+    --n-col-gap: 48px;
+  }
+}
+@media (max-width: 1320px) {
+  :root[data-look="presence"] {
+    --n-fs-title: 18px;   --n-lh-title: 24px;
+    --n-fs-verdict: 23px; --n-lh-verdict: 27px;
+    --n-fs-figure: 30px;  --n-lh-figure: 34px;
+    --n-col-gap: 40px;
+    --n-bar-h: 52px;
+  }
+}
+
+/* The owner's screen (2560 x 1353): Presence steps its root from 16 to 18px, so the whole
+   scale and the shared component sizes move up by an eighth; the measure grows with the type. */
+@media (min-width: 2200px) {
+  :root[data-look="presence"] {
+    --n-fs-meta: 13.5px;  --n-lh-meta: 18px;
+    --n-fs-label: 14.5px; --n-lh-label: 21px;
+    --n-fs-ui: 17px;      --n-lh-ui: 25px;
+    --n-fs-own: 18px;     --n-lh-own: 27px;
+    --n-fs-prose: 18px;   --n-lh-prose: 27px;
+    --n-fs-title: 23.5px; --n-lh-title: 31px;
+    --n-fs-verdict: 36px; --n-lh-verdict: 40px;
+    --n-fs-figure: 58px;  --n-lh-figure: 65px;
+    --n-control-h: 40px;  --n-control-h-sm: 34px;
+    --n-bar-h: 63px;
+    --n-measure: 720px;
+    --n-page-x: 44px; --n-col-gap: 72px;
+  }
+}

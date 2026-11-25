@@ -1,0 +1,241 @@
+/* =====================================================================================
+   Theme · Briefing
+   -------------------------------------------------------------------------------------
+   Source: docs/design/hud-next/briefing/ (README.md identity sheet, tokens.css, briefing.css).
+   Idea: the home is the brief a superb chief of staff hands you: one page, written in
+   sentences, numbered and sourced. An instrument set in editorial type. Ink does the work.
+     Night (dark)  designed, not inverted: near-neutral cool paper, warm paper-white ink,
+                   solid fills a step under the text white, the marker becomes gold words
+     Day (light)   the default edition (registry: defaultScheme 'light'): ink on warm paper
+   This file follows the contract order, so the dark (Night) block comes first.
+   The one accent is THE MARKER: "this is yours to decide". By day it is a highlighter fill
+   behind ink (--n-accent, ink on it via --n-on-accent) and dark gold as text; by night it is
+   a lit gold. Red is not an ink, it is the alarm: a real problem, or Stop. Attention is the
+   marker. Structure is drawn with rules, not boxes: a 3px ink rule opens a section.
+   Emphasis and primary actions are ink too, as drawn: the current area and
+   panel are ink at semibold over an ink rule, a quiet chosen segment sits on the pressed paper,
+   and a primary action is the solid fill (--nv-fill: the ink by day, a step under the text
+   white by night) with the paper on it. The marker stays for flags and highlights: what is
+   yours to decide (the --n-accent fill), never a Send or a Save.
+
+   Status. In the brief OK is ink and a check, never green, and every status is a shape plus a
+   word. Legacy screens still tell status, locality and categories apart by hue alone
+   (legends, health rings, the locality bar, meters), so contract §3 (2026-11-23) keeps the five
+   status colours apart: ok, info and cloud take quiet hues (sage, slate, lavender) at the
+   lightness of the secondary ink; warn is the marker's text form and bad the alarm red.
+
+   Port notes:
+   - sheet = the raised paper (by day white over warm paper, by night a step up); bg-2 is the
+     quiet fill (inputs, the reply tray, past hours); bg-3 is hover / pressed. Briefing draws
+     no card inside a card, so sheet-2 (a card inside a panel) is derived, and kept apart from
+     the fills the kit draws on it: by day a step under the raised white (0.993), not the quiet
+     fill, which would hide a hover; by night the third paper (0.265), with the pressed fill
+     and meter track one step past it (0.290) so a track on a card stays visible.
+   - verdict takes the lead item's step (27px, heading weight); the headline (46, 40 in the
+     compact edition, 50 on the broadsheet) is the one large figure. Briefing draws its other
+     large figure, the share of runs on this machine, at 36px: between the two.
+   - warn is a text role, so it takes the marker's text form (dark gold by day, lit gold by
+     night); the bright marker itself stays a fill.
+   - selection: Briefing selects with the marker. By day that is the marker fill under ink;
+     by night text stays light, so the selection is the marker's dark gold ground.
+   - stop / on-stop: Briefing's stop is a red outline with red text that fills with the alarm
+     red on hover, so stop is the problem red and on-stop the paper.
+   - ok-wash stays the hover paper (the washes are neutral); the scrim is not in the palette
+     (ink at 30% by day, a deeper Night paper at 62% by night).
+   - Every designed text pair already clears AA; nothing was moved.
+   - status (2026-11-23): ok was the text ink and info and cloud one secondary ink, which the
+     contract test now refuses (each must stay 0.05 apart in OKLab, and from text). Night: ok
+     0.935 0.008 95 -> 0.800 0.060 150, info and cloud 0.790 0.008 95 -> 0.790 0.045 232 and
+     0.780 0.070 295. Day: ok 0.210 0.012 265 -> 0.440 0.070 150, info and cloud 0.400 0.012 265
+     -> 0.440 0.055 235 and 0.450 0.090 295. Each reads 6.7:1 or more on the four grounds the
+     test reads (bg, bg-2, sheet, sheet-2) and 6.3:1 or more on bg-3; the nearest pair
+     (info / cloud, Night) is 0.065 apart.
+   - derived roles: emph is the text ink; emph-wash is the pressed paper (bg-3, paper-3 by day,
+     a step past it by night), the ground of a quiet chosen segment; field-bg is the quiet fill
+     (bg-2, paper-2), where inputs sit; primary is --nv-fill (Night 0.870 0.008 95, Day the
+     ink) with the paper on it (by night that is already the default on-primary, so only the
+     Day block sets on-primary).
+   - figures: the serif's default figures are old-style, and Briefing sets lining tabular
+     figures everywhere (--n-numerals). Titles track in: the direction draws -0.005em at the
+     section head, -0.012em at the lead item and -0.018em at the headline; one value carries
+     all three sizes here, the lead item's.
+   ===================================================================================== */
+
+:is(:root, .n-theme-scope)[data-look="briefing"] {
+  color-scheme: dark;
+
+  --n-bg:          oklch(0.190 0.006 265);
+  --n-bg-2:        oklch(0.225 0.007 265);
+  --n-bg-3:        oklch(0.290 0.009 265);
+  --n-sheet:       oklch(0.245 0.008 265);
+  --n-sheet-2:     oklch(0.265 0.008 265);
+  --n-scrim:       oklch(0.120 0.006 265 / 0.62);
+
+  --n-text:        oklch(0.935 0.008 95);
+  --n-text-2:      oklch(0.790 0.008 95);
+  --n-text-3:      oklch(0.690 0.008 95);
+
+  --n-rule:        oklch(0.295 0.007 265);
+  --n-rule-2:      oklch(0.375 0.008 265);
+  --n-rule-field:  oklch(0.530 0.008 265);
+  --n-rule-heavy:  oklch(0.800 0.008 95);
+
+  --n-accent:      oklch(0.860 0.155 95);
+  --n-accent-text: oklch(0.860 0.155 95);
+  --n-accent-wash: oklch(0.330 0.055 95);
+  --n-on-accent:   oklch(0.190 0.006 265);
+
+  --n-stop:        oklch(0.740 0.155 27);
+  --n-on-stop:     oklch(0.190 0.006 265);
+
+  --n-ok:          oklch(0.800 0.060 150);
+  --n-warn:        oklch(0.860 0.155 95);
+  --n-bad:         oklch(0.740 0.155 27);
+  --n-info:        oklch(0.790 0.045 232);
+  --n-cloud:       oklch(0.780 0.070 295);
+  --n-ok-wash:     oklch(0.265 0.008 265);
+  --n-warn-wash:   oklch(0.330 0.055 95);
+  --n-bad-wash:    oklch(0.290 0.060 27);
+
+  --n-focus:       oklch(0.935 0.008 95);
+  --n-selection:   oklch(0.330 0.055 95);
+
+  /* ink does the work: the current item is ink, a chosen one sits on the pressed paper,
+     inputs on the quiet fill, and a primary action is the solid fill with the paper on it
+     (by night a step under the text white, so a button never out-glares the headline; the
+     paper on it is the default on-primary, on-accent, so only the Day block names it) */
+  --n-emph:       var(--n-text);
+  --n-emph-wash:  var(--n-bg-3);
+  --n-primary:    oklch(0.870 0.008 95);
+  --n-field-bg:   var(--n-bg-2);
+
+  /* Three voices. The voice (what Nerva says: replies, titles, the headline) is a screen
+     serif with optical sizes: production Literata (variable, latin-ext), installed stand-in
+     Sitka. The instrument (controls, labels, tables, the owner's own lines) is a humanist
+     sans: production Source Sans 3, stand-in Segoe UI Variable (Small for the smallest).
+     The machine (identifiers only) is JetBrains Mono. */
+  --n-font-ui:      "Source Sans 3", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-label:   "Source Sans 3", "Segoe UI Variable Small", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-text:    "Literata", "Sitka Text", Georgia, serif;
+  --n-font-title:   "Literata", "Sitka Heading", "Sitka Subheading", Georgia, serif;
+  --n-font-display: "Literata", "Sitka Banner", "Sitka Display", Georgia, serif;
+  --n-font-mono:    "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  /* sentence case throughout; nothing is set in tracked capitals */
+  --n-label-case:   none;
+  --n-label-track:  0;
+  --n-label-weight: 500;
+  /* figures are facts: lining and tabular in every face; titles track in */
+  --n-numerals:     lining-nums tabular-nums;
+  --n-title-track:  -0.012em;
+
+  /* the editions' scale: meta 12.5 · cells and controls 13–13.5 · the owner's lines 15 ·
+     replies 16 · section heads 20 · the lead item 27 (a verdict) · the headline 46 (the one
+     large figure) */
+  --n-fs-meta:    12.5px; --n-lh-meta:    16px;
+  --n-fs-label:   13px;   --n-lh-label:   18px;
+  --n-fs-ui:      13.5px; --n-lh-ui:      19px;
+  --n-fs-own:     15px;   --n-lh-own:     21px;
+  --n-fs-prose:   16px;   --n-lh-prose:   24px;
+  --n-fs-title:   20px;   --n-lh-title:   24px;
+  --n-fs-verdict: 27px;   --n-lh-verdict: 31px;
+  --n-fs-figure:  46px;   --n-lh-figure:  48px;
+
+  /* radii 4 (buttons, inputs) · 8 (composer, menus, palette); rules and cells are square */
+  --n-r-0: 0;
+  --n-r-1: 4px;
+  --n-r-2: 8px;
+  --n-r-3: 8px;
+
+  /* rules, not boxes: a 3px rule opens a section; nothing is a card inside a card */
+  --n-panel-bg:     transparent;
+  --n-panel-border: 0 solid transparent;
+  --n-panel-top:    3px solid var(--n-rule-heavy);
+  --n-panel-radius: 0;
+  --n-panel-shadow: none;
+
+  /* no elevation on content; one shadow, for transient layers. The signing sheet takes the
+     edge Briefing gives the field you sign in: ink by day, the lit marker by night. */
+  --n-shadow-1:     none;
+  --n-shadow-2:     0 0 0 1px oklch(0.370 0.008 265), 0 18px 40px -12px oklch(0 0 0 / 0.6);
+  --n-shadow-sheet: 0 0 0 1px oklch(0.860 0.155 95), 0 18px 40px -12px oklch(0 0 0 / 0.6);
+
+  --n-control-h:    30px;
+  --n-control-h-sm: 26px;
+  --n-measure:      72ch;
+  --n-col-gap:      40px;
+}
+
+:is(:root, .n-theme-scope)[data-look="briefing"][data-scheme="light"] {
+  color-scheme: light;
+
+  --n-bg:          oklch(0.985 0.003 95);
+  --n-bg-2:        oklch(0.965 0.004 95);
+  --n-bg-3:        oklch(0.940 0.005 95);
+  --n-sheet:       oklch(1 0 0);
+  --n-sheet-2:     oklch(0.993 0.002 95);
+  --n-scrim:       oklch(0.210 0.012 265 / 0.30);
+
+  --n-text:        oklch(0.210 0.012 265);
+  --n-text-2:      oklch(0.400 0.012 265);
+  --n-text-3:      oklch(0.500 0.010 265);
+
+  --n-rule:        oklch(0.885 0.004 265);
+  --n-rule-2:      oklch(0.780 0.006 265);
+  --n-rule-field:  oklch(0.600 0.008 265);
+  --n-rule-heavy:  oklch(0.210 0.012 265);
+
+  /* by day the marker is a highlighter fill behind ink */
+  --n-accent:      oklch(0.905 0.170 98);
+  --n-accent-text: oklch(0.470 0.100 85);
+  --n-accent-wash: oklch(0.955 0.085 98);
+  --n-on-accent:   oklch(0.210 0.012 265);
+
+  --n-stop:        oklch(0.520 0.200 27);
+  --n-on-stop:     oklch(0.985 0.003 95);
+
+  --n-ok:          oklch(0.440 0.070 150);
+  --n-warn:        oklch(0.470 0.100 85);
+  --n-bad:         oklch(0.520 0.200 27);
+  --n-info:        oklch(0.440 0.055 235);
+  --n-cloud:       oklch(0.450 0.090 295);
+  --n-ok-wash:     oklch(0.940 0.005 95);
+  --n-warn-wash:   oklch(0.955 0.085 98);
+  --n-bad-wash:    oklch(0.955 0.030 27);
+
+  --n-focus:       oklch(0.210 0.012 265);
+  --n-selection:   oklch(0.905 0.170 98);
+
+  /* by day the solid fill is the ink itself, with the paper on it (on-accent is the ink here,
+     so the Day block names the paper) */
+  --n-primary:     var(--n-text);
+  --n-on-primary:  var(--n-bg);
+
+  --n-shadow-1:     none;
+  --n-shadow-2:     0 1px 0 oklch(0.210 0.012 265 / 0.06), 0 14px 36px -10px oklch(0.210 0.012 265 / 0.22);
+  --n-shadow-sheet: 0 0 0 1px oklch(0.210 0.012 265), 0 14px 36px -10px oklch(0.210 0.012 265 / 0.22);
+}
+
+/* The compact edition (1440, 1280): the headline steps down; the type never tightens below,
+   so the lead item (the verdict step) keeps its size. */
+@media (max-width: 1700px) {
+  :root[data-look="briefing"] {
+    --n-fs-figure: 40px;  --n-lh-figure: 42px;
+  }
+}
+@media (max-width: 1340px) {
+  :root[data-look="briefing"] {
+    --n-fs-figure: 38px;  --n-lh-figure: 40px;
+    --n-col-gap: 32px;
+  }
+}
+
+/* The broadsheet edition (the owner's 2560 x 1353): the extra room carries more of the
+   brief, never wider lines. The conversation and the headline go up a size. */
+@media (min-width: 2200px) {
+  :root[data-look="briefing"] {
+    --n-fs-own: 16px;     --n-lh-own: 23px;
+    --n-fs-prose: 17px;   --n-lh-prose: 26px;
+    --n-fs-figure: 50px;  --n-lh-figure: 52px;
+    --n-page-x: 40px; --n-col-gap: 48px;
+  }
+}

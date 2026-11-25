@@ -5,49 +5,76 @@ import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
 import { installSkill, getAutonomyMode, setAutonomyMode, modeRefusalNote, getNorthStar } from './api/actions';
 import { getToken } from './api/client';
 import { WorldIntelligencePanel } from './world-intelligence';
+import { PageSection } from './pages/PageSection';
+import { ConfirmAction, RISK_TIER } from './confirm';
+import { isLooser } from './frame/RunningHead';
+import { RUNHEAD_STRINGS } from './frame/frame-strings';
+import { fmt, pick } from './frame/strings';
 /* HUD v2 · MODES II — Autonomy, Build, Observe, Interop */
 
-function ModePanel({ icon, title, status, children }){
-  return (
-    <div className="panel scroll" style={{flex:1}}>
-      <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Ic d={IK[icon]} size={14}/><span className="ttl">{title}</span>{status&&<span className="st">{status}</span>}</div>
-      <div className="panel-body">{children}</div>
-    </div>
-  );
-}
 function SubH({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
 
 /* ============ AUTONOMY ============ */
-function AutonomyMode({ t }){
+/* The global approval mode here follows the running head's rule (PHASE_B_PLAN.md §4.2, owner
+   question 3; the reasoning §0.5 applies to the Decision Inbox): a stricter mode is one click, a
+   looser one (Off → Ask, Off → Auto, Ask → Auto) takes two steps through ConfirmAction tier 1 with
+   the running head's words, and which of the two is decided on the mode in force asked again at the
+   press, never on the last read. While the demo sample is on (§1.4) the mode is neither read nor
+   changed here. */
+const AUTONOMY_MODES = ['auto', 'ask', 'off'] as const;
+type AutonomyModeValue = typeof AUTONOMY_MODES[number];
+const autonomyModeOf = (v: unknown): AutonomyModeValue | null => {
+  const m = typeof v === 'string' ? v.toLowerCase() : '';
+  return (AUTONOMY_MODES as readonly string[]).includes(m) ? m as AutonomyModeValue : null;
+};
+
+function AutonomyMode({ t, demo = false, lang = 'en' }: { t: any; demo?: boolean; lang?: string }){
   const A = V2.AUTONOMY;
   const policies = A.policies;
+  const rs = pick(RUNHEAD_STRINGS, lang);
+  const modeWord = (m: AutonomyModeValue) => m === 'auto' ? rs.auto : m === 'ask' ? rs.ask : rs.off;
   // LIVE global autonomy mode (AUTO/ASK/OFF) ↔ GET/POST /autonomy/mode. AUTO =
   // balanced; ASK = side-effects wait for approval; OFF = nothing auto-runs +
   // the proactive loop is paused. Per-agent rows below are informational.
-  const [mode, setMode] = uS2(null);     // null until loaded
+  const [mode, setMode] = uS2<AutonomyModeValue | null>(null);     // null until loaded
   const [busy, setBusy] = uS2(false);
   const [modeNote, setModeNote] = uS2(null);   // H484: why a write did not take effect
-  uE2(()=>{ let ok=true; getAutonomyMode().then(r=>{ if(ok&&r&&r.mode) setMode(String(r.mode).toLowerCase()); }).catch(()=>{}); return ()=>{ok=false;}; }, []);
-  const choose = async (m)=>{
-    if(busy||m===mode) return;
-    const prev = mode; setMode(m); setBusy(true); setModeNote(null);
+  const [pending, setPending] = uS2<AutonomyModeValue | null>(null);   // a looser mode awaiting its second step
+  uE2(()=>{
+    setPending(null);
+    if (demo) { setMode(null); return undefined; }
+    let ok=true; getAutonomyMode().then(r=>{ const m = autonomyModeOf(r && r.mode); if(ok&&m) setMode(m); }).catch(()=>{}); return ()=>{ok=false;};
+  }, [demo]);
+  const write = async (m: AutonomyModeValue, prev: AutonomyModeValue | null)=>{
+    setMode(m); setBusy(true); setModeNote(null);
     try {
       const r = await setAutonomyMode(m) as { mode?: string } | null;
       // H484: a refused write shows the mode IN FORCE (the hub's `live`, or what it
       // reports when asked) and why — never the clicked mode, never a silent revert.
       const refused = modeRefusalNote(m, r);
       if (refused) {
-        let live = refused.live;
-        if (!live) { try { const now = await getAutonomyMode(); if (now && now.mode) live = String(now.mode).toLowerCase(); } catch { /* keep prev */ } }
+        let live = autonomyModeOf(refused.live);
+        if (!live) { try { const now = await getAutonomyMode(); live = autonomyModeOf(now && now.mode); } catch { /* keep prev */ } }
         setMode(live || prev);
         setModeNote(refused.text);
-      } else if(r&&r.mode) setMode(String(r.mode).toLowerCase());
+      } else { const now = autonomyModeOf(r && r.mode); if (now) setMode(now); }
     }
     catch { setMode(prev); setModeNote(m.toUpperCase()+' was not applied (the hub refused the request).'); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setPending(null); }
   };
-  const MODES = ['auto','ask','off'];
+  const choose = async (m: AutonomyModeValue)=>{
+    if(demo||busy||mode==null||m===mode) return;
+    setBusy(true); setModeNote(null); setPending(null);
+    // the friction is decided on the mode in force now, asked again, not on the last read
+    let from: AutonomyModeValue | null = null;
+    try { const now = await getAutonomyMode(); from = autonomyModeOf(now && now.mode); } catch { /* unknown */ }
+    if (!from) { setBusy(false); setModeNote(`${m.toUpperCase()} was not applied: the mode in force could not be read.`); return; }
+    setMode(from);
+    if (m === from) { setBusy(false); return; }
+    if (isLooser(from, m)) { setBusy(false); setPending(m); return; }
+    await write(m, from);
+  };
+  const MODES = AUTONOMY_MODES;
   // "Speak brief" — read the morning brief aloud: server /tts (cloned-voice
   // chain) with the fully-local speechSynthesis fallback, mirroring the voice
   // loop's honest degradation. Never fakes playback: server down + no local
@@ -73,7 +100,7 @@ function AutonomyMode({ t }){
     finally { setSpeaking(false); }
   };
   return (
-    <ModePanel icon="autonomy" title={t.autonomy} status="observer running">
+    <PageSection title={t.autonomy} meta="observer running">
       <div className="auto-grid">
         <div>
           <SubH style={{display:'flex',alignItems:'center',gap:8}}>MORNING BRIEF · {A.brief.length} items
@@ -95,28 +122,36 @@ function AutonomyMode({ t }){
           ))}
         </div>
         <div>
-          <SubH>AUTONOMY MODE · global · {mode==null?'…':mode.toUpperCase()}</SubH>
+          <SubH>AUTONOMY MODE · global · {demo ? 'DEMO SAMPLE' : mode==null?'…':mode.toUpperCase()}</SubH>
           <div className="amode-row" role="group" aria-label="autonomy mode" style={{display:'flex',gap:6,marginBottom:6}}>
             {MODES.map(m=>(
               <button key={m} className={'pmode '+m+(mode===m?' on':'')} aria-pressed={mode===m}
-                disabled={busy||mode==null} onClick={()=>choose(m)}
+                disabled={demo||busy||mode==null} onClick={()=>{ void choose(m); }}
                 title={m==='auto'?'balanced — low-risk acts, risky asks; a payment inside your money caps runs':m==='ask'?'everything with a side-effect waits for approval':'nothing a machine approved runs; proactive loop paused; no per-agent override loosens it'}
-                style={mode===m?{}:{opacity:.7}}>{m.toUpperCase()}</button>
+                style={mode===m?{}:{color:'var(--ink-2)'}}>{m.toUpperCase()}</button>
             ))}
           </div>
+          {pending && <div className="pol-note" data-autonomy="confirm">
+            <ConfirmAction tier={RISK_TIER.REVERSIBLE} armed block repeatConfirms={false} label={modeWord(pending)}
+              ariaLabel={rs.confirming} groupLabel={rs.confirming}
+              prompt={pending === 'auto' ? rs.toAuto : rs.toAsk}
+              armedLabel={fmt(rs.switchTo, { mode: modeWord(pending) })} cancelLabel={rs.cancel}
+              onCancel={() => setPending(null)} onConfirm={() => write(pending, mode)} />
+          </div>}
+          {demo && <div role="note" className="pol-note">Demo sample: the approval mode is not read or changed here. Exit the demo to change it.</div>}
           {modeNote && <div role="alert" className="pol-note" style={{color:'var(--amber)'}}>{modeNote}</div>}
-          <div className="pol-note">Global <b>AUTO / ASK / OFF</b> (live). Per-task approvals run via the Console (accept / edit / reject / defer).</div>
+          <div className="pol-note">Global <b>AUTO / ASK / OFF</b> (live). A stricter mode is one click; a looser one asks you to confirm. Per-task approvals are signed on Home's docket and on Work › Decisions (accept / edit / reject / defer).</div>
           <SubH style={{marginTop:14}}>PER-AGENT SCOPE · reference</SubH>
           {policies.map((p,i)=>(
             <div className="pol-row" key={i}>
               <span className="pag"><Gl id={p.agent} size={14}/>{p.agent}</span>
               <div className="pscope"><div>{p.scope}</div><div className="pbud">{p.budget} · {p.used}</div></div>
-              <span className={'pmode '+p.mode} style={{opacity:.55}}>{p.mode.toUpperCase()}</span>
+              <span className={'pmode '+p.mode} style={{color:'var(--ink-2)'}}>{p.mode.toUpperCase()}</span>
             </div>
           ))}
         </div>
       </div>
-    </ModePanel>
+    </PageSection>
   );
 }
 
@@ -144,7 +179,7 @@ function BuildMode({ t }){
   };
   const kindColor = k => k==='trigger'?'var(--amber)':k==='plugin'?'var(--accent-light)':k==='agent'?'var(--accent)':'var(--green)';
   return (
-    <ModePanel icon="build" title={t.build} status="workflow canvas">
+    <PageSection title={t.build} meta="workflow canvas">
       <SubH>WORKFLOW · {W.name} <span className="wf-status">{W.status}</span></SubH>
       <div className="wf-canvas">
         <svg viewBox="0 0 860 240" preserveAspectRatio="xMidYMid meet" style={{width:'100%',height:240}}>
@@ -180,7 +215,7 @@ function BuildMode({ t }){
           </div>
         </div>
       </div>
-    </ModePanel>
+    </PageSection>
   );
 }
 
@@ -216,7 +251,7 @@ function NorthStarMeter(){
   return (
     <div style={{marginBottom:'var(--gap)'}}>
       <SubH>NORTH-STAR · weekly accepted actions / active user
-        <span className="st" style={{marginLeft:8,opacity:.7}}>{statusLabel}</span></SubH>
+        <span className="st" style={{marginLeft:8,color:'var(--ink-2)'}}>{statusLabel}</span></SubH>
       <div className="mem-grid">
         <div className="stat-card"><div className="sv">{n(ns.accepted_per_active_user)}</div><div className="sl">accepted / user · wk</div></div>
         <div className="stat-card"><div className="sv">{n(ns.total_accepted)}</div><div className="sl">total accepted</div></div>
@@ -251,14 +286,14 @@ function _pct(v: any){ return (v === null || v === undefined) ? '—' : `${Math.
 // List-shaped sections (traces/arena/by_agent) start each live cycle empty; a
 // silent endpoint renders this, never the demo corpus rows.
 function ObsEmpty({ what }: { what?: string }){
-  return <div style={{ fontFamily:'var(--font-mono)', fontSize:9, letterSpacing:'.08em', color:'var(--ink-2)', padding:'3px 0' }}>not connected{what ? ` · ${what}` : ''}</div>;
+  return <div style={{ fontSize:'var(--n-fs-meta)', color:'var(--ink-2)', padding:'3px 0' }}>not connected{what ? ` · ${what}` : ''}</div>;
 }
 
 function ObserveMode({ t }){
   const O = V2.OBSERVE;
   const maxLat = O.by_agent.length ? Math.max(...O.by_agent.map(a=>a.v)) : 0;
   return (
-    <ModePanel icon="observe" title={t.observe} status="world · north-star · traces · eval">
+    <PageSection title={t.observe} meta="world · north-star · traces · eval">
       <NorthStarMeter />
       <WorldIntelligencePanel />
       <div className="mem-grid" style={{marginBottom:'var(--gap)'}}>
@@ -308,7 +343,7 @@ function ObserveMode({ t }){
           <div className="cap-row"><div className="cn">Escalations</div><span className="cap-tag scoped">{_obs(O.quality.escalations)}</span></div>
         </div>
       </div>
-    </ModePanel>
+    </PageSection>
   );
 }
 
@@ -324,7 +359,7 @@ function InteropMode({ t }){
   const N: any = V2.INTEROP;
   const off = N.unavailable || {};
   return (
-    <ModePanel icon="interop" title={t.interop} status="A2A · MCP · widgets · webhooks">
+    <PageSection title={t.interop} meta="A2A · MCP · widgets · webhooks">
       <div className="obs-grid">
         <div>
           <SubH>AGENT-TO-AGENT (A2A)</SubH>
@@ -337,7 +372,7 @@ function InteropMode({ t }){
             </div>
           ))}</Section>
           {/* G9 — install from the catalog, sign in, connect: the console's MCP panel. */}
-          <SubH style={{marginTop:16}}>MCP SERVERS <a href={appUrl('/v2/console/mcp')} aria-label="manage MCP servers" style={{marginLeft:8,fontSize:10}}>manage →</a></SubH>
+          <SubH style={{marginTop:16}}>MCP SERVERS <a href={appUrl('/v2/console/mcp')} aria-label="manage MCP servers" style={{marginLeft:8,fontSize:'var(--n-fs-meta)'}}>manage →</a></SubH>
           <Section off={off.mcp} n={N.mcp.length}>{N.mcp.map((m,i)=>(
             <div className="io-row" key={i}>
               <span className={'sdot '+(m.status==='up'?'active':m.status==='degraded'?'busy':'err')}></span>
@@ -354,7 +389,7 @@ function InteropMode({ t }){
               <span className={'cap-tag '+(w.enabled?'allow':'scoped')}>{w.enabled?'LIVE':'OFF'}</span></div>
           ))}</Section>
           {/* H200 — create, switch and delete live in the console's Webhooks panel. */}
-          <SubH style={{marginTop:16}}>WEBHOOKS <a href={appUrl('/v2/console/webhooks')} aria-label="manage webhooks" style={{marginLeft:8,fontSize:10}}>manage →</a></SubH>
+          <SubH style={{marginTop:16}}>WEBHOOKS <a href={appUrl('/v2/console/webhooks')} aria-label="manage webhooks" style={{marginLeft:8,fontSize:'var(--n-fs-meta)'}}>manage →</a></SubH>
           {!off.webhooks && N.receiver && N.receiver !== 'on' && (
             <div className="iod" data-testid="interop-receiver" style={{padding:'4px 0',color:'var(--amber)'}}>
               {N.receiver === 'off' ? 'receiver off: every delivery is refused' : 'receiver not read: deliveries may be refused'}
@@ -363,13 +398,13 @@ function InteropMode({ t }){
           <Section off={off.webhooks} n={N.webhooks.length}>{N.webhooks.map((h,i)=>(
             <div className="io-row" key={i}>
               <span className={'io-dir '+h.dir}>{h.dir==='in'?'IN':'OUT'}</span>
-              <div><div className="ion" style={{fontFamily:'var(--font-mono)',fontSize:11}}>{h.event}</div><div className="iod">{h.url}</div></div>
+              <div><div className="ion" style={{fontFamily:'var(--font-mono)',fontSize:'var(--n-fs-meta)'}}>{h.event}</div><div className="iod">{h.url}</div></div>
               <span className={'io-status '+(h.status==='active'?'connected':'degraded')}>{h.status}</span>
             </div>
           ))}</Section>
         </div>
       </div>
-    </ModePanel>
+    </PageSection>
   );
 }
 

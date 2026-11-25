@@ -17,6 +17,22 @@ function mockFetch(payload) {
   return fn;
 }
 
+/* Phase B (PHASE_B_PLAN.md §5.4): accept, approve once and save & approve take the task's tier
+   (confirm.tsx confirmStyle) — one click at tier 0, a second click at tier 1, the typed phrase at
+   tiers 2–3 and at a tier the hub did not send (docket/phrases.ts). These finish whatever the
+   first click opened: type the phrase the box asks for (its placeholder), then confirm. */
+function finishConfirmation(name) {
+  const box = screen.queryByLabelText(/^type \S+ to (accept|save and approve) /);
+  if (box) fireEvent.change(box, { target: { value: box.getAttribute('placeholder') } });
+  const confirm = screen.queryByRole('button', { name: `confirm ${name}` });
+  if (confirm) fireEvent.click(confirm);
+}
+function accept(index = 0) {
+  fireEvent.click(screen.getAllByTitle('accept')[index]);
+  finishConfirmation('accept');
+}
+const posts = (fn) => fn.mock.calls.filter(([, init]) => init?.method === 'POST');
+
 it.each([true, false])('previews complete pending questions or explains a lost binding: %s', async available => {
   const text = 'Full question ' + 'x'.repeat(17000);
   mockFetch({ tasks: [{ id: 75, title: 'Native question', kind: 'channel.reply', status: 'blocked' }],
@@ -81,7 +97,7 @@ it('shows the current request deadline without changing its single-use decision'
   const label = await screen.findByLabelText('Approval deadline for Timed request');
   expect(label.querySelector('time')?.getAttribute('datetime')).toBe(deadline);
   expect(label.textContent).toContain('Expires without a response');
-  fireEvent.click(screen.getByTitle('accept'));
+  accept();   // no risk tier sent: the strictest, a typed phrase
   await waitFor(() => expect(fn.mock.calls.some(([url, init]) => url === '/autonomy/tasks/71/decision'
     && init?.body === JSON.stringify({ action: 'accept' }))).toBe(true));
 });
@@ -130,26 +146,40 @@ describe('DecisionInboxPanel — independent grouped approvals', () => {
     render(<DecisionInboxPanel />);
     await screen.findByText(/2 matching requests/);
     expect(screen.getAllByTitle('accept')).toHaveLength(1);
+    // approve once: a delete with no tier sent is typed — "delete"
     fireEvent.click(screen.getByTitle('accept'));
+    expect(screen.getByLabelText('type delete to accept Same governed task').getAttribute('placeholder')).toBe('delete');
+    finishConfirmation('accept');
     await waitFor(() => expect(screen.queryByText(/2 matching requests/)).toBeNull());
     expect(screen.getByText('Same governed task')).toBeTruthy();
-    expect(fn.mock.calls.filter(([, init]) => init?.method === 'POST').map(([url]) => url))
-      .toEqual(['/autonomy/tasks/41/decision']);
-    fireEvent.click(screen.getByTitle('accept'));
+    expect(posts(fn).map(([url]) => url)).toEqual(['/autonomy/tasks/41/decision']);
+    accept();
     await waitFor(() => expect(fn.mock.calls.some(([url]) => url === '/autonomy/tasks/42/decision')).toBe(true));
   });
 
-  it('rejects only the displayed exact group and carries the leader reason', async () => {
+  it('rejects only the displayed exact group, in two steps, and carries the leader reason', async () => {
     const fn = mockFetch({ tasks, groups: [group] });
     render(<DecisionInboxPanel />);
     const reason = await screen.findByLabelText('Your decision reason for Same governed task');
     fireEvent.change(reason, { target: { value: 'Use staging' } });
     fireEvent.click(screen.getByRole('button', { name: 'reject group' }));
+    expect(posts(fn)).toHaveLength(0);                                   // the first click only arms it
+    fireEvent.click(screen.getByRole('button', { name: 'confirm reject all 2' }));
     await waitFor(() => expect(fn.mock.calls.some(([url, init]) =>
       url === '/autonomy/tasks/groups/task-group/reject'
       && JSON.stringify(JSON.parse(init?.body || '{}')) === JSON.stringify({
         snapshot: 'current-members', member_ids: [41, 42], reason: 'Use staging',
       }))).toBe(true));
+  });
+
+  it('cancels a group reject without sending anything', async () => {
+    const fn = mockFetch({ tasks, groups: [group] });
+    render(<DecisionInboxPanel />);
+    await screen.findByText(/2 matching requests/);
+    fireEvent.click(screen.getByRole('button', { name: 'reject group' }));
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }));
+    expect(screen.getByRole('button', { name: 'reject group' })).toBeTruthy();
+    expect(posts(fn)).toHaveLength(0);
   });
 
   it('does not hide cards behind a missing leader or malformed membership', async () => {
@@ -186,11 +216,14 @@ describe('DecisionInboxPanel — the north-star resolve action is live', () => {
     expect(screen.getByText(/settled payment cannot be undone/i)).toBeTruthy();
   });
 
-  it('accepts a decision (POST {action:"accept"}) when ✓ is clicked', async () => {
+  it('accepts a tier-1 decision (POST {action:"accept"}) in two steps: ✓, then confirm', async () => {
     const fn = mockFetch({ tasks: [{ id: 5, title: 'X', kind: 'k', risk_tier: 1, status: 'blocked' }], total: 1 });
     render(<DecisionInboxPanel />);
     await waitFor(() => expect(screen.getByTitle('accept')).toBeTruthy());
     fireEvent.click(screen.getByTitle('accept'));
+    expect(posts(fn)).toHaveLength(0);
+    expect(screen.queryByLabelText(/^type /)).toBeNull();             // two steps, no phrase
+    fireEvent.click(screen.getByRole('button', { name: 'confirm accept' }));
     await waitFor(() => expect(
       fn.mock.calls.some((c) => String(c[0]).includes('/autonomy/tasks/5/decision')
         && c[1]?.method === 'POST' && String(c[1]?.body).includes('"action":"accept"'))
@@ -224,7 +257,11 @@ describe('DecisionInboxPanel — the north-star resolve action is live', () => {
     // the textarea is pre-filled with the task's payload
     const ta = await screen.findByDisplayValue(/"amount": 200/);
     fireEvent.change(ta, { target: { value: '{"amount": 50}' } });
+    // tier 3 money: the signature is the edited amount, typed
     fireEvent.click(screen.getByText('save & approve'));
+    expect(posts(fn)).toHaveLength(0);
+    expect(screen.getByLabelText('type 50 to save and approve Wire $200').getAttribute('placeholder')).toBe('50');
+    finishConfirmation('save & approve');
     await waitFor(() => expect(
       fn.mock.calls.some((c) => String(c[0]).includes('/autonomy/tasks/7/decision')
         && c[1]?.method === 'POST'
@@ -288,7 +325,7 @@ describe('DecisionInboxPanel — the north-star resolve action is live', () => {
     expect(screen.queryByTitle('edit')).toBeNull();
     expect(screen.queryByTitle('dry-run preview')).toBeNull();
     expect(document.body.textContent).not.toContain('PRIVATE');
-    fireEvent.click(screen.getByTitle('accept'));
+    accept();   // tier 2: typed
     await waitFor(() => expect(fn.mock.calls.some(c => c[0] === '/autonomy/tasks/17/decision'
       && c[1].body === '{"action":"accept"}')).toBe(true));
   });
@@ -471,7 +508,7 @@ it('keeps a visible image return link after accepted task leaves inbox',async()=
     return {ok:true,status:200,json:async()=>({tasks:decided?[]:[task]})};
   });
   render(<DecisionInboxPanel/>);await screen.findByText('return me');
-  fireEvent.click(screen.getByTitle('accept'));
+  accept();
   await waitFor(()=>expect(screen.queryByText('return me')).toBeNull());
   expect(screen.getByRole('link',{name:'Watch decided image task'}).getAttribute('href')).toBe('/v2/console/images?image_task=17');
 });
@@ -619,7 +656,8 @@ describe('H277 Decision Inbox advisory judge', () => {
   it('keeps approval payload unchanged despite a high-risk advisory opinion', async () => {
     const fn = mockFetch({ tasks: [{ ...task, judge: opinion, judge_pending: true }], judge: { configured: true, timeout: 1 } });
     await mount();
-    fireEvent.click(screen.getByTitle('accept'));
+    accept();   // tier 3 money, no amount sent: the typed word
+
     await waitFor(() => expect(fn.mock.calls.some(c => c[0] === '/autonomy/tasks/31/decision'
       && c[1]?.method === 'POST' && c[1]?.body === '{"action":"accept"}')).toBe(true));
   });
@@ -664,5 +702,193 @@ describe('H137 — ?card=<id> opens the inbox on that card', () => {
     mockFetch({ tasks });
     render(<DecisionInboxPanel />);
     expect(await screen.findByText(/card #99 is no longer waiting/)).toBeTruthy();
+  });
+});
+
+/* Phase B (PHASE_B_PLAN.md §5.4): the Decision Inbox takes the docket's grading, so it is no way
+   around it, and it decides only through api/decisions.ts (decisions-source.test.ts). */
+describe('DecisionInboxPanel — graded like the docket', () => {
+  afterEach(() => { history.replaceState(null, '', '/'); });
+  const one = (task) => mockFetch({ tasks: [{ status: 'blocked', title: 'Graded', ...task }] });
+  const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+  it('accepts a tier-0 request in one click', async () => {
+    const fn = one({ id: 61, kind: 'read_logs', risk_tier: 0 });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Graded');
+    fireEvent.click(screen.getByTitle('accept'));
+    await waitFor(() => expect(posts(fn).map(([url, init]) => [url, init.body]))
+      .toEqual([['/autonomy/tasks/61/decision', '{"action":"accept"}']]));
+  });
+
+  it.each([
+    [2, 'comms.send', 'send'], [3, 'restart_service', 'restart'], [3, 'delete_file', 'delete'],
+    [undefined, 'k', 'sign'], ['3', 'k', 'sign'],
+  ])('types the phrase at tier %s (%s: "%s"); case matters and Enter never confirms', async (risk_tier, kind, phrase) => {
+    const fn = one({ id: 62, kind, risk_tier });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Graded');
+    fireEvent.click(screen.getByTitle('accept'));
+    const box = screen.getByLabelText(`type ${phrase} to accept Graded`);
+    const confirm = screen.getByRole('button', { name: 'confirm accept' });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(box, { target: { value: phrase.toUpperCase() } });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(box, { target: { value: phrase } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await settle();
+    expect(posts(fn)).toHaveLength(0);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posts(fn)).toHaveLength(1));
+  });
+
+  it('types the amount, in digits, to approve money', async () => {
+    const fn = one({ id: 64, kind: 'payment', risk_tier: 3, payload: { amount: 4200, currency: 'EUR' } });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Graded');
+    fireEvent.click(screen.getByTitle('accept'));
+    expect(screen.getByLabelText('type 4200 to accept Graded').getAttribute('placeholder')).toBe('4200');
+    finishConfirmation('accept');
+    await waitFor(() => expect(posts(fn)).toHaveLength(1));
+  });
+
+  it('asks a second step for Allow always, and none for Allow this session', async () => {
+    const revision = 'b'.repeat(64);
+    const fn = one({ id: 65, kind: 'toolrpc.terminal_run', risk_tier: 3, consent_offer: {
+      revision, count: 3, choices: ['session', 'always', 'deny'],
+      categories: [{ description: 'reviewed warning', permanent: true }] } });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('reviewed warning');
+    fireEvent.click(screen.getByRole('button', { name: 'Allow always' }));
+    expect(posts(fn)).toHaveLength(0);
+    expect(screen.getByText('a standing permission for 3 matching requests')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'confirm allow always' }));
+    await waitFor(() => expect(posts(fn).map(([url, init]) => [url, JSON.parse(init.body)]))
+      .toEqual([['/autonomy/tasks/65/consent', { choice: 'always', revision }]]));
+  });
+
+  it('keeps save & approve shut until the payload is a JSON object', async () => {
+    one({ id: 66, kind: 'k', risk_tier: 1, payload: { a: 1 } });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Graded');
+    fireEvent.click(screen.getByTitle('edit'));
+    const ta = await screen.findByDisplayValue(/"a": 1/);
+    for (const bad of ['{not json', '[1, 2]', '7']) {
+      fireEvent.change(ta, { target: { value: bad } });
+      expect(screen.getByText('save & approve').closest('button').disabled).toBe(true);
+      expect(screen.getByText('the payload is not a JSON object yet')).toBeTruthy();
+    }
+    fireEvent.change(ta, { target: { value: '{"a": 2}' } });
+    expect(screen.getByText('save & approve').closest('button').disabled).toBe(false);
+  });
+
+  it('says the hub\'s own words when it refuses a decision', async () => {
+    global.fetch = vi.fn(async (url, init) => (init?.method === 'POST'
+      ? { ok: false, status: 409, json: async () => ({ error: 'decision could not be applied' }) }
+      : { ok: true, status: 200, json: async () => ({ tasks: [{ id: 67, title: 'Graded', kind: 'k', risk_tier: 1, status: 'blocked' }] }) }));
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Graded');
+    fireEvent.click(screen.getByTitle('reject'));
+    expect((await screen.findByRole('alert')).textContent).toBe('decision could not be applied');
+  });
+
+  it('sends nothing, and offers no request decision, while the demo sample is on — and says only that', async () => {
+    history.replaceState(null, '', '/v2/console/decision-inbox?demo=1');
+    const fn = mockFetch({ tasks: [{ id: 68, title: 'Demo time', kind: 'k', risk_tier: 0, status: 'blocked' }],
+      groups: [] });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Demo time');
+    for (const title of ['accept', 'reject', 'defer', 'edit']) expect(screen.getByTitle(title).disabled).toBe(true);
+    const note = screen.getByRole('note').textContent;
+    expect(note).toMatch(/^The demo sample is on: the requests in this queue and the skill changes further down cannot be decided here\./);
+    expect(note).not.toMatch(/their buttons still decide/i);
+    expect(note).not.toMatch(/no decision is sent/i);
+    fireEvent.click(screen.getByTitle('accept'));
+    await settle();
+    expect(posts(fn)).toHaveLength(0);
+  });
+
+  // §1.4: every decision control is disabled in demo — the skill changes and batches this page
+  // draws under the queue too (their approve and reject decide a card through /api/actions)
+  it('disables the approve and reject of the skill changes and skill batches while the demo sample is on', async () => {
+    history.replaceState(null, '', '/v2/console/decision-inbox?demo=1');
+    const fn = vi.fn(async (url) => {
+      const path = String(url);
+      const body = path.includes('/api/skills/proposals') ? { proposals: [{ id: 'p1', skill: 'triage', origin: 'refine', card: 'c1', diff: '+ one' }] }
+        : path.includes('/api/skills/batches') ? { batches: [{ id: 'b1', card: 'c2', operations: [{ name: 'a' }], skills: ['a'] }] }
+          : { tasks: [], groups: [] };
+      return { ok: true, status: 200, json: async () => body };
+    });
+    global.fetch = fn;
+    render(<DecisionInboxPanel />);
+    await screen.findByTestId('skill-change');
+    await screen.findByTestId('skill-batch');
+    for (const title of ['approve skill change', 'reject skill change', 'approve skill batch', 'reject skill batch']) {
+      const button = screen.getByTitle(title);
+      expect(button.disabled, title).toBe(true);
+      fireEvent.click(button);
+    }
+    expect(screen.getByText(/these skill changes cannot be decided here/)).toBeTruthy();
+    expect(screen.getByText(/these skill batches cannot be decided here/)).toBeTruthy();
+    await settle();
+    expect(posts(fn)).toHaveLength(0);
+  });
+
+  it('sends one decision per request at a time: a double click never adds a refusal after a success', async () => {
+    let answered = 0;
+    const fn = vi.fn(async (url, init) => {
+      if (init?.method !== 'POST') return { ok: true, status: 200, json: async () => ({ tasks: [{ id: 69, title: 'Graded', kind: 'k', risk_tier: 1, status: 'blocked' }] }) };
+      answered += 1;
+      return answered === 1 ? { ok: true, status: 200, json: async () => ({ ok: true }) }
+        : { ok: false, status: 409, json: async () => ({ error: 'decision could not be applied' }) };
+    });
+    global.fetch = fn;
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Graded');
+    const reject = screen.getByTitle('reject');
+    fireEvent.click(reject);
+    fireEvent.click(reject);                                            // before the first answer
+    expect(reject.disabled).toBe(true);                                 // in flight: its controls wait
+    await waitFor(() => expect(screen.getByTitle('reject').disabled).toBe(false));
+    expect(posts(fn).map(([url, init]) => [url, init.body])).toEqual([['/autonomy/tasks/69/decision', '{"action":"reject"}']]);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('the second click of a double-click, or a held key, never decides — the next card may be under the pointer', async () => {
+    const fn = one({ id: 70, kind: 'k', risk_tier: 1 });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Graded');
+    fireEvent.click(screen.getByTitle('reject'), { detail: 2 });
+    fireEvent.click(screen.getByTitle('defer'), { detail: 2 });
+    fireEvent.click(screen.getByTitle('accept'));                      // tier 1: arms, focus on "confirm accept"
+    const confirm = screen.getByRole('button', { name: 'confirm accept' });
+    expect(document.activeElement).toBe(confirm);
+    const held = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true });
+    confirm.dispatchEvent(held);
+    expect(held.defaultPrevented).toBe(true);
+    fireEvent.click(confirm, { detail: 2 });
+    await settle();
+    expect(posts(fn)).toHaveLength(0);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posts(fn).map(([url, init]) => [url, init.body])).toEqual([['/autonomy/tasks/70/decision', '{"action":"accept"}']]));
+  });
+
+  it('draws a group the client could not send back (no snapshot) as separate cards, with no "reject group"', async () => {
+    mockFetch({ tasks: [41, 42].map(id => ({ id, title: 'Same governed task', kind: 'delete_file', status: 'blocked' })),
+      groups: [{ id: 'task-group', leader_id: 41, count: 2, member_ids: [41, 42] }] });
+    render(<DecisionInboxPanel />);
+    await waitFor(() => expect(screen.getAllByTitle('accept')).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: 'reject group' })).toBeNull();
+  });
+
+  it('types the amount an edit gives a tier-3 request: the edited request is money', async () => {
+    one({ id: 71, kind: 'k', risk_tier: 3, payload: { a: 1 } });
+    render(<DecisionInboxPanel />);
+    await screen.findByText('Graded');
+    fireEvent.click(screen.getByTitle('edit'));
+    fireEvent.change(await screen.findByDisplayValue(/"a": 1/), { target: { value: '{"a": 1, "amount": 250}' } });
+    fireEvent.click(screen.getByText('save & approve'));
+    expect(screen.getByLabelText('type 250 to save and approve Graded').getAttribute('placeholder')).toBe('250');
   });
 });

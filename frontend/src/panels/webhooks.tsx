@@ -40,7 +40,10 @@ import { appUrl } from '../base-path';
 import { apiDelete, apiPatch, apiPost, apiPut } from '../api/client';
 import type { components } from '../api/schema.gen';
 import { ConfirmAction, RISK_TIER } from '../confirm';
-import { Card, Row, State, Tag, arr, asLive, inpS, mono, refusalReason, taS, useApi } from '../panel-kit';
+/* `note` is the panel kit's words style; the panel's own status line is a `note` state, so the
+   style is imported as noteS. */
+import { Card, Row, State, Tag, arr, asLive, codeS, inpS, mono, note as noteS, refusalReason, taS, useApi } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const HOOKS_PATH = '/api/webhooks';
 const RECEIVER_PATH = '/api/admin/settings/webhooks';
@@ -150,7 +153,7 @@ function Subscription({ hook, label, held, onSave, onProblem }: {
       <textarea aria-label={`prompt template for ${label}`} placeholder="prompt template, e.g. {event} on {repository.full_name} (empty: the payload's text)"
         value={prompt} maxLength={2000} onChange={(e) => setPrompt(e.target.value)} style={{ ...taS, minHeight: 40 }} />
       {filterBad && (
-        <div role="status" style={{ ...mono, color: 'var(--amber)' }}>
+        <div role="status" style={{ ...noteS, color: 'var(--amber)' }}>
           The stored filter is unreadable, so every delivery is filtered. Saving the other fields leaves it as it is;
           write a new list of rules to replace it, or clear the box and save to remove it.
         </div>
@@ -158,12 +161,12 @@ function Subscription({ hook, label, held, onSave, onProblem }: {
       <textarea aria-label={`filter for ${label}`} value={filter}
         onChange={(e) => { setFilter(e.target.value); setFilterEdited(true); }}
         placeholder='filter: JSON rules every delivery must satisfy, e.g. [{"path": "ref", "op": "eq", "value": "refs/heads/main"}] (ops: eq ne contains startswith endswith glob in exists missing; empty: no rule)'
-        style={{ ...taS, minHeight: 40 }} />
+        style={{ ...codeS, minHeight: 40 }} />
       <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <select aria-label={`deliver ${label} to`} value={deliver} onChange={(e) => setDeliver(e.target.value)} style={inpS}>
           {DESTINATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-        <label style={mono}>
+        <label style={noteS}>
           <input type="checkbox" checked={deliverOnly} onChange={(e) => setDeliverOnly(e.target.checked)}
             aria-label={`deliver only for ${label} (skip the agent)`} /> deliver only
         </label>
@@ -237,26 +240,26 @@ function Reveal({ hook, onDismiss }: { hook: any; onDismiss: () => void }) {
   return (
     <div role="group" aria-label="the new webhook's credentials" data-testid="webhook-reveal"
       style={{ border: '1px solid var(--amber)', borderRadius: 4, padding: 8, marginBottom: 8 }}>
-      <div role="alert" style={{ ...mono, color: 'var(--amber)', marginBottom: 4 }}>
+      <div role="alert" style={{ ...noteS, color: 'var(--amber)', marginBottom: 4 }}>
         Save these now. The {kind} is shown once and never again.
       </div>
       <Row>
-        <span style={mono}>URL</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>URL</span>
         <code style={{ ...mono, overflowWrap: 'anywhere' }}>{url}</code>
         <Copy value={url} label="URL" />
       </Row>
       <Row>
-        <span style={mono}>{kind}</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>{kind}</span>
         <code data-testid="webhook-secret" style={{ ...mono, overflowWrap: 'anywhere' }}>{secret}</code>
         <Copy value={secret} label={kind} />
       </Row>
-      <div style={{ ...mono, color: 'var(--ink-2)', margin: '4px 0 6px' }}>
+      <div style={{ ...noteS, color: 'var(--ink-2)', margin: '4px 0 6px' }}>
         {hook.signed
           ? 'The sender signs each raw body: X-Signature-256: sha256=<HMAC-SHA256 with this secret>.'
           : 'The sender puts it in the X-Webhook-Token header.'}
       </div>
       {loopback && (
-        <div style={{ ...mono, color: 'var(--ink-2)', margin: '0 0 6px' }}>
+        <div style={{ ...noteS, color: 'var(--ink-2)', margin: '0 0 6px' }}>
           This URL is this machine's own address. A sender elsewhere needs one it can reach: the hub's
           network name, or a tunnel to it.
         </div>
@@ -462,12 +465,12 @@ export function WebhooksPanel() {
     <Card title="WEBHOOKS" live={asLive(list.d)} sub={`${hooks.length} inbound`}
       onReload={() => { list.reload(); receiver.reload(); }}>
       <Row>
-        <span style={mono}>receiver</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>receiver</span>
         <Tag c={receiverOn === false ? 'var(--amber)' : receiverOn ? 'var(--green)' : undefined}>
           {receiverOn === null ? (receiver.e ? `not read · ${receiver.e}` : 'not read')
             : receiverMissing ? 'on · not stored (the default)' : receiverOn ? 'on' : 'off'}
         </Tag>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>takes effect at once, no restart</span>
+        <span style={{ ...noteS, color: 'var(--ink-2)' }}>takes effect at once, no restart</span>
         <span style={{ marginLeft: 'auto' }}>
           <button className="tool-btn" disabled={receiverOn === null || !!pending[RECEIVER]} onClick={switchReceiver}>
             {receiverOn === null ? 'receiver state not read' : receiverOn ? 'switch the receiver off' : 'switch the receiver on'}
@@ -475,7 +478,7 @@ export function WebhooksPanel() {
         </span>
       </Row>
       {receiverOn === false && (
-        <div role="status" data-testid="receiver-off" style={{ ...mono, color: 'var(--amber)', padding: '4px 0 6px' }}>
+        <div role="status" data-testid="receiver-off" style={{ ...noteS, color: 'var(--amber)', padding: '4px 0 6px' }}>
           {receiverOdd ? 'The stored receiver setting is not true or false, so the hub treats it as off. ' : ''}
           The receiver is off: every delivery is refused until it is switched back on. Hooks keep their credentials.
           A sender that retries on an error (GitHub, Stripe) may deliver again once it is back on.
@@ -491,7 +494,7 @@ export function WebhooksPanel() {
         </select>
         <input aria-label="target" placeholder={`${targetType} id`} value={target} maxLength={128}
           onChange={(e) => setTarget(e.target.value)} style={inpS} />
-        <label style={mono}>
+        <label style={noteS}>
           <input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} /> HMAC-signed
         </label>
       </div>
@@ -502,15 +505,15 @@ export function WebhooksPanel() {
           onChange={(e) => setEvents(e.target.value)} style={inpS} />
         <textarea aria-label="prompt template" placeholder="prompt template, e.g. {event} on {repository.full_name} (empty: the payload's text)"
           value={prompt} maxLength={2000} onChange={(e) => setPrompt(e.target.value)} style={{ ...taS, minHeight: 40 }} />
-        <textarea aria-label="filter" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ ...taS, minHeight: 40 }}
+        <textarea aria-label="filter" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ ...codeS, minHeight: 40 }}
           placeholder='filter: JSON rules every delivery must satisfy, e.g. [{"path": "ref", "op": "eq", "value": "refs/heads/main"}] (ops: eq ne contains startswith endswith glob in exists missing; empty: no rule)' />
         <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={mono}>deliver to{' '}
+          <label style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>deliver to{' '}
             <select aria-label="deliver to" value={deliver} onChange={(e) => setDeliver(e.target.value)} style={inpS}>
               {DESTINATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </label>
-          <label style={mono}>
+          <label style={noteS}>
             <input type="checkbox" checked={deliverOnly} onChange={(e) => setDeliverOnly(e.target.checked)}
               aria-label="deliver only (skip the agent)" /> deliver only
           </label>
@@ -519,7 +522,7 @@ export function WebhooksPanel() {
             title={created ? 'save the new hook’s credentials first' : undefined}>create</button>
         </span>
       </div>
-      {note && <div role="status" style={{ ...mono, color: 'var(--amber)', marginBottom: 6 }}>{note}</div>}
+      {note && <div role="status" style={{ ...noteS, color: 'var(--amber)', marginBottom: 6 }}>{note}</div>}
       <State e={list.e} loading={list.loading && !list.d} n={hooks.length} />
       {hooks.map((hook: any) => {
         const label = hookName(hook);
@@ -528,7 +531,7 @@ export function WebhooksPanel() {
           <div key={hook.id}>
             <Row>
               <button ref={focusRef(`open:${hook.id}`)} className="tool-btn" aria-expanded={open === hook.id}
-                style={{ ...mono, textAlign: 'left' }} onClick={() => setOpen(open === hook.id ? '' : hook.id)}>
+                style={{ ...noteS, textAlign: 'left' }} onClick={() => setOpen(open === hook.id ? '' : hook.id)}>
                 {hook.name || hook.target}
               </button>
               <span style={mono}>{hook.target_type}:{hook.target}</span>
@@ -560,13 +563,13 @@ export function WebhooksPanel() {
               </span>
             </Row>
             {confirming === hook.id && (
-              <div role="status" style={{ ...mono, color: 'var(--amber)', padding: '2px 0 6px' }}>
+              <div role="status" style={{ ...noteS, color: 'var(--amber)', padding: '2px 0 6px' }}>
                 Deleting ends the sender's {hook.signed ? 'secret' : 'token'}; switching it off keeps it.
               </div>
             )}
             {open === hook.id && (
-              <div style={{ ...mono, color: 'var(--ink-2)', padding: '2px 0 8px 8px' }}>
-                <div>POST {triggerUrl(hook.id)}</div>
+              <div style={{ ...noteS, color: 'var(--ink-2)', padding: '2px 0 8px 8px' }}>
+                <div style={mono}>POST {triggerUrl(hook.id)}</div>
                 <div>{hook.signed ? 'X-Signature-256 (HMAC-SHA256 of the raw body)' : `X-Webhook-Token (${hook.token_hint || '…'})`}</div>
                 {hook.description ? <div>{hook.description}</div> : null}
                 <div>{hook.calls ?? 0} calls · last {when(hook.last_called)} · created {when(hook.created_at)}</div>
@@ -589,7 +592,7 @@ export function WebhooksPanel() {
                 {lastTest(hook) ? <div>{lastTest(hook)}</div> : null}
                 {tests[hook.id] && (
                   <div role="status" data-testid="webhook-test-outcome" aria-label={`test outcome for ${label}`}
-                    style={{ border: '1px solid var(--line, #444)', borderRadius: 4, padding: '4px 6px', margin: '4px 0' }}>
+                    style={{ border: '1px solid var(--panel-line)', borderRadius: 4, padding: '4px 6px', margin: '4px 0' }}>
                     {testSummary(tests[hook.id]).map((line, i) => <div key={i}>{line}</div>)}
                   </div>
                 )}

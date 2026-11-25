@@ -26,8 +26,10 @@
    the panel literally cannot see the backend's detail string on a GET and must not guess.
    apiPost DOES carry the refusal body, so reindex renders err.body verbatim. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, inpS } from '../panel-kit';
+// The panel keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, actA, inpS } from '../panel-kit';
 import { LspSection } from './lsp';
+import { LABEL } from '../theme/type';
 
 const STATS_PATH = '/api/codeintel/stats';
 const SEARCH_PATH = '/api/codeintel/search';
@@ -120,7 +122,7 @@ export function CodeIntelPanel() {
       {s && (
         <>
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>index</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>index</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
               <Tag>{fmt(s.files_indexed)} files</Tag>
               <Tag>{fmt(s.symbol_count)} symbols</Tag>
@@ -133,7 +135,7 @@ export function CodeIntelPanel() {
           {errs.length > 0 && (
             <>
               <Row>
-                <span style={{ ...mono, color: 'var(--amber)' }}>
+                <span style={{ ...noteS, color: 'var(--amber)' }}>
                   {errs.length} file(s) failed to parse — their symbols are MISSING from the index, so search under-reports
                 </span>
               </Row>
@@ -144,14 +146,14 @@ export function CodeIntelPanel() {
                 </Row>
               ))}
               {errs.length > 8 && (
-                <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>+{errs.length - 8} more not shown</div>
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>+{errs.length - 8} more not shown</div>
               )}
             </>
           )}
         </>
       )}
 
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', margin: '6px 0' }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '6px 0' }}>
         <div>
           <b>Directory scope</b> — every *.py under the repo root except .git/.hg/.svn/__pycache__/
           node_modules/.mypy_cache/.pytest_cache/.ruff_cache/build/dist, plus any directory holding a
@@ -191,7 +193,7 @@ export function CodeIntelPanel() {
       </Row>
 
       {submitted === '' ? (
-        <div style={{ fontSize: 12, color: 'var(--ink-2)', padding: '5px 0' }}>
+        <div style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)', padding: '5px 0' }}>
           enter a symbol substring to search — nothing has been asked yet
         </div>
       ) : (
@@ -201,7 +203,7 @@ export function CodeIntelPanel() {
               so the empty case is rendered below with its caveat instead of through State. */}
           <State e={hits.e} loading={hits.loading} n={h && results.length > 0 ? results.length : null} />
           {h && results.length === 0 && (
-            <div style={{ fontSize: 12, color: 'var(--amber)', padding: '5px 0' }}>
+            <div style={{ fontSize: 'var(--n-fs-label)', color: 'var(--amber)', padding: '5px 0' }}>
               0 indexed symbols matched — that is not proof the name is absent from the repo. The index
               holds only module-level functions/classes and the methods directly in a class body, so a
               nested def or a closure with this name would match nothing here even though it exists.
@@ -211,7 +213,7 @@ export function CodeIntelPanel() {
             <Row>
               {/* Labelled with the ECHOED query, so a stale render can never claim results
                   belong to a query they don't. */}
-              <span style={{ ...mono, color: 'var(--ink-2)' }}>
+              <span style={{ ...noteS, color: 'var(--ink-2)' }}>
                 results for "{String(h.query)}"{h.kind ? ` · kind ${h.kind}` : ''}
               </span>
               <span style={{ marginLeft: 'auto' }}>
@@ -222,7 +224,7 @@ export function CodeIntelPanel() {
             </Row>
           )}
           {h && vendored > 0 && (
-            <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+            <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
               {vendored} of {results.length} shown are vendored third-party code — tagged, not hidden,
               so this list always matches the count above.
             </div>
@@ -233,7 +235,7 @@ export function CodeIntelPanel() {
               <Tag>{r && r.kind}</Tag>
               <span style={{ ...mono, color: 'var(--ink-2)' }}>{r && r.file}:{r && r.lineno}</span>
               {r && r.doc
-                ? <span style={{ fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.doc}</span>
+                ? <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.doc}</span>
                 : null}
               {isVendored(r && r.file) && <span style={{ marginLeft: 'auto' }}><Tag>vendored</Tag></span>}
             </Row>
@@ -242,7 +244,7 @@ export function CodeIntelPanel() {
       )}
 
       <Row>
-        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+        <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           rebuild this process's cached index (full repo walk — 3.4k files)
         </span>
         <button
@@ -251,12 +253,12 @@ export function CodeIntelPanel() {
         >{busy ? 'reindexing…' : 'reindex (admin)'}</button>
       </Row>
       {note && (
-        <div role="alert" style={{ ...mono, marginTop: 6, color: note.kind === 'err' ? 'var(--red)' : 'var(--green)' }}>
+        <div role="alert" style={{ ...noteS, marginTop: 6, color: note.kind === 'err' ? 'var(--red)' : 'var(--green)' }}>
           {note.text}
         </div>
       )}
 
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
         Reads are user-tier (X-User-Token); reindex is admin-tier (X-Admin-Token). Reindex reassigns
         one in-process cache — nothing is persisted, nothing propagates to another worker, and a
         restart rebuilds it lazily on first use. The index is not watching the filesystem: it is only

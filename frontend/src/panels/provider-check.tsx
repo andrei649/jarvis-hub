@@ -6,7 +6,7 @@
    only the verdict, the HTTP status and how many models the key can see. Nothing is
    probed until the owner asks. */
 import React, { useState } from 'react';
-import { Card, Row, Tag, actA, arr, mono, refusalReason } from '../panel-kit';
+import { Card, Row, Tag, actA, arr, mono, note, refusalReason } from '../panel-kit';
 
 export const PROBE_PATH = '/api/admin/llm/providers/probe';
 
@@ -53,13 +53,14 @@ export function ProviderCheckPanel() {
     <Card title="CLOUD PROVIDER CHECK" live={rows ? 'live' : undefined} sub={rows ? (bad ? `${bad} failing` : 'ok') : null}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
         <button className="tool-btn" disabled={busy} onClick={() => run()}>{busy ? 'checking…' : 'check all providers'}</button>
-        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>one authenticated model-list read per provider with a key</span>
+        <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>one authenticated model-list read per provider with a key</span>
       </div>
       {(rows || []).map((row: any) => {
         const [label, color] = LABELS[row.verdict] || [String(row.verdict || '?'), 'var(--ink-2)'];
         return (
           <Row key={row.provider}>
-            <span style={{ ...mono }}>{row.display_name || row.provider}</span>
+            {/* A display name is words; without one the provider is named by its id. */}
+            <span style={row.display_name ? note : mono}>{row.display_name || row.provider}</span>
             <Tag c={color}>{label}</Tag>
             {['error', 'auth_failed', 'no_listing'].includes(row.verdict) && row.status_code ? <Tag>HTTP {row.status_code}</Tag> : null}
             {row.models != null && row.working ? <Tag>{row.models} model(s)</Tag> : null}
@@ -71,8 +72,8 @@ export function ProviderCheckPanel() {
           </Row>
         );
       })}
-      {msg && <div role="status" style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>{msg}</div>}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>keys and provider replies are never shown</div>
+      {msg && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>{msg}</div>}
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>keys and provider replies are never shown</div>
     </Card>
   );
 }

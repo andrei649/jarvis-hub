@@ -7,7 +7,7 @@
 .compare-agents-cloud small,
 .compare-agents-route {
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: var(--n-fs-label);
 }
 
 .compare-agents-selectors,
@@ -38,8 +38,8 @@
   border-radius: var(--radius);
   overflow-wrap: anywhere;
 }
-.compare-agents-results h3 { margin: 0 0 8px; font-size: 15px; }
-.compare-agents-results h3 span { color: var(--ink-2); font-size: 12px; font-weight: 400; }
+.compare-agents-results h3 { margin: 0 0 8px; font-size: var(--n-fs-own); }
+.compare-agents-results h3 span { color: var(--ink-2); font-size: var(--n-fs-label); font-weight: 400; }
 .compare-agents-route { margin: 0 0 12px !important; }
 .compare-agents-answer { white-space: pre-wrap; margin-top: 6px; }
 .compare-agents-save { margin-top: 12px; }

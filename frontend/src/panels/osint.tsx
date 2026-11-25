@@ -39,7 +39,8 @@
    sitting beside a stale success drawer. apiGet throws WITHOUT a body, so the GET keeps
    top/limit inside their declared ranges rather than explaining an unreadable 422. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
+import { useApi, arr, mono, note, asLive, Card, State, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const CORRELATE_PATH = '/api/osint/correlate';
 const BRIEF_PATH = '/api/osint/brief';
@@ -78,13 +79,13 @@ function Refusal({ err, path }: { err: any; path: string }) {
     : (b && line == null ? b : null);
   return (
     <div role="alert" style={{ marginTop: 6, padding: 6, border: '1px solid var(--amber)', borderRadius: 4 }}>
-      <div style={{ ...mono, color: 'var(--amber)' }}>
+      <div style={{ ...note, color: 'var(--amber)' }}>
         refused · HTTP {(err && err.status) || '?'} · POST {path}
       </div>
-      {line != null && <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>{line}</div>}
+      {line != null && <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>{line}</div>}
       {structured != null && <Json v={structured} />}
       {line == null && structured == null && (
-        <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+        <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
           {(err && err.message) || 'request failed'} (the response carried no readable body)
         </div>
       )}
@@ -158,7 +159,7 @@ export function OsintPanel() {
         live={asLive(d)}
         sub={out ? (out.err ? 'refused' : `${out.view} · ${sendable.length} row(s) sent`) : 'offline correlator — correlates what you type'}
       >
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginBottom: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
           Evidence drawer. Each row is one observation; rows sharing a kind + value correlate into one
           finding with its provenance chain and a corroboration score. kind and value are required —
           a row missing either is dropped by the correlator with no error, so it is not sent.
@@ -193,11 +194,11 @@ export function OsintPanel() {
                 onChange={(e) => setRow(i, 'url', e.target.value)}
               />
               <button
-                className="tool-btn" style={{ fontSize: 9.5, padding: '1px 5px' }}
+                className="tool-btn" style={{ fontSize: 'var(--n-fs-meta)', padding: '1px 5px' }}
                 title="detail" onClick={() => setDetailOpen(detailOpen === i ? null : i)}
               >detail</button>
               <button
-                className="tool-btn" style={{ fontSize: 9.5, padding: '1px 5px' }}
+                className="tool-btn" style={{ fontSize: 'var(--n-fs-meta)', padding: '1px 5px' }}
                 title="remove row" onClick={() => dropRow(i)}
               >×</button>
             </div>
@@ -213,29 +214,29 @@ export function OsintPanel() {
 
         <Row>
           <button className="tool-btn" onClick={addRow} disabled={rows.length >= MAX_ROWS}>+ row</button>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>{sendable.length} sendable</span>
+          <span style={{ ...note, color: 'var(--ink-2)' }}>{sendable.length} sendable</span>
           {incomplete > 0 && (
-            <span style={{ ...mono, color: 'var(--amber)' }}>
+            <span style={{ ...note, color: 'var(--amber)' }}>
               {incomplete} row(s) with content but no kind/value — not sent (the correlator drops
               those without an error)
             </span>
           )}
         </Row>
 
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', margin: '6px 0' }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '6px 0' }}>
           Trust rule, verbatim from the backend: only the source label "manual" or "operator" is
           trusted. Every other label is tainted at ingestion, and a blank source is rewritten to
           "osint:unknown" and is tainted too. No other label is neutral.
         </div>
 
         <Row>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>top</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>top</span>
           <input
             type="number" min={1} max={100} value={top} aria-label="brief size"
             style={{ ...inpS, width: 64 }}
             onChange={(e) => setTop(clampInt(e.target.value, 1, 100, 8))}
           />
-          <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             brief size (1–100) — used by {BRIEF_PATH} only; {CORRELATE_PATH} declares this field and ignores it
           </span>
         </Row>
@@ -252,7 +253,7 @@ export function OsintPanel() {
             onClick={() => run(BRIEF_PATH, 'brief')}
           >{busy === 'brief' ? 'briefing…' : 'brief (top-N)'}</button>
           {sendable.length === 0 && (
-            <span style={{ fontSize: 10, color: 'var(--ink-2)', marginLeft: 'auto' }}>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginLeft: 'auto' }}>
               fill kind and value on at least one row
             </span>
           )}
@@ -272,12 +273,12 @@ export function OsintPanel() {
 
             {/* The backend's own headline. /api/osint/correlate emits none, so none is shown there. */}
             {out.view === 'brief' && typeof d.headline === 'string' && (
-              <div style={{ ...mono, color: 'var(--ink)', margin: '6px 0' }}>{d.headline}</div>
+              <div style={{ ...note, color: 'var(--ink)', margin: '6px 0' }}>{d.headline}</div>
             )}
 
             {counts && (
               <Row>
-                <span style={{ ...mono, color: 'var(--ink-2)' }}>
+                <span style={{ ...note, color: 'var(--ink-2)' }}>
                   evidence {num(counts.evidence)} · findings {num(counts.findings)} ·
                   {' '}corroborated {num(counts.corroborated)} · tainted {num(counts.tainted)}
                 </span>
@@ -285,26 +286,26 @@ export function OsintPanel() {
             )}
 
             {dropped > 0 && (
-              <div style={{ ...mono, color: 'var(--amber)', marginTop: 4 }}>
+              <div style={{ ...note, color: 'var(--amber)', marginTop: 4 }}>
                 {dropped} of {out.sent} row(s) sent were dropped by the correlator (kind or value empty
                 after trim) — it reports no error for this, counts.evidence is the only trace
               </div>
             )}
 
             {d.untrusted_ingestion === true && (
-              <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+              <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
                 at least one finding is backed by a source that is not "manual"/"operator". This is a
                 flag on this read only — this route stores nothing, submits nothing and actions nothing.
               </div>
             )}
 
             {findings.length === 0
-              ? <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>0 findings returned</div>
+              ? <div style={{ ...note, color: 'var(--ink-2)', marginTop: 6 }}>0 findings returned</div>
               : findings.map((f, i) => (
                 <div key={`${f && f.kind}:${f && f.value}:${i}`}>
                   <Row>
                     <button
-                      className="tool-btn" style={{ fontSize: 9.5, padding: '1px 5px' }}
+                      className="tool-btn" style={{ fontSize: 'var(--n-fs-meta)', padding: '1px 5px' }}
                       title="provenance" onClick={() => setOpenF(openF === i ? null : i)}
                     >{openF === i ? '−' : '+'}</button>
                     <span style={{ ...mono, color: 'var(--accent-light)' }}>{f && f.kind}:{f && f.value}</span>
@@ -321,14 +322,14 @@ export function OsintPanel() {
               ))}
 
             {out.view === 'brief' && counts && Number(counts.findings) > findings.length && (
-              <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+              <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
                 showing top {findings.length} of {num(counts.findings)} indicator(s)
               </div>
             )}
           </>
         )}
 
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           User-tier POST (X-User-Token), not admin. {CORRELATE_PATH} and {BRIEF_PATH} correlate only the
           evidence typed above: they never fetch, never store and never act, so nothing survives a reload
           and nothing here is queued, escalated or written back. Live collection (SpiderFoot, news feeds) is owner-gated wiring and is not reachable from this panel. The brief view calls
@@ -344,12 +345,12 @@ export function OsintPanel() {
         onReload={domain ? sig.reload : undefined}
       >
         <Row>
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>domain</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>domain</span>
           <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {ROUTER_DOMAINS.map((dm) => (
               <button
                 key={dm} className="tool-btn"
-                style={{ fontSize: 9.5, padding: '1px 5px', color: dm === domain ? 'var(--accent-light)' : undefined }}
+                style={{ fontSize: 'var(--n-fs-meta)', padding: '1px 5px', color: dm === domain ? 'var(--accent-light)' : undefined }}
                 onClick={() => pickDomain(dm)}
               >{dm}</button>
             ))}
@@ -363,13 +364,13 @@ export function OsintPanel() {
             onBlur={commitDomain}
             onKeyDown={(e) => { if (e.key === 'Enter') commitDomain(); }}
           />
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>top</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>top</span>
           <input
             type="number" min={1} max={50} value={sTop} aria-label="signal top"
             style={{ ...inpS, width: 58 }}
             onChange={(e) => setSTop(clampInt(e.target.value, 1, 50, 5))}
           />
-          <span style={{ ...mono, color: 'var(--ink-2)' }}>limit</span>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>limit</span>
           <input
             type="number" min={1} max={200} value={sLimit} aria-label="signal limit"
             style={{ ...inpS, width: 58 }}
@@ -378,7 +379,7 @@ export function OsintPanel() {
         </Row>
 
         {domain === '' ? (
-          <div style={{ fontSize: 12, color: 'var(--ink-2)', marginTop: 6 }}>
+          <div style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)', marginTop: 6 }}>
             pick a domain — nothing is requested until you do
           </div>
         ) : sig.e ? (
@@ -390,10 +391,10 @@ export function OsintPanel() {
           <>
             {s.available === false ? (
               <>
-                <div style={{ ...mono, color: 'var(--amber)', marginTop: 6 }}>
+                <div style={{ ...note, color: 'var(--amber)', marginTop: 6 }}>
                   {typeof s.headline === 'string' ? s.headline : 'available: false'} · reason: {String(s.reason)}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
                   the sidecar returned nothing — this is NOT "zero signals". In this branch the route sends
                   count 0 and known_domain null as placeholders, so neither is shown as a measurement.
                 </div>
@@ -404,21 +405,21 @@ export function OsintPanel() {
               </>
             ) : s.known_domain === false ? (
               <>
-                <div style={{ ...mono, color: 'var(--amber)', marginTop: 6 }}>
+                <div style={{ ...note, color: 'var(--amber)', marginTop: 6 }}>
                   {typeof s.headline === 'string' ? s.headline : ''}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
                   the router has no keyword rules for "{s.domain}" (known_domain false), so no signal can
                   route into it. The sidecar answered — this is not an outage.
                 </div>
               </>
             ) : (
               <>
-                <div style={{ ...mono, color: 'var(--ink)', margin: '6px 0' }}>
+                <div style={{ ...note, color: 'var(--ink)', margin: '6px 0' }}>
                   {typeof s.headline === 'string' ? s.headline : ''}
                 </div>
                 <Row>
-                  <span style={{ ...mono, color: 'var(--ink-2)' }}>
+                  <span style={{ ...note, color: 'var(--ink-2)' }}>
                     count {num(s.count)} routed into {String(s.domain)}
                   </span>
                 </Row>
@@ -426,16 +427,16 @@ export function OsintPanel() {
                 {sTopList.map((g, i) => (
                   <Row key={i}>
                     <span
-                      style={{ ...mono, color: 'var(--accent-light)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      style={{ ...note, color: 'var(--accent-light)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                     >{(g && g.title) || '—'}</span>
                     {g && g.severity != null && <Tag>sev {String(g.severity)}</Tag>}
                     {g && g.summary
-                      ? <span style={{ fontSize: 10, color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.summary}</span>
+                      ? <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.summary}</span>
                       : null}
                   </Row>
                 ))}
                 {Number(s.count) > sTopList.length && (
-                  <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+                  <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
                     showing top {sTopList.length} of {num(s.count)} (severity-ranked)
                   </div>
                 )}
@@ -445,7 +446,7 @@ export function OsintPanel() {
           </>
         )}
 
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           User-tier GET, read-only. Signals come from the local Signal Layer sidecar
           (SIGNAL_LAYER_API_URL, default http://localhost:8787); with it down this route still answers 200
           with available:false and the reason above is the sidecar's or the router's own string, printed

@@ -1,0 +1,216 @@
+[
+  {
+    "page": "cockpit",
+    "width": 1920,
+    "height": 1080,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\atlas\\shots\\cockpit-1920-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 306,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Space Grotesk",
+      "JetBrains Mono"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "Space Grotesk 300 700",
+      "Space Grotesk 300 700",
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": [],
+    "axeContrastCount": 0,
+    "axeContrastSamples": []
+  },
+  {
+    "page": "cockpit",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\atlas\\shots\\cockpit-1440-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 243,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Space Grotesk",
+      "JetBrains Mono"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "Space Grotesk 300 700",
+      "Space Grotesk 300 700",
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": []
+  },
+  {
+    "page": "cockpit",
+    "width": 1280,
+    "height": 800,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\atlas\\shots\\cockpit-1280-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 212,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Space Grotesk",
+      "JetBrains Mono"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "Space Grotesk 300 700",
+      "Space Grotesk 300 700",
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": []
+  },
+  {
+    "page": "cockpit",
+    "width": 2560,
+    "height": 1353,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\atlas\\shots\\cockpit-2560-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 348,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Space Grotesk",
+      "JetBrains Mono"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "Space Grotesk 300 700",
+      "Space Grotesk 300 700",
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": []
+  },
+  {
+    "page": "cockpit",
+    "width": 2560,
+    "height": 1353,
+    "theme": "light",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\atlas\\shots\\cockpit-2560-light.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 348,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Space Grotesk",
+      "JetBrains Mono"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "Space Grotesk 300 700",
+      "Space Grotesk 300 700",
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": []
+  },
+  {
+    "page": "cockpit",
+    "width": 1920,
+    "height": 1080,
+    "theme": "light",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\atlas\\shots\\cockpit-1920-light.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 306,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Space Grotesk",
+      "JetBrains Mono"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "Space Grotesk 300 700",
+      "Space Grotesk 300 700",
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": [],
+    "axeContrastCount": 0,
+    "axeContrastSamples": []
+  },
+  {
+    "page": "secondary",
+    "width": 1920,
+    "height": 1080,
+    "theme": "dark",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\atlas\\shots\\secondary-1920-dark.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 253,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Space Grotesk",
+      "JetBrains Mono"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "Space Grotesk 300 700",
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": [],
+    "axeContrastCount": 0,
+    "axeContrastSamples": []
+  },
+  {
+    "page": "secondary",
+    "width": 1920,
+    "height": 1080,
+    "theme": "light",
+    "file": "C:\\dev\\jarvis-hub\\.claude\\worktrees\\hud-redesign\\docs\\design\\hud-next\\atlas\\shots\\secondary-1920-light.png",
+    "ok": true,
+    "error": null,
+    "horizontalOverflow": false,
+    "verticalOverflowPx": 0,
+    "textElements": 253,
+    "smallestFontPx": 12,
+    "textElementsUnder11px": 0,
+    "fontsRequested": [
+      "Space Grotesk",
+      "JetBrains Mono"
+    ],
+    "fontsMissing": [],
+    "fontsLoaded": [
+      "Space Grotesk 300 700",
+      "JetBrains Mono 100 800"
+    ],
+    "blockedExternal": [],
+    "consoleErrors": [],
+    "axeContrastCount": 0,
+    "axeContrastSamples": []
+  }
+]

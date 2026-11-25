@@ -2,10 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiPut } from './api/client';
 import { basePath } from './base-path';
 import { LANGUAGES } from './data';
+import { DEFAULT_SCHEME_PREFERENCE, DEFAULT_THEME, SCHEME_PREFERENCES, THEME_IDS } from './theme/registry';
 
 const OPTIONS = {
   font: ['theme', 'system-sans', 'system-serif', 'system-mono', 'jetbrains-mono'],
-  accent: ['cyan', 'amber', 'green', 'violet'], look: ['obsidian', 'graphite'],
+  accent: ['cyan', 'amber', 'green', 'violet'],
+  // Theme contract v1 (theme/CONTRACT.md §7): the seven Nerva themes and the two Classic looks,
+  // from the one registry. `scheme` is dark/light/system; theme/apply.ts resolves `system`.
+  look: THEME_IDS, scheme: SCHEME_PREFERENCES,
   density: ['normal', 'compact', 'comfy'], motion: ['system', 'calm', 'lively'],
   scanline: ['on', 'off'], dotgrid: ['off', 'on'],
   // H221 — the HUD language is a display choice like the rest: one list, synced the same way.
@@ -13,9 +17,13 @@ const OPTIONS = {
 } as const;
 export type AppearanceKey = keyof typeof OPTIONS;
 export type Appearance = Record<AppearanceKey, string>;
-const DEFAULTS: Appearance = {font:'theme', accent:'cyan', look:'obsidian', density:'normal', motion:'system', scanline:'on', dotgrid:'off', lang:'en'};
+const DEFAULTS: Appearance = {font:'theme', accent:'cyan', look:DEFAULT_THEME, scheme:DEFAULT_SCHEME_PREFERENCE, density:'normal', motion:'system', scanline:'on', dotgrid:'off', lang:'en'};
 const KEYS = Object.keys(DEFAULTS) as AppearanceKey[];
+const isKey = (key: string): key is AppearanceKey => (KEYS as string[]).includes(key);
 const ENDPOINT = '/api/preferences/appearance';
+// The key keeps its v1 name (contract §7); the stored object carries its own shape version.
+const CACHE_VERSION = 2;
+const cacheKeyFor = (base: string) => 'hud.appearance.v1:' + (base || '/');
 type Patch = Partial<Appearance>;
 type Reply = {revision:string; configured: boolean; preferences: Appearance};
 type State = {preferences: Appearance; pending: Patch; status: 'loading' | 'local' | 'synced' | 'saving' | 'unsynced'; error: string};
@@ -67,7 +75,8 @@ function legacy(keys: AppearanceKey[]): Patch {
 // the first flush uploads it and refresh() keeps it. Once the cache carries `lang` (or a lang
 // edit is already queued) this is a no-op, and 'en' is never uploaded.
 function adoptLegacyLang(key: string, cached: {version?: number; preferences?: object} | null, queued: Patch): Patch {
-  if (cached?.version === 1 && Object.prototype.hasOwnProperty.call(cached.preferences || {}, 'lang')) return {};
+  if ((cached?.version === 1 || cached?.version === CACHE_VERSION)
+    && Object.prototype.hasOwnProperty.call(cached.preferences || {}, 'lang')) return {};
   if (queued.lang !== undefined) return {};
   const lang = legacy(['lang']).lang;
   if (!lang || lang === DEFAULTS.lang) return {};
@@ -75,25 +84,47 @@ function adoptLegacyLang(key: string, cached: {version?: number; preferences?: o
   try { localStorage.setItem(edit.id, JSON.stringify(edit)); } catch { /* display fallback only; nothing to upload from */ }
   return {lang};
 }
+// Contract §7 migration. A version-1 cache and the pre-H135 `hud.look` key were both written from the
+// look on screen at every boot, so their `obsidian` (the old default) records no owner choice: it is
+// dropped and an unconfigured install moves to the new default. Any other cached value is a choice
+// and is kept; pending journal edits are never touched here.
+function withoutOldDefaultLook(choices: Patch): Patch {
+  if (choices.look !== 'obsidian') return choices;
+  const {look: _oldDefault, ...rest} = choices;
+  return rest;
+}
+function cachedChoices(cached: {version?: unknown; preferences?: unknown} | null): Patch {
+  if (cached && cached.version === CACHE_VERSION) return normalize(cached.preferences);
+  if (cached && cached.version === 1) return withoutOldDefaultLook(normalize(cached.preferences));
+  return withoutOldDefaultLook(legacy(KEYS.filter(k => k !== 'motion' && k !== 'lang' && k !== 'scheme')));
+}
 function readCache(key: string): State {
   let preferences = {...DEFAULTS}, pending: Patch = {};
   try {
     const cached = JSON.parse(localStorage.getItem(key) || 'null');
-    if (cached && cached.version === 1) {
-      preferences = {...preferences, ...normalize(cached.preferences)};
-    } else {
-      preferences = {...preferences, ...legacy(KEYS.filter(k => k !== 'motion' && k !== 'lang'))};
-    }
+    preferences = {...preferences, ...cachedChoices(cached)};
     pending = patches(journal(key));
     pending = {...pending, ...adoptLegacyLang(key, cached, pending)};
   } catch { /* unavailable/corrupt browser storage keeps safe defaults */ }
   pending = {...pending,...patches(journal(key))};
   return {preferences:{...preferences,...pending}, pending, status:'loading', error:''};
 }
+/**
+ * The appearance the first paint shows: this deployment's cached choices (migrated as above) under
+ * the owner's pending edits. Synchronous and write-free, so theme/apply.ts can put it on <html>
+ * before React renders; the hook below then hydrates from the server as usual.
+ */
+export function readCachedAppearance(): Appearance {
+  const key = cacheKeyFor(basePath());
+  let preferences = {...DEFAULTS};
+  try { preferences = {...preferences, ...cachedChoices(JSON.parse(localStorage.getItem(key) || 'null'))}; }
+  catch { /* unavailable/corrupt browser storage keeps safe defaults */ }
+  return {...preferences, ...patches(journal(key))};
+}
 
 /** One owner instance, with a prefix-scoped offline queue of explicit cosmetic edits. */
 export function useAppearance() {
-  const [cacheKey] = useState(() => 'hud.appearance.v1:' + (basePath() || '/'));
+  const [cacheKey] = useState(() => cacheKeyFor(basePath()));
   const [state, setState] = useState(() => readCache(cacheKey));
   const current = useRef(state);
   const mounted = useRef(false);
@@ -109,7 +140,7 @@ export function useAppearance() {
   const publish = useCallback((next: State) => {
     current.current = next;
     if (mounted.current) setState(next);
-    try { localStorage.setItem(cacheKey, JSON.stringify({version:1, preferences:next.preferences, })); } catch { /* memory state still works */ }
+    try { localStorage.setItem(cacheKey, JSON.stringify({version:CACHE_VERSION, preferences:next.preferences})); } catch { /* memory state still works */ }
   }, [cacheKey]);
 
   const flush = useCallback(async () => {
@@ -197,7 +228,10 @@ export function useAppearance() {
     return () => media.removeEventListener?.('change', changed);
   }, []);
 
+  // Typed to the fixed fields for direct callers. The shared AppearanceProvider hands it on as
+  // (key: string, value: string), so a key outside the fields is also ignored at run time.
   const setPreference = useCallback((key: AppearanceKey, value: string) => {
+    if (!isKey(key)) return;
     const next = normalize({[key]:value})[key]!;
     const edit=newEdit(cacheKey,{[key]:next});
     try {localStorage.setItem(edit.id,JSON.stringify(edit));} catch {memoryEdits.current.push(edit);}

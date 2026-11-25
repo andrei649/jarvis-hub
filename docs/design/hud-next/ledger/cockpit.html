@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva — Today · Monday, 23 November 2026</title>
+<script>
+  /* Theme before first paint. Carbon (dark) is this direction's default; Paper is ?theme=light. */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'dark' || t === 'light' ? t : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="ledger.css">
+</head>
+<body>
+
+<!-- Marks. State is a shape and a word; the seal is the only coloured mark. -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="mk-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.4" fill="currentColor"/></symbol>
+  <symbol id="mk-attn" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 2.4a5.6 5.6 0 0 0 0 11.2z" fill="currentColor"/></symbol>
+  <symbol id="mk-problem" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" fill="currentColor"/></symbol>
+  <symbol id="mk-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.4 2"/></symbol>
+  <symbol id="mk-stale" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.8V8l2.3 1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="mk-idle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.1" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  <symbol id="mk-work" viewBox="0 0 16 16"><path d="M4 2.5l9.5 5.5L4 13.5z" fill="currentColor"/></symbol>
+  <symbol id="mk-done" viewBox="0 0 16 16"><path d="M3 8.6l3.3 3.3L13 4.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="mk-held" viewBox="0 0 16 16"><path d="M5.2 3v10M10.8 3v10" fill="none" stroke="currentColor" stroke-width="2.4"/></symbol>
+  <symbol id="mk-blocked" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.1 11.9l7.8-7.8" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="mk-key" viewBox="0 0 16 16"><path d="M8 2.2l5.8 5.8L8 13.8 2.2 8z" fill="currentColor"/></symbol>
+  <symbol id="mk-here" viewBox="0 0 16 16"><rect x="2.75" y="2.75" width="10.5" height="10.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6" y="6" width="4" height="4" fill="currentColor"/></symbol>
+  <symbol id="mk-seal" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7.25" fill="currentColor"/><path d="M5.4 10.9V5.1l5.2 5.8V5.1" fill="none" style="stroke: var(--knock, var(--paper))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="mk-seal-open" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 10.7V5.3l4.8 5.4V5.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="tier-3" viewBox="0 0 20 12"><rect x="0" y="0" width="5" height="12" fill="currentColor"/><rect x="7.5" y="0" width="5" height="12" fill="currentColor"/><rect x="15" y="0" width="5" height="12" fill="currentColor"/></symbol>
+  <symbol id="tier-2" viewBox="0 0 20 12"><rect x="0" y="0" width="5" height="12" fill="currentColor"/><rect x="7.5" y="0" width="5" height="12" fill="currentColor"/><rect x="15.6" y="0.6" width="3.8" height="10.8" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+  <symbol id="tier-1" viewBox="0 0 20 12"><rect x="0" y="0" width="5" height="12" fill="currentColor"/><rect x="8.1" y="0.6" width="3.8" height="10.8" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="15.6" y="0.6" width="3.8" height="10.8" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+  <symbol id="tier-0" viewBox="0 0 20 12"><rect x="0.6" y="0.6" width="3.8" height="10.8" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="8.1" y="0.6" width="3.8" height="10.8" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="15.6" y="0.6" width="3.8" height="10.8" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4L14 14"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 16 16"><rect x="6" y="1.8" width="4" height="7.6" rx="2"/><path d="M3.4 7.6a4.6 4.6 0 0 0 9.2 0M8 12.2v2.2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+  <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 2h5.2L12 4.8V14H4z"/><path d="M9.2 2v2.8H12"/></symbol>
+  <symbol id="i-down" viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 16 16"><path d="M6 3.5L10.5 8 6 12.5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6"/><path d="M8 2.4a5.6 5.6 0 0 1 0 11.2z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-glance" viewBox="0 0 16 16"><rect x="1.8" y="3" width="12.4" height="8.4"/><path d="M5.5 14h5"/></symbol>
+</svg>
+
+<a class="skip" href="#conversation">Skip to the conversation</a>
+
+<div class="page">
+
+  <!-- ===== masthead ===================================================== -->
+  <header class="masthead">
+    <a class="brand" href="cockpit.html" aria-label="Nerva — today's page">
+      <svg class="brand__mark" viewBox="0 0 128 128" aria-hidden="true">
+        <circle cx="64" cy="64" r="59" fill="none" stroke="currentColor" stroke-width="5"/>
+        <g stroke="currentColor" stroke-width="9" stroke-linecap="round" fill="none">
+          <line x1="42" y1="90" x2="42" y2="38"/><line x1="42" y1="38" x2="86" y2="90"/><line x1="86" y1="90" x2="86" y2="38"/>
+        </g>
+        <g fill="currentColor"><circle cx="42" cy="38" r="8"/><circle cx="42" cy="90" r="8"/><circle cx="86" cy="38" r="8"/><circle cx="86" cy="90" r="8"/></g>
+      </svg>
+      <span class="brand__name">Nerva</span>
+    </a>
+
+    <nav class="areas" aria-label="Areas">
+      <a href="cockpit.html" aria-current="page">Home</a>
+      <a href="#" aria-label="Work — 9 need you">Work <span class="areas__note areas__note--seal"><span class="n">9</span><span class="l-up">need you</span></span></a>
+      <a href="#">Agents</a>
+      <a href="#">Memory</a>
+      <a href="secondary.html">Trust</a>
+      <a href="#">Build</a>
+      <a href="#">Connect</a>
+      <a href="#" aria-label="Observe — 4 services down">Observe <span class="areas__note"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-problem"/></svg><span class="n">4</span><span class="l-up">services down</span></span></a>
+      <a href="#">Settings</a>
+    </nav>
+
+    <button class="find" type="button" aria-label="Search and command — finds every area, panel, agent and action">
+      <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+      <span><span class="l-up">Search or run a command</span><span class="l-down">Search</span></span>
+      <kbd>Ctrl K</kbd>
+    </button>
+
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Language">
+        <button type="button" aria-pressed="true">EN</button>
+        <button type="button" aria-pressed="false">RO</button>
+      </div>
+      <button class="tool" type="button" id="theme-toggle" aria-label="Theme: Carbon. Switch to Paper"><svg class="ico" aria-hidden="true"><use href="#i-theme"/></svg></button>
+      <button class="tool" type="button" aria-label="Glance mode"><svg class="ico" aria-hidden="true"><use href="#i-glance"/></svg><span class="m-up" aria-hidden="true">Glance</span></button>
+      <button class="btn btn--seal stop" type="button" title="One click. Halts every agent and the job queue until you resume."><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents</button>
+    </div>
+  </header>
+
+  <!-- ===== running head: trust signals, on every page ==================== -->
+  <div class="runhead">
+    <dl class="signals" aria-label="Trust signals">
+      <div><dt>Egress</dt><dd><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg>Sealed<span class="more only-xl">— nothing can leave this machine</span></dd></div>
+      <div><dt>Runs on this machine</dt><dd><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg><span class="tnum">100%</span><span class="more l-up">· 41 of 41 runs today</span><span class="more term" title="Counted from the route each run used. Not a verified network measurement.">by route</span></dd></div>
+      <div><dt>Microphone</dt><dd><svg class="ico" aria-hidden="true" style="width:13px;height:13px"><use href="#i-mic"/></svg>On</dd></div>
+      <div><dt>Model</dt><dd><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg><code>gemma-4-31b</code><span class="more only-xl">· loaded on Ollama</span><span class="more l-up not-xl">· Ollama</span></dd></div>
+      <div><dt><span class="m-up">Data on screen</span><span class="s-only">Data</span></dt><dd><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg>Live<span class="asof l-up">· checked 10:50</span></dd></div>
+      <div class="l-up"><dt>Audit chain</dt><dd><svg class="mk mk--sm mk--chain" aria-hidden="true"><use href="#mk-seal"/></svg>Intact<span class="more">· 921 sealed<span class="only-xl"> entries · verified 10:50</span></span></dd></div>
+    </dl>
+    <div class="runhead__mode">
+      <span class="k" id="mode-l"><span class="m-up">Approval mode</span><span class="s-only">Mode</span></span>
+      <div class="seg" role="radiogroup" aria-labelledby="mode-l">
+        <button type="button" role="radio" aria-checked="false" title="Safe and reversible actions run on their own; risky ones wait.">Auto</button>
+        <button type="button" role="radio" aria-checked="true" title="Anything with a side effect waits for you.">Ask</button>
+        <button type="button" role="radio" aria-checked="false" title="Agents may read and think, nothing acts.">Off</button>
+      </div>
+      <span class="sep" aria-hidden="true"></span>
+      <span><span class="k">Interrupts</span> <b class="tnum">3 of 4</b><span class="m-up"> today</span></span>
+    </div>
+  </div>
+
+  <!-- the day, folded (shown below 1680 wide, where its register has no room) -->
+  <div class="dayband" aria-label="The day, in brief">
+    <a class="dayband__cell" href="#" aria-label="Health — open the day">
+      <svg class="mk" aria-hidden="true"><use href="#mk-attn"/></svg>
+      <b>Working, with 4 local services down</b>
+      <span class="rest">since 08:14 · checked 10:50</span>
+      <svg class="ico" aria-hidden="true"><use href="#i-down"/></svg>
+    </a>
+    <a class="dayband__cell" href="#" aria-label="Today — open the schedule">
+      <span class="k">Next</span>
+      <b>11:00 · 1:1 with Cosmina</b>
+      <span class="rest">in 9 min · then 14:00 Raiffeisen quarterly review</span>
+      <svg class="ico" aria-hidden="true"><use href="#i-down"/></svg>
+    </a>
+    <a class="dayband__cell" href="#" aria-label="While you were away — open the list">
+      <span class="k"><span class="m-up">While you were away</span><span class="s-only">Away</span></span>
+      <b>4 done · 2 held or blocked · 1 problem</b>
+      <svg class="ico" aria-hidden="true"><use href="#i-down"/></svg>
+    </a>
+  </div>
+
+  <main class="spread spread--home">
+    <h1 class="sr">Today — Monday, 23 November 2026</h1>
+
+    <!-- ===== the day ===================================================== -->
+    <section class="register register--day" aria-labelledby="day-h">
+      <header class="register__head">
+        <h2 class="register__title" id="day-h">Monday, 23 November</h2>
+        <p class="register__meta"><time datetime="2026-11-23T10:51"><b>10:51</b></time></p>
+      </header>
+      <div class="register__body">
+
+        <section class="verdict" aria-labelledby="verdict-h">
+          <p class="verdict__state">
+            <svg class="mk" aria-hidden="true"><use href="#mk-attn"/></svg>
+            <span><b>Degraded</b> since 08:14</span>
+            <span class="asof">checked 10:50</span>
+          </p>
+          <h3 class="verdict__line" id="verdict-h">Working, with 4&nbsp;local services down</h3>
+          <ul class="causes" aria-label="Causes — not responding since 08:14">
+            <li><svg class="mk" aria-hidden="true"><use href="#mk-problem"/></svg><code>lmstudio</code><span>Not blocking: the model is being served by Ollama instead.</span></li>
+            <li><svg class="mk" aria-hidden="true"><use href="#mk-problem"/></svg><code>qdrant</code><span>Long-term recall is using the built-in vector store.</span></li>
+            <li><svg class="mk" aria-hidden="true"><use href="#mk-problem"/></svg><code>neo4j</code><span>The knowledge graph is running in memory only.</span></li>
+            <li><svg class="mk" aria-hidden="true"><use href="#mk-problem"/></svg><code>n8n</code><span>Oracle's workflows cannot run.</span></li>
+          </ul>
+          <p class="verdict__remedy">
+            <svg class="mk mk--seal" aria-hidden="true"><use href="#mk-seal-open"/></svg>
+            <span>Restarting them waits for your signature — <a class="link" href="#entry-g1">first entry on the docket</a>.</span>
+          </p>
+        </section>
+
+        <section class="block only-xl" aria-labelledby="mach-h">
+          <h3 class="sec-head" id="mach-h">This machine <small><span class="src"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg>Live <span class="asof">· checked 10:50</span></span></small></h3>
+          <dl class="machine">
+            <div><dt>RAM</dt><dd class="num tnum">19%</dd><dd class="bar"><span class="meter" aria-hidden="true"><i style="width:19%"></i></span></dd><dd class="detail">36 of 192 GB</dd></div>
+            <div><dt>VRAM</dt><dd class="num tnum">96%</dd><dd class="bar"><span class="meter" aria-hidden="true"><i style="width:96%"></i></span></dd><dd class="detail" title="Expected while a 31B model is loaded">23.0 of 24 GB · model loaded</dd></div>
+            <div><dt>GPU load</dt><dd class="num tnum">3%</dd><dd class="bar"><span class="meter" aria-hidden="true"><i style="width:3%"></i></span></dd><dd class="detail"></dd></div>
+            <div><dt>Latency p50</dt><dd class="num">—</dd><dd class="bar"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-unknown"/></svg></dd><dd class="detail" title="The hub does not measure latency yet">Unknown — not measured yet</dd></div>
+          </dl>
+        </section>
+
+        <section class="block" aria-labelledby="today-h">
+          <h3 class="sec-head" id="today-h">Today <small><span>București · 9° · Mist</span><span class="src"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg>Live</span></small></h3>
+          <ol class="schedule">
+            <li class="is-past"><span></span><time>09:30</time><span class="what">Standup — Digitaholic</span><span class="where">Google Meet</span></li>
+            <li class="is-next"><svg class="mk" role="img" aria-label="Next"><use href="#mk-work"/></svg><time>11:00</time><span class="what">1:1 with Cosmina</span><span class="where">Office · <b>in 9 min</b></span></li>
+            <li class="is-key"><svg class="mk" role="img" aria-label="Important"><use href="#mk-key"/></svg><time>14:00</time><span class="what">Raiffeisen quarterly review</span><span class="where">Conf Room A · prep 13:15</span></li>
+            <li><span></span><time>16:30</time><span class="what">Vision research sync</span><span class="where">Async</span></li>
+            <li><span></span><time>19:00</time><span class="what">Gym — Hercules plan</span><span class="where">Personal</span></li>
+          </ol>
+        </section>
+
+        <section class="block" aria-labelledby="away-h">
+          <h3 class="sec-head" id="away-h">While you were away <small><span>since 06:00</span><span class="src"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg>Live</span></small></h3>
+          <ol class="away">
+            <li><svg class="mk" role="img" aria-label="Done"><use href="#mk-done"/></svg><time>06:00</time><span class="who">Friday</span><span>Morning brief generated — 6 items ranked</span></li>
+            <li><svg class="mk" role="img" aria-label="Done"><use href="#mk-done"/></svg><time>07:14</time><span class="who">Pepper</span><span>Calendar synced · 1 conflict auto-resolved</span></li>
+            <li class="is-exception"><svg class="mk" role="img" aria-label="Held"><use href="#mk-held"/></svg><time>07:48</time><span class="who">Ultron</span><span>2 PII findings redacted, outbound held</span></li>
+            <li><svg class="mk" role="img" aria-label="Done"><use href="#mk-done"/></svg><time>08:00</time><span class="who">Stark</span><span>KPI snapshot cached for the Raiffeisen review</span></li>
+            <li class="is-exception"><svg class="mk" role="img" aria-label="Blocked"><use href="#mk-blocked"/></svg><time>08:01</time><span class="who">Ultron</span><span>SSRF attempt blocked · 1 request denied</span></li>
+            <li class="is-exception"><svg class="mk" role="img" aria-label="Problem"><use href="#mk-problem"/></svg><time>08:14</time><span class="who">Steve</span><span>lmstudio, qdrant, neo4j and n8n stopped responding</span></li>
+            <li><svg class="mk" role="img" aria-label="Done"><use href="#mk-done"/></svg><time>09:40</time><span class="who">Vision</span><span>Indexed 17 sources on competitor pricing</span></li>
+          </ol>
+          <p class="total">
+            <b>7 entries</b>
+            <span><span><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-done"/></svg>4 done</span><span><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-held"/></svg><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-blocked"/></svg>2 held or blocked</span><span><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-problem"/></svg>1 problem</span></span>
+          </p>
+        </section>
+
+      </div>
+    </section>
+
+    <!-- ===== the conversation ============================================ -->
+    <section class="register register--talk" id="conversation" aria-labelledby="talk-h">
+      <header class="register__head">
+        <h2 class="register__title" id="talk-h">Conversation</h2>
+        <p class="register__meta"><span>with <b>Jarvis</b> · Prime Orchestrator · Orchestrated</span></p>
+      </header>
+
+      <ol class="transcript" id="transcript" tabindex="0" aria-label="Conversation with Jarvis, today">
+        <li class="turn-open"><span>Today, from 08:02</span><a class="link" href="#">Search earlier conversations</a></li>
+        <li class="turn turn--owner">
+          <time>08:02</time><span class="turn__who">You</span>
+          <div class="turn__body"><p>Morning Jarvis — what does my day look like?</p></div>
+        </li>
+        <li class="turn turn--reply">
+          <time>08:02</time><span class="turn__who" title="Jarvis — Prime Orchestrator">Jarvis</span>
+          <div class="turn__body">
+            <p class="said">Good morning, Andrei. Three meetings today; the Raiffeisen review at 14:00 is the one that matters. Pepper holds your calendar, Stark prepped the KPI deltas. Weather is clear — good day to cycle in.</p>
+            <p class="turn__ran"><span title="Where it ran, by route"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-here"/></svg>on this machine · <code>gemma-4-31b</code></span></p>
+          </div>
+        </li>
+
+        <li class="turn turn--owner">
+          <time>08:05</time><span class="turn__who">You</span>
+          <div class="turn__body"><p>draft the churn slide <span class="attach"><svg class="ico" aria-hidden="true"><use href="#i-file"/></svg>QBR-deck.docx</span></p></div>
+        </li>
+        <li class="turn turn--reply">
+          <time>08:05</time><span class="turn__who" title="Stark — Biz Intel">Stark</span>
+          <div class="turn__body">
+            <p class="said">Stark pulled the numbers — <strong>Digitaholic MRR is +6.2% WoW</strong>; I flagged the missing churn-cohort slide for the review.</p>
+            <p class="turn__ran">
+              <span title="Where it ran, by route"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-here"/></svg>on this machine · <code>gemma-4-31b</code></span>
+              <span class="turn__tools"><span>2 tool calls</span><span><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-done"/></svg><code>web_search</code> done</span><span class="is-failed"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-problem"/></svg><code>file_write</code> failed</span></span>
+            </p>
+          </div>
+        </li>
+
+        <li class="turn turn--owner">
+          <time>08:07</time><span class="turn__who">You</span>
+          <div class="turn__body"><p>sweep idle cash</p></div>
+        </li>
+        <li class="turn turn--reply">
+          <time>08:07</time><span class="turn__who" title="Gecko — Markets &amp; Capital">Gecko</span>
+          <div class="turn__body">
+            <p class="said">Gecko's watching the markets — EUR/RON steady at 4.97; idle cash is <strong>€4.2k over buffer</strong>, sweep available.</p>
+            <p class="slip">
+              <svg class="mk mk--seal" aria-hidden="true"><use href="#mk-seal-open"/></svg>
+              <span><b>1 action waits for your decision</b> — Sweep €4,200 to the savings ladder</span>
+              <a class="link" href="#entry-g2">On the docket</a>
+            </p>
+            <p class="turn__ran">
+              <span title="Where it ran, by route"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-here"/></svg>on this machine · <code>gemma-4-31b</code></span>
+              <span class="turn__acts"><button type="button">Copy</button><button type="button">Save</button><button type="button">Read aloud</button><button type="button">Create task</button><button type="button" aria-haspopup="menu">More</button></span>
+            </p>
+          </div>
+        </li>
+
+        <li class="turn turn--owner">
+          <time>10:48</time><span class="turn__who">You</span>
+          <div class="turn__body"><p lang="ro">Ce proiecte sunt de terminat acum?</p></div>
+        </li>
+        <li class="turn turn--reply turn--writing">
+          <time>10:51</time><span class="turn__who" title="Jarvis — Prime Orchestrator">Jarvis</span>
+          <div class="turn__body">
+            <div class="working" role="status">
+              <ol class="steps" aria-label="Steps of this reply">
+                <li class="is-done"><svg class="mk" aria-hidden="true"><use href="#mk-done"/></svg>Classify</li>
+                <li class="is-done"><svg class="mk" aria-hidden="true"><use href="#mk-done"/></svg>Route</li>
+                <li class="is-now" aria-current="step"><svg class="mk" aria-hidden="true"><use href="#mk-work"/></svg>Gather</li>
+                <li>Synthesize</li>
+              </ol>
+              <p class="working__line">
+                <span class="working__status">Gathering — asking Pepper and Stark</span>
+                <button class="btn btn--sm" type="button"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop this reply</button>
+              </p>
+              <ul class="working__asks">
+                <li><svg class="mk" aria-hidden="true"><use href="#mk-work"/></svg><b>Pepper</b><span>Checking this week's deadlines</span></li>
+                <li><svg class="mk" aria-hidden="true"><use href="#mk-work"/></svg><b>Stark</b><span>Pulling project status for Digitaholic</span></li>
+              </ul>
+            </div>
+            <p class="said" lang="ro">Trei proiecte au termene săptămâna aceasta: prezentarea pentru Raiffeisen (azi, 14:00), raportul lunar Digitaholic și<span class="caret" aria-hidden="true"></span></p>
+            <p class="working__meta">
+              <span><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-here"/></svg>running on this machine · <code>gemma-4-31b</code></span>
+              <span>asked <time>10:48</time> · <b>3 min</b> so far · writing as it goes</span>
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <form class="composer" aria-label="Write to Jarvis" onsubmit="return false">
+        <div class="composer__head">
+          <span class="k">To</span>
+          <button class="pick" type="button">Jarvis · orchestrated<svg class="ico" aria-hidden="true"><use href="#i-down"/></svg></button>
+          <span class="composer__mode"><span class="k">Mode</span> <b>Ask</b> — anything with a side effect waits for you</span>
+        </div>
+        <label class="sr" for="msg">Message Jarvis</label>
+        <textarea id="msg" rows="2" placeholder="Message Jarvis…"></textarea>
+        <div class="composer__bar">
+          <button class="btn btn--bare" type="button"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Attach</button>
+          <button class="btn btn--bare" type="button"><svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg>Voice ready <small>· runs locally</small></button>
+          <button class="btn btn--bare" type="button">Options<svg class="ico" aria-hidden="true" style="width:11px;height:11px;vertical-align:0"><use href="#i-down"/></svg></button>
+          <span class="composer__keys" title="/new  /undo  /refine  /&lt;skill&gt;  @file:path"><span><code>/</code> commands</span><span><code>@</code> files</span></span>
+          <button class="btn btn--ink" type="submit" id="send">Send</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ===== the docket ================================================== -->
+    <section class="register register--docket" aria-labelledby="docket-h">
+      <header class="register__head">
+        <h2 class="register__title" id="docket-h"><span class="figure">9</span>await your signature</h2>
+        <p class="register__meta"><span class="src"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg>Live <span class="asof">· checked 10:50</span></span></p>
+      </header>
+
+      <div class="docket-wrap">
+        <div class="docket__cols" aria-hidden="true"><span>Risk</span><span>Entry, and what happens if you sign</span><span>Your hand</span></div>
+
+        <ol class="docket">
+
+          <!-- g1 · open -->
+          <li class="entry entry--open" id="entry-g1" data-tier="3">
+            <div class="entry__risk">
+              <span class="lvl"><svg class="tier" role="img" aria-label="Tier 3 of 3"><use href="#tier-3"/></svg>Irreversible</span>
+              <span class="who">Steve</span>
+              <span class="role">CTO / Builds</span>
+              <span class="when">raised 08:14, repeated 3 times</span>
+            </div>
+            <div class="entry__main">
+              <h3 class="entry__title">Restart 4 local services that stopped responding</h3>
+              <p class="entry__why">Held because the approval mode is Ask. 12 requests, grouped into one entry.</p>
+
+              <ul class="members" aria-label="The 4 actions in this entry">
+                <li><code>402</code><span>lmstudio</span><code class="addr">127.0.0.1:1234</code></li>
+                <li><code>409</code><span>qdrant</span><code class="addr">127.0.0.1:6333</code></li>
+                <li><code>410</code><span>neo4j</span><code class="addr">127.0.0.1:7474</code></li>
+                <li><code>411</code><span>n8n</span><code class="addr">127.0.0.1:5678</code></li>
+              </ul>
+
+              <dl class="consequence">
+                <dt>If you sign</dt><dd>Would run the configured restart command for each service on this machine.</dd>
+                <dt>To undo</dt><dd>None — a restart interrupts anything the service is doing.</dd>
+                <dt>If you wait</dt><dd>Tomorrow 08:14 — then it is blocked, never auto-approved.</dd>
+              </dl>
+
+              <div class="signline">
+                <label class="signline__label" for="sig-g1"><span>Sign here</span> <span class="how">— type <span class="word">restart</span><span class="m-up"> to sign once for all 4</span></span></label>
+                <div class="signline__row">
+                  <span class="signline__x" aria-hidden="true">×</span>
+                  <input id="sig-g1" type="text" autocomplete="off" spellcheck="false" placeholder="restart" data-phrase="restart" aria-describedby="sig-g1-fine">
+                  <button class="btn btn--seal" type="button" id="sign-g1" aria-disabled="true"><svg class="mk" aria-hidden="true"><use href="#mk-seal-open"/></svg>Sign · restart all 4</button>
+                </div>
+              </div>
+
+              <div class="entry__acts">
+                <button class="btn btn--sm" type="button">Preview</button>
+                <button class="btn btn--sm" type="button">Edit, then sign</button>
+                <button class="btn btn--sm" type="button">Defer</button>
+                <span class="spacer"><span class="fine" id="sig-g1-fine"><span class="m-up">No keyboard shortcut signs or rejects</span><span class="s-only">No shortcut signs or rejects</span></span></span>
+                <button class="btn btn--sm" type="button">Reject group</button>
+              </div>
+            </div>
+          </li>
+
+          <!-- g2 -->
+          <li class="entry" id="entry-g2" data-tier="3">
+            <div class="entry__risk">
+              <span class="lvl"><svg class="tier" role="img" aria-label="Tier 3 of 3"><use href="#tier-3"/></svg>Money</span>
+              <span class="who">Gecko</span>
+              <span>raised 08:07</span>
+            </div>
+            <div class="entry__main">
+              <h3 class="entry__title">Sweep €4,200 of idle cash to the savings ladder</h3>
+              <p class="entry__line">Would move €4,200 from the current account to the savings ladder. <span class="undo">To undo: a transfer back takes 1–2 working days.</span></p>
+              <p class="entry__more tall"><b>Markets &amp; Capital</b> · from your conversation · Idle cash in the current account is €4.2k over your target buffer. Money always waits for you.</p>
+            </div>
+            <div class="entry__sign">
+              <button class="btn" type="button" title="Typed confirmation: the amount">Open to sign</button>
+              <span class="how">typed: the amount</span>
+            </div>
+          </li>
+
+          <!-- g3 -->
+          <li class="entry" id="entry-g3" data-tier="3">
+            <div class="entry__risk">
+              <span class="lvl"><svg class="tier" role="img" aria-label="Tier 3 of 3"><use href="#tier-3"/></svg>Irreversible</span>
+              <span class="who">Jarvis</span>
+              <span>raised 07:30, repeated once</span>
+            </div>
+            <div class="entry__main">
+              <h3 class="entry__title">Delete logs older than 14 days</h3>
+              <p class="entry__line">Would delete 312 files, 2.1 GB. <span class="undo">To undo: none.</span></p>
+              <p class="entry__more tall"><b>Prime Orchestrator</b> · 2 requests, grouped · Held because the approval mode is Ask.</p>
+            </div>
+            <div class="entry__sign">
+              <button class="btn" type="button" title="Typed confirmation: delete">Open to sign</button>
+              <span class="how">typed: delete</span>
+            </div>
+          </li>
+
+          <!-- g4 -->
+          <li class="entry" id="entry-g4" data-tier="2">
+            <div class="entry__risk">
+              <span class="lvl"><svg class="tier" role="img" aria-label="Tier 2 of 3"><use href="#tier-2"/></svg>External</span>
+              <span class="who">Ultron</span>
+              <span>raised 07:48</span>
+            </div>
+            <div class="entry__main">
+              <h3 class="entry__title">Veronica's LinkedIn draft names a client flagged as sensitive</h3>
+              <p class="entry__line">Outbound is held until you clear it. <span class="undo">Then: redact and send, or reject.</span></p>
+              <p class="entry__more tall"><b>Security &amp; Automation</b> · 2 PII findings were redacted at 07:48 and the draft was held.</p>
+            </div>
+            <div class="entry__sign">
+              <button class="btn" type="button" title="Review what will be sent, then confirm">Review the draft</button>
+              <span class="how">then confirm</span>
+            </div>
+          </li>
+
+          <!-- g5 -->
+          <li class="entry" id="entry-g5" data-tier="1">
+            <div class="entry__risk">
+              <span class="lvl"><svg class="tier" role="img" aria-label="Tier 1 of 3"><use href="#tier-1"/></svg>Reversible</span>
+              <span class="who">Stark</span>
+              <span>raised 08:05</span>
+            </div>
+            <div class="entry__main">
+              <h3 class="entry__title">Draft a reply to Raiffeisen with the QBR agenda</h3>
+              <p class="entry__line">Would save a draft in your mailbox. Nothing is sent. <span class="undo">To undo: delete the draft.</span></p>
+              <p class="entry__more tall"><b>Biz Intel</b> · Held because the approval mode is Ask.</p>
+            </div>
+            <div class="entry__sign">
+              <button class="btn btn--seal" type="button" title="One click. Undo stays available."><svg class="mk" aria-hidden="true"><use href="#mk-seal-open"/></svg>Sign</button>
+              <span class="how">one click, undo after</span>
+            </div>
+          </li>
+
+          <!-- g6 -->
+          <li class="entry" id="entry-g6" data-tier="1">
+            <div class="entry__risk">
+              <span class="lvl"><svg class="tier" role="img" aria-label="Tier 1 of 3"><use href="#tier-1"/></svg>Reversible</span>
+              <span class="who">Pepper</span>
+              <span>raised 07:14</span>
+            </div>
+            <div class="entry__main">
+              <h3 class="entry__title">Move the research sync from 16:30 to 17:15</h3>
+              <p class="entry__line">Your 14:00 and 16:30 leave no lunch gap; Vision is async anyway. <span class="undo">To undo: move it back.</span></p>
+              <p class="entry__more tall"><b>Chief of Staff</b> · Held because the approval mode is Ask.</p>
+            </div>
+            <div class="entry__sign">
+              <button class="btn btn--seal" type="button" title="One click. Undo stays available."><svg class="mk" aria-hidden="true"><use href="#mk-seal-open"/></svg>Sign</button>
+              <span class="how">one click, undo after</span>
+            </div>
+          </li>
+        </ol>
+
+        <p class="total docket__total">
+          <b>6 entries · 9 actions · 18 requests</b>
+          <span><span>3 typed</span><span>1 review, then confirm</span><span>2 one click, with undo</span></span>
+        </p>
+      </div>
+    </section>
+
+    <!-- ===== agents by exception, and the tail of the record (the owner's wide screen) -->
+    <section class="register register--record only-xl" aria-labelledby="agents-h">
+      <header class="register__head">
+        <h2 class="register__title" id="agents-h">Agents</h2>
+        <p class="register__meta"><span>18, shown by exception</span><span class="src"><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg>Live</span></p>
+      </header>
+      <div class="register__body">
+        <ul class="agents">
+          <li class="agents__group">Working <span>3</span></li>
+          <li class="agent"><svg class="mk" aria-hidden="true"><use href="#mk-work"/></svg><span class="agent__name">Jarvis</span><span class="agent__role">Prime Orchestrator</span><span class="agent__runs">auto</span><span class="agent__doing">Answering you — gathering from Pepper and Stark</span></li>
+          <li class="agent"><svg class="mk" aria-hidden="true"><use href="#mk-work"/></svg><span class="agent__name">Pepper</span><span class="agent__role">Chief of Staff</span><span class="agent__runs">auto</span><span class="agent__doing">Checking this week's deadlines</span></li>
+          <li class="agent"><svg class="mk" aria-hidden="true"><use href="#mk-work"/></svg><span class="agent__name">Stark</span><span class="agent__role">Biz Intel</span><span class="agent__runs">auto</span><span class="agent__doing">Pulling project status for Digitaholic</span></li>
+
+          <li class="agents__group">Waiting on you <span>3</span></li>
+          <li class="agent"><svg class="mk mk--seal" aria-hidden="true"><use href="#mk-seal-open"/></svg><span class="agent__name">Steve</span><span class="agent__role">CTO / Builds</span><span class="agent__runs">cloud preferred</span><span class="agent__doing">4 restarts wait for your decision</span></li>
+          <li class="agent"><svg class="mk mk--seal" aria-hidden="true"><use href="#mk-seal-open"/></svg><span class="agent__name">Ultron</span><span class="agent__role">Security &amp; Automation</span><span class="agent__runs">local only</span><span class="agent__doing">Holding an outbound draft for your review</span></li>
+          <li class="agent"><svg class="mk mk--seal" aria-hidden="true"><use href="#mk-seal-open"/></svg><span class="agent__name">Gecko</span><span class="agent__role">Markets &amp; Capital</span><span class="agent__runs">auto</span><span class="agent__doing">Sweep of €4,200 waits for your decision</span></li>
+
+          <li class="agents__group">Finished <span>2</span></li>
+          <li class="agent"><svg class="mk" aria-hidden="true"><use href="#mk-done"/></svg><span class="agent__name">Friday</span><span class="agent__role">Daily Intel</span><span class="agent__runs">auto</span><span class="agent__doing">Morning brief ready · 6 items · 06:00</span></li>
+          <li class="agent"><svg class="mk" aria-hidden="true"><use href="#mk-done"/></svg><span class="agent__name">Vision</span><span class="agent__role">Deep Research</span><span class="agent__runs">cloud preferred</span><span class="agent__doing">Indexed 17 sources on competitor pricing · 09:40</span></li>
+
+          <li class="agents__group">Unavailable <span>1</span></li>
+          <li class="agent"><svg class="mk" aria-hidden="true"><use href="#mk-blocked"/></svg><span class="agent__name">Athena</span><span class="agent__role">External Strategist</span><span class="agent__runs">cloud only</span><span class="agent__doing">Cloud only — unavailable while egress is sealed</span></li>
+
+          <li class="agents__group">Idle <span>9</span></li>
+          <li class="agents__idle">Jerome · Veronica · Argus · Oracle · Hercules · Hephaestus · Frigga · Hestia · Howard<small>Oracle: n8n is down — workflows cannot run</small></li>
+        </ul>
+
+        <section class="block" aria-labelledby="record-h" style="margin-top:14px">
+          <h3 class="sec-head" id="record-h">The record <small><span>921 sealed · verified 10:50</span></small></h3>
+          <ol class="chain-tail">
+            <li><time>10:49</time><span class="who">Jarvis</span><span class="what">Routed your question to Pepper and Stark</span><svg class="mk mk--chain" role="img" aria-label="Sealed"><use href="#mk-seal"/></svg><span class="ref"><code>9f2c…a41b</code><span>read only</span></span></li>
+            <li><time>09:40</time><span class="who">Vision</span><span class="what">Indexed 17 sources into memory</span><svg class="mk mk--chain" role="img" aria-label="Sealed"><use href="#mk-seal"/></svg><span class="ref"><code>5ad1…77e0</code><span>read only</span></span></li>
+            <li><time>08:14</time><span class="who">Steve</span><span class="what">Proposed restart of 4 services</span><svg class="mk mk--chain" role="img" aria-label="Sealed"><use href="#mk-seal"/></svg><span class="ref"><code>c03e…1d9f</code><span>irreversible</span><span class="asks"><svg class="mk" aria-hidden="true"><use href="#mk-seal-open"/></svg>awaits your signature</span></span></li>
+            <li><time>08:07</time><span class="who">Gecko</span><span class="what">Proposed transfer of €4,200</span><svg class="mk mk--chain" role="img" aria-label="Sealed"><use href="#mk-seal"/></svg><span class="ref"><code>71bb…e2c4</code><span>money</span><span class="asks"><svg class="mk" aria-hidden="true"><use href="#mk-seal-open"/></svg>awaits your signature</span></span></li>
+            <li><time>08:05</time><span class="who">Stark</span><span class="what"><code>file_write</code> failed — nothing was changed</span><svg class="mk mk--chain" role="img" aria-label="Sealed"><use href="#mk-seal"/></svg><span class="ref"><code>2e90…0b6a</code><span>reversible</span></span></li>
+          </ol>
+          <p class="total"><b>Chain intact</b><span><a class="link" href="secondary.html">Open the record</a></span></p>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== running foot ================================================== -->
+  <footer class="runfoot">
+    <div class="runfoot__group not-xl" aria-label="Agents, by exception">
+      <span><span class="k">Agents</span> <b>18</b></span>
+      <span><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-work"/></svg>3 working</span>
+      <span><svg class="mk mk--sm mk--seal" aria-hidden="true"><use href="#mk-seal-open"/></svg>3 waiting on you</span>
+      <span><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-done"/></svg>2 finished</span>
+      <span><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-idle"/></svg>9 idle</span>
+      <span><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-blocked"/></svg>1 unavailable<span class="detail l-up">— Athena: cloud only, unavailable while egress is sealed</span></span>
+    </div>
+    <div class="runfoot__group not-xl" aria-label="This machine">
+      <span><span class="k">RAM</span> <b class="tnum">19%</b><span class="meter" aria-hidden="true"><i style="width:19%"></i></span></span>
+      <span><span class="k">VRAM</span> <b class="tnum">96%</b><span class="meter" aria-hidden="true"><i style="width:96%"></i></span><span class="detail l-up">expected while a 31B model is loaded</span></span>
+      <span><span class="k">GPU load</span> <b class="tnum">3%</b><span class="meter" aria-hidden="true"><i style="width:3%"></i></span></span>
+      <span class="m-up"><span class="k">Latency p50</span> <svg class="mk mk--sm" aria-hidden="true"><use href="#mk-unknown"/></svg>unknown</span>
+    </div>
+    <div class="runfoot__group only-xl" aria-label="Channels">
+      <span><span class="k">Channels</span> <svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg><b>2 of 2 running</b> · 1 session in the last 15 min</span>
+    </div>
+    <div class="runfoot__group only-xl">
+      <span><span class="kbd">Ctrl K</span> finds every area, panel, agent and action</span>
+      <span class="detail">No keyboard shortcut signs or rejects</span>
+    </div>
+    <span class="runfoot__ver">Nerva 1.0.0<span class="only-xl"> · Personal intelligence OS</span></span>
+  </footer>
+</div>
+
+<script>
+  /* Small behaviours only: keep the transcript at its newest entry, switch theme,
+     and arm the signature when the typed word matches. Enter never signs. */
+  (function () {
+    var t = document.getElementById('transcript');
+    if (t) {
+      t.scrollTop = t.scrollHeight;
+      var clip = function () { t.classList.toggle('is-clipped', t.scrollTop > 2); };
+      clip();
+      t.addEventListener('scroll', clip, { passive: true });
+    }
+
+    var tt = document.getElementById('theme-toggle');
+    if (tt) tt.addEventListener('click', function () {
+      var el = document.documentElement;
+      var next = el.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      el.setAttribute('data-theme', next);
+      tt.setAttribute('aria-label', next === 'dark' ? 'Theme: Carbon. Switch to Paper' : 'Theme: Paper. Switch to Carbon');
+    });
+
+    var msg = document.getElementById('msg');
+    var send = document.getElementById('send');
+    if (msg && send) msg.addEventListener('input', function () { send.classList.toggle('is-ready', msg.value.trim().length > 0); });
+
+    var sig = document.getElementById('sig-g1');
+    var btn = document.getElementById('sign-g1');
+    if (sig && btn) {
+      sig.addEventListener('input', function () {
+        var ok = sig.value.trim().toLowerCase() === sig.getAttribute('data-phrase');
+        btn.classList.toggle('is-armed', ok);
+        btn.setAttribute('aria-disabled', ok ? 'false' : 'true');
+        var use = btn.querySelector('use');
+        if (use) use.setAttribute('href', ok ? '#mk-seal' : '#mk-seal-open');
+      });
+      sig.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+    }
+  })();
+</script>
+</body>
+</html>

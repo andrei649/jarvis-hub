@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, expect, it, vi } from 'vitest';
 import { InputBar } from '../cockpit';
 import { signOut } from '../api/owner-session';
+import { openComposerMenu } from '../home/talk/test-support';
 
 const t = { transmit: 'Transmit', placeholder: 'Message', channel: 'Chat' };
 const officeFile = (name = 'Quarterly.xlsx') => new File(['sheet data'], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -182,6 +183,7 @@ it('reviews a later Godot source passage locally and transmits only the chosen t
   vi.stubGlobal('fetch', fetcher);
   const submit = vi.fn();
   const { container } = render(<InputBar onSubmit={submit} t={t} selectedTurn sessionId="s1"/>);
+  openComposerMenu('attach');   // the document control is in the composer's Attach menu since the re-lay
   expect(screen.getByRole('button', { name: 'Attach document' }).textContent).toBe('Files');
   expect(screen.getByRole('button', { name: 'Attach document' }).getAttribute('title')).toContain('Godot');
   expect(container.querySelector('.office-file-input')?.getAttribute('accept')).toContain('.tscn');
@@ -472,6 +474,7 @@ it('asks before uploading a Blender file and sends only selected inspection text
   vi.stubGlobal('fetch', fetcher);
   const submit = vi.fn();
   const { container, rerender } = render(<InputBar onSubmit={submit} t={t} agent="frigga" selectedTurn sessionId="s1"/>);
+  openComposerMenu('attach');
   expect(screen.getByRole('button', { name: 'Attach document' }).getAttribute('title')).toContain('Blender');
   choose(container, blendFile());
   expect(screen.getByText(/Blender lists datablock names without rendering or editing/)).toBeTruthy();

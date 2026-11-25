@@ -18,7 +18,8 @@
    write is shown in the hub's own words and the list is re-read, so the row never shows a
    pin the hub did not store. */
 import React, { useState } from 'react';
-import { Card, Row, State, Tag, actA, arr, asLive, inpS, mono, refusalReason, useApi } from '../panel-kit';
+import { Card, Row, State, Tag, actA, arr, asLive, inpS, mono, note, refusalReason, useApi } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export const SKILLS_PATH = '/skills';
 export const SWITCH_PATH = '/api/skills/switch';
@@ -130,7 +131,7 @@ export function SkillSwitchesPanel() {
         <input style={{ ...inpS, flex: 1 }} aria-label="channel" placeholder="channel (empty = everywhere)"
           value={channel} onChange={(ev) => setChannel(ev.target.value)} />
       </div>
-      {!channelOk && <div role="alert" style={{ fontSize: 10, color: 'var(--red)' }}>a channel is lower-case letters, digits, _ . -</div>}
+      {!channelOk && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--red)' }}>a channel is lower-case letters, digits, _ . -</div>}
       {names.map((n) => {
         const s = map[n] || {};
         const chans = arr(s, 'disabled_channels');
@@ -147,13 +148,13 @@ export function SkillSwitchesPanel() {
             {s.essential && <Tag>essential</Tag>}
             {from && <Tag>{from}</Tag>}
             {pinned && <Tag c="var(--accent-light)">pinned</Tag>}
-            {counts && <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}
+            {counts && <span style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}
               title={usage.last_used_at ? `last used ${usage.last_used_at}` : 'never used'}>{counts}</span>}
             {s.readiness === 'unsupported' && <Tag c="var(--red)">{s.readiness_reason || 'unsupported here'}</Tag>}
             {s.disabled && <Tag c="var(--amber)">off everywhere</Tag>}
             {!s.disabled && chans.map((c: string) => <Tag key={c} c="var(--amber)">off on {c}</Tag>)}
             {s.essential
-              ? <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>always on</span>
+              ? <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>always on</span>
               : <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!channelOk || busy !== null}
                   aria-label={`${offHere ? 'switch on' : 'switch off'} ${n}`}
                   onClick={() => flip({ skill: n }, !!offHere, onEverywhere ? '' : where)}>
@@ -166,7 +167,7 @@ export function SkillSwitchesPanel() {
       })}
       {categories.length > 0 && (
         <>
-          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em', marginTop: 8 }}>BY CATEGORY</div>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 8 }}>BY CATEGORY</div>
           {categories.map((c: string) => (
             <Row key={c}>
               <span style={{ ...mono }}>{c}</span>
@@ -180,18 +181,18 @@ export function SkillSwitchesPanel() {
       )}
       {bundleApi.d && (
         <>
-          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em', marginTop: 8 }}>BY BUNDLE</div>
+          <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 8 }}>BY BUNDLE</div>
           {bundles.length === 0 && (
-            <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>no bundles · nerva skills bundles create NAME --skill A --skill B</div>
+            <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>no bundles · nerva skills bundles create NAME --skill A --skill B</div>
           )}
           {bundles.map((b: any) => {
             const missing = arr(b, 'missing');
             return (
               <Row key={b.slug}>
-                <span style={{ ...mono }} title={b.description || undefined}>{b.name}</span>
+                <span style={{ ...note }} title={b.description || undefined}>{b.name}</span>
                 <Tag>{arr(b, 'skills').length} skills</Tag>
                 {missing.length > 0 && <Tag c="var(--amber)">{missing.length} not installed</Tag>}
-                <span style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}
+                <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}
                   title="send it in the chat to load every skill of the bundle into that turn">/{b.slug}</span>
                 <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!channelOk || busy !== null}
                   aria-label={`switch off bundle ${b.name}`} onClick={() => flip({ bundle: b.slug }, false)}>all off</button>
@@ -202,7 +203,7 @@ export function SkillSwitchesPanel() {
           })}
         </>
       )}
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6, lineHeight: 1.5 }}>
         A switched-off skill stays installed, signed and approved; the model is not told about it and a command
         naming it is refused. Switching back on requires owner approval; the switch changes after the task runs.
         {' '}A pin stops automation: the curator never marks a pinned skill stale or archives it, and a batch the
@@ -211,7 +212,7 @@ export function SkillSwitchesPanel() {
         an uninstall, a reject from review. A skill that ships with Nerva has no pin.
         {bundles.length > 0 && ' The owner sends /<bundle> [instruction] in the chat to load a bundle\'s skills into that turn.'}
       </div>
-      {msg && <div role="status" style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      {msg && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
     </Card>
   );
 }

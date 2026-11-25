@@ -13,8 +13,10 @@ No admin API expansion, kernel change, credentials, custom CSS/assets/fonts,
 translation work, arbitrary config writes or new dependencies.
 
 Contract:
-- Fixed fields: accent (cyan/amber/green/violet), look (obsidian/graphite), density
-  (compact/normal/comfy), motion (system/calm/lively), scanline and dotgrid (on/off).
+- Fixed fields: accent (cyan/amber/green/violet), look (originally obsidian/graphite; since
+  the theme contract below, the nine theme ids with ledger the default), scheme
+  (dark/light/system, added by the theme contract), density (compact/normal/comfy), motion
+  (system/calm/lively), scanline and dotgrid (on/off), font and lang (later deliveries).
   system motion follows prefers-reduced-motion; only explicit calm/lively overrides it.
 - GET is read-only and returns canonical preferences plus whether any owner choice
   was stored. Unknown stale values coerce to defaults; unknown field names are refused
@@ -83,3 +85,56 @@ checked fresh; no deep context index, hooks or dependency indexing were enabled.
 real user-guarded GET/PUT over the temporary Settings DB, root and /one paths,
 fresh storage/cache clearing, reduced motion, offline convergence, and two offline
 tabs closing/recovering without Web Locks. No native GUI or provider proof is claimed.
+
+## Theme contract v1: themes, colour scheme and the cache migration (2026-11-23)
+
+Owner decision: the HUD moves to the Ledger design as its default, and the seven designed
+directions ship as themes, each with a dark and a light scheme; the HUD v2 looks stay as
+Classic. The full contract is `frontend/src/theme/CONTRACT.md`; this section records what it
+changed in this synced document. State: local implementation with unit and API tests; no
+browser, build or device acceptance yet.
+
+- `look` takes `ledger`, `obsidian`, `graphite`, `presence`, `briefing`, `workbench`,
+  `threshold`, `console`, `atlas`. The server order (`agents/core/appearance.py`) puts
+  `ledger` first: it is the default for a new or unconfigured instance and the value an
+  unknown look coerces to. The client list comes from `frontend/src/theme/registry.ts`.
+- New field `scheme`: `dark` (default), `light`, `system`. It is a plain optional string in
+  the Pydantic model and the OpenAPI types, journalled and synced like every other field. A
+  stored document without it reads as `dark`. `system` follows `prefers-color-scheme` live
+  (`App` keeps the OS reading current whatever the preference, so choosing System paints the
+  right scheme from its first frame); a theme that does not design the wanted scheme falls
+  back to its own default, and Classic is always dark. Native ignores `scheme` (see
+  `mobile/PARITY.md`).
+- `accent`, `scanline` and `dotgrid` stay; they act on Classic only (a Nerva theme brings its
+  own accent and has no cockpit texture).
+- `density`, `motion` and `font` act on every look (`frontend/src/theme/overrides.css`).
+  Density sets the spacing steps and scales the control heights the look itself draws
+  (Console 28px, Presence 36px, more on a 2200px+ screen): compact by 0.875, never above the
+  look's own height nor under 24px; comfy by 1.2. Calm motion stops every animation and
+  transition, Classic's included.
+- Where it applies: `App` still puts every value on `.hud-root`, now with the resolved
+  `data-scheme`, and `frontend/src/theme/apply.ts` mirrors `data-look`, `data-scheme`,
+  `data-font`, `data-density`, `data-motion` (resolved), `color-scheme` and
+  `<meta name="theme-color">` onto `<html>`, where the theme stylesheets select. `main.tsx`
+  calls `applyInitialAppearance()` before React renders, reading the cache below
+  synchronously and without writing, so the first paint is already themed; `index.html`
+  carries the default theme until then (no inline script: the CSP forbids one).
+- One owner instance: `App` creates `useAppearance()` once and shares it through
+  `AppearanceProvider` (`frontend/src/theme/appearance-context.tsx`); a second hook instance
+  would be a second writer racing on the same document.
+- Cache migration. The key stays `hud.appearance.v1:<base path or />`; the stored object is
+  now `version: 2`. In a `version: 1` object a `look` of `obsidian` is ignored, because the
+  old client wrote the look on screen at every boot and `obsidian` was its default, so it
+  records no choice; every other cached value is kept. The pre-H135 `hud.look` key is read
+  the same way for the same reason. Pending journal edits are never migrated or dropped: an
+  explicit pending `obsidian` stays and uploads. The server needs no migration: a stored
+  document only holds fields an owner set, so an owner who never chose a look reads the new
+  default, and a stored `obsidian` is kept as a choice.
+- Mixed versions: an old hub process answers a PUT carrying `scheme` with 422, which holds the
+  whole pending batch until the hub restarts with this change (the field rule above); an old
+  hub also coerces new look ids to `obsidian`. Ship and restart the hub with the frontend.
+
+Rollback: revert the change. A stored new look reads as `obsidian` on the old server and old
+clients; a stored `scheme` is dropped on read by the old server. Version-2 browser caches are
+not read by the old client (it accepts only version 1) and fall back to its defaults and the
+server document.

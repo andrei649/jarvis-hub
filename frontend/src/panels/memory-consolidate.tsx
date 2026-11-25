@@ -93,7 +93,7 @@ export function MemoryConsolidatePanel() {
       <State e={e} loading={loading} n={d ? 1 : 0} />
 
       {d && !available && (
-        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>
           {'no memory manager' + (raw.reason ? ` · ${String(raw.reason)}` : '')} — no existing memories to plan against
         </div>
       )}
@@ -107,12 +107,12 @@ export function MemoryConsolidatePanel() {
       </div>
 
       {d && available && existing.length === 0 && (
-        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>
           nothing recalled — a plan against no existing memories is degenerate (every candidate reads as novel), so plan and apply are withheld
         </div>
       )}
       {d && available && raw.tainted && (
-        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>
           recall touched untrusted or injection-flagged memory · an action born of it queues for approval
         </div>
       )}
@@ -136,7 +136,7 @@ export function MemoryConsolidatePanel() {
         <button className="tool-btn" disabled={!canPlan} onClick={makePlan}>plan</button>
         <button className="tool-btn" disabled={!canApply} onClick={() => apply(true)}>dry run</button>
         <button className="tool-btn" disabled={!canApply} onClick={() => apply(false)}>apply</button>
-        {summary && <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{counts(summary)}</span>}
+        {summary && <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{counts(summary)}</span>}
       </div>
 
       {Array.isArray(plan) && plan.map((op, i) => (
@@ -145,12 +145,12 @@ export function MemoryConsolidatePanel() {
           <span style={{ color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {op.text || (op.target_id ? `→ ${op.target_id}` : '')}
           </span>
-          <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{op.reason || ''}</span>
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{op.reason || ''}</span>
         </Row>
       ))}
 
       {result && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }} data-testid="apply-result">
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }} data-testid="apply-result">
           <div style={{ color: result.dry_run ? 'var(--amber)' : 'var(--green)' }}>
             {result.dry_run ? 'dry run · nothing written' : 'applied'} · snapshot {counts(result.counts)}
           </div>
@@ -169,9 +169,9 @@ export function MemoryConsolidatePanel() {
         </div>
       )}
 
-      {err && <div role="alert" style={{ fontSize: 10, color: 'var(--red)', marginTop: 6 }}>{err}</div>}
+      {err && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 6 }}>{err}</div>}
 
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
         Mem0-style plan over what the store really holds: a dry run never writes; apply merges the snapshot and persists vector-backed rows only — graph-only rows are skipped and named.
       </div>
     </Card>

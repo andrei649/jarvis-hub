@@ -60,6 +60,7 @@
    never presents that string as something it received. */
 import React from 'react';
 import { useApi, mono, asLive, Card, State, Row, Tag } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const PRESENCE_PATH = '/api/presence/owner';
 const INBOX_STATUS_PATH = '/api/channels/inbox/status';
@@ -91,13 +92,13 @@ const ageOf = (v) => {
 /* A provenance/consequence line. Everything on screen that is not a payload value is one
    of these, so a claim and the file it was read from stay attached to each other. */
 const Note = ({ c, children }: { c?: any; children?: any }) => (
-  <div style={{ fontSize: 10, lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
+  <div style={{ fontSize: 'var(--n-fs-meta)', lineHeight: 1.5, color: c || 'var(--ink-2)', padding: '3px 0 5px' }}>{children}</div>
 );
 
 const Head = ({ k, note }: { k: any; note?: any }) => (
   <div style={{ marginTop: 10, marginBottom: 2 }}>
-    <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)' }}>{k}</div>
-    {note != null && <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>{note}</div>}
+    <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{k}</div>
+    {note != null && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{note}</div>}
   </div>
 );
 
@@ -160,12 +161,12 @@ export function PresenceInboxPanel() {
       {p && (
         <>
           <Row>
-            <span style={mono}>state</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>state</span>
             <Right><Tag c={STATE_COLOR[p.state] || 'var(--ink-2)'}>{String(p.state)}</Tag></Right>
           </Row>
 
           <Row>
-            <span style={mono}>away</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>away</span>
             <Right>
               {p.away === true
                 ? <Tag c="var(--accent)">AWAY</Tag>
@@ -193,7 +194,7 @@ export function PresenceInboxPanel() {
           )}
 
           <Row>
-            <span style={mono}>freshness</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>freshness</span>
             <Right>
               {p.stale === true
                 ? <Tag c="var(--amber)">STALE</Tag>
@@ -209,7 +210,7 @@ export function PresenceInboxPanel() {
           )}
 
           <Row>
-            <span style={mono}>daemon</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>daemon</span>
             <Right>
               {p.ever_reported === false
                 ? <Tag c="var(--amber)">NEVER REPORTED</Tag>
@@ -234,14 +235,14 @@ export function PresenceInboxPanel() {
           </Row>
 
           <Row>
-            <span style={mono}>{reported ? 'last signal' : 'tracker created'}</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>{reported ? 'last signal' : 'tracker created'}</span>
             <Right>
               <Tag>{stamp(p.updated_at)}</Tag>
               <Tag>{ageOf(p.updated_at)}</Tag>
             </Right>
           </Row>
           <Row>
-            <span style={mono}>{reported ? 'in state since' : 'default state since'}</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>{reported ? 'in state since' : 'default state since'}</span>
             <Right>
               <Tag>{stamp(p.since)}</Tag>
               <Tag>{ageOf(p.since)}</Tag>
@@ -268,7 +269,7 @@ export function PresenceInboxPanel() {
       {ib && (
         <>
           <Row>
-            <span style={mono}>store</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>store</span>
             <Right>
               {bound
                 ? <Tag c="var(--green)">BOUND</Tag>
@@ -287,7 +288,7 @@ export function PresenceInboxPanel() {
           )}
 
           <Row>
-            <span style={mono}>threads</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>threads</span>
             <Right>
               <Tag c={unbound ? 'var(--ink-2)' : undefined}>
                 {st.threads == null ? EM : String(st.threads)}{unbound ? ' (placeholder)' : ''}
@@ -295,7 +296,7 @@ export function PresenceInboxPanel() {
             </Right>
           </Row>
           <Row>
-            <span style={mono}>messages</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>messages</span>
             <Right>
               <Tag c={unbound ? 'var(--ink-2)' : undefined}>
                 {st.messages == null ? EM : String(st.messages)}{unbound ? ' (placeholder)' : ''}
@@ -303,7 +304,7 @@ export function PresenceInboxPanel() {
             </Right>
           </Row>
           <Row>
-            <span style={mono}>cap</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>cap</span>
             <Right>
               <Tag c={st.max_messages == null ? 'var(--ink-2)' : undefined}>
                 {st.max_messages == null
@@ -314,7 +315,7 @@ export function PresenceInboxPanel() {
           </Row>
 
           <Row>
-            <span style={mono}>accepts</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>accepts</span>
             <Right>
               {channels.length === 0
                 ? <Tag c="var(--amber)">{EM} no channels key</Tag>
@@ -326,7 +327,7 @@ export function PresenceInboxPanel() {
           </Row>
 
           <Row>
-            <span style={mono}>holds traffic</span>
+            <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>holds traffic</span>
             <Right>
               {active == null
                 ? <Tag c="var(--amber)">{EM} not in payload</Tag>

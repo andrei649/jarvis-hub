@@ -1,13 +1,17 @@
 // @ts-nocheck
 /* H168 — agent text renders through the one shared Markdown component (markdown.tsx) in
-   the chat bubbles, the decision cards and canvas artifacts: lists, fences, tables and
-   safe links render as elements; raw HTML and unsafe links stay text; a user's own words
-   stay literal; an artifact still shows at most 4,000 characters. */
+   the transcript's replies and canvas artifacts: lists, fences, tables and safe links render as
+   elements; raw HTML and unsafe links stay text; a user's own words stay literal; an artifact
+   still shows at most 4,000 characters. Since the Ledger cutover the transcript's turns are
+   `data-turn="owner|reply|vision"` with their words in `data-turn-body` (PHASE_B_PLAN.md §8.3);
+   the classic `.msg` bubbles were deleted at the stage 5 cleanup. (The cockpit's decision cards rendered their body as
+   Markdown too; they were deleted with the classic shell, and the docket that replaced them draws
+   a queue title as plain text, because it may come from an untrusted producer —
+   PHASE_B_PLAN.md §1.4, §8.3; Docket.test.tsx pins it.) */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
 import { render, screen, cleanup } from '@testing-library/react';
 import { Conversation } from '../cockpit';
-import { ContextColumn } from '../shell';
 import { ArtifactsPanel, MARKDOWN_LIMIT } from '../artifacts';
 import { V2 } from '../data';
 
@@ -39,10 +43,11 @@ function inert(container) {
   expect(screen.getByText(/<img src=x onerror=alert\(2\)>/)).toBeTruthy();  // raw HTML stays literal
 }
 
-describe('chat bubbles — H168', () => {
+describe('the transcript’s replies — H168', () => {
   it('an agent reply renders as Markdown', () => {
     const { container } = render(<Conversation messages={[{ role: 'agent', who: 'jarvis', text: RICH, ts: '09:00' }]} thinking={null} t={t} />);
-    const bubble = container.querySelector('.msg.agent .bubble');
+    expect(container.querySelector('.msg, .bubble')).toBeNull();
+    const bubble = container.querySelector('[data-turn="reply"] [data-turn-body]');
     expect(bubble.querySelector('strong').textContent).toBe('plan');
     expect([...bubble.querySelectorAll('ol li')].map((li) => li.textContent)).toEqual(['read the logs', 'fix the parser']);
     expect(bubble.querySelector('li code').textContent).toBe('parser');
@@ -60,22 +65,10 @@ describe('chat bubbles — H168', () => {
       { role: 'user', text: 'make it **bold** and - a list', ts: '09:00' },
       { role: 'vision', text: '- a cat\n- a mat', ts: '09:01', model: 'm', backend: 'b', destination: 'd', local: true },
     ]} thinking={null} t={t} />);
-    expect([...container.querySelectorAll('.msg.agent .bubble li')].map((li) => li.textContent)).toEqual(['a cat', 'a mat']);
-    const mine = container.querySelector('.msg.user .bubble');
+    expect([...container.querySelectorAll('[data-turn="vision"] [data-turn-body] li')].map((li) => li.textContent)).toEqual(['a cat', 'a mat']);
+    const mine = container.querySelector('[data-turn="owner"] [data-turn-body]');
     expect(mine.textContent).toBe('make it **bold** and - a list');
     expect(mine.querySelector('strong, li')).toBeNull();
-  });
-});
-
-describe('decision cards — H168', () => {
-  it('a decision body renders as Markdown', () => {
-    const decisions = [{ _id: 'd1', who: 'friday', kind: 'approve', kindLabel: 'APPROVE', body: RICH, actions: [{ l: 'ok', primary: true }] }];
-    const { container } = render(<ContextColumn decisions={decisions} onDecision={() => {}} t={t} />);
-    const body = container.querySelector('.dcard .db');
-    expect(body.querySelector('strong').textContent).toBe('plan');
-    expect(body.querySelectorAll('ol li')).toHaveLength(2);
-    expect(body.querySelector('table')).toBeTruthy();
-    inert(container);
   });
 });
 

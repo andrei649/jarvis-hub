@@ -158,13 +158,13 @@ export function DeviceSyncPanel() {
 
   return (
     <Card title="DEVICE SYNC · E2E config & skills" sub={peers.length} onReload={refresh}>
-      <div style={{ fontSize: 11, color: 'var(--ink-2)', marginBottom: 8 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 8 }}>
         status: <strong>{status?.enabled ? 'enabled' : 'disabled'}</strong> ({status?.backend || 'no-key'}) · device:{' '}
         <code>{status?.device_label || status?.device_id || 'local'}</code>
       </div>
 
       {status?.inbound_mode === 'stage_only' && (
-        <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+        <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           Incoming changes are staged for review; automatic import is paused.
         </p>
       )}
@@ -213,7 +213,7 @@ export function DeviceSyncPanel() {
       {policies.length > 0 && (
         <div style={{ marginBottom: 10 }}>
           {policies.map(([slug, on]) => (
-            <div key={slug} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, marginBottom: 3 }}>
+            <div key={slug} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--n-fs-meta)', marginBottom: 3 }}>
               <code>{slug}</code>
               <span>{on ? 'synced' : 'excluded'}</span>
               <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => toggleSkill(slug, !on)}>
@@ -245,7 +245,7 @@ export function DeviceSyncPanel() {
       </div>
 
       {peers.map((p) => (
-        <div key={p.peer_id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, marginBottom: 3 }}>
+        <div key={p.peer_id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--n-fs-meta)', marginBottom: 3 }}>
           <code>{p.peer_id}</code>
           <span style={{ color: 'var(--ink-2)' }}>{p.url}</span>
           <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => removePeer(p.peer_id)}>
@@ -254,7 +254,7 @@ export function DeviceSyncPanel() {
         </div>
       ))}
 
-      {note && <div style={{ fontSize: 11, color: 'var(--accent-light)', marginTop: 6 }}>{note}</div>}
+      {note && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)', marginTop: 6 }}>{note}</div>}
     </Card>
   );
 }

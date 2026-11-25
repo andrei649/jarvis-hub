@@ -1,0 +1,129 @@
+/* The contents column and the All pages site map (PHASE_B_PLAN.md §3.3).
+   Roles only; the primitives (n-kbd, n-link) are Phase A's and are used, not redefined. */
+
+.n-contents { display: flex; flex-direction: column; min-height: 0; min-width: 0; font-family: var(--n-font-ui); }
+
+.n-contents-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--n-s-3);
+  padding-bottom: var(--n-s-2);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+}
+.n-contents-title {
+  margin: 0;
+  font-family: var(--n-font-label);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  font-weight: var(--n-w-semi);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  color: var(--n-text);
+}
+.n-contents-meta {
+  margin-left: auto;
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-3);
+  white-space: nowrap;
+}
+
+.n-contents-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--n-s-4);
+  scrollbar-width: thin;
+  scrollbar-color: var(--n-rule-2) transparent;
+}
+
+.n-toc { margin: 0; padding: var(--n-s-1) 0 0; list-style: none; }
+.n-toc ul, .n-toc li { margin: 0; padding: 0; list-style: none; }
+.n-toc-section { padding-top: var(--n-s-1); }
+.n-toc-group {
+  padding: var(--n-s-3) 0 var(--n-s-1);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-3);
+}
+
+.n-toc-link, .n-toc-more {
+  display: flex;
+  align-items: baseline;
+  gap: var(--n-s-2);
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--n-s-1) var(--n-s-3);
+  border: 0;
+  border-left: var(--n-heavy) solid transparent;
+  background: transparent;
+  color: var(--n-text-2);
+  font: inherit;
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.n-toc-link:hover, .n-toc-more:hover { background: var(--n-bg-2); color: var(--n-text); }
+.n-toc-link[aria-current="page"] {
+  background: var(--n-emph-wash);
+  border-left-color: var(--n-emph);
+  color: var(--n-text);
+  font-weight: var(--n-w-semi);
+}
+.n-toc-more { color: var(--n-text-3); font-size: var(--n-fs-label); }
+.n-toc-name { min-width: 0; overflow-wrap: anywhere; }
+
+.n-contents-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--n-s-1);
+  margin-left: auto;
+  flex: none;
+  font-size: var(--n-fs-meta);
+  font-weight: var(--n-w-reg);
+  color: var(--n-text-3);
+}
+.n-contents-note[data-hand="true"] { color: var(--n-accent-text); font-weight: var(--n-w-semi); }
+/* On the current page's wash the accent text and text-3 fall under 4.5:1 in some themes: use ink. */
+.n-toc-link[aria-current="page"] .n-contents-note { color: var(--n-text-2); }
+.n-toc-link[aria-current="page"] .n-contents-note[data-hand="true"] { color: var(--n-text); }
+
+.n-toc-find {
+  margin: var(--n-s-3) 0 0;
+  padding-left: var(--n-s-3);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-3);
+}
+.n-toc-find kbd { margin: 0 var(--n-s-1); }
+.n-toc-panel { font-size: var(--n-fs-meta); }
+
+/* All pages: every area as a column of its groups */
+.n-allpages { display: flex; flex-direction: column; gap: var(--n-s-4); font-family: var(--n-font-ui); }
+.n-allpages-note { margin: 0; font-size: var(--n-fs-label); color: var(--n-text-2); }
+.n-allpages-note kbd { margin: 0 var(--n-s-1); }
+.n-allpages-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--n-s-6) var(--n-col-gap);
+  align-items: start;
+}
+.n-allpages-area { min-width: 0; }
+.n-allpages-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--n-s-3);
+  padding-bottom: var(--n-s-2);
+  border-bottom: var(--n-hair) solid var(--n-rule-heavy);
+}
+.n-allpages-title {
+  margin: 0;
+  font-family: var(--n-font-title);
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+  font-weight: var(--n-w-semi);
+  letter-spacing: var(--n-title-track);
+  color: var(--n-text);
+}

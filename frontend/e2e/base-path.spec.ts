@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
 
+/* The Ledger frame, the default since the cutover (PHASE_B_PLAN.md §3.4, §3.6, §8.2 row 36): pages
+   are titled `<Page> · <Area> · Nerva`; the backtick opens the search and command sheet filtered to
+   panels, where the Console used to open; `w` goes to Observe › World signals, an ordinary page
+   that Back leaves (Escape does not); /v2/console is All pages. Every in-app navigation below keeps
+   the deployment prefix and the page's context (?demo=1, the hash). */
+const SHEET = 'Search or run a command';
+
 for (const prefix of ['', '/one', '/two/nerva']) {
   test(`same built HUD through proxy at ${prefix || '/'}`, async ({ page, context, baseURL }) => {
     const origin = new URL(baseURL!).origin;
@@ -13,27 +20,44 @@ for (const prefix of ['', '/one', '/two/nerva']) {
       if (url.pathname.includes('/v2/assets/')) assets.add(url.pathname);
     });
     await page.goto(prefix + '/v2/cockpit?demo=1#anchor');
-    await expect(page).toHaveTitle('Cockpit · Nerva');
+    await expect(page).toHaveTitle('Today · Nerva');
+    // the backtick: the sheet, filtered to panels; Escape closes it where it was opened
+    const sheet = page.getByRole('dialog', {name: SHEET});
     await page.keyboard.press('`');
-    await expect(page).toHaveTitle('Console · Nerva');
-    await page.keyboard.press('`');
-    await expect(page).toHaveTitle('Cockpit · Nerva');
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator('[data-cmd="scope"]')).toBeVisible();
+    await expect(page).toHaveTitle('Today · Nerva');
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+    await expect(page).toHaveURL(origin + prefix + '/v2/cockpit?demo=1#anchor');
+    // `w`: World signals is a page of Observe; Escape leaves it on screen, Back leaves it
     await page.route('http://localhost:8787/**', route => route.abort());
     await page.keyboard.press('w');
-    await expect(page).toHaveTitle('World · Nerva');
+    await expect(page).toHaveTitle('World signals · Observe · Nerva');
+    await expect(page).toHaveURL(origin + prefix + '/v2/world?demo=1#anchor');
     await page.keyboard.press('Escape');
-    await expect(page).toHaveTitle('Cockpit · Nerva');
-    await page.getByTitle('console (`)').click();
-    await page.getByRole('link', {name:'Decision Inbox', exact:true}).click();
-    await expect(page).toHaveURL(origin + prefix + '/v2/console/decision-inbox?demo=1#anchor');
-    await expect(page.getByRole('heading', {name:'Decision Inbox', exact:true})).toBeFocused();
-    await page.reload();
-    await expect(page).toHaveTitle('Decision Inbox · Console · Nerva');
-    await page.getByRole('link', {name:'All console panels'}).click();
+    await expect(page).toHaveTitle('World signals · Observe · Nerva');
     await page.goBack();
-    await expect(page).toHaveTitle('Decision Inbox · Console · Nerva');
+    await expect(page).toHaveTitle('Today · Nerva');
+    // a panel found through the sheet opens as a page of its area, its heading focused
+    await page.keyboard.press('`');
+    await sheet.getByRole('combobox').fill('Decisions');
+    await sheet.locator('[data-command="page:panel:decision-inbox"]').click();
+    await expect(page).toHaveURL(origin + prefix + '/v2/console/decision-inbox?demo=1#anchor');
+    await expect(page.getByRole('heading', {name:'Decisions', exact:true})).toBeFocused();
+    await expect(page.locator('[data-frame="masthead"] [aria-current="page"]')).toHaveAttribute('data-area', 'work');
+    await page.reload();
+    await expect(page).toHaveTitle('Decisions · Work · Nerva');
+    // All pages, from the masthead's Find; Back and Forward walk plain history
+    await page.getByRole('button', {name:/^Search or run a command/}).click();
+    await sheet.getByRole('combobox').fill('All pages');
+    await sheet.locator('[data-command="page:allPages"]').click();
+    await expect(page).toHaveTitle('All pages · Nerva');
+    await expect(page).toHaveURL(origin + prefix + '/v2/console?demo=1#anchor');
+    await page.goBack();
+    await expect(page).toHaveTitle('Decisions · Work · Nerva');
     await page.goForward();
-    await expect(page).toHaveTitle('Console · Nerva');
+    await expect(page).toHaveTitle('All pages · Nerva');
     expect([...assets].some(path => /\/gap-/.test(path))).toBe(true);
     expect([...assets].some(path => path.endsWith('.woff2'))).toBe(true);
     const entry = [...assets].find(path => /\/index-[^/]+\.js$/.test(path))!;
@@ -73,7 +97,7 @@ for (const prefix of ['', '/one', '/two/nerva']) {
     await page.addInitScript(() => {(window as any).__TAURI__ = {core:{invoke:async () => ({})}};});
     await page.goto(prefix + '/v2/unknown?desktop=floating&demo=1');
     await expect(page).toHaveURL(origin + prefix + '/v2/chat?desktop=floating&demo=1');
-    await expect(page).toHaveTitle('Chat · Nerva');
+    await expect(page).toHaveTitle('Conversation · Home · Nerva');
     await page.goto(prefix + '/v2/cockpit?demo=1');
     await page.evaluate(async () => {await navigator.serviceWorker.ready;});
     await page.reload();
@@ -85,7 +109,7 @@ for (const prefix of ['', '/one', '/two/nerva']) {
     expect(cached.some(url => url.includes('/api/'))).toBe(false);
     await context.setOffline(true);
     await page.goto(prefix + '/v2/chat?demo=1');
-    await expect(page).toHaveTitle('Chat · Nerva');
+    await expect(page).toHaveTitle('Conversation · Home · Nerva');
     await context.setOffline(false);
     expect(leaks).toEqual([]);
     expect(errors).toEqual([]);

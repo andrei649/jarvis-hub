@@ -40,6 +40,14 @@ export interface JarvisData {
   sources: LiveSources;   // per-tile: did REAL data arrive in this load cycle?
   safeMode: SafeModeState; // H275: the hub was started in safe mode
   chrome: StatusChrome;    // H133: gateway / sessions / version for the top bar and rail
+  /* Phase B (HubSnapshot, frame/types.ts HUB_LOADER_FIELDS): what /status said besides the above,
+     raw, so the frame validates it (hubSnapshotFrom) and a missing field reads as "not reported".
+     Absent unless /status answered and sent the field; never a default. */
+  checkedAt?: number;      // when this cycle finished (epoch ms): "checked 10:50" in the running head
+  llmBackend?: unknown;    // /status llm_backend ('ollama', 'lmstudio', the hub's own 'none')
+  configuredModel?: unknown; // /status configured_model: a setting, not a measurement
+  residencyState?: unknown;  // /status residency_state ('known' | 'unknown' | 'offline')
+  slots?: unknown;         // /status slots: turns, lanes and sub-agents in use against what is allowed
 }
 
 /* A pending approval, projected into the shape the cockpit's decision cards read.
@@ -155,6 +163,11 @@ export async function loadJarvisData(demo = false, isCurrent: () => boolean = ()
     out.safeMode = readSafeMode(d.safe_mode);
     out.chrome = readStatusChrome(d);
     if (d.sys) out.sys = d.sys;
+    // Phase B: kept raw, only when /status sent them (HubSnapshot validates them).
+    if (d.llm_backend !== undefined) out.llmBackend = d.llm_backend;
+    if (d.configured_model !== undefined) out.configuredModel = d.configured_model;
+    if (d.residency_state !== undefined) out.residencyState = d.residency_state;
+    if (d.slots !== undefined) out.slots = d.slots;
     const residents: LocalModelRef[] = Array.isArray(d.resident_models)
       ? d.resident_models.flatMap((pair: unknown) => {
         if (!pair || typeof pair !== 'object') return [];
@@ -262,6 +275,7 @@ export async function loadJarvisData(demo = false, isCurrent: () => boolean = ()
 
   // "live" = at least one tile is showing REAL (non-demo) content
   out.live = Object.values(out.sources).some(Boolean);
+  out.checkedAt = Date.now();   // Phase B: the cycle's end, for "checked 10:50"
   return out;
 }
 
@@ -328,6 +342,9 @@ function normCal(c: any) {
     ti: c.ti || c.title || c.summary || '',
     vw: c.vw || c.location || c.via || '',
     state: c.state || '',
+    // The hub's own rows carry only `ts` (ISO date-time, or a bare date for an all-day event);
+    // kept so the day register can read the start (home/day/schedule.ts).
+    ts: typeof c.ts === 'string' ? c.ts : '',
   };
 }
 function normHb(n: any) {

@@ -126,11 +126,12 @@ test('no /api/ response is ever written to Cache Storage', async ({ page }) => {
   await loadControlled(page);
 
   // Boot alone fetches a good deal of /api/; then drive the HUD a little more so the
-  // 30s refresh loop and a mode switch add their own reads on top. Anything the
-  // worker were to cache would be here by the time we look.
-  await page.keyboard.press('3');      // Trust Center — its own fetches
+  // 30s refresh loop and a page switch add their own reads on top. Anything the
+  // worker were to cache would be here by the time we look. (The number keys follow the
+  // masthead since the Ledger cutover, PHASE_B_PLAN.md §3.6: 5 is Trust, 1 is Home.)
+  await page.keyboard.press('5');      // Trust — the record, payments and the stop: its own fetches
   await page.waitForTimeout(1500);
-  await page.keyboard.press('1');      // back to the cockpit
+  await page.keyboard.press('1');      // back to Home (Today)
   await page.waitForTimeout(1500);
 
   const paths = (await cachedUrls(page)).map((u) => new URL(u).pathname);

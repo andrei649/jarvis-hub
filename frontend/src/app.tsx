@@ -1,61 +1,70 @@
-import { SAFE_MODE_OFF, SafeModeBanner } from './safe-mode-banner';
-import { PowerChip, usePower } from './power-chip';
-import { PressureBanner, usePressure } from './pressure-banner';
+import { SAFE_MODE_OFF } from './safe-mode-banner';
+import { usePower } from './power-chip';
+import { usePressure } from './pressure-banner';
 import {describeImages,restoreVisionTurn} from './vision-turn';
 import type {VisionDraft} from './composer-images';
 import type { components } from './api/schema.gen';
-import { useAppearance } from './appearance';
-import { appUrl, logicalPath } from './base-path';
-/* HUD v2 · APP ROOT — P0: shell + cockpit are live; the other modes render an
-   honest placeholder and get ported from the prototype in the next phase. */
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, lazy } from 'react';
+import { useAppearance, type AppearanceKey } from './appearance';
+import { AppearanceProvider, type AppearanceApi } from './theme/appearance-context';
+import { applyAppearanceToDocument, readPrefersDark, subscribePrefersDark } from './theme/apply';
+import { resolveScheme, themeById, type SchemePreference } from './theme/registry';
+/* HUD v2 · APP ROOT — the Ledger frame (docs/design/hud-next/PHASE_B_PLAN.md §2.1). Every route is a
+   page inside the Frame (masthead, running head, notices, the page, running foot); Glance is drawn
+   full screen; the floating desktop window is the conversation page's floating variant. App owns
+   the conversation, the loader and the hub snapshot, and hands them to the pages. */
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, lazy } from 'react';
 import { V2, restoreDemoCorpora } from './data';
 import { localityFigure } from './locality';
-import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
-import { TopBar, Ticker, Rail, RailDrawer, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh, MODES, useRailCollapsed } from './shell';
-import { PageHeaderBar, PageHeaderProvider } from './page-header';
+import { useClock, fmtTimeShort, Icon, ICONS } from './primitives';
+import { CinemaMesh } from './shell';
 import { approvalIds, mergeToolEvent } from './turn-tools';
-
-/** H132 — the page header's title: the mode's own label from the rail. */
-function modeTitle(mode: string, t: any): string {
-  if (mode === 'jobs') return 'Automations';
-  const m = MODES.find((x) => x.id === mode);
-  return (m && m.tkey && t[m.tkey]) || mode;
-}
-import {
-  type Overrides, bindings as shortcutBindings, chordOf, displayChord, firesInInputs, matchAction, useShortcutOverrides,
-} from './shortcuts';
+import { bindings as shortcutBindings, firesInInputs, matchAction, useShortcutOverrides } from './shortcuts';
 import { ShortcutsPanel } from './shortcuts-panel';
 import { PointerOverlay } from './pointer';
 import { PetCompanionOverlay, type AgentPetState } from './panels/pets';
-import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { historySourceLabel, type HistoryReference } from './chat-history-search';
 import { useVoice } from './voice';
 import { noticeMessages } from './turn-notices';
 import { toolActivity, turnOutcome, type TurnOutcome } from './turn-outcome';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
-import { STATUS_CHROME_UNKNOWN } from './api/status-chrome';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
-import { LiveSourceChip, liveSourceState } from './LiveSourceChip';
 import { postStream, apiGet, apiPost, apiFetchOnce, getToken, getAdminToken } from './api/client';
 import { csrfToken, isNetworkedOrigin, loadOwnerSession, onOwnerSession, ownerSession } from './api/owner-session';
 import { pendingQuestion, PendingQuestion, type Question, type QuestionAnswer } from './pending-question';
-import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import type { WorkshopRef } from './workshop-projects';
 import type { BoardReference, BoardResultRef } from './composer-board-result';
 import { boardSources } from './board-sources';
-import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 import { useDemoMode } from './demo-mode';
-import { DesktopControls, notifyDesktopConversation, useDesktopConversation, useDesktopDecisionNotifications, useQuickEntryFocus } from './desktop';
+import { notifyDesktopConversation, useDesktopConversation, useDesktopDecisionNotifications, useQuickEntryFocus } from './desktop';
 import { useListeningIndicator } from './listening';
 import { SessionRecovery } from './session-recovery';
 import { modelCalls } from './model-call-provenance';
-import { RoutingPolicyLabel, selectableChatAgents } from './chat-routing-policy';
+import { selectableChatAgents } from './chat-routing-policy';
 
 import { shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './onboarding-state';
-import { useHudRoute, navigateHud, closeHudOverlay, parseHudRoute } from './hud-routing';
+import { useHudRoute, navigateHud, navigatePage, closeHudOverlay, type HudRoute } from './hud-routing';
+import type { HudMode } from './hud-modes';
 import { RouteBoundary } from './route-boundary';
+import { Frame } from './frame/Frame';
+import { AreaPage, SlotNote } from './frame/AreaPage';
+import { ModePage } from './frame/ModePage';
+import { PanelPage } from './frame/PanelPage';
+import { Notices } from './frame/Notices';
+import { useFrameAttention } from './frame/attention';
+import { hubReading, hubSnapshotFrom, hubWithLocality, initialHubSnapshot, type FirstRunNotice, type FrameNavigation, type HubLoaderData } from './frame/types';
+import { langOf, type Lang } from './frame/strings';
+import { Home } from './home/Home';
+import { ChatPage } from './home/ChatPage';
+import type { RecipientHold, RecipientRefusal, RecipientSwitch, RecipientSwitchDropped, TalkInput } from './home/talk/types';
+import { recipientChoosable, rosterServed, switchStanding } from './home/talk/RecipientPicker';
+import { DOCKET_FEED_PATH } from './docket/types';
+import { AllPages } from './nav/AllPages';
+import { CommandSheet } from './nav/CommandSheet';
+import type { SheetActions } from './nav/commands';
+import { pageForRoute, type RoutePage } from './nav/routes';
+import { refreshPolled } from './signals/poll';
+import type { HubSnapshot, TabTurn } from './signals/types';
 
 type ChatAttachment = components['schemas']['ChatAttachment'];
 type HistorySend = { reference: HistoryReference; role: 'user' | 'assistant'; onResult: (ok: boolean, reason?: string) => void };
@@ -63,39 +72,63 @@ type BoardSend = { boardReferences: BoardReference[]; allowBoardCloud: boolean }
 
 const AgentsMode = lazy(() => import('./modes').then(m => ({ default: m.AgentsMode })));
 const Dossier = lazy(() => import('./modes').then(m => ({ default: m.Dossier })));
-const TrustMode = lazy(() => import('./modes').then(m => ({ default: m.TrustMode })));
 const MemoryMode = lazy(() => import('./modes').then(m => ({ default: m.MemoryMode })));
 const JobsWorkspace = lazy(() => import('./panels/jobs').then(m => ({ default: m.JobsWorkspace })));
 const AutonomyMode = lazy(() => import('./modes2').then(m => ({ default: m.AutonomyMode })));
 const BuildMode = lazy(() => import('./modes2').then(m => ({ default: m.BuildMode })));
 const ObserveMode = lazy(() => import('./modes2').then(m => ({ default: m.ObserveMode })));
 const InteropMode = lazy(() => import('./modes2').then(m => ({ default: m.InteropMode })));
-const ChatMode = lazy(() => import('./modes3').then(m => ({ default: m.ChatMode })));
 const CommsMode = lazy(() => import('./modes3').then(m => ({ default: m.CommsMode })));
 const AdminMode = lazy(() => import('./modes3').then(m => ({ default: m.AdminMode })));
 const FinanceMode = lazy(() => import('./modes4').then(m => ({ default: m.FinanceMode })));
 const HealthMode = lazy(() => import('./modes4').then(m => ({ default: m.HealthMode })));
 const KnowledgeMode = lazy(() => import('./modes4').then(m => ({ default: m.KnowledgeMode })));
 const FamilyMode = lazy(() => import('./modes4').then(m => ({ default: m.FamilyMode })));
-const ConsoleOverlay = lazy(() => import('./gap').then(m => ({ default: m.ConsoleOverlay })));
 const FirstRunGate = lazy(() => import('./gap').then(m => ({ default: m.FirstRunGate })));
 const ProjectsMode = lazy(() => import('./gap').then(m => ({ default: m.ProjectsMode })));
+// World is a page of Observe (Observe › World signals), not an overlay.
+const WorldIntelligenceMode = lazy(() => import('./modes_world').then(m => ({ default: m.WorldIntelligenceMode })));
+// The Ledger frame's own pages (PHASE_B_PLAN.md §6), loaded when their route is first visited.
+const WorkOverview = lazy(() => import('./pages/WorkOverview').then(m => ({ default: m.WorkOverview })));
+const Timeline = lazy(() => import('./pages/Timeline').then(m => ({ default: m.Timeline })));
+const TrustOverview = lazy(() => import('./pages/TrustOverview').then(m => ({ default: m.TrustOverview })));
+const ArtifactsPage = lazy(() => import('./pages/ArtifactsPage').then(m => ({ default: m.ArtifactsPage })));
+const Glance = lazy(() => import('./pages/Glance').then(m => ({ default: m.Glance })));
+/** The Ledger frame moves between pages with hud-routing's own functions. */
+const FRAME_NAVIGATION: FrameNavigation = { navigate: navigateHud, closeOverlay: closeHudOverlay };
+const HOME_PATH = '/v2/cockpit';
+/** Settings › Personalisation (the Console panel `appearance`). */
+const PERSONALISATION_PATH = '/v2/console/appearance';
+/** The audit chain's verdict as signals/hooks.ts useAuditVerify reads it ("Verify the record again"). */
+const AUDIT_VERIFY_PATH = '/api/security/audit/verify';
 
 const CHAT_SESSION_KEY = 'nerva.chat.session_id';
 const CHAT_RECIPIENT_KEY = 'nerva.chat.recipient';
 const recipientPrincipal = () => JSON.stringify([getToken(), getAdminToken(), ownerSession()?.signed_in ? csrfToken() : '']);
-type SavedRecipient = { agent: string; session: string | null; credential: string };
+/** The owner's choice of recipient, kept for this tab; `name` is the display name the hub's roster
+ *  gave the agent when it was chosen (a choice refused after a reload names the agent as the owner
+ *  knew it, not by its id). */
+type SavedRecipient = { agent: string; name?: string; session: string | null; credential: string };
 function savedRecipient(): SavedRecipient | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(CHAT_RECIPIENT_KEY) || 'null');
     return value && typeof value.agent === 'string' && typeof value.credential === 'string'
-      && (value.session === null || typeof value.session === 'string') ? value : null;
+      && (value.session === null || typeof value.session === 'string')
+      && (value.name === undefined || typeof value.name === 'string') ? value : null;
   } catch { return null; }
 }
 async function recipientCredential(): Promise<string> {
   if (isNetworkedOrigin() && !getToken() && !ownerSession()) await loadOwnerSession();
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(recipientPrincipal()));
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+/** Notes the display name the hub's roster gives each agent it served (rows from GET /api/agents). */
+function noteRosterNames(names: Map<string, string>, agents: readonly any[] | undefined): void {
+  for (const agent of agents || []) {
+    if (agent && agent.rosterSource === 'api' && typeof agent.id === 'string' && typeof agent.name === 'string' && agent.name.trim()) {
+      names.set(agent.id, agent.name.trim());
+    }
+  }
 }
 function savedChatSession(): string | null {
   try { return sessionStorage.getItem(CHAT_SESSION_KEY); } catch { return null; }
@@ -119,31 +152,36 @@ export function visibleTurns(turns: any[]): any[] {
   });
 }
 
-function ModeStub({ label }) {
-  return (
-    <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-      <div className="panel" style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div style={{ textAlign: 'center', color: 'var(--ink-2)', maxWidth: 360 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, letterSpacing: '.18em', color: 'var(--accent-light)' }}>{String(label).toUpperCase()}</div>
-          <div style={{ marginTop: 12, fontSize: 13, color: 'var(--ink-2)' }}>Mode wiring in progress — ported from the prototype next.</div>
-          <div style={{ marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: 10 }}>P0 · shell + cockpit live · build green</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function App({ floating = false, shortcuts, onWorld }: {
+function App({ floating = false }: {
+  /** The 420 × 620 desktop window (main.tsx, `?desktop=floating` with the native bridge). */
   floating?: boolean;
-  /** H209: the page's shortcut overrides when the caller shows them too (World's button). */
-  shortcuts?: [Overrides, (next: Overrides) => void];
-  onWorld?: () => void;
 } = {}) {
   const appearance = useAppearance();
   const { look, density, scanline, dotgrid, accent } = appearance.preferences;
+  const schemePreference = appearance.preferences.scheme as SchemePreference;
   const motion = appearance.motion;
+  // Theme contract v1 §7: `scheme: system` follows the OS colour scheme live; the resolved scheme
+  // (never `system`) goes on .hud-root and, with the other axes, on <html> where the themes select.
+  // The OS reading is followed whatever the scheme, so the first frame after choosing System is
+  // already right even when the OS changed while Dark or Light was chosen.
+  const [prefersDark, setPrefersDark] = useState(readPrefersDark);
+  useEffect(() => {
+    setPrefersDark(readPrefersDark());
+    return subscribePrefersDark(setPrefersDark);
+  }, []);
+  const scheme = resolveScheme(themeById(look), schemePreference, prefersDark);
+  useLayoutEffect(() => {
+    applyAppearanceToDocument({ ...appearance.preferences, motion }, prefersDark);
+  }, [appearance.preferences, motion, prefersDark]);
+  // One owner instance (§7): every component reads and changes appearance through this provider.
+  // The shared API takes a plain string key; useAppearance ignores one outside the fixed fields.
+  const appearanceApi = useMemo<AppearanceApi>(() => ({
+    preferences: appearance.preferences, status: appearance.status,
+    setPreference: (key: string, value: string) => appearance.setPreference(key as AppearanceKey, value),
+    error: appearance.error, retry: appearance.retry, motion: appearance.motion,
+  }), [appearance.preferences, appearance.setPreference, appearance.status, appearance.error, appearance.retry, appearance.motion]);
   const setLook = useCallback((value: string) => appearance.setPreference('look', value), [appearance.setPreference]);
+  const setScheme = useCallback((value: string) => appearance.setPreference('scheme', value), [appearance.setPreference]);
   const setDensity = useCallback((value: string) => appearance.setPreference('density', value), [appearance.setPreference]);
   const setScanline = useCallback((value: string) => appearance.setPreference('scanline', value), [appearance.setPreference]);
   const setDotgrid = useCallback((value: string) => appearance.setPreference('dotgrid', value), [appearance.setPreference]);
@@ -151,11 +189,9 @@ function App({ floating = false, shortcuts, onWorld }: {
   const setMotion = useCallback((value: string) => appearance.setPreference('motion', value), [appearance.setPreference]);
   const setAccent = useCallback((value: string) => appearance.setPreference('accent', value), [appearance.setPreference]);
   // H221 — the language is an appearance preference (cached + synced like the others); the
-  // globe menu and the palette rows both set it by code.
+  // masthead's EN | RO radio group and the sheet's Language rows both set it by code.
   const lang = appearance.preferences.lang;
   const setLang = useCallback((value: string) => appearance.setPreference('lang', value), [appearance.setPreference]);
-  const ia = 'rail' as 'rail' | 'tabs';
-  const [railCollapsed, toggleRail] = useRailCollapsed();
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
   const [demo, setDemo] = useDemoMode();
@@ -164,25 +200,32 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
   const setVoice = (patch) => setVoiceCfg((c) => ({ ...c, ...patch }));
 
-  const { route, notice, dismissNotice } = useHudRoute(floating);
-  const mode = route.mode === 'console' || route.mode === 'world' ? 'cockpit' : route.mode;
+  // The document is titled in the owner's language (nav/routes pageTitle).
+  const { route, notice, dismissNotice } = useHudRoute(floating, lang);
+  // PHASE_B_PLAN.md §4.4: the route notice names the page the router fell back to when it raised
+  // the notice, recorded here as the notice appears (never the page on screen later); once the
+  // owner moves on to another page the notice is no longer news and is withdrawn.
+  const [routeNoticeAt, setRouteNoticeAt] = useState<{ path: string; page: RoutePage } | null>(null);
+  if (notice && !routeNoticeAt) setRouteNoticeAt({ path: route.path, page: pageForRoute(route) });
+  if (!notice && routeNoticeAt) setRouteNoticeAt(null);
+  useEffect(() => {
+    if (notice && routeNoticeAt && route.path !== routeNoticeAt.path) dismissNotice();
+    // useHudRoute hands a new dismissNotice on every render; the route and the notice decide
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notice, routeNoticeAt, route.path]);
   const setMode = useCallback((next: string) => navigateHud('/v2/' + next), []);
-  const consoleOpen = route.mode === 'console';
-  const setConsoleOpen = useCallback((next: boolean | ((current: boolean) => boolean)) => {
-    const current = parseHudRoute(logicalPath(window.location.pathname) ?? '').mode === 'console';
-    const open = typeof next === 'function' ? next(current) : next;
-    if (open) navigateHud('/v2/console');
-    else closeHudOverlay();
-  }, []);
   useEffect(() => { const handoff = () => setMode('chat'); window.addEventListener('nerva-desktop-handoff', handoff); return () => window.removeEventListener('nerva-desktop-handoff', handoff); }, []);
   const [agents, setAgents] = useState<any[]>(demo ? V2.AGENTS : []);
+  // Whether a poll of the hub has completed since the page loaded (or left the demo sample): its
+  // agents, from the hub's roster or not, are then in `agents`. A selected agent that still cannot be
+  // confirmed after one is held for want of the roster (recipientHold), not "being checked" for ever.
+  const [rosterPolled, setRosterPolled] = useState(false);
   const initialRecipient = useRef(savedRecipient());
   const [activeId, setActiveId] = useState(initialRecipient.current ? '' : 'jarvis');
   const [recipientReady, setRecipientReady] = useState(!initialRecipient.current);
   const recipientGeneration = useRef(0);
   const recipientSelected = useRef(!!initialRecipient.current);
   const recipientPrincipalAtChoice = useRef(recipientPrincipal());
-  const [focusId, setFocusId] = useState(null);
   const [messages, setMessages] = useState<any[]>(demo ? V2.SEED_MESSAGES : []);
   const [currentOutcome, setCurrentOutcome] = useState<TurnOutcome | null>(null);
   const sessionId = useRef<string | null>(savedChatSession());
@@ -191,26 +234,43 @@ function App({ floating = false, shortcuts, onWorld }: {
   const selectedSessionId = useCallback(() => sessionId.current, []);
   const sessionActivityGeneration = useCallback(() =>
     `${sessionGeneration.current}:${turnEpoch.current}:${nextTextTurn.current}:${latestTextTurn.current}`, []);
+  // Why App last dropped the recipient (home/talk/types.ts RecipientRefusal). It is state, not a
+  // ref: a refusal must redraw at once even when the recipient was already empty and not ready (a
+  // saved choice refused while it was being checked), or the composer keeps saying
+  // "Checking the selected agent…" until something else redraws.
+  const [recipientRefusal, setRecipientRefusal] = useState<RecipientRefusal | null>(null);
+  // The last display name the hub's roster gave each agent (only rows it served: a demo or seed name
+  // is not the hub's), so an agent that leaves the roster is still named as the owner knew it. Noted
+  // as a poll is committed (below), so a choice made in that same frame already carries the name.
+  const knownNames = useRef(new Map<string, string>());
+  useEffect(() => { noteRosterNames(knownNames.current, agents); }, [agents]);
   const rememberRecipient = useCallback((id: string) => {
     const generation = ++recipientGeneration.current;
+    // the owner's own choice settles a saved one still being checked: a later check (the next
+    // roster poll) must neither restore over it nor refuse it
+    initialRecipient.current = null;
     recipientSelected.current = id !== 'jarvis';
     recipientPrincipalAtChoice.current = recipientPrincipal();
-    setActiveId(id); setRecipientReady(true);
+    setActiveId(id); setRecipientReady(true); setRecipientRefusal(null);
     try { sessionStorage.removeItem(CHAT_RECIPIENT_KEY); } catch { /* storage unavailable */ }
     if (demo || id === 'jarvis') return;
-    try { sessionStorage.setItem(CHAT_RECIPIENT_KEY, JSON.stringify({ agent: id, session: sessionId.current, credential: '' })); } catch { /* storage unavailable */ }
+    const name = knownNames.current.get(id);
+    const saved = (credential: string) => JSON.stringify({ agent: id, ...(name ? { name } : {}), session: sessionId.current, credential });
+    try { sessionStorage.setItem(CHAT_RECIPIENT_KEY, saved('')); } catch { /* storage unavailable */ }
     void recipientCredential().then(credential => {
       if (generation === recipientGeneration.current) {
-        try { sessionStorage.setItem(CHAT_RECIPIENT_KEY, JSON.stringify({ agent: id, session: sessionId.current, credential })); } catch { /* storage unavailable */ }
+        try { sessionStorage.setItem(CHAT_RECIPIENT_KEY, saved(credential)); } catch { /* storage unavailable */ }
       }
     }).catch(() => {});
   }, [demo]);
-  const clearRecipient = useCallback(() => {
+  // Drops the recipient, saying why. Nothing is sent until the owner chooses again: the message never
+  // goes to a substitute (the composer's To reads "Choose an agent" and its line gives the reason).
+  const clearRecipient = useCallback((refusal: RecipientRefusal) => {
     ++recipientGeneration.current;
     initialRecipient.current = null;
     recipientSelected.current = false;
     try { sessionStorage.removeItem(CHAT_RECIPIENT_KEY); } catch { /* storage unavailable */ }
-    setActiveId(''); setRecipientReady(false);
+    setActiveId(''); setRecipientReady(false); setRecipientRefusal(refusal);
   }, []);
   const selectSession = useCallback((id: string, turns?: any[]) => {
     // Convert a supplied snapshot before touching the selected id or its storage.
@@ -220,7 +280,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     sessionRecovery.current?.allowExplicitSelection(id);
     if (id !== sessionId.current || turns) setCurrentOutcome(null);
     if (recipientSelected.current && id !== sessionId.current && (sessionId.current || turns)) {
-      clearRecipient();
+      clearRecipient({ reason: 'conversation' });
     } else if (!sessionId.current) {
       const saved = savedRecipient();
       if (saved?.session === null) {
@@ -239,15 +299,25 @@ function App({ floating = false, shortcuts, onWorld }: {
     void recipientCredential().then(credential => {
       if (generation !== recipientGeneration.current || !initialRecipient.current) return;
       initialRecipient.current = null;
-      if (saved.credential === credential && (saved.session === sessionId.current || saved.session === null)
-        && selectableChatAgents(agents, false).some(agent => agent.id === saved.agent)) {
+      // A saved choice is used only by the sign-in that made it, in its conversation, while the
+      // roster still offers the agent; otherwise it is refused, and the refusal says which rule held.
+      if (!saved.credential) clearRecipient({ reason: 'unverified' });
+      else if (saved.credential !== credential) clearRecipient({ reason: 'signin' });
+      else if (saved.session !== sessionId.current && saved.session !== null) clearRecipient({ reason: 'conversation' });
+      else if (!selectableChatAgents(agents, false).some(agent => agent.id === saved.agent)) {
+        clearRecipient({ reason: 'unavailable', agent: saved.agent, name: knownNames.current.get(saved.agent) ?? saved.name });
+      }
+      else {
         recipientSelected.current = true;
         recipientPrincipalAtChoice.current = recipientPrincipal();
-        setActiveId(saved.agent); setRecipientReady(true);
-      } else {
-        clearRecipient();
+        setActiveId(saved.agent); setRecipientReady(true); setRecipientRefusal(null);
       }
-    }).catch(() => { setRecipientReady(false); });
+    }).catch(() => {
+      // No digest here (crypto.subtle needs a secure origin): the saved choice can never be checked,
+      // so it is refused now rather than left at "Checking…" — unless the owner chose meanwhile.
+      if (generation !== recipientGeneration.current || !initialRecipient.current) return;
+      clearRecipient({ reason: 'unverified' });
+    });
   }, [agents, demo, clearRecipient]);
   useEffect(() => {
     let credential = recipientPrincipal();
@@ -262,7 +332,7 @@ function App({ floating = false, shortcuts, onWorld }: {
         return;
       }
       if (initialRecipient.current) return; // first owner-session discovery is checked by restoration
-      clearRecipient();
+      clearRecipient({ reason: 'signin' });
     };
     const off = onOwnerSession(check);
     window.addEventListener('storage', check);
@@ -273,7 +343,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     if (demo || initialRecipient.current || activeId === 'jarvis' || !activeId ||
       !agents.some(agent => agent.rosterSource === 'api') ||
       selectableChatAgents(agents, false).some(agent => agent.id === activeId)) return;
-    clearRecipient();
+    clearRecipient({ reason: 'unavailable', agent: activeId, name: knownNames.current.get(activeId) });
   }, [activeId, agents, demo, clearRecipient]);
   const sessionRecovery = useRef<SessionRecovery | null>(null);
   if (!sessionRecovery.current) {
@@ -294,7 +364,6 @@ function App({ floating = false, shortcuts, onWorld }: {
           setThinking(null);
         }
         selectSession(detail.sessionId, detail.turns);
-        setCenterTab('conversation');
       }
     };
     window.addEventListener('nerva:session-selected', selected);
@@ -305,8 +374,6 @@ function App({ floating = false, shortcuts, onWorld }: {
     sessionRecovery.current, sessionActivityGeneration);
   useQuickEntryFocus();
   useDesktopDecisionNotifications(!floating && !demo);
-  const [trace, setTrace] = useState(null);
-  const [centerTab, setCenterTab] = useState('conversation');
   const inspectBlend = useRef<((file: File) => boolean) | null>(null);
   const [projectForChat, setProjectForChat] = useState<WorkshopRef | null>(null);
   useLayoutEffect(() => setProjectForChat(null), [activeId, activeSessionId]);
@@ -317,12 +384,14 @@ function App({ floating = false, shortcuts, onWorld }: {
     setBoardResultForChat(ref);
     setMode('chat');
   };
-  // bumped after every successful explicit save so the Artifacts tab refetches
+  // bumped after every successful explicit save so Memory › Saved replies refetches
   const [artifactsRefresh, setArtifactsRefresh] = useState(0);
   const bumpArtifacts = useCallback(() => setArtifactsRefresh((n) => n + 1), []);
   // mic/voice state is owned by the useVoice loop (defined below), not a bare flag
+  // `palette` opens the search and command sheet (nav/CommandSheet), which can open filtered to
+  // panels (the backtick, the contents column's "Find a panel…").
   const [palette, setPalette] = useState(false);
-  const [ambient, setAmbient] = useState(false);
+  const [sheetFilter, setSheetFilter] = useState<'panels' | null>(null);
   const [cinema, setCinema] = useState(false);
   const [provModal, setProvModal] = useState(null);
   const [dossier, setDossier] = useState(null);
@@ -337,17 +406,14 @@ function App({ floating = false, shortcuts, onWorld }: {
       .then((cc: any) => { if (shouldShowFirstRun(cc)) setFirstRun(true); })
       .catch(() => {});
   }, [demo]);
+  // What Cinema's briefing wall reads (the read-only decision cards of api/loaders decisionCard()).
   const [decisions, setDecisions] = useState(() => demo ? V2.DECISIONS.map((d, i) => ({ ...d, _id: 'd' + i })) : []);
-  // P1 live-data state — empty by default (honest); demo pre-seeds, backend overwrites
-  const [ticker, setTicker] = useState(demo ? V2.TICKER : []);
-  const [tasks, setTasks] = useState([]); // autonomy queue → network task-fan (/tasks)
-  const [weather, setWeather] = useState(demo ? V2.WEATHER : null);
+  // P1 live-data state — empty by default (honest); demo pre-seeds, backend overwrites. Cinema and
+  // the pet companion read these; the frame and the pages read the hub snapshot below.
+  const [tasks, setTasks] = useState([]); // the autonomy queue (/tasks)
   const [calendar, setCalendar] = useState(demo ? V2.CALENDAR : []);
   const [heartbeat, setHeartbeat] = useState(demo ? V2.HEARTBEAT : []);
-  const [sys, setSys] = useState(null);
-  const [live, setLive] = useState(false);
   const [serverUp, setServerUp] = useState(false);
-  const [statusChrome, setStatusChrome] = useState(STATUS_CHROME_UNKNOWN);   // H133: gateway · sessions · version
   const [safeMode, setSafeMode] = useState(SAFE_MODE_OFF);
   const power = usePower(demo);   // H182: battery, resume, keep-awake
   const [pressure, dismissPressure] = usePressure(demo);   // H161: memory/disk running out
@@ -358,12 +424,18 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [trust, setTrust] = useState({ mic: 'on', strict_local: false });
   const [sources, setSources] = useState({ tasks: false, trust: false });
   const [locality, setLocality] = useState(null); // {local_pct} from real runs, or null
-  const baseAgents = useRef(demo ? V2.AGENTS : []);
+  // The hub as one snapshot (frame/types.ts), committed beside the setters above.
+  const [hub, setHub] = useState<HubSnapshot>(() => initialHubSnapshot(demo));
   // H202: a roster change (create, rename, retire, restore) refreshes the live data now,
   // not at the next 30 s poll.
   const refreshNow = useRef<() => void>(() => {});
 
-  const clock = useClock();
+  // PHASE_B_PLAN.md §2.3, §10.6: App keeps a minute clock and Cinema keeps the 1-second one
+  // (SecondsCinema), so the frame and the pages are not re-rendered every second. The pages read
+  // it as a Date that changes once a minute, on the minute.
+  const clock = useMinuteClock();
+  const clockMinute = Math.floor(clock.getTime() / 60_000);
+  const minuteClock = useMemo(() => new Date(clockMinute * 60_000), [clockMinute]);
   const t = V2.I18N[lang];
   // %-local is honest, in priority order: a real measured split from /api/analytics/
   // locality (the brand metric, from run-history routes) → strict-local proof (100%)
@@ -459,8 +531,7 @@ function App({ floating = false, shortcuts, onWorld }: {
 
   // hotkeys (H209): every shortcut is an action in shortcuts.ts, rebindable from the
   // Keyboard Shortcuts panel (mod+/); nothing here spells a key.
-  const ownShortcuts = useShortcutOverrides();
-  const [shortcutOverrides, changeShortcuts] = shortcuts || ownShortcuts;
+  const [shortcutOverrides, changeShortcuts] = useShortcutOverrides();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useEffect(() => {
     const list = shortcutBindings(shortcutOverrides);
@@ -468,19 +539,21 @@ function App({ floating = false, shortcuts, onWorld }: {
       if (floating || shortcutsOpen) return;   // the panel owns the keyboard while it is open
       const action = matchAction(e, list, 'global');
       if (!action) return;
-      // A field owns its keys: only the palette and the panel answer there, on a chord held
+      // A field owns its keys: only the sheet and the panel answer there, on a chord held
       // with Ctrl/⌘ or Alt, so no letter typed into it (a password included) is eaten.
+      // A <select> types to jump to an option (the composer's To), and an editable region takes
+      // letters: both own their keys as a field does.
       const tag = (e.target && e.target.tagName ? e.target.tagName : '').toLowerCase();
-      if ((tag === 'input' || tag === 'textarea') && !firesInInputs(action)) return;
-      if (action.id === 'session.palette') { e.preventDefault(); setPalette((p) => !p); return; }
+      const field = tag === 'input' || tag === 'textarea' || tag === 'select' || !!(e.target && e.target.isContentEditable);
+      if (field && !firesInInputs(action)) return;
+      if (action.id === 'session.palette') { e.preventDefault(); setSheetFilter(null); setPalette((p) => !p); return; }
       // Not over Cinema, which paints above the panel: it would open unseen.
       if (action.id === 'session.shortcuts' && !cinema) { e.preventDefault(); setPalette(false); setShortcutsOpen(true); return; }
-      if (ambient || cinema) return;   // overlays own the keyboard (Esc exits them)
-      // The chat transcript is now in the tab order (cockpit.tsx `.convo`), so it is a
-      // place a keyboard user reads FROM. Without this, typing a digit while reading
-      // jumps to another mode and drops focus to <body>; `a` opens the ambient overlay.
-      // Same reasoning as the input/textarea bail: a surface you are reading or typing
-      // into owns its keys.
+      if (cinema) return;   // Cinema owns the keyboard (Esc exits it)
+      // The chat transcript is in the tab order (its `role="log"` region), so it is a place a
+      // keyboard user reads FROM. Without this, typing a digit while reading jumps to another
+      // page and drops focus to <body>; `a` goes to Glance. Same reasoning as the input/textarea
+      // bail: a surface you are reading or typing into owns its keys.
       if (e.target && e.target.closest && e.target.closest('[role="log"]')) return;
       if (action.id === 'composer.focus') {
         const box = document.querySelector('[data-composer]') as HTMLInputElement | null;
@@ -489,43 +562,27 @@ function App({ floating = false, shortcuts, onWorld }: {
       }
       e.preventDefault();   // a rebound chord (Ctrl+J, Ctrl+D) runs the HUD action, not the browser's too
       if (action.id.startsWith('mode.')) setMode(action.id.slice(5));
-      else if (action.id === 'view.world') onWorld?.();
-      else if (action.id === 'view.ambient') setAmbient(true);
+      // World is a page of Observe, Glance is a route, the backtick opens the sheet on panels.
+      else if (action.id === 'view.world') navigateHud('/v2/world');
+      else if (action.id === 'view.ambient') navigateHud('/v2/glance');
       else if (action.id === 'view.cinema') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
-      else if (action.id === 'view.console') setConsoleOpen((c) => !c);
+      else if (action.id === 'view.console') { setSheetFilter('panels'); setPalette((p) => !p); }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ambient, cinema, shortcutOverrides, shortcutsOpen, onWorld]);
+  }, [cinema, shortcutOverrides, shortcutsOpen]);
 
-  // NTH-1 — live cognition scoring over SSE (/api/cognition/stream). EventSource
-  // can't send the user token, so this only attaches where the guard is
-  // localhost-exempt; elsewhere it errors out silently and the post-turn
-  // /api/cognition snapshot (runTurn) remains the source. Frames only arrive when
-  // the snapshot CHANGES, so this never overwrites a fresher post-turn trace with
-  // stale data — it upgrades the cockpit to routing-decisions-as-they-happen.
-  useEffect(() => {
-    if (demo || typeof EventSource === 'undefined') return undefined;
-    let es;
-    try { es = new EventSource(appUrl('/api/cognition/stream')); } catch { return undefined; }
-    es.onmessage = (ev) => {
-      try {
-        const f = JSON.parse(ev.data);
-        const cog = f && f.type === 'cognition' ? f.cognition : null;
-        if (!cog) return;
-        const tr = traceFromCognition(cog, '');
-        setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
-      } catch { /* malformed frame — ignore */ }
-    };
-    es.onerror = () => { try { es.close(); } catch { /* ignore */ } };
-    return () => { try { es.close(); } catch { /* ignore */ } };
-  }, [demo]);
-
-  // submit → cognition flow (mock timeline; real SSE arrives in P2)
+  // The conversation's turns. (PHASE_B_PLAN.md §2.4 retired the cockpit's cognition trace, its
+  // post-turn snapshot read and its live scoring subscription: they drew routing the chat stream
+  // does not report, honesty defects D11 and D15. The working reply shows only what the stream
+  // says; the Observe › Cognition panel keeps its own reads.)
   const timers = useRef([]);
   const turnBusy=useRef(false), turnEpoch=useRef(0);
   const abortRef = useRef<AbortController|null>(null); // vision turn
   const textTurns=useRef(new Map<number,{controller:AbortController;settle:(text:string)=>void}>());
+  // A state copy of the in-flight turns (textTurns is a ref), so the pages re-render; the agent
+  // asked and the time are kept from the moment the reply bubble is reserved.
+  const [inflight, setInflight] = useState<readonly { turnId: number; agent: string; askedAt: number }[]>([]);
   const nextTextTurn=useRef(0), latestTextTurn=useRef(0);
   const lastTypedSubmit=useRef({text:'',at:0});
   const questionTurn=useRef<number|null>(null);
@@ -542,41 +599,32 @@ function App({ floating = false, shortcuts, onWorld }: {
     if(questionTurn.current===owner)setQuestion(current=>current?.id===id?null:current);
   },[question]);
 
-  // offline fallback — the prototype's staged timeline so the cockpit still demos
-  const runMock = useCallback((text) => {
+  // DEMO only: when the chat stream fails in the demo sample, a staged reply from the agent the
+  // owner wrote to, so the conversation still demos. It invents no routing and no stages: the
+  // waiting line names the agent that was asked, as a live turn's does.
+  const runMock = useCallback((agent: string) => {
     timers.current.forEach(clearTimeout); timers.current = [];
-    const tr = buildTrace(text);
-    setTrace({ stages: tr.stages.map((s) => ({ ...s, state: '' })) });
-    setCenterTab('cognition');
-    setAgents((prev) => prev.map((a) => (tr.selected.includes(a.id) ? { ...a, status: 'busy' } : a)));
-    setThinking({ label: t.think + ' · classify', route: null });
-    const seq: Array<[number, () => void]> = [
-      [250, () => setTrace((p) => mark(p, 0, 'on'))],
-      [700, () => { setTrace((p) => mark(p, 0, 'done', 1, 'on')); setThinking({ label: t.think + ' · route', route: tr.selected.map((s) => s.toUpperCase()) }); }],
-      [1400, () => { setTrace((p) => mark(p, 1, 'done', 2, 'on')); setThinking({ label: t.think + ' · gather', route: tr.selected.map((s) => s.toUpperCase()) }); }],
-      [2300, () => { setTrace((p) => mark(p, 2, 'done', 3, 'on')); setThinking({ label: t.think + ' · synthesize', route: tr.selected.map((s) => s.toUpperCase()) }); }],
-      [3300, () => {
-        setTrace((p) => mark(p, 3, 'done'));
-        setThinking(null);
-        setMessages((m) => [...m, { role: 'agent', who: 'jarvis', role_label: 'Prime Orchestrator', ts: fmtTimeShort(new Date()), text: replyFor(text, tr) }]);
-        setAgents(baseAgents.current);
-      }],
-    ];
-    seq.forEach(([ms, fn]) => timers.current.push(setTimeout(fn, ms)));
+    setThinking({ label: t.think, route: [agent.toUpperCase()] });
+    timers.current.push(setTimeout(() => {
+      setThinking(null);
+      setMessages((m) => [...m, { role: 'agent', who: agent, role_label: '', ts: fmtTimeShort(new Date()), text: demoReplyFor(agent) }]);
+    }, 1200));
   }, [t]);
 
-  // P2 — real streaming turn: POST /chat/stream token-by-token, then pull the live
-  // /api/cognition snapshot for the trace + provenance. Falls back to runMock offline.
-  // P2 — real streaming turn. Resolves with the FINAL reply text so the voice loop can
-  // speak it. On /chat/stream failure: honest system notice (or the DEMO staged mock).
+  // P2 — real streaming turn: POST /chat/stream token-by-token. Resolves with the FINAL reply
+  // text so the voice loop can speak it. On /chat/stream failure: honest system notice (or, in
+  // the demo sample only, the staged demo reply).
   // H5.16: runTurn is defined before useVoice (which takes runTurn as onTurn), so
   // the token->TTS forward goes through a ref, assigned right after the hook runs.
   const voiceRef = useRef(null);
   const runTurn = useCallback((text:string, source:'typed'|'voice'='typed', excerpts?:ChatAttachment[], directReply=false, history?:HistorySend, onAdmitted?: () => void,
     board?: BoardSend & { onFinished: (ok: boolean) => void }) => new Promise<string>((resolve) => {
-    if (recipientSelected.current && recipientPrincipalAtChoice.current !== recipientPrincipal()) { clearRecipient(); resolve(''); return; }
+    if (recipientSelected.current && recipientPrincipalAtChoice.current !== recipientPrincipal()) { clearRecipient({ reason: 'signin' }); resolve(''); return; }
     if (!demo && (!recipientReady || (activeId !== 'jarvis' && !selectableChatAgents(agents, false).some(agent => agent.id === activeId)))) { resolve(''); return; }
     if (turnBusy.current || (source==='voice' && (thinking || textTurns.current.size>0)) || (thinking && textTurns.current.size===0)) { resolve(''); return; }
+    // The turn is sent, typed or hands-free voice: it ends the line about a dropped change of
+    // recipient (switchDropped, below). A turn refused above sends nothing and ends nothing.
+    setSwitchDropped(null);
     const id=++nextTextTurn.current, epoch=turnEpoch.current;
     latestTextTurn.current=id;
     setCurrentOutcome(null);
@@ -592,17 +640,21 @@ function App({ floating = false, shortcuts, onWorld }: {
       reportBoard(false);
       if (onAdmitted && !admitted) setMessages(messages => messages.filter(message => message._draftTurnId !== id && message._turnId !== id));
       textTurns.current.delete(id);
+      setInflight(list => list.filter(turn => turn.turnId !== id));
       if(questionTurn.current===id){questionTurn.current=null;setQuestion(null);}
       if(textTurns.current.size===0 && !turnBusy.current)setThinking(null);
       resolve(reply);
     };
     textTurns.current.set(id,{controller:ctl,settle});
     // Reserve the reply bubble now: a queued request may emit start after a newer one.
+    // Phase B stamps (home/talk/types.ts ReplyStamps, epoch ms): _askedAt here, _startedAt on the
+    // first `start` frame, _firstTokenAt on the first `token` frame.
+    const askedAt = Date.now();
+    setInflight(list => [...list, { turnId: id, agent: activeId, askedAt }]);
     setMessages((m) => [...m,
       { role: 'user', text, ts: fmtTimeShort(new Date()), ...(onAdmitted ? { _draftTurnId: id } : {}), ...(board ? { _boardTurnId: id } : {}), ...(history ? { _historyTurnId: id, attachmentNames: [historySourceLabel({ ...history.reference, role: history.role })].filter(Boolean) } : excerpts?.length ? { attachmentNames: excerpts.map(item => item.name) } : {}) },
-      { role: 'agent', who: activeId, role_label: '', ts: fmtTimeShort(new Date()), text: '', _turnId:id },
+      { role: 'agent', who: activeId, role_label: '', ts: fmtTimeShort(new Date()), text: '', _turnId:id, _askedAt:askedAt },
     ]);
-    setCenterTab('conversation');
     setThinking({ label: t.think + ' · routing', route: null });
     const updateBubble=(change:(message:any)=>any)=>setMessages((messages)=>messages.map(message=>message._turnId===id?change(message):message));
     postStream('/chat/stream', { message: text, agent: activeId, tool_events: true,
@@ -619,7 +671,8 @@ function App({ floating = false, shortcuts, onWorld }: {
       }
       if (evt.type === 'start') {
         if(id===latestTextTurn.current)setThinking({ label: t.think, route: [String(evt.agent || activeId).toUpperCase()] });
-        updateBubble(message=>({...message,who:evt.agent||activeId}));
+        const startedAt=Date.now();
+        updateBubble(message=>({...message,who:evt.agent||activeId,_startedAt:message._startedAt??startedAt}));
       } else if (evt.type === 'clarify') {
         const prompt=pendingQuestion(evt);
         if(prompt){questionTurn.current=id;setQuestion(prompt);}
@@ -629,7 +682,8 @@ function App({ floating = false, shortcuts, onWorld }: {
         // sentence #1 is synthesized while the model is still writing sentence #2.
         // No-op unless a voice turn opened a session (typed turns stay silent).
         try { if(source==='voice')voiceRef.current?.pushSpeakDelta(evt.text || ''); } catch { /* never break the stream over TTS */ }
-        updateBubble(message=>({...message,text:streamed}));
+        const tokenAt=Date.now();
+        updateBubble(message=>({...message,text:streamed,_firstTokenAt:message._firstTokenAt??tokenAt}));
       } else if (evt.type === 'tool') {
         // H137 — one card per tool call, updated in place (no arguments or results ride here).
         updateBubble(message=>({...message,tools:mergeToolEvent(message.tools,evt.event)}));
@@ -689,11 +743,6 @@ function App({ floating = false, shortcuts, onWorld }: {
         const notes = noticeMessages(evt, fmtTimeShort(new Date()));
         if (notes.length) setMessages((m) => [...m, ...notes]);
         settle(finalText);
-        apiGet('/api/cognition').then((cog: any) => {
-          if(epoch!==turnEpoch.current||ctl.signal.aborted)return;
-          const tr = traceFromCognition(cog, text);
-          if(id===latestTextTurn.current)setTrace({ stages: tr.stages.map((s) => ({ ...s, state: 'done' })) });
-        }).catch(() => {});
       }
     }, { signal: ctl.signal, admin: !!history || !!board }).then(() => {
       // EOF without an end frame must still release the composer and voice promise.
@@ -730,9 +779,12 @@ function App({ floating = false, shortcuts, onWorld }: {
       // HONESTY: never fabricate a reply. The staged mock is for DEMO only; otherwise
       // surface the real failure (e.g. no model loaded / backend offline).
       if (demo && textTurns.current.size===1) {
-        settle('');setMessages(messages=>messages.filter(message=>message._turnId!==id));runMock(text);return;
+        settle('');setMessages(messages=>messages.filter(message=>message._turnId!==id));runMock(activeId);return;
       }
-      setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model in LM Studio, or enable ◐ DEMO to preview the interface.' }]);
+      // In the owner's language, and naming controls the Ledger frame has (the classic ◐ DEMO badge is gone)
+      setMessages((m) => [...m, { role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: lang === 'ro'
+        ? '⚠ Niciun răspuns — backendul de model nu poate fi accesat sau niciun model nu este încărcat. Încarcă un model (Setări › Configurarea modelului) sau, pentru a previzualiza interfața, activează exemplul demo din căutare (Ctrl K).'
+        : '⚠ No reply — the model backend is unreachable or no model is loaded. Load a model (Settings › Model setup), or turn the demo sample on from search (Ctrl K) to preview the interface.' }]);
       settle('');
     });
   }).finally(() => { if (!demo) notifyDesktopConversation(); }), [t, activeId, agents, recipientReady, runMock, demo, thinking, selectSession, lang, clearRecipient]);
@@ -740,9 +792,9 @@ function App({ floating = false, shortcuts, onWorld }: {
   const runVision=useCallback(async(text:string,draft:VisionDraft)=>{
     if(turnBusy.current||thinking||textTurns.current.size>0)return;
     turnBusy.current=true;
+    setSwitchDropped(null);   // a sent turn ends the line about a dropped change of recipient (runTurn)
     setCurrentOutcome(null);
     const epoch=++turnEpoch.current,controller=new AbortController();abortRef.current=controller;
-    setCenterTab('conversation');
     setMessages(messages=>[...messages,{role:'user',text,imageNames:[...draft.names],ts:fmtTimeShort(new Date())}]);
     setThinking({label:'Vision analysis',route:null});
     try {
@@ -764,21 +816,63 @@ function App({ floating = false, shortcuts, onWorld }: {
     setCurrentOutcome(null);
     timers.current.forEach(clearTimeout);timers.current=[];setThinking(null);
   },[]);
-  const selectAgent=useCallback((id:string)=>{
-    if(id!==activeId)stopTurn();
-    rememberRecipient(id);setDossier(id);
-  },[activeId,stopTurn,rememberRecipient]);
+  // Whom the owner may choose: the hub's roster offers them (selectableChatAgents); without that
+  // roster, Jarvis alone — App's own default, which needs none (runTurn and submit take it so). The
+  // To reads the same rule (home/talk/RecipientPicker.tsx recipientChoosable) to hold its switch.
+  const canChooseRecipient = useCallback((id: string) => recipientChoosable(id, agents, demo), [agents, demo]);
+  // The recipient changes; the Dossier does not open (opening an agent never changes who the owner
+  // writes to, PHASE_B_PLAN.md §3.2). It stops a reply being written, so while one is in flight it is
+  // called only once the owner has answered the To's question (RecipientPicker); "Write to <Agent>"
+  // from the sheet or the Dossier calls it at once only when no reply is being written (writeTo).
   const selectChatAgent=useCallback((id:string)=>{
-    if(!demo && !selectableChatAgents(agents, false).some(agent => agent.id === id)) return;
+    if(!canChooseRecipient(id)) return;
     if(id!==activeId)stopTurn();
     rememberRecipient(id);
-  },[activeId,agents,demo,stopTurn,rememberRecipient]);
+  },[activeId,canChooseRecipient,stopTurn,rememberRecipient]);
+  // A change of recipient the owner asked for while a reply was being written, waiting for the
+  // answer in the composer's To (home/talk/types.ts RecipientSwitch; PHASE_B_PLAN.md §12 item 11).
+  // App keeps it, so the question outlives the composer: leaving Home and coming back shows it
+  // again. Nothing switches by itself. It belongs to the recipient it would replace, to the side of
+  // the demo boundary it was asked on, and to an agent a roster the hub served still offers: when
+  // any of those moves it is dropped, in the same frame (liveSwitch) and then from the state. A poll
+  // the hub did not serve (GET /api/agents failed once; the loader's /status rows are not the
+  // roster) drops nothing, as it drops no recipient (the effect that refuses one waits for a served
+  // roster): the question stays until the owner answers it, Send stays held, and the To holds only
+  // its switch, saying why, until a served roster offers the agent (switchStanding 'held').
+  const [recipientSwitch, setRecipientSwitch] = useState<RecipientSwitch | null>(null);
+  const switchStands = !!recipientSwitch && recipientSwitch.from === activeId && recipientSwitch.demo === demo
+    && recipientSwitch.id !== activeId;
+  const liveSwitch = switchStands && switchStanding(recipientSwitch!.id, agents, demo) !== 'gone' ? recipientSwitch : null;
+  // A question dropped because a roster the hub served no longer offers the agent asked for is not
+  // dropped in silence: the composer says so on one line (recipientSwitchDropped) until the next turn
+  // sent, typed or hands-free voice (runTurn and runVision end it once they send; a turn they refuse
+  // ends nothing), a change of recipient (`from`), the demo boundary, or the owner's Dismiss. Send is
+  // free meanwhile. A voice turn goes to the recipient kept, as ever (PHASE_B_PLAN.md §12 item 12).
+  const [switchDropped, setSwitchDropped] = useState<RecipientSwitchDropped | null>(null);
+  const switchGone = switchStands && !liveSwitch;
+  useLayoutEffect(() => {
+    if (!recipientSwitch || liveSwitch) return;
+    if (switchGone) {
+      const name = knownNames.current.get(recipientSwitch.id) ?? recipientSwitch.name;
+      setSwitchDropped({ id: recipientSwitch.id, ...(name ? { name } : {}), from: recipientSwitch.from, demo: recipientSwitch.demo });
+    }
+    setRecipientSwitch(null);
+  }, [recipientSwitch, liveSwitch, switchGone]);
+  const liveDropped = switchDropped && switchDropped.from === activeId && switchDropped.demo === demo ? switchDropped : null;
+  useLayoutEffect(() => { if (switchDropped && !liveDropped) setSwitchDropped(null); }, [switchDropped, liveDropped]);
+  const askRecipientSwitch = useCallback((id: string | null) => {
+    // the last name the hub's roster gave the agent goes with the question, so it names the agent as
+    // the owner knew it if the roster is then not served
+    const name = id === null ? undefined : knownNames.current.get(id);
+    setRecipientSwitch(id === null ? null : { id, from: activeId, demo, at: Date.now(), ...(name ? { name } : {}) });
+  }, [activeId, demo]);
   const submit=useCallback((text:string,vision?:VisionDraft,excerpts?:ChatAttachment[],directReply=false,options?:HistorySend | { awaitAdmission: true } | BoardSend)=>{
     const history = options && 'reference' in options ? options : undefined;
-    if (recipientSelected.current && recipientPrincipalAtChoice.current !== recipientPrincipal()) { clearRecipient(); return false; }
+    if (recipientSelected.current && recipientPrincipalAtChoice.current !== recipientPrincipal()) { clearRecipient({ reason: 'signin' }); return false; }
     if (!demo && (!recipientReady || (activeId !== 'jarvis' && !selectableChatAgents(agents, false).some(agent => agent.id === activeId)))) return false;
     if(turnBusy.current || (vision && (thinking||textTurns.current.size>0)) || (thinking && textTurns.current.size===0))return false;
     if(!demo&&vision?.review_token && (vision.session_id!==sessionId.current || vision.agent!==activeId))return false;
+    // runVision and runTurn end the line about a dropped change of recipient once they send
     if(vision)void runVision(text,vision);
     else {
       const now=Date.now();
@@ -823,30 +917,29 @@ function App({ floating = false, shortcuts, onWorld }: {
     turnEpoch.current++;turnBusy.current=false;
     setCurrentOutcome(null);
     setAgents([]);
-    baseAgents.current = [];
+    setRosterPolled(false);
     setActiveId('jarvis');
     setRecipientReady(true);
+    setRecipientRefusal(null);
+    setRecipientSwitch(null);
+    setSwitchDropped(null);
     recipientSelected.current = false;
-    setFocusId(null);
     setMessages([]);
     setThinking(null);
-    setTrace(null);
     setProvModal(null);
     setDossier(null);
     setDecisions([]);
-    setTicker([]);
     setTasks([]);
-    setWeather(null);
     setCalendar([]);
     setHeartbeat([]);
-    setSys(null);
-    setLive(false);
     setServerUp(false);
-    setStatusChrome(STATUS_CHROME_UNKNOWN);
     setLlm({ state: 'unknown', model: null, residents: [] });
     setTrust({ mic: 'on', strict_local: false });
     setSources({ tasks: false, trust: false });
     setLocality(null);
+    // The hub snapshot the frame and the pages read is demo-owned too (it holds the demo loader's
+    // corpus), so it goes back to Checking… in the same event, not an effect later.
+    setHub(initialHubSnapshot(false));
   }, []);
   // Popstate can also take the HUD out of DEMO. A layout effect closes that
   // path before paint; the explicit Exit control clears in its event handler.
@@ -858,6 +951,9 @@ function App({ floating = false, shortcuts, onWorld }: {
       try { sessionStorage.removeItem(CHAT_RECIPIENT_KEY); } catch { /* storage unavailable */ }
       initialRecipient.current = null;
       recipientSelected.current = false;
+      setRecipientRefusal(null);
+      setRecipientSwitch(null);
+      setSwitchDropped(null);
     }
     previousDemo.current = demo;
   }, [clearDemoDerivedState, demo, stopTurn]);
@@ -867,6 +963,10 @@ function App({ floating = false, shortcuts, onWorld }: {
   }, [clearDemoDerivedState, setDemo]);
 
   useEffect(() => () => {timers.current.forEach(clearTimeout);turnEpoch.current++;for(const turn of textTurns.current.values()){turn.controller.abort();turn.settle('');}abortRef.current?.abort();turnBusy.current=false;}, []);
+
+  // Re-seed the hub snapshot when demo toggles (Checking…, or the demo sample), before the loader
+  // below commits the new cycle.
+  useEffect(() => { setHub(initialHubSnapshot(demo)); }, [demo]);
 
   // P1 — load live data and poll every 30s. A generation guard prevents a
   // slower, older poll from replacing a newer evidence snapshot.
@@ -880,10 +980,11 @@ function App({ floating = false, shortcuts, onWorld }: {
       },
       loadLocality: demo ? undefined : () => apiGet<any>('/api/analytics/locality'),
       commitData: (d) => {
-        setAgents(d.agents); baseAgents.current = d.agents;
-        setTicker(d.ticker); setTasks(Array.isArray(d.tasks) ? d.tasks : []); setWeather(d.weather); setCalendar(d.calendar);
-        setHeartbeat(d.heartbeat); setSys(d.sys); setLive(!!d.live);
-        setServerUp(!!d.serverUp); setStatusChrome(d.chrome || STATUS_CHROME_UNKNOWN); setSafeMode(d.safeMode || SAFE_MODE_OFF); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
+        noteRosterNames(knownNames.current, d.agents);
+        setAgents(d.agents); setRosterPolled(true);
+        setTasks(Array.isArray(d.tasks) ? d.tasks : []); setCalendar(d.calendar);
+        setHeartbeat(d.heartbeat);
+        setServerUp(!!d.serverUp); setSafeMode(d.safeMode || SAFE_MODE_OFF); setLlm(d.llm || { state: 'unknown', model: null, residents: [] });
         setSources(d.sources || { tasks: false, trust: false });
         /* Live approvals REPLACE the list only when the feed actually answered.
            `/autonomy/approvals` is admin-guarded, so on the common token-configured
@@ -895,8 +996,12 @@ function App({ floating = false, shortcuts, onWorld }: {
           setDecisions((d.decisions || []).map((it, i) => ({ ...it, _id: 'live' + (it.id != null ? it.id : i) })));
         }
         if (d.trust) setTrust(d.trust);
+        setHub((prev) => hubSnapshotFrom(d as HubLoaderData, prev));
       },
-      commitLocality: (nextLocality) => setLocality(nextLocality),
+      commitLocality: (nextLocality) => {
+        setLocality(nextLocality);
+        setHub((prev) => hubWithLocality(prev, nextLocality));
+      },
     });
     let runner = makeRunner();
     const stop = () => { active = false; lifecycle++; runner.stop(); };
@@ -924,15 +1029,17 @@ function App({ floating = false, shortcuts, onWorld }: {
       clearInterval(iv);
     };
   }, [demo]);
-  const dismissDecision = (id) => setDecisions((ds) => ds.filter((d) => d._id !== id));
 
   const rootAttrs = {
     className: 'hud-root',
-    'data-look': look, 'data-accent': accent, 'data-density': density,
+    'data-look': look, 'data-scheme': scheme, 'data-accent': accent, 'data-density': density,
     'data-font': appearance.preferences.font, 'data-motion': motion, 'data-scanline': scanline, 'data-dotgrid': dotgrid,
   };
 
-  const appearanceNotice = appearance.error && <div role="status" style={{fontSize:11, color:'var(--amber)', padding:'4px 8px'}}>
+  // Theme contract §8: while Personalisation is open, its own status line (localised, with its own
+  // retry) is the one live region that announces an appearance sync failure; the shell keeps quiet.
+  const personalisationOpen = route.mode === 'console' && route.panel === 'appearance';
+  const appearanceNotice = appearance.error && !personalisationOpen && <div role="status" style={{fontSize:'var(--n-fs-meta)', color:'var(--amber)', padding:'4px 8px'}}>
     {appearance.error} <button className="tool-btn" onClick={appearance.retry}>Retry sync</button>
   </div>;
   const questionPanel=question && <PendingQuestion key={question.id} question={question} onAnswer={answerQuestion} lang={lang}/>;
@@ -947,155 +1054,170 @@ function App({ floating = false, shortcuts, onWorld }: {
           ? 'finishing'
           : 'idle';
   const petStandalone = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('pet_overlay') === '1';
-  const recipientStatus = demo || (recipientReady && (!recipientSelected.current || recipientPrincipalAtChoice.current === recipientPrincipal()) &&
+  const principalChanged = recipientSelected.current && recipientPrincipalAtChoice.current !== recipientPrincipal();
+  // 'checking' only while there is a selected agent to check: a saved choice being verified, or the
+  // one chosen while the hub does not serve the roster that could confirm it. With no agent
+  // selected (one was dropped), it is 'choose' whatever the roster: "Checking the selected agent…"
+  // would name an agent there is not.
+  const recipientStatus = demo || (recipientReady && !principalChanged &&
     (activeId === 'jarvis' || selectableChatAgents(agents, false).some(agent => agent.id === activeId)))
-    ? 'ready' : (initialRecipient.current || !agents.some(agent => agent.rosterSource === 'api')) ? 'checking' : 'choose';
+    ? 'ready' : (initialRecipient.current || (activeId && !principalChanged && !agents.some(agent => agent.rosterSource === 'api')))
+      ? 'checking' : 'choose';
+  // Why there is no recipient to send to, from the first frame it is so: a recipient App still holds
+  // is refused before the effect that drops it has run (a changed sign-in, an agent the roster no
+  // longer offers); one already dropped carries the reason clearRecipient recorded.
+  const recipientNotice: RecipientRefusal | null = recipientStatus !== 'choose' ? null
+    : principalChanged ? { reason: 'signin' }
+      : activeId && activeId !== 'jarvis' ? { reason: 'unavailable', agent: activeId, name: knownNames.current.get(activeId) }
+        : recipientRefusal;
+  // A selected agent still not confirmed once a poll has completed without the hub serving the
+  // roster (a saved choice, or one chosen before the roster stopped being served): "checking" is no
+  // longer what is true. The choice is kept, and confirmed when a served roster offers the agent (the
+  // effects above); meanwhile nothing is sent to it, the composer says why, and the To offers Jarvis,
+  // which needs no roster. Nothing switches by itself.
+  const heldAgent = initialRecipient.current ? initialRecipient.current.agent : activeId;
+  const recipientHold: RecipientHold | null = recipientStatus === 'checking' && !demo && rosterPolled && !rosterServed(agents) && heldAgent
+    ? (() => {
+      const name = knownNames.current.get(heldAgent) ?? initialRecipient.current?.name;
+      return { agent: heldAgent, ...(name ? { name } : {}) };
+    })() : null;
   const canContinueHistory = () => !turnBusy.current && textTurns.current.size === 0;
 
+  // ---- What the pages read ----------------------------------------------------------------------
+  // This tab's in-flight turns with their reply stamps (home/talk/types.ts): the working reply and
+  // the running foot read them. A stopped turn leaves the list; its bubble keeps its stamps.
+  const turns = useMemo<TabTurn[]>(() => inflight.map((turn) => {
+    const bubble: any = messages.find((m: any) => m && m._turnId === turn.turnId);
+    const stamp = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    return { turnId: turn.turnId, agent: turn.agent, askedAt: stamp(bubble?._askedAt) ?? turn.askedAt,
+      startedAt: stamp(bubble?._startedAt), firstTokenAt: stamp(bubble?._firstTokenAt) };
+  }), [inflight, messages]);
+  const openFind = useCallback((filter?: 'panels') => { setSheetFilter(filter ?? null); setPalette(true); }, []);
+  const openGlance = useCallback(() => navigateHud('/v2/glance'), []);
+  const frameLang: Lang = langOf(lang);
+
   if (petStandalone) return (
-    <div {...rootAttrs} style={{ padding: 12, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <PetCompanionOverlay enabled={!demo} agentState={petAgentState} standalone />
-    </div>
+    <AppearanceProvider value={appearanceApi}>
+      <div {...rootAttrs} style={{ padding: 12, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <PetCompanionOverlay enabled={!demo} agentState={petAgentState} standalone />
+      </div>
+    </AppearanceProvider>
   );
 
-  if (floating) return <RouteBoundary routeKey={`floating:${demo}`}><div {...rootAttrs} className="hud-root desktop-floating">
-    <DesktopControls floating />
-    {appearanceNotice}
-    {questionPanel}
-    <SafeModeBanner state={safeMode} />
-    {demo && <DemoBanner onExit={exitDemo} />}
-    <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} agents={agents} demo={demo} onSelectAgent={selectChatAgent} recipientStatus={recipientStatus} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power} canContinue={canContinueHistory} />
-    {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
-  </div></RouteBoundary>;
+  // What App owns for the conversation, handed to the pages as `talk` (home/talk/types.ts).
+  const talkInput = (): TalkInput => ({
+    messages, thinking, onStop: stopTurn, onProv: setProvModal, onArtifactSaved: demo ? undefined : bumpArtifacts,
+    exportAllowed: !demo, messageActionsAllowed: !demo, messageScope: `${activeId}:${activeSessionId || ''}`, lang, t,
+    onSubmit: submit, mic: voice.active, setMic: voice.toggle, voice, cfg: voiceCfg, onCfg: setVoice, micMuted: trust.mic === 'off',
+    motion, demo, agent: activeId, agents, recipientStatus, sessionId: activeSessionId || '', selectedTurn: !demo,
+    outcome: currentOutcome, power, projectForChat, onProjectReviewed: () => setProjectForChat(null),
+    boardResultForChat, onBoardResultReviewed: () => setBoardResultForChat(null), inspectBlend,
+    turnActive: !!thinking, canContinue: canContinueHistory, onSelectAgent: selectChatAgent,
+    recipientSwitch: liveSwitch, onRecipientSwitch: askRecipientSwitch, recipientRefusal: recipientNotice,
+    recipientHold, recipientSwitchDropped: liveDropped, onRecipientSwitchDropped: () => setSwitchDropped(null),
+  });
 
+  // The floating desktop window: the conversation page's floating variant.
+  if (floating) return <AppearanceProvider value={appearanceApi}><RouteBoundary routeKey={`floating:${demo}`}>
+    <div {...rootAttrs} className="hud-root desktop-floating" data-frame-root="ledger">
+      {questionPanel}
+      <ChatPage variant="floating" talk={talkInput()} turns={turns} hub={hub} lang={frameLang} demo={demo} navigate={navigateHud}
+        awaitingAnswer={!!question}
+        notices={<>{appearanceNotice}<Notices lang={frameLang} hub={hub} page={pageForRoute(route)} demo={demo} onExitDemo={exitDemo} /></>} />
+      {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
+    </div></RouteBoundary></AppearanceProvider>;
+
+  // Every other page (PHASE_B_PLAN.md §2.1): the Frame, or Glance full screen; over both, the
+  // search and command sheet (Ctrl K, the backtick, the masthead's Find).
+  const page = pageForRoute(route);
+  const firstRunNotice: FirstRunNotice = {
+    dismissed: firstRunDismissed,
+    onDismiss: () => { setFirstRunDismissed(true); try { localStorage.setItem('hud.seen', '1'); } catch { /* ignore */ } },
+    onDemo: () => setDemo(true),
+  };
+  const modeBody = (id: string) => ledgerModeBody(id, t, {
+    demo, lang, frameLang, agents, localPct, artifactsRefresh,
+    onOpenAgent: (agentId: string) => setDossier(agentId),
+    onChanged: () => refreshNow.current(),
+    onDiscussResult: demo ? undefined : discussBoardResult,
+    // Saved replies goes to the conversation itself once the project is staged.
+    onDiscussProject: (project: WorkshopRef) => setProjectForChat(project),
+    // No composer is mounted beside Saved replies, so this is false and the panel says why.
+    onInspectBlend: (file: File) => !!inspectBlend.current?.(file),
+  });
+  // "Write to <Agent>" (the sheet, the Dossier): the recipient changes, never the Dossier; then the
+  // composer takes the focus. A page without a composer goes to Home first. As a pick in the
+  // composer's To is: at once when no reply is being written (there is nothing to stop); while one
+  // is, which a change of recipient would stop, it becomes the To's question (recipientSwitch) and
+  // nothing changes until the owner answers. Writing to the recipient already chosen answers an open
+  // question "stay".
+  const writeTo = (id: string) => {
+    if (!canWriteTo(id)) return;
+    if (thinking && id !== activeId) askRecipientSwitch(id);
+    else {
+      setRecipientSwitch(null);
+      if (id !== activeId) selectChatAgent(id);
+    }
+    if (!document.querySelector('[data-composer]')) navigateHud(HOME_PATH);
+    window.setTimeout(() => { (document.querySelector('[data-composer]') as HTMLElement | null)?.focus(); }, 0);
+  };
+  // Whether App takes this agent as the recipient (selectChatAgent's own rule, as the sheet asks it).
+  const canWriteTo = (id: string) => demo || selectableChatAgents(agents, false).some((agent) => agent.id === id);
+  // What the sheet may do beyond navigating: open a surface, re-read, or toggle the demo
+  // sample. Nothing here decides, signs, stops or changes a mode (nav/commands.ts).
+  const sheetActions: SheetActions = {
+    onGlance: openGlance,
+    onCinema: () => setCinema(true),
+    onShortcuts: () => setShortcutsOpen(true),
+    onVerifyRecord: () => { if (!demo) void refreshPolled(AUDIT_VERIFY_PATH); },
+    onRefresh: () => { refreshNow.current(); if (!demo) void refreshPolled(DOCKET_FEED_PATH, { admin: true }); },
+    demo,
+    setDemo: (on: boolean) => { if (on) setDemo(true); else exitDemo(); },
+    onPersonalisation: () => navigateHud(PERSONALISATION_PATH),
+  };
   return (
-    <div {...rootAttrs}>
+    <AppearanceProvider value={appearanceApi}>
+    <div {...rootAttrs} data-frame-root="ledger">
       {questionPanel}
       <div className="tex-layer tex-glow"></div>
       <div className="tex-layer tex-dotgrid"></div>
       <div className="tex-layer tex-scan"></div>
       <div className="tex-scanbar"></div>
-
-      <div className="shell">
-        {appearanceNotice}
-        {notice && <div role="alert">{notice} <button className="tool-btn" onClick={dismissNotice}>Dismiss</button></div>}
-        <SafeModeBanner state={safeMode} />
-        <PowerChip state={power} />
-        <PressureBanner state={pressure} onDismiss={dismissPressure} />
-        {demo && <DemoBanner onExit={exitDemo} />}
-        {!demo && serverUp && !firstRunDismissed && !llm.model && llm.state !== 'unknown' && (
-          <FirstRunBanner llm={llm} onDemo={() => setDemo(true)}
-            onDismiss={() => { setFirstRunDismissed(true); try { localStorage.setItem('hud.seen', '1'); } catch { /* ignore */ } }} t={t} />
-        )}
-        <TopBar clock={clock} lang={lang} setLang={setLang} accent={accent} agents={agents} localPct={localPct} live={live} trust={trust}
-          llm={llm} demo={demo} setDemo={setDemo} serverUp={serverUp} chrome={statusChrome}
-          onJobs={() => setMode('jobs')} onPalette={() => setPalette(true)} onAmbient={() => setAmbient(true)} shortcutOverrides={shortcutOverrides} t={t} />
-        <DesktopControls />
-        <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
-
-        <div className="main" data-ia={ia} data-rail={railCollapsed ? 'collapsed' : 'expanded'}>
-          {ia === 'rail' && <Rail mode={mode} setMode={setMode} gateway={statusChrome.gateway} t={t} collapsed={railCollapsed} onToggle={toggleRail} />}
-          <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
-            {ia === 'tabs' && <Tabs mode={mode} setMode={setMode} t={t} />}
-            {ia === 'rail' && <RailDrawer mode={mode} setMode={setMode} gateway={statusChrome.gateway} t={t} />}
-
-            <PageHeaderProvider routeKey={mode}>
-            <PageHeaderBar title={modeTitle(mode, t)} />
-            <RouteBoundary routeKey={`${route.path}:${demo}`}>
-            {mode === 'cockpit' ? (
-              <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
-                <RosterColumn agents={agents} activeId={activeId} onSelect={selectAgent} sys={sys} llm={llm} demo={demo} t={t} />
-                <div className="col" style={{ minHeight: 0 }}>
-                  <div className="panel" style={{ flex: '1.3 1 0', minHeight: 0 }}>
-                    <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-                    <div className="panel-head"><Icon d={ICONS.brain} size={14} /><span className="ttl">{t.network}</span><span className="st">focus mode</span></div>
-                    {/* Neural Mesh — native canvas brain of agents + models firing
-                        (HUD-v3 port of v3-mesh.jsx; replaces the /brain?embed=1 iframe). */}
-                    <NeuralMesh agents={agents} tasks={tasks} activeId={activeId} onSelect={selectAgent} motion={motion} llm={llm} trust={trust} sources={sources} demo={demo} t={t} />
-                  </div>
-                  <div className="panel" style={{ flex: '1 1 0', minHeight: 0 }}>
-                    <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-                    <div className="center-tabs">
-                      <button className={'center-tab' + (centerTab === 'conversation' ? ' active' : '')} onClick={() => setCenterTab('conversation')}>{t.conversation}{thinking && <span className="pip"></span>}</button>
-                      <button className={'center-tab' + (centerTab === 'cognition' ? ' active' : '')} onClick={() => setCenterTab('cognition')}>{t.cognition}{trace && !thinking && <span className="pip"></span>}</button>
-                      <button className={'center-tab' + (centerTab === 'artifacts' ? ' active' : '')} onClick={() => setCenterTab('artifacts')}>{artifactsTabLabel(lang)}</button>
-                    </div>
-                    {centerTab === 'conversation'
-                      ? <Conversation messages={messages} thinking={thinking} onStop={stopTurn} onProv={setProvModal} onArtifactSaved={demo ? undefined : bumpArtifacts} exportAllowed={!demo}
-                          messageActionsAllowed={!demo} messageScope={`${activeId}:${activeSessionId || ''}`} lang={lang} t={t} />
-                      : centerTab === 'cognition'
-                        ? <CognitionStream trace={trace} t={t} />
-                        : <ArtifactsPanel refreshKey={artifactsRefresh} lang={lang} exportAllowed={!demo}
-                            onInspectBlend={file => {
-                              if (!inspectBlend.current?.(file)) return false;
-                              setCenterTab('conversation');
-                              return true;
-                            }}
-                            onDiscussProject={project => { setProjectForChat(project); setCenterTab('conversation'); }} />}
-                    {centerTab === 'conversation' && <div className="cockpit-routing-policy"><RoutingPolicyLabel selected={demo ? V2.AGENTS.find(a => a.id === activeId) : agents.find(a => a.id === activeId && a.rosterSource === 'api')} demo={demo} lang={lang}/></div>}
-                    <InputBar onSubmit={submit} mic={voice.active} setMic={voice.toggle} voice={voice} cfg={voiceCfg} onCfg={setVoice} micMuted={trust.mic === 'off'} motion={motion} t={t} lang={lang} demo={demo} agent={activeId} recipientStatus={recipientStatus} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power}
-                      agents={agents} inspectBlend={inspectBlend} projectForChat={projectForChat} onProjectReviewed={() => setProjectForChat(null)}
-                      turnActive={!!thinking} canContinue={canContinueHistory} />
-                  </div>
-                </div>
-                <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
-              </div>
-            ) : mode === 'jobs' ? (
-              <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-                <JobsWorkspace />
-              </div>
-            ) : mode === 'agents' ? (
-              <div className="workzone wide" style={{ flex: 1, minHeight: 0 }}>
-                <AgentsMode agents={agents} onOpen={selectAgent} t={t} onChanged={() => refreshNow.current()} />
-                <ContextColumn decisions={decisions} onDecision={dismissDecision} weather={weather} calendar={calendar} heartbeat={heartbeat} demo={demo} t={t} />
-              </div>
-            ) : mode === 'chat' ? (
-              <div className="workzone full" style={{ flex: 1, minHeight: 0 }}>
-                <ChatMode messages={messages} thinking={thinking} onStop={stopTurn} onSubmit={submit} onProv={setProvModal} mic={voice.active} setMic={voice.toggle} lang={lang} t={t} agent={activeId} agents={agents} demo={demo} onSelectAgent={selectChatAgent} recipientStatus={recipientStatus} sessionId={activeSessionId||''} selectedTurn={!demo} outcome={currentOutcome} power={power}
-                  boardResultForChat={boardResultForChat} onBoardResultReviewed={() => setBoardResultForChat(null)} canContinue={canContinueHistory} />
-              </div>
-            ) : (
-              <div className="workzone full" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                <LiveSourceChip state={liveSourceState(mode, demo, liveModes.live, MODE_LIVE_KEYS)} />
-                <div style={{ flex: 1, minHeight: 0 }}>
-                  {modeComponent(mode, t, { demo, live: liveModes.live, onDemo: () => setDemo(true), localPct, activeId, onOpen: selectAgent,
-                    onDiscussResult: demo ? undefined : discussBoardResult })}
-                </div>
-              </div>
-            )}
-            </RouteBoundary>
-            </PageHeaderProvider>
-          </div>
-        </div>
-      </div>
-
+      {page.kind === 'glance' ? (
+        <RouteBoundary routeKey={`${route.path}:${demo}`}>
+          <Glance hub={hub} lang={frameLang} demo={demo} clock={minuteClock} turns={turns} onExit={closeHudOverlay} navigate={navigateHud} />
+        </RouteBoundary>
+      ) : (
+        <Frame route={route} page={page} hub={hub} lang={frameLang} setLang={setLang} scheme={scheme} schemePreference={schemePreference}
+          setScheme={setScheme} theme={themeById(look)} navigation={FRAME_NAVIGATION} onFind={openFind} onGlance={openGlance}
+          demo={demo} onExitDemo={exitDemo} turns={turns} shortcutOverrides={shortcutOverrides} voiceStatus={voice.status}
+          power={power} pressure={pressure} onDismissPressure={dismissPressure} routeNotice={notice}
+          routeNoticePage={routeNoticeAt?.page ?? null} onDismissRouteNotice={dismissNotice}
+          appearanceNotice={appearanceNotice} firstRun={firstRunNotice}>
+          <LedgerPage route={route} page={page} lang={frameLang} demo={demo} hub={hub} clock={minuteClock} talk={talkInput()}
+            turns={turns} question={question} live={liveModes.live} onDemo={() => setDemo(true)} onFind={openFind} modeBody={modeBody} />
+        </Frame>
+      )}
       {provModal && <ProvModal prov={provModal} onClose={() => setProvModal(null)} />}
-      {dossier && <RouteBoundary overlay><Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} agents={agents} onChanged={() => refreshNow.current()} /></RouteBoundary>}
-      {consoleOpen && <RouteBoundary overlay routeKey={`${route.path}:${demo}`}><ConsoleOverlay panelId={route.panel} onClose={() => setConsoleOpen(false)} /></RouteBoundary>}
+      {dossier && <RouteBoundary overlay><Dossier id={dossier} onClose={() => setDossier(null)} onOpen={setDossier} agents={agents}
+        onChanged={() => refreshNow.current()} onWriteTo={canWriteTo(dossier) ? writeTo : undefined} lang={lang} /></RouteBoundary>}
       {firstRun && <RouteBoundary overlay><FirstRunGate onClose={() => setFirstRun(false)} /></RouteBoundary>}
-      {!floating && <PointerOverlay enabled={!demo} />}
-      {!floating && <PetCompanionOverlay enabled={!demo} agentState={petAgentState} />}
-      <button className="tool-btn" data-anchor="console" onClick={() => setConsoleOpen(true)} title={`console (${displayChord(chordOf(shortcutOverrides, 'view.console'))})`}
-        style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
-      <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}
-        setAccent={setAccent} lang={lang} setLang={setLang} onAmbient={() => { setPalette(false); setAmbient(true); }}
-        onShortcuts={() => setShortcutsOpen(true)} shortcutOverrides={shortcutOverrides}
-        ui={{ font: appearance.preferences.font, setFont, look, setLook, density, setDensity, motion: appearance.preferences.motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }} t={t} />
-      {ambient && <Ambient onExit={() => setAmbient(false)} clock={clock} lang={lang} agents={agents} decisions={decisions} motion={motion} localPct={localPct} t={t} />}
+      <PointerOverlay enabled={!demo} />
+      <PetCompanionOverlay enabled={!demo} agentState={petAgentState} />
+      <CommandSheet open={palette} filter={sheetFilter} onClose={() => setPalette(false)} lang={frameLang} navigate={navigateHud}
+        agents={agents} onOpenAgent={(id) => setDossier(id)} onWriteTo={writeTo} actions={sheetActions}
+        ui={{ font: appearance.preferences.font, setFont, look, setLook, scheme: schemePreference, setScheme, density, setDensity, motion: appearance.preferences.motion, setMotion, scanline, setScanline, dotgrid, setDotgrid }}
+        accent={accent} setAccent={setAccent} setLang={setLang} shortcutOverrides={shortcutOverrides} />
       {shortcutsOpen && <ShortcutsPanel overrides={shortcutOverrides} onChange={changeShortcuts} onClose={() => setShortcutsOpen(false)} />}
-      {cinema && <CinemaMesh agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} clock={clock} motion={motion} localPctSource={localPctSource} shortcutOverrides={shortcutOverrides} onExit={() => setCinema(false)} t={t} />}
+      {cinema && <CinemaWithClock agents={agents} tasks={tasks} llm={llm} trust={trust} sources={sources} demo={demo} localPct={localPct} voice={voice} decisions={decisions} calendar={calendar} heartbeat={heartbeat} serverUp={serverUp} motion={motion} localPctSource={localPctSource} shortcutOverrides={shortcutOverrides} onExit={() => setCinema(false)} t={t} />}
     </div>
+    </AppearanceProvider>
   );
 }
 
-function mark(trace, i, state, j?, jstate?) {
-  if (!trace) return trace;
-  const stages = trace.stages.map((s, k) => (k === i ? { ...s, state } : (j !== undefined && k === j) ? { ...s, state: jstate } : s));
-  return { ...trace, stages };
-}
-function replyFor(text, tr) {
-  const a = tr.selected[0];
-  const map = {
+/** The demo sample's staged replies (runMock), by the agent the owner wrote to. */
+function demoReplyFor(agent: string): string {
+  const map: Record<string, string> = {
     pepper: 'Pepper has it — your calendar is reconciled and the **14:00 Raiffeisen review** is protected with prep at 13:15.',
     stark: 'Stark pulled the numbers — **Digitaholic MRR is +6.2% WoW**; I flagged the missing churn-cohort slide for the review.',
     vision: "Vision is on it — indexing sources now; I'll have a cited brief in your queue within the hour.",
@@ -1107,39 +1229,7 @@ function replyFor(text, tr) {
     jerome: 'Jerome cued the soundtrack — focus playlist matched to your morning.',
     jarvis: "Understood. I'll handle that directly and keep everything on-device.",
   };
-  return map[a] || map.jarvis;
-}
-export function DemoBanner({ onExit }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '4px 0',
-      background: 'repeating-linear-gradient(45deg, rgba(245,158,11,.16) 0 12px, rgba(245,158,11,.05) 12px 24px)',
-      borderBottom: '1px solid rgba(245,158,11,.5)', fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.18em', color: 'var(--amber)' }}>
-      ◐ DEMO DATA — seeded sample, not your live backend · /v2/?demo=1
-      <button className="tool-btn" onClick={onExit}>exit demo</button>
-    </div>
-  );
-}
-
-/* First-run guidance: shown only when the server is up but nothing is configured
-   yet (no agents, no model, not in demo) — the exact state a fresh install / the
-   first manual-test boot lands in. Without it the cockpit is a wall of "not
-   connected" with no next step. Dismissible + remembered. */
-function FirstRunBanner({ llm, onDemo, onDismiss, t }) {
-  const noModel = !llm || llm.state === 'unknown' || llm.state === 'offline' || !llm.model;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, flexWrap: 'wrap',
-      padding: '7px 14px', background: 'rgba(43,184,240,.08)', borderBottom: '1px solid rgba(43,184,240,.35)',
-      fontSize: 12, color: 'var(--ink-2)' }}>
-      <span style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.12em', color: 'var(--accent)' }}>◇ WELCOME</span>
-      <span>
-        {noModel
-          ? 'No language model is loaded yet — start LM Studio (or Ollama) and load a model, then this fills with your data.'
-          : 'Connect plugins in Admin to populate weather, calendar, email and the rest.'}
-      </span>
-      <button className="tool-btn" onClick={onDemo} style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}>◐ preview with demo</button>
-      <button className="tool-btn" onClick={onDismiss}>dismiss</button>
-    </div>
-  );
+  return map[agent] || map.jarvis;
 }
 
 function ProvModal({ prov, onClose }) {
@@ -1152,9 +1242,9 @@ function ProvModal({ prov, onClose }) {
   return (
     <div className="pal-scrim" onClick={onClose} onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }} style={{ alignItems: 'center', paddingTop: 0 }}>
       <div className="pal" role="dialog" aria-modal="true" aria-labelledby="model-calls-title" onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px,92vw)' }}>
-        <div className="pal-input" style={{ borderBottom: '1px solid var(--panel-line)' }}><span className="pc"><Icon d={ICONS.shield} size={16} /></span><span id="model-calls-title" style={{ fontSize: 14, letterSpacing: '.04em' }}>MODELS CALLED</span><button ref={closeRef} type="button" className="tool-btn" onClick={onClose} aria-label="Close model call details" style={{marginLeft:'auto'}}>×</button></div>
+        <div className="pal-input" style={{ borderBottom: '1px solid var(--panel-line)' }}><span className="pc"><Icon d={ICONS.shield} size={16} /></span><span id="model-calls-title" style={{ fontSize: 'var(--n-fs-ui)', letterSpacing: '.04em' }}>MODELS CALLED</span><button ref={closeRef} type="button" className="tool-btn" onClick={onClose} aria-label="Close model call details" style={{marginLeft:'auto'}}>×</button></div>
         <div style={{ padding: 18 }}>
-          <p style={{margin:'0 0 12px',color:'var(--ink-2)',fontSize:12}}>Measured provider and model for this reply. Physical execution location was not reported.</p>
+          <p style={{margin:'0 0 12px',color:'var(--ink-2)',fontSize:'var(--n-fs-label)'}}>Measured provider and model for this reply. Physical execution location was not reported.</p>
           <ul style={{margin:0,paddingLeft:20,overflowWrap:'anywhere'}}>{prov.models.map(({provider,model}) => <li key={provider+'\0'+model}><b>{provider}</b> / {model}</li>)}</ul>
         </div>
       </div>
@@ -1162,52 +1252,60 @@ function ProvModal({ prov, onClose }) {
   );
 }
 
-// Which V2 keys must carry REAL backend data for a capability mode to be "live".
+// Which V2 keys must carry REAL backend data for a capability mode to be "live": ModePage draws a
+// mode only when one of them is live, or in demo, and the area-page empty state otherwise.
 export const MODE_LIVE_KEYS = {
   trust: ['AUDIT_CHAIN', 'PAYMENTS'], memory: ['MEMORY_STATS'], autonomy: ['AUTONOMY'],
   observe: ['OBSERVE'], interop: ['INTEROP'], admin: ['ADMIN'],
   ...PREVIEW_MODE_LIVE_KEYS,
 };
-const MODE_LABELS = {
-  trust: 'Trust & Governance', memory: 'Memory', autonomy: 'Autonomy', build: 'Builds',
-  observe: 'Observability', interop: 'Interop', comms: 'Comms', admin: 'Admin',
-  finance: 'Finance', health: 'Health', knowledge: 'Knowledge', family: 'Family',
-};
 
-function ModeEmpty({ mode, onDemo }) {
-  const keys = MODE_LIVE_KEYS[mode];
-  const wired = !!keys; // has a backend path, just no data yet
-  return (
-    <div className="workzone full" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div className="panel" style={{ maxWidth: 460, textAlign: 'center', padding: '30px 26px' }}>
-        <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.2em', color: 'var(--ink-2)', marginBottom: 10 }}>{(MODE_LABELS[mode] || mode).toUpperCase()}</div>
-        <div style={{ fontSize: 14, color: 'var(--ink)', marginBottom: 8 }}>{wired ? 'Not connected' : 'Design preview'}</div>
-        <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.5, marginBottom: 18 }}>
-          {wired
-            ? 'No live data from the backend for this view yet. It populates automatically once the source responds.'
-            : 'This view has no backend wired yet. Enable DEMO to preview the design with sample data.'}
-        </div>
-        <button className="tool-btn" onClick={onDemo} style={{ color: 'var(--amber)', borderColor: 'var(--amber)' }}>◐ enable DEMO</button>
-      </div>
-    </div>
-  );
+/* ---- The Ledger frame's pages --------------------------------------------------------------- */
+
+/** App's clock (PHASE_B_PLAN.md §2.3): a Date that changes once a minute, on the minute. What
+ *  shows seconds keeps a clock of its own (Cinema below, the working reply). */
+function useMinuteClock(): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const untilNextMinute = () => 60_000 - (Date.now() % 60_000);
+    const tick = () => { setNow(new Date()); timer = setTimeout(tick, untilNextMinute()); };
+    timer = setTimeout(tick, untilNextMinute());
+    return () => { if (timer !== null) clearTimeout(timer); };
+  }, []);
+  return now;
 }
 
-function modeComponent(mode, t, ctx) {
-  const { demo, live, onDemo, localPct } = ctx || {};
-  // Projects is a workspace surface (Rooms + Missions + activity timeline). Its panels
-  // each fetch real endpoints and render honest empty states with no seed corpus, so it
-  // renders always — you must be able to create your first room before any data exists.
-  if (mode === 'projects') return <ProjectsMode t={t} onDiscussResult={ctx?.onDiscussResult} />;
-  const keys = MODE_LIVE_KEYS[mode];
-  // Honest gate: show real content only in DEMO, or when this mode's source is live.
-  const isLive = demo || (keys && live && keys.some((k) => live[k]));
-  if (!isLive) return <ModeEmpty mode={mode} onDemo={onDemo} />;
+/** Cinema with the 1-second clock it shows: only Cinema re-renders each second, not the frame and
+ *  the conversation around it. */
+function CinemaWithClock(props: Record<string, unknown>) {
+  const clock = useClock();
+  return <CinemaMesh {...props} clock={clock} />;
+}
+
+type LedgerModeContext = {
+  demo: boolean; lang: string; frameLang: Lang; agents: any[]; localPct: number | null; artifactsRefresh: number;
+  onOpenAgent: (id: string) => void; onChanged: () => void;
+  onDiscussResult?: (ref: BoardResultRef) => void; onDiscussProject: (project: WorkshopRef) => void;
+  onInspectBlend: (file: File) => boolean;
+};
+
+/* A mode's body inside its ModePage. ModePage decides whether a mode with live sources is drawn
+   (the area-page empty state otherwise), so nothing here is gated. Work, Timeline and Trust are
+   LedgerPage's (they read the hub, the clock and this tab's turns). */
+function ledgerModeBody(mode: string, t: any, ctx: LedgerModeContext): React.ReactNode {
   switch (mode) {
-    case 'trust': return <TrustMode t={t} localPct={localPct} />;
-    case 'memory': return <MemoryMode t={t} demo={!!demo} />;
-    case 'autonomy': return <AutonomyMode t={t} />;
+    case 'projects': return <ProjectsMode t={t} onDiscussResult={ctx.onDiscussResult as any} />;
+    case 'jobs': return <JobsWorkspace />;
+    // The roster opens the Dossier without changing who the owner writes to (§3.2).
+    case 'agents': return <AgentsMode agents={ctx.agents} onOpen={ctx.onOpenAgent} t={t} onChanged={ctx.onChanged} />;
+    case 'world': return <WorldIntelligenceMode t={t} />;
+    // Saved replies: the Artifacts panel as a page; "Discuss in chat" stages the project and goes Home.
+    case 'artifacts': return <ArtifactsPage lang={ctx.frameLang} demo={ctx.demo} refreshKey={ctx.artifactsRefresh}
+      onInspectBlend={ctx.onInspectBlend} onDiscussProject={ctx.onDiscussProject} />;
+    case 'memory': return <MemoryMode t={t} demo={ctx.demo} />;
+    // demo (§1.4) disables its mode control; lang words its looser-mode confirmation as the running head does
+    case 'autonomy': return <AutonomyMode t={t} demo={ctx.demo} lang={ctx.frameLang} />;
     case 'build': return <BuildMode t={t} />;
     case 'observe': return <ObserveMode t={t} />;
     case 'interop': return <InteropMode t={t} />;
@@ -1217,8 +1315,58 @@ function modeComponent(mode, t, ctx) {
     case 'health': return <HealthMode t={t} />;
     case 'knowledge': return <KnowledgeMode t={t} />;
     case 'family': return <FamilyMode t={t} />;
-    default: return <ModeStub label={mode} />;
+    default: return <SlotNote lang={ctx.frameLang} />;
   }
+}
+
+interface LedgerPageProps {
+  route: HudRoute;
+  page: RoutePage;
+  lang: Lang;
+  demo: boolean;
+  hub: HubSnapshot;
+  clock: Date;
+  talk: TalkInput;
+  turns: readonly TabTurn[];
+  /** App's open mid-turn question (the Work overview's "Needs you", the working reply's wait). */
+  question: Question | null;
+  live: Readonly<Record<string, boolean>>;
+  onDemo: () => void;
+  onFind: (filter?: 'panels') => void;
+  modeBody: (mode: string) => React.ReactNode;
+}
+
+/* The Ledger frame's own pages: every section carries its own source label and its own refused,
+   unknown and empty states, so the page is drawn whatever the V2 live keys say (no empty-state
+   gate: Trust's MODE_LIVE_KEYS would hide its honest per-section states behind one). */
+const OWN_PAGES: ReadonlySet<string> = new Set(['work', 'timeline', 'trust', 'artifacts']);
+
+/* The page body inside the Frame (PHASE_B_PLAN.md §2.1): pageForRoute decides. Its own component,
+   so the attention readings are asked only where a page body is drawn (not in Glance or the
+   floating window). */
+function LedgerPage({ route, page, lang, demo, hub, clock, talk, turns, question, live, onDemo, onFind, modeBody }: LedgerPageProps) {
+  const attention = useFrameAttention({ demo, hub });
+  // a page's links (its contents column, All pages, its own) leave the Decisions card and the hash
+  // of the page being left behind, as their hrefs do (hud-routing.ts navigatePage)
+  const common = { page, lang, attention, navigate: navigatePage, onFind };
+  const awaitingAnswer = !!question;
+  if (page.kind === 'home') {
+    return <Home hub={hub} clock={clock} lang={lang} demo={demo} navigate={navigatePage} talk={talk} turns={turns} awaitingAnswer={awaitingAnswer} />;
+  }
+  if (page.kind === 'chat') return <ChatPage variant="chat" {...common} talk={talk} turns={turns} hub={hub} demo={demo} awaitingAnswer={awaitingAnswer} />;
+  if (page.kind === 'allPages') return <AreaPage {...common}><AllPages lang={lang} navigate={navigatePage} attention={attention} /></AreaPage>;
+  if (page.kind === 'panel' && route.panel) return <PanelPage panelId={route.panel} {...common} />;
+  const mode = (page.entry.ref.kind === 'mode' ? page.entry.ref.id : 'cockpit') as HudMode;
+  const body = mode === 'work' ? <WorkOverview hub={hub} lang={lang} demo={demo} navigate={navigatePage} turns={turns} question={question} />
+    : mode === 'timeline' ? <Timeline hub={hub} lang={lang} demo={demo} clock={clock} navigate={navigatePage} turns={turns} />
+      : mode === 'trust' ? <TrustOverview hub={hub} lang={lang} demo={demo} navigate={navigatePage} />
+        : modeBody(mode);
+  return (
+    <ModePage mode={mode} {...common} demo={demo} live={live} onDemo={onDemo} hubState={hubReading(hub).state}
+      liveKeys={OWN_PAGES.has(mode) ? null : MODE_LIVE_KEYS[mode] ?? null}>
+      {body}
+    </ModePage>
+  );
 }
 
 export default App;

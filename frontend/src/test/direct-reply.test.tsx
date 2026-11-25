@@ -1,9 +1,10 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from '../app';
 import { InputBar } from '../cockpit';
 import { V2 } from '../data';
+import { openComposerMenu } from '../home/talk/test-support';
 
 const voice = vi.hoisted(() => ({ onTurn: null as null | ((text: string) => Promise<string>) }));
 vi.mock('../voice', () => ({ useVoice: ({ onTurn }: any) => {
@@ -51,7 +52,8 @@ const sent = () => requests.filter(request => request.path.endsWith('/chat/strea
 const draft = () => document.querySelector<HTMLInputElement>('[data-composer="1"]')!;
 async function mount() {
   render(<App />);
-  await screen.findByRole('combobox', { name: 'Selected agent' });
+  // the recipient is the composer's To (RecipientPicker, PHASE_B_PLAN.md §5.3)
+  await screen.findByRole('combobox', { name: 'To' });
 }
 async function send(text: string) {
   fireEvent.change(draft(), { target: { value: text } });
@@ -62,6 +64,9 @@ async function send(text: string) {
 it.each(['chat', 'cockpit'])('compares a live %s draft without sending it and preserves it on close', async mode => {
   history.replaceState(null, '', '/v2/' + mode);
   render(<App />);
+  // Compare agents is in the composer's Options menu since the re-lay (PHASE_B_PLAN.md §5.3)
+  await waitFor(() => expect(document.querySelector('[data-composer]')).toBeTruthy());
+  openComposerMenu('options');
   const trigger = await screen.findByRole('button', { name: 'Compare agents' });
   expect((trigger as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(draft(), { target: { value: 'How should we organize a garden?' } });
@@ -81,21 +86,25 @@ it('closes comparison on session change and excludes commands and demo recipient
   ] };
   const view = render(<InputBar {...props} sessionId="one" />);
   fireEvent.change(draft(), { target: { value: 'One question' } });
+  openComposerMenu('options');
   fireEvent.click(screen.getByRole('button', { name: 'Compare agents' }));
   expect(screen.getByRole('dialog')).toBeTruthy();
   view.rerender(<InputBar {...props} sessionId="two" />);
   expect(screen.queryByRole('dialog')).toBeNull();
   view.rerender(<InputBar {...props} sessionId="one" />);
   expect(screen.queryByRole('dialog')).toBeNull();
+  openComposerMenu('options');   // the absences below are checked with the menu open
   fireEvent.change(draft(), { target: { value: '/help' } });
   expect(screen.queryByRole('button', { name: 'Compare agents' })).toBeNull();
   fireEvent.change(draft(), { target: { value: 'Plain question' } });
+  expect(screen.getByRole('button', { name: 'Compare agents' })).toBeTruthy();
   view.rerender(<InputBar {...props} agents={[props.agents[0], { id: 'preview', rosterSource: 'demo' }]} />);
   expect(screen.queryByRole('button', { name: 'Compare agents' })).toBeNull();
 });
 
 it('sends reasoning none only for the checked text turn and consumes the choice', async () => {
   await mount();
+  openComposerMenu('options');   // Direct reply is in the composer's Options menu since the re-lay
   const choice = screen.getByRole('button', { name: 'Direct reply' });
   expect(choice.getAttribute('aria-pressed')).toBe('false');
   const help = screen.getByText('Ask supported models to skip extended thinking for this message');
@@ -112,6 +121,7 @@ it('sends reasoning none only for the checked text turn and consumes the choice'
 
 it('keeps direct reply in the current draft and out of voice, commands, and another agent', async () => {
   await mount();
+  openComposerMenu('options');
   const choice = screen.getByRole('button', { name: 'Direct reply' });
   fireEvent.click(choice);
   await voice.onTurn!('Spoken turn');
@@ -124,7 +134,9 @@ it('keeps direct reply in the current draft and out of voice, commands, and anot
   expect(sent()[1]).not.toHaveProperty('reasoning');
   fireEvent.change(draft(), { target: { value: 'Keep draft' } });
   fireEvent.click(choice);
-  fireEvent.change(screen.getByRole('combobox', { name: 'Selected agent' }), { target: { value: 'frigga' } });
+  // the /new turn has ended (the picker would otherwise ask before stopping it, §5.3)
+  await waitFor(() => expect(screen.queryByRole('button', { name: /^Stop (this reply|the replies)$/ })).toBeNull());
+  fireEvent.change(screen.getByRole('combobox', { name: 'To' }), { target: { value: 'frigga' } });
   expect(draft().value).toBe('Keep draft');
   expect(choice.getAttribute('aria-pressed')).toBe('false');
   fireEvent.keyDown(draft(), { key: 'Enter' });
@@ -135,8 +147,10 @@ it('keeps direct reply in the current draft and out of voice, commands, and anot
 it('sends only explicitly reviewed vault text with the choice and never adds a prompt suffix', async () => {
   await mount();
   fireEvent.change(draft(), { target: { value: 'Use my note' } });
+  openComposerMenu('attach');
   fireEvent.click(screen.getByRole('button', { name: 'Find vault notes' }));
   fireEvent.click(await screen.findByRole('checkbox', { name: 'Note.md' }));
+  openComposerMenu('options');
   fireEvent.click(screen.getByRole('button', { name: 'Direct reply' }));
   fireEvent.click(screen.getByRole('button', { name: /transmit|send/i }));
   await waitFor(() => expect(sent()).toHaveLength(1));
@@ -149,6 +163,7 @@ it('retains the text draft and choice when the submit callback refuses it', () =
   render(<InputBar onSubmit={submit} selectedTurn agent="jarvis" sessionId="a"
     t={{ transmit: 'Send', placeholder: 'Message', channel: 'Chat' }} />);
   fireEvent.change(draft(), { target: { value: 'Try again' } });
+  openComposerMenu('options');
   const choice = screen.getByRole('button', { name: 'Direct reply' });
   fireEvent.click(choice);
   fireEvent.click(screen.getByRole('button', { name: 'Send' }));
@@ -160,6 +175,7 @@ it('retains the text draft and choice when the submit callback refuses it', () =
 it('uses the Romanian HUD label and help text and toggles the scoped choice', () => {
   const submit = vi.fn();
   render(<InputBar onSubmit={submit} selectedTurn agent="jarvis" sessionId="a" t={V2.I18N.ro} />);
+  openComposerMenu('options');
   const choice = screen.getByRole('button', { name: 'Răspuns direct' });
   const help = screen.getByText('Cere modelelor compatibile să sară peste gândirea extinsă pentru acest mesaj.');
   expect(choice.getAttribute('aria-describedby')).toBe(help.id);
@@ -169,7 +185,7 @@ it('uses the Romanian HUD label and help text and toggles the scoped choice', ()
   fireEvent.click(choice);
   expect(choice.getAttribute('aria-pressed')).toBe('false');
   fireEvent.click(choice);
-  fireEvent.click(screen.getByRole('button', { name: 'TRIMITE' }));
+  fireEvent.click(screen.getByRole('button', { name: V2.I18N.ro.transmit }));
   expect(submit).toHaveBeenCalledWith('Salut', undefined, undefined, true);
   expect(choice.getAttribute('aria-pressed')).toBe('false');
 });
@@ -178,6 +194,7 @@ it('drops the choice when the session changes or an image enters the draft', asy
   const props = { onSubmit: vi.fn(), selectedTurn: true, agent: 'jarvis',
     t: { transmit: 'Send', placeholder: 'Message', channel: 'Chat' } };
   const view = render(<InputBar {...props} sessionId="first" />);
+  openComposerMenu('options');
   const choice = screen.getByRole('button', { name: 'Direct reply' });
   fireEvent.change(draft(), { target: { value: 'Keep this text' } });
   fireEvent.click(choice);
@@ -218,6 +235,7 @@ it('sends a reviewed history reference as a top-level owner request with a plain
   }));
   await mount();
   fireEvent.change(draft(), { target: { value: 'What next?' } });
+  openComposerMenu('options');
   fireEvent.click(screen.getByRole('button', { name: 'Search chat history' }));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'old task' } });
   fireEvent.click(screen.getByRole('button', { name: 'Search' }));
@@ -237,7 +255,9 @@ it('sends a reviewed history reference as a top-level owner request with a plain
   await waitFor(() => expect(screen.getByRole('button', { name: 'Remove passage' })).toBeTruthy());
   expect(draft().value).toBe('What next?');
   expect(screen.queryByText('Busy')).toBeNull();
-  expect(screen.queryByText('What next?')).toBeNull();
+  // the draft stays in the composer (a textarea since the re-lay, whose text is its value): the
+  // refused turn must not be in the transcript
+  expect(within(screen.getByRole('log')).queryByText('What next?')).toBeNull();
   fireEvent.change(draft(), { target: { value: 'What after source?' } });
   fireEvent.click(screen.getByRole('button', { name: /transmit|send/i }));
   await waitFor(() => expect(sentRequests).toHaveLength(2));

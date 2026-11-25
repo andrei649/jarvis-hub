@@ -1,0 +1,939 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva — The brief · Monday 23 November 2026, 10:51</title>
+<script>
+  /* Day edition is the default; ?theme=dark|light selects an edition before first paint. */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'dark' || t === 'light' ? t : 'light');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="briefing.css">
+<style>
+  /* ==========================================================================
+     Home — "The brief". Left: the brief (a document you read and settle).
+     Right: the conversation (a place you stay). One sheet, one column rule between.
+     Editions by room: compact (1280–1440) · standard (1920) · broadsheet (2560).
+     ========================================================================== */
+  .spread { display: grid; grid-template-columns: minmax(0, 1fr) clamp(430px, 33.4vw, 660px); min-height: 0; }
+
+  /* ---- the brief -------------------------------------------------------------- */
+  .brief { min-width: 0; min-height: 0; overflow-y: auto; padding: 16px 36px 12px 40px; container: brief / inline-size; scrollbar-width: thin; scrollbar-color: var(--nv-rule-2) transparent; }
+  .brief-grid { display: grid; grid-template-columns: minmax(0, 1fr) 372px; grid-template-areas: "head stand" "main side"; column-gap: 20px; }
+  .brief-head { grid-area: head; padding-bottom: 11px; min-width: 0; }
+  .standfirst { grid-area: stand; padding: 2px 0 11px 20px; border-left: 1px solid var(--nv-rule-2); }
+  .col-main { grid-area: main; min-width: 0; container: main / inline-size; }
+  .col-side { grid-area: side; min-width: 0; padding-left: 20px; border-left: 1px solid var(--nv-rule-2); }
+  .col-side2 { display: none; }
+  .x-broad { display: none !important; }
+
+  .kicker { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; font: 400 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); white-space: nowrap; }
+  .kicker b { color: var(--nv-ink); font: italic 600 15px/1.2 var(--nv-font-title); }
+  .kicker .push { margin-left: auto; }
+  .brief-head h1 { font: 700 var(--nv-t-headline)/1.06 var(--nv-font-display); letter-spacing: -0.018em; }
+  .deck { margin-top: 3px; font: italic 400 var(--nv-t-deck)/1.28 var(--nv-font-deck); color: var(--nv-ink-2); }
+  .standfirst p { font: 400 var(--nv-t-body)/1.46 var(--nv-font-text); color: var(--nv-ink); text-wrap: pretty; }
+  .standfirst p + p { margin-top: 3px; }
+  .standfirst strong { font-weight: 700; }
+
+  .col-main > section + section, .col-side > section + section, .col-side2 > section + section { margin-top: 12px; }
+
+  /* ---- decisions: numbered, flagged with the marker, decided in place --------- */
+  .dec { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 14px; padding: 7px 0 8px; border-top: 1px solid var(--nv-rule); }
+  .dec:first-child { border-top: 0; padding-top: 2px; }
+  .dec:last-child { padding-bottom: 0; }
+  .dec-n { display: grid; place-items: center; width: 32px; height: 32px; margin-top: 3px; background: var(--nv-flag-bg); color: var(--nv-flag-ink); box-shadow: inset 0 0 0 1.5px var(--nv-flag-edge); border-radius: var(--nv-r-1); font: 700 21px/1 var(--nv-font-display); text-decoration: none; }
+  .is-lead .dec-n { width: 40px; height: 40px; font-size: 27px; }
+  /* "can wait" is still yours, just not now: the numeral is drawn, not filled */
+  .later .dec-n { background: transparent; color: var(--nv-ink); box-shadow: inset 0 0 0 1.5px var(--nv-ink-2); }
+  .dec-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font: 400 var(--nv-t-meta)/1.5 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .dec-meta b { color: var(--nv-ink); font-weight: 650; }
+  .dec h3 { margin-top: 2px; font: 600 var(--nv-t-title)/1.25 var(--nv-font-title); letter-spacing: -0.003em; text-wrap: balance; }
+  .is-lead h3 { margin-top: 3px; font: 700 var(--nv-t-lead)/1.15 var(--nv-font-heading); letter-spacing: -0.012em; }
+
+  /* a compact decision: title left, verdict controls right; underneath, the sentence and,
+     right-aligned under the controls, the friction those controls carry */
+  .dec-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "text acts" "foot foot"; column-gap: 20px; align-items: start; }
+  .dec-text { grid-area: text; min-width: 0; }
+  .dec-acts { grid-area: acts; display: flex; gap: 6px; padding-top: 4px; }
+  .dec-foot { grid-area: foot; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; align-items: baseline; margin-top: 2px; }
+  .dec-say { font: 400 var(--nv-t-body)/1.42 var(--nv-font-text); color: var(--nv-ink-2); max-width: 78ch; text-wrap: pretty; }
+  .dec-fr { grid-column: 2; display: inline-flex; align-items: center; gap: 5px; font: 400 var(--nv-t-meta)/1.42 var(--nv-font-ui-sm); color: var(--nv-ink-3); white-space: nowrap; }
+  .dec-fr .i { color: var(--nv-ink-2); }
+  .dec .facts { margin-top: 7px; }
+  .dec-foot .facts { margin-top: 3px; }
+
+  /* the lead: what is down, what would run, what it costs to wait */
+  .svc { width: 100%; margin-top: 7px; }
+  .svc td { padding: 3px 0; border-top: 1px solid var(--nv-rule); vertical-align: baseline; }
+  .svc tr:last-child td { border-bottom: 1px solid var(--nv-rule); }
+  .svc .id, .svc .name, .svc .addr { padding-right: 14px; white-space: nowrap; width: 1%; font: 400 var(--nv-t-mono)/1.5 var(--nv-font-mono); color: var(--nv-ink-3); }
+  .svc .name { color: var(--nv-ink); font-weight: 600; }
+  .svc .impact { font: 400 14px/1.42 var(--nv-font-text); color: var(--nv-ink); }
+
+  /* the confirmation: the marker shows where to type; the button stays locked until the phrase matches */
+  .sign { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+  .confirm { display: inline-flex; align-items: center; height: 34px; margin-right: 4px; border: 1px solid var(--nv-sign-edge); border-radius: var(--nv-r-2); background: var(--nv-mark-wash); }
+  .confirm > .i { margin: 0 2px 0 10px; color: var(--nv-ink); }
+  .confirm input { width: 206px; height: 100%; padding: 0 8px; border: 0; outline-offset: -2px; background: transparent; color: var(--nv-ink); font: 400 13px/1 var(--nv-font-ui); }
+  .confirm input::placeholder { color: var(--nv-ink-2); opacity: 1; }
+  .confirm .btn { height: 34px; margin: -1px -1px -1px 0; border-radius: 0 var(--nv-r-2) var(--nv-r-2) 0; }
+  .confirm .btn:disabled { border: 1px solid var(--nv-sign-edge); background: var(--nv-paper); color: var(--nv-ink-2); }
+  .dec-hint { margin-top: 5px; font: 400 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+
+  /* ---- the digest column -------------------------------------------------------- */
+  .away li { display: grid; grid-template-columns: 38px 16px minmax(0, 1fr) auto; column-gap: 8px; align-items: baseline; padding: 4px 0 5px; border-top: 1px solid var(--nv-rule); }
+  .away li:first-child { border-top: 0; padding-top: 1px; }
+  .away time, .today time { font: 500 var(--nv-t-meta)/1.5 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .away .i { align-self: start; margin-top: 3px; color: var(--nv-ink-2); }
+  .away .is-problem .i { color: var(--nv-problem); }
+  .away .txt { font: 400 14px/1.36 var(--nv-font-text); }
+  .away .txt b { margin-right: 5px; font: 650 13px/1 var(--nv-font-ui); }
+  .away .ref, .away .go { align-self: start; margin-top: 2px; }
+  .go { color: var(--nv-ink-3); }
+  .tally { display: flex; gap: 14px; padding: 5px 0 0 46px; border-top: 1px solid var(--nv-rule); font: 400 var(--nv-t-meta)/1.5 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .tally .st { gap: 4px; }
+
+  .today li { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; column-gap: 8px; align-items: baseline; padding: 4px 0 5px; border-top: 1px solid var(--nv-rule); }
+  .today li:first-child { border-top: 0; padding-top: 1px; }
+  .today .what { grid-column: 2 / 4; font: 400 15px/1.3 var(--nv-font-text); }
+  .today .where { grid-column: 2; font: 400 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .today .tag { grid-column: 3; font: 500 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); white-space: nowrap; }
+  .today .is-past .what { color: var(--nv-ink-3); }
+  .today .is-next .what { grid-column: 2; font-weight: 700; }
+  .today .is-next .tag { grid-row: 1; grid-column: 3; color: var(--nv-ink); font-weight: 650; }
+  .today .is-next .where { grid-row: 2; grid-column: 2 / 4; }
+  .today .is-next time, .today .is-key time { color: var(--nv-ink); font-weight: 700; }
+  .today .is-key .what { font-weight: 700; }
+  .today .is-key .tag { color: var(--nv-ink-2); }
+  .today .hours, .today .now { display: none; }
+
+  .agents-sum { font: 400 14px/1.42 var(--nv-font-text); text-wrap: balance; }
+  .agents-sum b { font-weight: 700; }
+  .agents-ex { margin-top: 3px; }
+  .agents-ex li { padding: 3px 0 4px; border-top: 1px solid var(--nv-rule); font: 400 var(--nv-t-ui)/1.4 var(--nv-font-ui); color: var(--nv-ink-2); }
+  .agents-ex b { color: var(--nv-ink); font-weight: 650; margin-right: 5px; }
+
+  /* ---- broadsheet-only columns: at work · condition · where it ran ---------------- */
+  .ag li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; padding: 3px 0 4px; border-top: 1px solid var(--nv-rule); }
+  .ag li:first-child { border-top: 0; }
+  .ag-n { font: 400 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .ag-n b { margin-right: 6px; font: 650 13px/1.3 var(--nv-font-ui); color: var(--nv-ink); }
+  .ag-d { grid-column: 1; font: 400 14px/1.36 var(--nv-font-text); color: var(--nv-ink); }
+  .ag .ref { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+  .ag-idle { padding-top: 4px; font: 400 var(--nv-t-ui)/1.42 var(--nv-font-ui); color: var(--nv-ink-2); }
+  .ag-idle b { color: var(--nv-ink); font-weight: 650; }
+  .atwork .grp-h { margin-top: 8px; }
+
+  .cond-v { font: 400 14px/1.45 var(--nv-font-text); }
+  .cond-v .verdict-word { margin-right: 4px; vertical-align: 1px; }
+  .instr { margin-top: 8px; }
+  .instr div { display: grid; grid-template-columns: 104px minmax(0, 1fr); column-gap: 10px; padding: 3px 0 4px; border-top: 1px solid var(--nv-rule); }
+  .instr dt { font: 600 var(--nv-t-meta)/1.5 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .instr dd { display: flex; gap: 6px; font: 400 var(--nv-t-ui)/1.4 var(--nv-font-ui); color: var(--nv-ink); }
+  .instr dd .i { margin-top: 2px; color: var(--nv-ink-2); }
+  .instr dd.st-unknown .i { color: var(--nv-ink-3); }
+  .mtrs { margin-top: 6px; padding-top: 4px; border-top: 1px solid var(--nv-rule); }
+
+  .ran-big { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 10px; }
+  .ran-big > b { font: 700 36px/1 var(--nv-font-display); letter-spacing: -0.02em; }
+  .ran-big span { font: 400 var(--nv-t-body)/1.3 var(--nv-font-text); }
+  .ran-big .n { font-weight: 700; }
+  .ran-sub { margin-top: 7px; font: 400 var(--nv-t-meta)/1.45 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .ran-sub b { color: var(--nv-ink-2); font-weight: 650; }
+  /* the head of today's thread (shown where the thread has room above it) */
+  .day { display: flex; align-items: center; gap: 12px; margin: 0 0 4px; font: 600 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .day::before, .day::after { content: ""; flex: 1; height: 1px; background: var(--nv-rule); }
+  .ran-txt { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--nv-rule); font: 400 14px/1.42 var(--nv-font-text); color: var(--nv-ink); }
+
+  /* ---- the conversation ----------------------------------------------------------- */
+  .talk { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; padding: 16px 40px 14px 28px; border-left: 1px solid var(--nv-rule-2); container: talk / inline-size; }
+  .talk > .sec-head { margin-bottom: 0; }
+  /* bottom-anchored: the newest words sit on the composer; history scrolls up */
+  .thread { min-height: 0; overflow-y: auto; display: flex; flex-direction: column-reverse; margin-right: -12px; padding-right: 12px; border-top: 1px solid var(--nv-rule); scrollbar-width: thin; scrollbar-color: var(--nv-rule-2) transparent; }
+  .turn { display: grid; grid-template-columns: 50px minmax(0, 1fr); column-gap: 14px; padding: 4px 0 5px; }
+  .turn.you { margin-top: 3px; padding-top: 9px; border-top: 1px solid var(--nv-rule); }
+  .who { font: 650 var(--nv-t-meta)/1.5 var(--nv-font-ui-sm); color: var(--nv-ink); }
+  .turn.you .who { padding-top: 2px; }
+  .turn.agent .who { padding-top: 3px; }
+  .who time { display: block; font-weight: 400; color: var(--nv-ink-3); }
+  .turn.you .say { font: 600 15px/1.45 var(--nv-font-ui); color: var(--nv-ink); }
+  .turn.agent .say { font: 400 var(--nv-t-read)/1.48 var(--nv-font-text); color: var(--nv-ink); max-width: 70ch; }
+  .say strong { font-weight: 700; }
+  .attach { display: inline-flex; align-items: center; gap: 6px; height: 24px; margin-top: 4px; padding: 0 8px 0 6px; border: 1px solid var(--nv-rule-2); border-radius: var(--nv-r-2); font: 500 var(--nv-t-meta)/1 var(--nv-font-ui-sm); color: var(--nv-ink-2); }
+  .act, .prov { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; margin-top: 4px; font: 400 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .act { color: var(--nv-ink-2); }
+  .act .failed { color: var(--nv-problem); font-weight: 600; }
+  .prov .i { color: var(--nv-ink-2); }
+  .prov .acts { margin-left: auto; display: flex; gap: 12px; visibility: hidden; }
+  .turn:hover .acts, .turn:focus-within .acts, .turn.is-latest .acts { visibility: visible; }
+  .waits { display: flex; align-items: center; gap: 9px; margin-top: 7px; padding: 6px 2px 6px 0; border-top: 1px solid var(--nv-rule); border-bottom: 1px solid var(--nv-rule); font: 500 var(--nv-t-ui)/1.3 var(--nv-font-ui); color: var(--nv-ink); text-decoration: none; }
+  .waits:hover { border-color: var(--nv-ink); }
+  .waits .i { margin-left: auto; }
+
+  /* a reply in progress gets a tray of its own: the mark is the progress indicator,
+     the helpers are named, and Stop is one click. When the reply settles the tray goes. */
+  .live { margin-top: 4px; padding: 10px 0 2px; border-top: 1px solid var(--nv-rule); }
+  .tray { padding: 10px 14px 9px 13px; border-left: var(--nv-rule-bold) solid var(--nv-rule-heavy); border-radius: 0 var(--nv-r-2) var(--nv-r-2) 0; background: var(--nv-paper-2); --nmark-bg: var(--nv-paper-2); }
+  .live-head { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; }
+  .live-head .nmark { width: 38px; height: 38px; }
+  .live-status { font: 650 15px/1.3 var(--nv-font-ui); }
+  .steps { display: flex; flex-wrap: wrap; margin-top: 3px; font: 400 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .steps li { display: inline-flex; align-items: center; }
+  .steps li + li::before { content: ""; width: 12px; height: 1px; margin: 0 6px; background: var(--nv-rule-3); }
+  .steps .done { color: var(--nv-ink-2); }
+  .steps .done .i { margin-right: 3px; }
+  .steps .now span { color: var(--nv-ink); font-weight: 700; box-shadow: 0 2px 0 var(--nv-ink); }
+  .helpers { margin: 6px 0 0 50px; font: 400 var(--nv-t-ui)/1.45 var(--nv-font-ui); color: var(--nv-ink-2); }
+  .helpers li { display: grid; grid-template-columns: 52px minmax(0, 1fr); }
+  .helpers b { color: var(--nv-ink); font-weight: 650; }
+  .tray .say { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--nv-rule-2); }
+  .caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 3px; vertical-align: -0.16em; background: var(--nv-ink); }
+  .origin { display: grid; grid-template-columns: 50px minmax(0, 1fr); column-gap: 14px; padding: 7px 0 8px; font: 400 var(--nv-t-meta)/1.5 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .origin b { color: var(--nv-ink-2); font-weight: 650; }
+
+  /* the composer: a ruled box, recipient and mode on its top edge */
+  .composer { margin-top: 10px; border: 1px solid var(--nv-rule-heavy); border-radius: var(--nv-r-3); background: var(--nv-paper); }
+  .composer:focus-within { border-color: var(--nv-ink); box-shadow: 0 0 0 1px var(--nv-ink); }
+  .c-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: 31px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--nv-rule); font: 400 var(--nv-t-meta)/1 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .c-pick { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px; border: 0; border-radius: var(--nv-r-2); background: transparent; color: var(--nv-ink-3); font: inherit; }
+  .c-pick:first-child { margin-left: -6px; }
+  .c-pick:hover { background: var(--nv-paper-3); }
+  .c-pick b { color: var(--nv-ink); font-weight: 650; }
+  .composer textarea { display: block; width: 100%; height: 50px; padding: 9px 12px 4px; border: 0; background: transparent; resize: none; color: var(--nv-ink); font: 400 15px/1.45 var(--nv-font-ui); outline-offset: -3px; }
+  .composer textarea::placeholder { color: var(--nv-ink-3); opacity: 1; }
+  .c-bar { display: flex; align-items: center; gap: 2px; padding: 0 8px 8px 6px; }
+  .c-hint { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; font: 400 var(--nv-t-meta)/1 var(--nv-font-ui-sm); color: var(--nv-ink-3); white-space: nowrap; }
+  .c-hint .kbd + span { margin-right: 5px; }
+  .c-voice { margin-left: auto; margin-right: 4px; }
+  .c-voice small { font-size: inherit; font-weight: 400; color: var(--nv-ink-3); }
+
+  /* ==================================================================================
+     Widths
+     ================================================================================== */
+  @container main (max-width: 700px) {
+    .dec-row { grid-template-columns: minmax(0, 1fr); grid-template-areas: "text" "foot" "acts"; }
+    .dec-acts { flex-wrap: wrap; padding-top: 7px; }
+    .dec-foot { grid-template-columns: minmax(0, 1fr); }
+    .dec-fr { grid-column: 1; }
+    .svc .id { display: none; }
+    .confirm { flex: 1 1 100%; margin-right: 0; }
+    .confirm input { flex: 1; width: auto; min-width: 0; }
+  }
+  @container brief (max-width: 1120px) {
+    .brief-grid { grid-template-columns: minmax(0, 1fr) 300px; }
+    .kicker .push { display: none; }
+  }
+  /* Compact edition (1440, 1280): the digest goes under the decisions; the whole width
+     belongs to the headline and to the things that need a verdict. */
+  @container brief (max-width: 1000px) {
+    .brief-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "stand" "main" "side"; }
+    .brief-head { padding-bottom: 7px; }
+    .brief-head h1 { font-size: 40px; }
+    .deck { font-size: 20px; }
+    .standfirst { padding: 0 0 12px; border-left: 0; }
+    .standfirst p { max-width: 104ch; }
+    .col-side { margin-top: 12px; padding-left: 0; border-left: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 40px; align-items: start; }
+    .col-side > section + section { margin-top: 0; }
+    .col-side > .agents { grid-column: 2; margin-top: 12px; }
+    .col-side > .away { grid-row: span 2; }
+  }
+  @container brief (max-width: 800px) {
+    .brief-head h1 { font-size: 36px; }
+    .deck { font-size: 19px; }
+  }
+  @container talk (max-width: 559px) {
+    .c-hint { display: none; }
+    .steps li + li::before { width: 7px; margin: 0 4px; }
+    .live-status { font-size: 14px; }
+  }
+  @container talk (max-width: 440px) {
+    .c-voice small, .role { display: none; }
+    .live-head { column-gap: 10px; }
+    .helpers { margin-left: 0; }
+  }
+  @media (max-width: 1340px) {
+    .brief { padding: 16px 24px 12px 24px; }
+    .talk { padding: 16px 24px 12px 22px; }
+  }
+  /* A short window tightens the leading between items, never the type. */
+  @media (max-height: 1040px) {
+    .brief { padding-top: 12px; padding-bottom: 8px; }
+    .talk { padding-top: 12px; padding-bottom: 10px; }
+    .brief-head { padding-bottom: 8px; }
+    .standfirst { padding-bottom: 8px; }
+    .col-main > section + section, .col-side > section + section { margin-top: 8px; }
+    .brief .sec-head { min-height: 32px; margin-bottom: 3px; padding-top: 6px; }
+    .dec { padding: 5px 0 6px; }
+    .svc { margin-top: 5px; }
+    .svc td { padding: 2px 0; }
+    .dec .facts { margin-top: 5px; }
+    .sign { margin-top: 8px; }
+    .away li, .today li { padding: 3px 0 4px; }
+    .turn { padding: 3px 0 4px; }
+    .turn.you { margin-top: 2px; padding-top: 7px; }
+    .composer textarea { height: 44px; }
+  }
+  @media (max-height: 1040px) and (min-width: 1700px) {
+    .brief-head h1 { font-size: 42px; }
+    .deck { font-size: 20px; }
+  }
+
+  /* ---- Broadsheet edition (the owner's 2560×1353): a third column, full facts, a day ruler.
+     The extra room carries more of the brief, never wider lines. ------------------------ */
+  @media (min-width: 2200px) {
+    .spread { grid-template-columns: minmax(0, 1fr) 680px; }
+    .brief { padding: 18px 40px 14px 40px; }
+    .talk { padding: 18px 40px 16px 32px; }
+  }
+  /* the conversation is the longest reading on the screen: a size up on the big screen,
+     and the head of today's thread where there is room above it */
+  @media (min-width: 2200px) and (min-height: 1200px) {
+    .turn.agent .say { font-size: 17px; }
+    .turn.you .say { font-size: 16px; }
+    .composer textarea { height: 72px; }
+    .talk .day.x-broad { display: flex !important; }
+  }
+  @container brief (min-width: 1480px) {
+    /* the standfirst spans both digest columns, set in two columns whose rule continues
+       the column rule below: the grid is visible from the headline to the foot */
+    .brief-grid { grid-template-columns: minmax(0, 1fr) 392px 392px; grid-template-areas: "head stand stand" "main side side2"; column-gap: 26px; }
+    .standfirst { padding: 4px 0 12px 26px; column-count: 2; column-gap: 52px; column-rule: 1px solid var(--nv-rule-2); }
+    .standfirst p { font-size: 15px; line-height: 1.5; }
+    .standfirst p + p { margin-top: 0; break-before: column; }
+    .col-side { padding-left: 26px; }
+    .col-side2 { display: block; grid-area: side2; min-width: 0; padding-left: 26px; border-left: 1px solid var(--nv-rule-2); }
+    .col-side > .agents { display: none; }
+    .brief-head h1 { font-size: 50px; }
+    .deck { font-size: 23px; }
+    .x-broad { display: revert !important; }
+    .x-std { display: none !important; }
+    .dec-foot .facts.x-broad { display: grid !important; }
+  }
+  @media (min-height: 1200px) {
+    @container brief (min-width: 1480px) {
+      .brief .sec-head { min-height: 36px; }
+      .col-main > section + section, .col-side > section + section, .col-side2 > section + section { margin-top: 16px; }
+      .dec { padding: 9px 0 11px; }
+      /* Today becomes a ruler of the day: a hairline per hour, the past shaded, now marked,
+         each event hanging from its tick. Start times only — the hub gives no durations. */
+      .today { --hr: 50px; }
+      .today ol { position: relative; height: calc(12 * var(--hr) + 1px); margin: 8px 0 6px 30px; background:
+          linear-gradient(var(--nv-rule-2), var(--nv-rule-2)) 0 0 / 1px 100% no-repeat,
+          repeating-linear-gradient(to bottom, var(--nv-rule-3) 0 1px, transparent 1px var(--hr)) 0 0 / 7px 100% no-repeat,
+          linear-gradient(var(--nv-paper-2), var(--nv-paper-2)) 0 0 / 100% calc(171 / 60 * var(--hr)) no-repeat; }
+      .today li { position: absolute; left: 0; right: 0; top: calc(var(--t) / 60 * var(--hr) + 3px); border-top: 0; padding: 0 0 0 12px; grid-template-columns: 42px minmax(0, 1fr); background: none; }
+      .today li::before { content: ""; position: absolute; left: -4px; top: -6.5px; width: 7px; height: 7px; border-radius: 50%; background: var(--nv-ink-2); box-shadow: 0 0 0 2px var(--nv-paper); }
+      .today .is-past::before { background: var(--nv-rule-3); box-shadow: 0 0 0 2px var(--nv-paper-2); }
+      .today .is-next::before, .today .is-key::before { background: var(--nv-ink); }
+      .today li:first-child { padding-top: 0; }
+      .today .what { grid-column: 2; }
+      .today .where { grid-column: 2; grid-row: auto; }
+      .today .tag { grid-column: 2; }
+      .today .is-past .tag { display: none; }
+      .today .is-next .what { grid-column: 2; }
+      .today .is-next .tag { grid-row: 2; grid-column: 2; }
+      .today .is-next .where { grid-row: 3; grid-column: 2; }
+      .today li.hours::before, .today li.now::before { content: none; }
+      .today .hours { display: block; position: absolute; left: -30px; top: -6px; width: 24px; padding: 0; }
+      .today .hours span { position: absolute; left: 0; top: calc(var(--h) * var(--hr)); font: 500 var(--nv-t-floor)/1 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+      .today .now { display: flex; position: absolute; left: -30px; right: 0; top: calc(171 / 60 * var(--hr) - 1px); align-items: center; gap: 0; height: 0; padding: 0; }
+      .today .now::before { content: none; }
+      .today .now::after { content: ""; order: 1; flex: 1; height: 2px; background: var(--nv-ink); }
+      .today .now span { order: 2; padding: 2px 5px; background: var(--nv-fill); color: var(--nv-on-ink); border-radius: var(--nv-r-1); font: 650 var(--nv-t-floor)/1.2 var(--nv-font-ui-sm); }
+    }
+  }
+
+  @media (max-width: 900px) {
+    .shell { height: auto; overflow: visible; }
+    .spread { grid-template-columns: minmax(0, 1fr); }
+    .brief { overflow: visible; }
+    .talk { border-left: 0; border-top: 1px solid var(--nv-ink); }
+    .thread { max-height: 70vh; }
+  }
+</style>
+</head>
+<body>
+
+<!-- icons: one sprite, line work, drawn for this direction -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 16 16"><rect x="6" y="2" width="4" height="7.5" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 16 16"><path d="M2.5 5h5M11.5 5h2M2.5 11h2M8.5 11h5"/><circle cx="9.5" cy="5" r="1.6"/><circle cx="6.5" cy="11" r="1.6"/></symbol>
+  <symbol id="i-send" viewBox="0 0 16 16"><path d="M8 13V3.5M4 7l4-4 4 4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 16 16"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></symbol>
+  <symbol id="i-go" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 16 16"><path d="M5.5 4v8M10.5 4v8"/></symbol>
+  <symbol id="i-block" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="m4.2 11.8 7.6-7.6"/></symbol>
+  <symbol id="i-diamond" viewBox="0 0 16 16"><path d="M8 2.2 13.8 8 8 13.8 2.2 8z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-tri" viewBox="0 0 16 16"><path d="M8 2.8 14 13H2z"/><path d="M8 6.8v2.9M8 11.4v.01"/></symbol>
+  <symbol id="i-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" stroke-dasharray="2 2.3"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 16 16"><path d="M13 9.6A5.5 5.5 0 0 1 6.4 3 5.5 5.5 0 1 0 13 9.6z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/></symbol>
+  <symbol id="i-glance" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 13.5h4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 16 16"><g fill="currentColor" stroke="none"><circle cx="3.5" cy="8" r="1.1"/><circle cx="8" cy="8" r="1.1"/><circle cx="12.5" cy="8" r="1.1"/></g></symbol>
+  <symbol id="i-local" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="8" cy="8" r="1.7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1"/><path d="M6.5 2v2M9.5 2v2M6.5 12v2M9.5 12v2M2 6.5h2M2 9.5h2M12 6.5h2M12 9.5h2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 2.5h5l3 3v8H4z"/><path d="M9 2.5v3h3"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></symbol>
+  <symbol id="i-tool" viewBox="0 0 16 16"><path d="M10 2.5a3.2 3.2 0 0 0-3 4.3L2.5 11.3v2.2h2.2L9.2 9a3.2 3.2 0 0 0 4.3-3l-2 1.2-1.7-1.7z"/></symbol>
+  <symbol id="i-key" viewBox="0 0 16 16"><rect x="1.5" y="4" width="13" height="8" rx="1.5"/><path d="M4.2 6.6v.01M6.7 6.6v.01M9.3 6.6v.01M11.8 6.6v.01M5 9.5h6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.8 8S4.2 3.8 8 3.8 14.2 8 14.2 8 11.8 12.2 8 12.2 1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.9"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 16 16"><path d="M5.5 4 2.5 7l3 3"/><path d="M2.5 7h7a3.5 3.5 0 0 1 0 7H7"/></symbol>
+  <symbol id="i-working" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 16 16"><path d="M4 14V2.5M4 3h7.8l-1.9 2.7 1.9 2.7H4"/></symbol>
+  <symbol id="i-idle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/></symbol>
+  <symbol id="i-newchat" viewBox="0 0 16 16"><path d="M13.5 8.5v4a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h4"/><path d="M11.5 2.5l2 2-5 5H6.5v-2z"/></symbol>
+</svg>
+
+<div class="shell">
+
+  <!-- ============ masthead ============ -->
+  <header class="masthead">
+    <a class="nameplate" href="#" aria-label="Nerva — home">
+      <!-- the mark stays whole in the nameplate; while a reply is in progress the step it is on is ringed -->
+      <svg class="nmark" viewBox="20 16 88 96" aria-hidden="true">
+        <line x1="40" y1="92" x2="40" y2="36"/><line x1="40" y1="36" x2="88" y2="92"/><line x1="88" y1="92" x2="88" y2="36"/>
+        <circle cx="40" cy="92" r="9"/><circle cx="40" cy="36" r="9"/><circle cx="88" cy="92" r="9"/><circle cx="88" cy="36" r="9"/><circle class="now-ring" cx="88" cy="92" r="16"/>
+      </svg>
+      Nerva
+    </a>
+    <nav class="sections" aria-label="Areas">
+      <a href="#" aria-current="page" title="conversation with the orchestrator, what needs you, what happened, today">Home</a>
+      <a href="#" title="decisions, missions, projects board, scheduled jobs, sessions, activity · 14 panels">Work <span class="nb nb-you"><span class="long">9 need you</span><span class="short" aria-hidden="true">9</span></span></a>
+      <a href="#" title="the 18 agents, their homes (finance, health, family, knowledge), personas · 9 panels">Agents</a>
+      <a href="#" title="saved facts, knowledge graph, vault, recall, hygiene · 14 panels">Memory</a>
+      <a href="secondary.html" title="audit chain, emergency stop, capabilities, permissions, payments, secrets · 21 panels">Trust</a>
+      <a href="#" title="skills, workflows, sandbox, images, creative tools · 22 panels">Build</a>
+      <a href="#" title="channels, integrations, MCP servers, webhooks, rooms · 17 panels">Connect</a>
+      <a href="#" title="health, logs, metrics, traces, world signals · 16 panels">Observe <span class="nb nb-problem"><svg class="i i-12"><use href="#i-diamond"/></svg><span class="long">4 services down</span><span class="short" aria-hidden="true">4</span></span></a>
+      <a href="#" title="models and backends, appearance, backup, updates · 16 panels">Settings</a>
+    </nav>
+    <div class="tools">
+      <button class="search" type="button" title="Search and command — finds every area, panel, agent and action">
+        <svg class="i"><use href="#i-search"/></svg><span class="q">Search<span class="long"> or command</span></span><span class="kbd">Ctrl K</span>
+      </button>
+      <div class="seg seg-quiet" role="group" aria-label="Language"><button type="button" aria-pressed="true">EN</button><button type="button" aria-pressed="false">RO</button></div>
+      <button class="btn btn-quiet btn-tool" type="button" data-edition title="Switch edition (day / night)" aria-label="Switch to the night edition"><svg class="i ed-moon" aria-hidden="true"><use href="#i-moon"/></svg><svg class="i ed-sun" aria-hidden="true"><use href="#i-sun"/></svg><span class="lbl">Night</span></button>
+      <button class="btn btn-quiet btn-tool" type="button" title="Glance mode (idle or second screen)" aria-label="Glance mode"><svg class="i"><use href="#i-glance"/></svg><span class="lbl">Glance</span></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button class="btn btn-stop" type="button" title="One click. Halts every agent and the job queue until you resume."><svg class="i"><use href="#i-stop"/></svg>Stop all agents</button>
+    </div>
+  </header>
+
+  <!-- ============ folio: the verdict, then the trust signals ============ -->
+  <div class="folio" role="status" aria-label="Condition and trust signals">
+    <div class="verdict">
+      <a class="verdict-word" href="#d1" style="text-decoration:none" title="Degraded since 08:14 — cause and remedy are decision 1"><svg class="i i-14"><use href="#i-tri"/></svg>Degraded</a>
+      <strong>Working, with 4 local services down</strong>
+      <span><span class="f-lg">since 08:14 · </span>checked 10:50</span>
+    </div>
+    <span class="sig" title="Sealed — nothing can leave this machine"><svg class="i i-14"><use href="#i-lock"/></svg><span>Egress <b>sealed</b></span></span>
+    <span class="sig" title="The hub counts which route each run used; it is not a verified network measurement."><svg class="i i-14"><use href="#i-local"/></svg><span><b>100%</b> on this machine<span class="f-lg"> · 41 of 41 runs today</span><span class="basis-tag"> · by route</span></span></span>
+    <span class="sig" title="Microphone: On"><svg class="i i-14"><use href="#i-mic"/></svg><span>Mic <b>on</b></span></span>
+    <span class="sig" title="Model: gemma-4-31b · loaded on Ollama"><svg class="i i-14"><use href="#i-chip"/></svg><span><b class="mono">gemma-4-31b</b><span class="f-lg"> · Ollama</span></span></span>
+    <span class="sig" title="Data on screen: Live"><span class="src"><span><b>Live</b> data</span></span></span>
+    <span class="sig f-xl" title="2 of 2 running · 1 session in the last 15 min"><span>Channels <b>2 of 2</b></span></span>
+    <span class="sig f-xl st-unknown" title="Not measured by the hub yet"><svg class="i i-14"><use href="#i-unknown"/></svg><span>Latency p50 — unknown</span></span>
+    <span class="sig f-xl" title="RAM 36 of 192 GB · VRAM 23.0 of 24 GB (expected while a 31B model is loaded) · GPU load 3%"><span>RAM <b>19%</b> · VRAM <b>96%</b> · GPU <b>3%</b></span></span>
+  </div>
+
+  <main class="spread">
+
+    <!-- ============ the brief ============ -->
+    <article class="brief" aria-labelledby="brief-h">
+      <div class="brief-grid">
+
+        <header class="brief-head">
+          <p class="kicker"><b>The brief</b><span>Monday, 23 November 2026 · 10:51</span><span class="push">Interruptions today 3 of 4</span></p>
+          <h1 id="brief-h">Nine actions need you.</h1>
+          <p class="deck">Six decisions — three irreversible or money, one external, two reversible.</p>
+        </header>
+
+        <div class="standfirst">
+          <p><strong>Working, with 4 local services down</strong> since 08:14; nothing is blocked, and the restart is <a class="link" href="#d1">decision&nbsp;1</a>.</p>
+          <p>Overnight: 4 jobs done, 2 held or blocked, 1 problem. Your 1:1 with Cosmina is at 11:00, <mark class="nowrap">in 9 min</mark>.</p>
+        </div>
+
+        <div class="col-main">
+
+          <section aria-labelledby="h-needs">
+            <header class="sec-head">
+              <h2 id="h-needs">Needs you now</h2>
+              <p class="sec-meta"><span>4 decisions · 7 actions</span><span class="src">Live</span></p>
+              <div class="sec-tools">
+                <span id="mode-l">Approval mode</span>
+                <div class="seg" role="group" aria-labelledby="mode-l">
+                  <button type="button" aria-pressed="false" title="Safe and reversible actions run on their own; risky ones wait.">Auto</button>
+                  <button type="button" aria-pressed="true" title="Anything with a side effect waits for you.">Ask</button>
+                  <button type="button" aria-pressed="false" title="Agents may read and think, nothing acts.">Off</button>
+                </div>
+              </div>
+            </header>
+            <ol class="decs">
+
+              <!-- 1 · the lead: tier 3, typed confirmation in place -->
+              <li class="dec is-lead" id="d1">
+                <span class="dec-n" aria-label="Decision 1">1</span>
+                <div class="dec-main">
+                  <p class="dec-meta">
+                    <span class="tier tier-3"><span class="pips" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span>Irreversible</span>
+                    <span><b>Steve</b> · CTO / Builds</span>
+                    <span>raised 08:14, repeated 3 times</span>
+                    <span>12 requests grouped into 4 actions</span>
+                  </p>
+                  <h3>Restart 4 local services that stopped responding</h3>
+                  <table class="svc">
+                    <thead class="vh"><tr><th>Request</th><th>Service</th><th>Address</th><th>While it is down</th></tr></thead>
+                    <tbody>
+                      <tr><td class="id">#402</td><td class="name">lmstudio</td><td class="addr">127.0.0.1:1234</td><td class="impact">Not blocking: the model is being served by Ollama instead.</td></tr>
+                      <tr><td class="id">#409</td><td class="name">qdrant</td><td class="addr">127.0.0.1:6333</td><td class="impact">Long-term recall is using the built-in vector store.</td></tr>
+                      <tr><td class="id">#410</td><td class="name">neo4j</td><td class="addr">127.0.0.1:7474</td><td class="impact">The knowledge graph is running in memory only.</td></tr>
+                      <tr><td class="id">#411</td><td class="name">n8n</td><td class="addr">127.0.0.1:5678</td><td class="impact">Oracle's workflows cannot run.</td></tr>
+                    </tbody>
+                  </table>
+                  <dl class="facts">
+                    <dt>Preview</dt><dd>Would run the configured restart command for each service on this machine.</dd>
+                    <dt>Undo</dt><dd>None — a restart interrupts anything the service is doing.</dd>
+                    <dt>Deadline</dt><dd>Tomorrow 08:14 — then it is blocked, never auto-approved.</dd>
+                    <dt class="x-broad">Sealed</dt><dd class="x-broad">08:14 · Proposed restart of 4 services — waiting for approval · <span class="mono">c03e…1d9f</span></dd>
+                  </dl>
+                  <div class="sign">
+                    <div class="confirm">
+                      <svg class="i" aria-hidden="true"><use href="#i-key"/></svg>
+                      <label class="vh" for="c1">Type restart 4 to confirm</label>
+                      <input id="c1" type="text" placeholder="Type “restart 4” to confirm" autocomplete="off" spellcheck="false" data-phrase="restart 4">
+                      <button class="btn btn-primary" type="button" disabled data-unlocks="c1"><svg class="i i-14" aria-hidden="true"><use href="#i-lock"/></svg>Approve once for all 4</button>
+                    </div>
+                    <button class="btn btn-lg" type="button">Reject group</button>
+                    <button class="btn btn-lg" type="button">Defer</button>
+                    <button class="btn btn-lg" type="button">Preview</button>
+                    <button class="btn btn-lg btn-icon" type="button" aria-label="More: Edit then approve" title="Edit then approve" style="width:34px"><svg class="i"><use href="#i-more"/></svg></button>
+                  </div>
+                  <p class="dec-hint">One typed confirmation covers these 4 restarts only. Held by Ask mode. No keyboard shortcut approves or rejects.</p>
+                </div>
+              </li>
+
+              <!-- 2 · money -->
+              <li class="dec" id="d2">
+                <span class="dec-n" aria-label="Decision 2">2</span>
+                <div class="dec-main dec-row">
+                  <div class="dec-text">
+                    <p class="dec-meta">
+                      <span class="tier tier-3"><span class="pips" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span>Money</span>
+                      <span><b>Gecko</b> · Markets &amp; Capital</span>
+                      <span>raised 08:07, from your conversation</span>
+                    </p>
+                    <h3>Sweep €4,200 of idle cash to the savings ladder</h3>
+                  </div>
+                  <div class="dec-acts">
+                    <button class="btn btn-go" type="button" title="Opens the typed confirmation in place"><svg class="i i-14" aria-hidden="true"><use href="#i-key"/></svg>Approve…</button>
+                    <button class="btn" type="button">Reject</button>
+                    <button class="btn" type="button">Defer</button>
+                    <button class="btn btn-icon" type="button" aria-label="More: Preview, Edit then approve" title="Preview · Edit then approve"><svg class="i"><use href="#i-more"/></svg></button>
+                  </div>
+                  <div class="dec-foot">
+                    <p class="dec-say x-std">Idle cash in the current account is €4.2k over your target buffer. A transfer back takes 1–2 working days.</p>
+                    <dl class="facts x-broad">
+                      <dt>Context</dt><dd>Idle cash in the current account is €4.2k over your target buffer.</dd>
+                      <dt>Preview</dt><dd>Would move €4,200 from the current account to the savings ladder.</dd>
+                      <dt>Undo</dt><dd>A transfer back takes 1–2 working days.</dd>
+                      <dt>Waits</dt><dd>Money always waits for you.</dd>
+                      <dt>Sealed</dt><dd>08:07 · Proposed transfer of €4,200 — waiting for approval · <span class="mono">71bb…e2c4</span></dd>
+                    </dl>
+                    <p class="dec-fr">typed confirmation</p>
+                  </div>
+                </div>
+              </li>
+
+              <!-- 3 · irreversible -->
+              <li class="dec" id="d3">
+                <span class="dec-n" aria-label="Decision 3">3</span>
+                <div class="dec-main dec-row">
+                  <div class="dec-text">
+                    <p class="dec-meta">
+                      <span class="tier tier-3"><span class="pips" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span>Irreversible</span>
+                      <span><b>Jarvis</b> · Prime Orchestrator</span>
+                      <span>raised 07:30, repeated once</span>
+                    </p>
+                    <h3>Delete logs older than 14 days</h3>
+                  </div>
+                  <div class="dec-acts">
+                    <button class="btn btn-go" type="button" title="Opens the typed confirmation in place"><svg class="i i-14" aria-hidden="true"><use href="#i-key"/></svg>Approve…</button>
+                    <button class="btn" type="button">Reject</button>
+                    <button class="btn" type="button">Defer</button>
+                    <button class="btn btn-icon" type="button" aria-label="More: Preview, Edit then approve" title="Preview · Edit then approve"><svg class="i"><use href="#i-more"/></svg></button>
+                  </div>
+                  <div class="dec-foot">
+                    <p class="dec-say x-std">Would delete 312 files, 2.1 GB. Undo: none.</p>
+                    <dl class="facts x-broad">
+                      <dt>Preview</dt><dd>Would delete 312 files, 2.1 GB.</dd>
+                      <dt>Undo</dt><dd>None.</dd>
+                      <dt>Waits</dt><dd>Held because the approval mode is Ask. 2 requests.</dd>
+                    </dl>
+                    <p class="dec-fr">typed confirmation</p>
+                  </div>
+                </div>
+              </li>
+
+              <!-- 4 · external: review, then confirm -->
+              <li class="dec" id="d4">
+                <span class="dec-n" aria-label="Decision 4">4</span>
+                <div class="dec-main dec-row">
+                  <div class="dec-text">
+                    <p class="dec-meta">
+                      <span class="tier tier-2"><span class="pips" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i></span>External</span>
+                      <span><b>Ultron</b> · Security &amp; Automation</span>
+                      <span>raised 07:48</span>
+                    </p>
+                    <h3>Veronica's LinkedIn draft names a client flagged as sensitive</h3>
+                  </div>
+                  <div class="dec-acts">
+                    <button class="btn btn-go" type="button"><svg class="i i-14" aria-hidden="true"><use href="#i-eye"/></svg>Review the draft</button>
+                    <button class="btn" type="button">Redact and send</button>
+                    <button class="btn" type="button">Reject</button>
+                  </div>
+                  <div class="dec-foot">
+                    <p class="dec-say x-std">Outbound is held until you clear it.</p>
+                    <dl class="facts x-broad">
+                      <dt>Waits</dt><dd>Outbound is held until you clear it.</dd>
+                      <dt>Sealed</dt><dd>07:48 · Redacted 2 PII spans in an outbound draft and held it · <span class="mono">0d3f…5c82</span></dd>
+                    </dl>
+                    <p class="dec-fr">review, then confirm</p>
+                  </div>
+                </div>
+              </li>
+            </ol>
+          </section>
+
+          <section aria-labelledby="h-wait">
+            <header class="sec-head">
+              <h2 id="h-wait">Can wait</h2>
+              <p class="sec-meta"><span>2 decisions · reversible · held because the mode is Ask</span><span class="src">Live</span></p>
+            </header>
+            <ol class="decs" start="5">
+              <li class="dec later" id="d5">
+                <span class="dec-n" aria-label="Decision 5">5</span>
+                <div class="dec-main dec-row">
+                  <div class="dec-text">
+                    <p class="dec-meta">
+                      <span class="tier tier-1"><span class="pips" aria-hidden="true"><i class="on"></i><i></i><i></i></span>Reversible</span>
+                      <span><b>Stark</b> · Biz Intel</span>
+                      <span>raised 08:05</span>
+                    </p>
+                    <h3>Draft a reply to Raiffeisen with the QBR agenda</h3>
+                  </div>
+                  <div class="dec-acts">
+                    <button class="btn btn-go" type="button"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>Approve</button>
+                    <button class="btn" type="button">Reject</button>
+                    <button class="btn" type="button">Defer</button>
+                    <button class="btn btn-icon" type="button" aria-label="More: Preview, Edit then approve" title="Preview · Edit then approve"><svg class="i"><use href="#i-more"/></svg></button>
+                  </div>
+                  <div class="dec-foot">
+                    <p class="dec-say x-std">Would save a draft in your mailbox. Nothing is sent. Undo: delete the draft.</p>
+                    <dl class="facts x-broad">
+                      <dt>Preview</dt><dd>Would save a draft in your mailbox. Nothing is sent.</dd>
+                      <dt>Undo</dt><dd>Delete the draft.</dd>
+                    </dl>
+                    <p class="dec-fr"><svg class="i i-12" aria-hidden="true"><use href="#i-undo"/></svg>one click, undo</p>
+                  </div>
+                </div>
+              </li>
+              <li class="dec later" id="d6">
+                <span class="dec-n" aria-label="Decision 6">6</span>
+                <div class="dec-main dec-row">
+                  <div class="dec-text">
+                    <p class="dec-meta">
+                      <span class="tier tier-1"><span class="pips" aria-hidden="true"><i class="on"></i><i></i><i></i></span>Reversible</span>
+                      <span><b>Pepper</b> · Chief of Staff</span>
+                      <span>raised 07:14</span>
+                    </p>
+                    <h3>Move the research sync from 16:30 to 17:15</h3>
+                  </div>
+                  <div class="dec-acts">
+                    <button class="btn btn-go" type="button"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>Approve</button>
+                    <button class="btn" type="button">Reject</button>
+                    <button class="btn" type="button">Defer</button>
+                    <button class="btn btn-icon" type="button" aria-label="More: Preview, Edit then approve" title="Preview · Edit then approve"><svg class="i"><use href="#i-more"/></svg></button>
+                  </div>
+                  <div class="dec-foot">
+                    <p class="dec-say x-std">Your 14:00 and 16:30 leave no lunch gap; Vision is async anyway. Undo: move it back.</p>
+                    <dl class="facts x-broad">
+                      <dt>Context</dt><dd>Your 14:00 and 16:30 leave no lunch gap; Vision is async anyway.</dd>
+                      <dt>Undo</dt><dd>Move it back.</dd>
+                    </dl>
+                    <p class="dec-fr"><svg class="i i-12" aria-hidden="true"><use href="#i-undo"/></svg>one click, undo</p>
+                  </div>
+                </div>
+              </li>
+            </ol>
+          </section>
+        </div>
+
+        <aside class="col-side" aria-label="Digest">
+
+          <section class="away" aria-labelledby="h-away">
+            <header class="sec-head">
+              <h2 id="h-away">While you were away</h2>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <ol>
+              <li><time>06:00</time><svg class="i i-14" role="img" aria-label="done"><use href="#i-check"/></svg><span class="txt"><b>Friday</b>Morning brief generated — 6 items ranked</span><svg class="i i-12 go" aria-hidden="true"><use href="#i-go"/></svg></li>
+              <li><time>07:14</time><svg class="i i-14" role="img" aria-label="done"><use href="#i-check"/></svg><span class="txt"><b>Pepper</b>Calendar synced · 1 conflict auto-resolved</span><svg class="i i-12 go" aria-hidden="true"><use href="#i-go"/></svg></li>
+              <li><time>07:48</time><svg class="i i-14" role="img" aria-label="held"><use href="#i-pause"/></svg><span class="txt"><b>Ultron</b>2 PII findings redacted, outbound held</span><a class="ref" href="#d4" aria-label="Decision 4">4</a></li>
+              <li><time>08:00</time><svg class="i i-14" role="img" aria-label="done"><use href="#i-check"/></svg><span class="txt"><b>Stark</b>KPI snapshot cached for the Raiffeisen review</span><svg class="i i-12 go" aria-hidden="true"><use href="#i-go"/></svg></li>
+              <li><time>08:01</time><svg class="i i-14" role="img" aria-label="blocked"><use href="#i-block"/></svg><span class="txt"><b>Ultron</b>SSRF attempt blocked · 1 request denied</span><svg class="i i-12 go" aria-hidden="true"><use href="#i-go"/></svg></li>
+              <li class="is-problem"><time>08:14</time><svg class="i i-14" role="img" aria-label="problem"><use href="#i-diamond"/></svg><span class="txt"><b>Steve</b>lmstudio, qdrant, neo4j and n8n stopped responding</span><a class="ref" href="#d1" aria-label="Decision 1">1</a></li>
+              <li><time>09:40</time><svg class="i i-14" role="img" aria-label="done"><use href="#i-check"/></svg><span class="txt"><b>Vision</b>Indexed 17 sources on competitor pricing</span><svg class="i i-12 go" aria-hidden="true"><use href="#i-go"/></svg></li>
+            </ol>
+            <p class="tally"><span class="st"><svg class="i i-12" aria-hidden="true"><use href="#i-check"/></svg>4 done</span><span class="st"><svg class="i i-12" aria-hidden="true"><use href="#i-pause"/></svg>2 held or blocked</span><span class="st st-problem"><svg class="i i-12" aria-hidden="true"><use href="#i-diamond"/></svg>1 problem</span></p>
+          </section>
+
+          <section class="today" aria-labelledby="h-today">
+            <header class="sec-head">
+              <h2 id="h-today">Today</h2>
+              <p class="sec-meta"><span>București · 9° · Mist</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <ol>
+              <li class="is-past" style="--t:90"><time>09:30</time><span class="what">Standup — Digitaholic</span><span class="where">Google Meet</span><span class="tag">past</span></li>
+              <li class="is-next" style="--t:180"><time>11:00</time><span class="what">1:1 with Cosmina</span><span class="where">Office</span><span class="tag">next · <mark>in 9 min</mark></span></li>
+              <li class="is-key" style="--t:360"><time>14:00</time><span class="what">Raiffeisen quarterly review</span><span class="where">Conf Room A · prep 13:15</span><span class="tag">the one that matters</span></li>
+              <li style="--t:510"><time>16:30</time><span class="what">Vision research sync</span><span class="where">Async<span class="x-broad"> · 17:15 proposed, decision 6</span></span></li>
+              <li style="--t:660"><time>19:00</time><span class="what">Gym — Hercules plan</span><span class="where">Personal</span></li>
+              <li class="hours" aria-hidden="true"><span style="--h:0">08</span><span style="--h:2">10</span><span style="--h:4">12</span><span style="--h:6">14</span><span style="--h:8">16</span><span style="--h:10">18</span><span style="--h:12">20</span></li>
+              <li class="now" aria-hidden="true"><span>10:51</span></li>
+            </ol>
+          </section>
+
+          <section class="agents" aria-labelledby="h-agents">
+            <header class="sec-head">
+              <h2 id="h-agents">Agents</h2>
+              <p class="sec-meta"><span>18, shown by exception</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <p class="agents-sum"><b>3</b> working · <b>3</b> waiting on you · <b>2</b> finished · <b>9</b> idle · <b>1</b> unavailable</p>
+            <ul class="agents-ex">
+              <li><b>Athena</b>Cloud only — unavailable while egress is sealed</li>
+              <li><b>Oracle</b>n8n is down — workflows cannot run</li>
+            </ul>
+          </section>
+        </aside>
+
+        <!-- broadsheet only: the instrument column -->
+        <aside class="col-side2" aria-label="Agents and condition">
+
+          <section class="atwork" aria-labelledby="h-atwork">
+            <header class="sec-head">
+              <h2 id="h-atwork">At work</h2>
+              <p class="sec-meta"><span>18 agents, by exception</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <h3 class="grp-h"><svg class="i i-14" aria-hidden="true"><use href="#i-working"/></svg>Working<span class="n">3</span></h3>
+            <ul class="ag">
+              <li><p class="ag-n"><b>Jarvis</b>Prime Orchestrator</p><p class="ag-d">Answering you — gathering from Pepper and Stark</p></li>
+              <li><p class="ag-n"><b>Pepper</b>Chief of Staff</p><p class="ag-d">Checking this week's deadlines</p></li>
+              <li><p class="ag-n"><b>Stark</b>Biz Intel</p><p class="ag-d">Pulling project status for Digitaholic</p></li>
+            </ul>
+            <h3 class="grp-h"><svg class="i i-14" aria-hidden="true"><use href="#i-flag"/></svg>Waiting on you<span class="n">3</span></h3>
+            <ul class="ag">
+              <li><p class="ag-n"><b>Steve</b>CTO / Builds</p><p class="ag-d">4 restarts wait for your decision</p><a class="ref" href="#d1" aria-label="Decision 1">1</a></li>
+              <li><p class="ag-n"><b>Gecko</b>Markets &amp; Capital</p><p class="ag-d">Sweep of €4,200 waits for your decision</p><a class="ref" href="#d2" aria-label="Decision 2">2</a></li>
+              <li><p class="ag-n"><b>Ultron</b>Security &amp; Automation</p><p class="ag-d">Holding an outbound draft for your review</p><a class="ref" href="#d4" aria-label="Decision 4">4</a></li>
+            </ul>
+            <h3 class="grp-h"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>Finished<span class="n">2</span></h3>
+            <ul class="ag">
+              <li><p class="ag-n"><b>Friday</b>Daily Intel</p><p class="ag-d">Morning brief ready · 6 items · 06:00</p></li>
+              <li><p class="ag-n"><b>Vision</b>Deep Research</p><p class="ag-d">Indexed 17 sources on competitor pricing · 09:40</p></li>
+            </ul>
+            <h3 class="grp-h"><svg class="i i-14" aria-hidden="true"><use href="#i-block"/></svg>Unavailable<span class="n">1</span></h3>
+            <ul class="ag">
+              <li><p class="ag-n"><b>Athena</b>External Strategist</p><p class="ag-d">Cloud only — unavailable while egress is sealed</p></li>
+            </ul>
+            <h3 class="grp-h"><svg class="i i-14" aria-hidden="true"><use href="#i-idle"/></svg>Idle<span class="n">9</span></h3>
+            <p class="ag-idle">Jerome, Veronica, Argus, <b>Oracle</b> (n8n is down — workflows cannot run), Hercules, Hephaestus, Frigga, Hestia, Howard.</p>
+          </section>
+
+          <section class="cond" aria-labelledby="h-cond">
+            <header class="sec-head">
+              <h2 id="h-cond">Condition</h2>
+              <p class="sec-meta"><span>checked 10:50</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <p class="cond-v"><span class="verdict-word"><svg class="i i-14" aria-hidden="true"><use href="#i-tri"/></svg>Degraded</span> since 08:14 — lmstudio, qdrant, neo4j and n8n are not responding; nothing is blocked.</p>
+            <div class="mtrs">
+              <div class="mtr"><span class="k">RAM</span><span class="mbar" aria-hidden="true"><i style="width:19%"></i></span><span class="v"><b>19%</b> · 36 of 192 GB</span></div>
+              <div class="mtr"><span class="k">VRAM</span><span class="mbar" aria-hidden="true"><i style="width:96%"></i></span><span class="v"><b>96%</b> · 23.0 of 24 GB</span><span class="mtr-note">Expected while a 31B model is loaded.</span></div>
+              <div class="mtr"><span class="k">GPU load</span><span class="mbar" aria-hidden="true"><i style="width:3%"></i></span><span class="v"><b>3%</b></span></div>
+              <!-- unknown is drawn as unknown: no bar, no zero -->
+              <div class="mtr st-unknown"><span class="k">Latency p50</span><span class="mbar mbar-unknown" aria-hidden="true"></span><span class="v">— unknown</span><span class="mtr-note">Not measured by the hub yet.</span></div>
+            </div>
+          </section>
+
+          <section class="ran" aria-labelledby="h-ran">
+            <header class="sec-head">
+              <h2 id="h-ran">Where it ran</h2>
+              <p class="sec-meta"><span>today</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <p class="ran-big"><b>100%</b><span>on this machine · <b class="n">41 of 41</b> runs</span></p>
+            <ol class="basis" aria-label="How sure the figure is">
+              <li class="reached" title="Nothing is known about where runs went">Unknown</li>
+              <li class="reached" title="Derived from the local-only switch">Derived</li>
+              <li class="is-now" aria-current="true" title="The basis today">By route</li>
+              <li class="later" title="Needs a network measurement the hub does not make yet">Verified</li>
+            </ol>
+            <p class="ran-sub"><b>By route</b>: the hub counts which route each run used. “Verified” waits for a network measurement.</p>
+            <p class="ran-txt">Egress is sealed — nothing can leave this machine. Local only by code: Frigga, Ultron, Howard, Hestia.</p>
+          </section>
+        </aside>
+      </div>
+    </article>
+
+    <!-- ============ the conversation ============ -->
+    <section class="talk" aria-labelledby="h-talk">
+      <header class="sec-head">
+        <h2 id="h-talk">Conversation</h2>
+        <p class="sec-meta"><span>with Jarvis<span class="role"> · Prime Orchestrator</span> · Orchestrated</span></p>
+        <div class="sec-tools">
+          <button class="btn btn-quiet btn-icon" type="button" aria-label="Search chat history" title="Search chat history"><svg class="i"><use href="#i-search"/></svg></button>
+          <button class="btn btn-quiet btn-icon" type="button" aria-label="New conversation" title="New conversation (/new)"><svg class="i"><use href="#i-newchat"/></svg></button>
+        </div>
+      </header>
+
+      <div class="thread" tabindex="0" aria-label="Thread">
+        <div class="thread-in">
+
+          <!-- the thread grows out of the brief: its first entry is the brief itself -->
+          <p class="day x-broad">Monday, 23 November · today's thread</p>
+          <p class="origin"><time>06:00</time><span><b>Friday</b> · Morning brief ready · 6 items — this thread continues from <a class="link" href="#brief-h">the brief</a></span></p>
+
+          <div class="turn you">
+            <div class="who">You<time>08:02</time></div>
+            <div><p class="say">Morning Jarvis — what does my day look like?</p></div>
+          </div>
+          <div class="turn agent">
+            <div class="who">Jarvis<time>08:02</time></div>
+            <div>
+              <p class="say">Good morning, Andrei. Three meetings today; the Raiffeisen review at 14:00 is the one that matters. Pepper holds your calendar, Stark prepped the KPI deltas. Weather is clear — good day to cycle in.</p>
+              <p class="prov"><svg class="i i-14" aria-hidden="true"><use href="#i-local"/></svg><span>on this machine · <span class="mono">gemma-4-31b</span></span><span class="acts"><button class="link" type="button">Copy</button><button class="link" type="button">Save</button><button class="link" type="button">Read aloud</button><button class="link" type="button">More</button></span></p>
+            </div>
+          </div>
+
+          <div class="turn you">
+            <div class="who">You<time>08:05</time></div>
+            <div>
+              <p class="say">draft the churn slide</p>
+              <span class="attach"><svg class="i i-14" aria-hidden="true"><use href="#i-file"/></svg>QBR-deck.docx</span>
+            </div>
+          </div>
+          <div class="turn agent">
+            <div class="who">Stark<time>08:05</time></div>
+            <div>
+              <p class="say">Stark pulled the numbers — <strong>Digitaholic MRR is +6.2% WoW</strong>; I flagged the missing churn-cohort slide for the review.</p>
+              <p class="act"><svg class="i i-14" aria-hidden="true"><use href="#i-tool"/></svg><span>2 tool calls</span><span><span class="mono">web_search</span> done</span><span class="failed"><svg class="i i-12" aria-hidden="true"><use href="#i-diamond"/></svg> <span class="mono">file_write</span> failed</span><button class="link" type="button">Show</button></p>
+              <p class="prov"><svg class="i i-14" aria-hidden="true"><use href="#i-local"/></svg><span>on this machine · <span class="mono">gemma-4-31b</span></span><span class="acts"><button class="link" type="button">Copy</button><button class="link" type="button">Save</button><button class="link" type="button">Read aloud</button><button class="link" type="button">More</button></span></p>
+            </div>
+          </div>
+
+          <div class="turn you">
+            <div class="who">You<time>08:07</time></div>
+            <div><p class="say">sweep idle cash</p></div>
+          </div>
+          <div class="turn agent is-latest">
+            <div class="who">Gecko<time>08:07</time></div>
+            <div>
+              <p class="say">Gecko's watching the markets — EUR/RON steady at 4.97; idle cash is <strong>€4.2k over buffer</strong>, sweep available.</p>
+              <a class="waits" href="#d2"><span class="ref" aria-hidden="true">2</span><span>1 action waits for your decision — Sweep €4,200 to the savings ladder</span><svg class="i i-14" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+              <p class="prov"><svg class="i i-14" aria-hidden="true"><use href="#i-local"/></svg><span>on this machine · <span class="mono">gemma-4-31b</span></span><span class="acts"><button class="link" type="button">Copy</button><button class="link" type="button">Save</button><button class="link" type="button">Read aloud</button><button class="link" type="button">More</button></span></p>
+            </div>
+          </div>
+
+          <div class="turn you">
+            <div class="who">You<time>10:48</time></div>
+            <div><p class="say" lang="ro">Ce proiecte sunt de terminat acum?</p></div>
+          </div>
+
+          <!-- the reply in progress -->
+          <div class="turn agent live" aria-live="polite">
+            <div class="who">Jarvis<time>10:51</time></div>
+            <div class="tray">
+              <div class="live-head">
+                <svg class="nmark" viewBox="20 16 88 96" role="img" aria-label="Step 3 of 4">
+                  <line x1="40" y1="92" x2="40" y2="36"/><line x1="40" y1="36" x2="88" y2="92"/><line class="todo" x1="88" y1="92" x2="88" y2="36"/>
+                  <circle cx="40" cy="92" r="9"/><circle cx="40" cy="36" r="9"/><circle cx="88" cy="92" r="9"/><circle class="now-ring" cx="88" cy="92" r="16"/><circle class="todo" cx="88" cy="36" r="8"/>
+                </svg>
+                <div>
+                  <p class="live-status">Gathering — asking Pepper and Stark</p>
+                  <ol class="steps"><li class="done"><svg class="i i-12" aria-hidden="true"><use href="#i-check"/></svg>Classify</li><li class="done"><svg class="i i-12" aria-hidden="true"><use href="#i-check"/></svg>Route</li><li class="now" aria-current="step"><span>Gather</span></li><li>Synthesize</li></ol>
+                </div>
+                <button class="btn" type="button"><svg class="i"><use href="#i-stop"/></svg>Stop</button>
+              </div>
+              <ul class="helpers">
+                <li><b>Pepper</b>Checking this week's deadlines</li>
+                <li><b>Stark</b>Pulling project status for Digitaholic</li>
+              </ul>
+              <p class="say" lang="ro">Trei proiecte au termene săptămâna aceasta: prezentarea pentru Raiffeisen (azi, 14:00), raportul lunar Digitaholic și<span class="caret" aria-hidden="true"></span></p>
+              <p class="prov"><svg class="i i-14" aria-hidden="true"><use href="#i-local"/></svg><span>running on this machine · <span class="mono">gemma-4-31b</span></span></p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <form class="composer" onsubmit="return false" aria-label="Message Jarvis">
+        <div class="c-top">
+          <button class="c-pick" type="button" title="Who receives this message">To <b>Jarvis · orchestrated</b><svg class="i i-12" aria-hidden="true"><use href="#i-chev"/></svg></button>
+          <button class="c-pick" type="button" title="Ask — anything with a side effect waits for you.">Approval mode <b>Ask</b><svg class="i i-12" aria-hidden="true"><use href="#i-chev"/></svg></button>
+        </div>
+        <label class="vh" for="msg">Message</label>
+        <textarea id="msg" placeholder="Message Jarvis…"></textarea>
+        <div class="c-bar">
+          <button class="btn btn-quiet" type="button" title="Images · Files · Vault note · Board result · Skill"><svg class="i"><use href="#i-plus"/></svg>Attach</button>
+          <button class="btn btn-quiet" type="button" title="Direct reply (skip extended thinking) · Search chat history · Compare agents · Use previous image"><svg class="i"><use href="#i-sliders"/></svg>Options</button>
+          <span class="c-hint" title="/new  /undo  /refine  /&lt;skill&gt;  @file:path"><span class="kbd">/</span><span>commands</span><span class="kbd">@</span><span>files</span></span>
+          <button class="btn btn-quiet c-voice" type="button" title="Voice runs locally"><svg class="i"><use href="#i-mic"/></svg>Voice ready<small>&nbsp;· local</small></button>
+          <button class="btn btn-primary" type="submit">Send<svg class="i"><use href="#i-send"/></svg></button>
+        </div>
+      </form>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  /* Small behaviours only. The typed confirmation unlocks its button when the phrase matches
+     (no keyboard shortcut ever approves); the edition switch flips day/night. */
+  document.querySelectorAll('input[data-phrase]').forEach(function (inp) {
+    var btn = document.querySelector('[data-unlocks="' + inp.id + '"]');
+    inp.addEventListener('input', function () {
+      var ok = inp.value.trim().toLowerCase() === inp.dataset.phrase;
+      btn.disabled = !ok;
+    });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+  });
+  var ed = document.querySelector('[data-edition]');
+  function label() {
+    var night = document.documentElement.getAttribute('data-theme') === 'dark';
+    ed.querySelector('.lbl').textContent = night ? 'Day' : 'Night';
+    ed.setAttribute('aria-label', night ? 'Switch to the day edition' : 'Switch to the night edition');
+  }
+  ed.addEventListener('click', function () {
+    var night = document.documentElement.getAttribute('data-theme') === 'dark';
+    document.documentElement.setAttribute('data-theme', night ? 'light' : 'dark');
+    label();
+  });
+  label();
+</script>
+</body>
+</html>

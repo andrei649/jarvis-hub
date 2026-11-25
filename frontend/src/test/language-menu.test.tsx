@@ -1,26 +1,37 @@
 // @ts-nocheck
-/* H221 — the globe button opens a language list (not a two-way toggle), the choice is an
-   appearance preference (cached locally, synced to the narrow preference endpoint like the
-   other cosmetic choices) and it drives both the I18N tables and the document's lang. */
+/* H221 — the language is an appearance preference (cached locally, synced to the narrow
+   preference endpoint like the other cosmetic choices) and it drives both the HUD's strings and
+   the document's lang and dir.
+
+   The App chooses it from the masthead's EN | RO radio group (LangSeg) and from the sheet's
+   "Language · …" rows (PHASE_B_PLAN.md §8.3); the same claims as the HUD v2 globe menu's, which was
+   deleted with the top bar: persistence, `lang`/`dir`, `hud.lang` for the v1 shell and
+   `jarvis:locale_changed` from it. frame/Masthead.test.tsx pins the radio group itself. */
 import React from 'react';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { TopBar } from '../shell';
 import { LANGUAGES, V2 } from '../data';
 import App from '../app';
+import { resetPolling } from '../signals/poll';
 
-vi.mock('../voice', () => ({useVoice: () => ({active:false, toggle:()=>{}})}));
+vi.mock('../voice', () => ({useVoice: () => ({active:false, toggle:()=>{}, status:'idle'})}));
 vi.mock('../mesh', () => ({NeuralMesh:()=>null,isExecutingAgent:()=>false}));
 vi.mock('../api/loaders', () => ({loadJarvisData:async()=>({}),createLatestRefreshRunner:()=>({refresh:()=>{},stop:()=>{}})}));
 vi.mock('../api/live', () => ({PREVIEW_MODE_LIVE_KEYS:{},useLiveModes:()=>({live:{}})}));
 vi.mock('../analytics', () => ({initAnalytics:()=>{},trackPageview:()=>{}}));
-vi.mock('../modes3', () => ({ChatMode:()=> <div>Chat</div>}));
+vi.mock('../modes3', () => ({}));
 vi.mock('../gap', () => ({FirstRunGate:()=>null}));
 
 const defaults = {font:'theme',accent:'cyan',look:'obsidian',density:'normal',motion:'system',scanline:'on',dotgrid:'off',lang:'en'};
 
-beforeEach(() => { localStorage.clear(); history.replaceState(null, '', '/v2/chat?demo=1'); document.documentElement.lang = ''; });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+beforeEach(() => { resetPolling(); localStorage.clear(); history.replaceState(null, '', '/v2/chat?demo=1'); document.documentElement.lang = ''; document.documentElement.dir = ''; });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); resetPolling(); });
+
+/** The masthead's language radio group, and the code of the language it has checked ('EN' | 'RO'). */
+const langSeg = () => document.querySelector('[data-frame="masthead"] [role="radiogroup"]') as HTMLElement | null;
+const chosen = () => langSeg()?.querySelector('[role="radio"][aria-checked="true"]')?.textContent ?? null;
+/** The radio for a language, by the name the masthead gives it in the language on screen. */
+const radio = (name: string) => within(langSeg() as HTMLElement).getByRole('radio', {name});
 
 describe('language list', () => {
   it('lists exactly the languages the I18N tables translate, English and Romanian first', () => {
@@ -30,69 +41,6 @@ describe('language list', () => {
       expect(l.label.trim()).not.toBe('');
       expect(['ltr', 'rtl']).toContain(l.dir);
     }
-  });
-});
-
-describe('TopBar globe menu', () => {
-  function renderBar(lang = 'en', setLang = vi.fn()) {
-    render(<TopBar clock={new Date(0)} lang={lang} setLang={setLang} accent="cyan" agents={[]} localPct={null}
-      live={false} trust={{mic:'on', strict_local:false}} llm={{state:'unknown', model:null}} demo={false} setDemo={() => {}}
-      serverUp={false} onPalette={() => {}} onAmbient={() => {}} t={V2.I18N[lang]} />);
-    return { setLang, globe: screen.getByRole('button', {name:/language/i}) };
-  }
-
-  it('is a menu button that opens a radio list with the active language checked', () => {
-    const { globe } = renderBar('ro');
-    expect(globe.getAttribute('aria-haspopup')).toBe('menu');
-    expect(globe.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByRole('menu')).toBeNull();
-    fireEvent.click(globe);
-    expect(globe.getAttribute('aria-expanded')).toBe('true');
-    const menu = screen.getByRole('menu');
-    expect(globe.getAttribute('aria-controls')).toBe(menu.id);
-    const items = screen.getAllByRole('menuitemradio');
-    expect(items.map(i => i.textContent)).toEqual(LANGUAGES.map(l => l.label));
-    expect(items.map(i => i.getAttribute('aria-checked'))).toEqual(LANGUAGES.map(l => String(l.code === 'ro')));
-    expect(screen.getByRole('menuitemradio', {name:'Română'}).getAttribute('lang')).toBe('ro');
-  });
-
-  it('chooses with the keyboard: focus lands in the list, arrows move, Enter selects and closes', () => {
-    const { globe, setLang } = renderBar('en');
-    fireEvent.click(globe);
-    const [first, second] = screen.getAllByRole('menuitemradio');
-    expect(document.activeElement).toBe(first);
-    fireEvent.keyDown(first, {key:'ArrowDown'});
-    expect(document.activeElement).toBe(second);
-    fireEvent.keyDown(second, {key:'ArrowDown'});
-    expect(document.activeElement).toBe(first);
-    fireEvent.keyDown(first, {key:'End'});
-    expect(document.activeElement).toBe(second);
-    fireEvent.keyDown(second, {key:'Enter'});
-    expect(setLang).toHaveBeenCalledWith('ro');
-    expect(screen.queryByRole('menu')).toBeNull();
-    expect(globe.getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('closes on Escape (returning focus to the globe) and on a click elsewhere', () => {
-    const { globe, setLang } = renderBar('en');
-    fireEvent.click(globe);
-    fireEvent.keyDown(screen.getAllByRole('menuitemradio')[0], {key:'Escape'});
-    expect(screen.queryByRole('menu')).toBeNull();
-    expect(document.activeElement).toBe(globe);
-    fireEvent.click(globe);
-    expect(screen.getByRole('menu')).toBeTruthy();
-    fireEvent.mouseDown(document.body);
-    expect(screen.queryByRole('menu')).toBeNull();
-    expect(setLang).not.toHaveBeenCalled();
-  });
-
-  it('selects by click and shows the active language on the globe', () => {
-    const { globe, setLang } = renderBar('en');
-    expect(globe.textContent).toContain('EN');
-    fireEvent.click(globe);
-    fireEvent.click(screen.getByRole('menuitemradio', {name:'Română'}));
-    expect(setLang).toHaveBeenCalledWith('ro');
-    expect(screen.queryByRole('menu')).toBeNull();
   });
 });
 
@@ -108,30 +56,53 @@ describe('App language preference', () => {
     return { fetch, get saved() { return saved; } };
   }
 
-  it('switches the strings and the document lang from the globe menu and saves it like the other preferences', async () => {
+  it('switches the strings and the document lang from the masthead\'s EN | RO radio group and saves it like the other preferences', async () => {
     const api = server();
     render(<App/>);
     await waitFor(() => expect(document.documentElement.lang).toBe('en'));
-    fireEvent.click(screen.getByRole('button', {name:/language/i}));
-    fireEvent.click(screen.getByRole('menuitemradio', {name:'Română'}));
+    expect(chosen()).toBe('EN');
+    expect(screen.getByRole('navigation', {name:'Areas'})).toBeTruthy();
+    fireEvent.click(radio('Romanian'));
     await waitFor(() => expect(document.documentElement.lang).toBe('ro'));
-    expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO');
-    expect(screen.getByText(V2.I18N.ro.sub)).toBeTruthy();
+    expect(document.documentElement.dir).toBe('ltr');
+    expect(chosen()).toBe('RO');
+    // the radio group names itself and its choices in the language on screen
+    expect(langSeg()?.getAttribute('aria-label')).toBe('Limbă');
+    expect(radio('Română').getAttribute('aria-checked')).toBe('true');
+    // the frame's own strings switched: the masthead's areas, its Find and the page title
+    expect(screen.getByRole('navigation', {name:'Zone'})).toBeTruthy();
+    expect(screen.queryByRole('navigation', {name:'Areas'})).toBeNull();
+    expect(screen.getByRole('button', {name:/^Caută sau rulează o comandă/})).toBeTruthy();
+    await waitFor(() => expect(document.title).toBe('Conversație · Acasă · Nerva'));
     await waitFor(() => expect(api.saved.lang).toBe('ro'));
     expect(api.fetch.mock.calls.filter(c => c[1]?.method === 'PUT').map(c => JSON.parse(c[1].body))).toEqual([{lang:'ro', _revision:'1'}]);
     expect(localStorage.getItem('hud.lang')).toBe('ro');
   });
 
+  it('chooses with the keyboard: one stop in the tab order, the arrows move the choice', async () => {
+    const api = server();
+    render(<App/>);
+    await waitFor(() => expect(document.documentElement.lang).toBe('en'));
+    const radios = within(langSeg() as HTMLElement).getAllByRole('radio');
+    expect(radios.map(r => r.textContent)).toEqual(['EN', 'RO']);
+    expect(radios.map(r => r.getAttribute('tabindex'))).toEqual(['0', '-1']);
+    radios[0].focus();
+    fireEvent.keyDown(radios[0], {key:'ArrowRight'});
+    await waitFor(() => expect(document.documentElement.lang).toBe('ro'));
+    expect(chosen()).toBe('RO');
+    expect(document.activeElement?.getAttribute('lang')).toBe('ro');
+    await waitFor(() => expect(api.saved.lang).toBe('ro'));
+  });
+
   it('keeps the chosen language across a reload from the local cache before the server answers', async () => {
     const api = server();
     const first = render(<App/>);
-    fireEvent.click(screen.getByRole('button', {name:/language/i}));
-    fireEvent.click(screen.getByRole('menuitemradio', {name:'Română'}));
+    fireEvent.click(radio('Romanian'));
     await waitFor(() => expect(api.saved.lang).toBe('ro'));
     first.unmount();
     vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
     render(<App/>);
-    expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO');
+    expect(chosen()).toBe('RO');
     expect(document.documentElement.lang).toBe('ro');
   });
 
@@ -139,15 +110,16 @@ describe('App language preference', () => {
     server({lang:'ro'});
     render(<App/>);
     await waitFor(() => expect(document.documentElement.lang).toBe('ro'));
-    expect(screen.getByText(V2.I18N.ro.sub)).toBeTruthy();
+    expect(chosen()).toBe('RO');
+    expect(screen.getByRole('navigation', {name:'Zone'})).toBeTruthy();
   });
 
   it('shows the pre-sync hud.lang choice on an unconfigured server without uploading a default', async () => {
     localStorage.setItem('hud.lang', 'en');
-    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({configured:false, preferences:defaults})));
+    const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({configured:false, preferences:defaults})));
     vi.stubGlobal('fetch', fetch);
     render(<App/>);
-    expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('EN');
+    expect(chosen()).toBe('EN');
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     await new Promise(r => setTimeout(r, 30));
     expect(fetch.mock.calls.some(c => c[1]?.method === 'PUT')).toBe(false);
@@ -163,10 +135,10 @@ describe('App language preference', () => {
       seed();
       const api = server({accent:'amber'});
       render(<App/>);
-      expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO');
+      expect(chosen()).toBe('RO');
       await waitFor(() => expect(api.saved.lang).toBe('ro'));
       await new Promise(r => setTimeout(r, 30));
-      expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO');
+      expect(chosen()).toBe('RO');
       expect(document.documentElement.lang).toBe('ro');
       expect(localStorage.getItem('hud.lang')).toBe('ro');
       expect(api.fetch.mock.calls.filter(c => c[1]?.method === 'PUT').map(c => JSON.parse(c[1].body).lang)).toEqual(['ro']);
@@ -183,7 +155,7 @@ describe('App language preference', () => {
     render(<App/>);
     await new Promise(r => setTimeout(r, 30));
     expect(api.fetch.mock.calls.filter(c => c[1]?.method === 'PUT')).toHaveLength(1);
-    expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO');
+    expect(chosen()).toBe('RO');
   });
 
   it('follows the v1 shell: jarvis:locale_changed and a hud.lang storage event reach the HUD', async () => {
@@ -191,21 +163,27 @@ describe('App language preference', () => {
     render(<App/>);
     await waitFor(() => expect(document.documentElement.lang).toBe('en'));
     fireEvent(window, new CustomEvent('jarvis:locale_changed', {detail:'ro'}));
-    await waitFor(() => expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('RO'));
+    await waitFor(() => expect(chosen()).toBe('RO'));
+    expect(document.documentElement.lang).toBe('ro');
     await waitFor(() => expect(api.saved.lang).toBe('ro'));
     fireEvent(window, new StorageEvent('storage', {key:'hud.lang', newValue:'en'}));
-    await waitFor(() => expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('EN'));
+    await waitFor(() => expect(chosen()).toBe('EN'));
     fireEvent(window, new CustomEvent('jarvis:locale_changed', {detail:'xx'}));
-    expect(screen.getByRole('button', {name:/language/i}).textContent).toContain('EN');
+    expect(chosen()).toBe('EN');
+    expect(document.documentElement.lang).toBe('en');
   });
 
-  it('offers every language as a palette row and switches from there', async () => {
+  it('offers every language as a row of the search sheet and switches from there', async () => {
     const api = server();
     render(<App/>);
     fireEvent.keyDown(window, {key:'k', ctrlKey:true});
-    expect(await screen.findByText('Language · English ✓')).toBeTruthy();
-    fireEvent.click(screen.getByText('Language · Română'));
+    const sheet = await screen.findByRole('dialog', {name:'Search or run a command'});
+    // the appearance rows keep the palette's words; the sheet lists them for a query
+    fireEvent.change(within(sheet).getByRole('combobox'), {target:{value:'language'}});
+    for (const l of LANGUAGES) expect(within(sheet).getByText(`Language · ${l.label}${l.code === 'en' ? ' ✓' : ''}`)).toBeTruthy();
+    fireEvent.click(within(sheet).getByText('Language · Română'));
     await waitFor(() => expect(document.documentElement.lang).toBe('ro'));
+    expect(chosen()).toBe('RO');
     await waitFor(() => expect(api.saved.lang).toBe('ro'));
   });
 });

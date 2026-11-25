@@ -13,16 +13,16 @@
 .photoshop-layout-fields { display: grid; align-content: start; gap: 12px; min-width: 0; }
 .photoshop-layout-fields label { display: grid; gap: 6px; font-weight: 500; min-width: 0; }
 .photoshop-layout-fields textarea { min-height: 180px; }
-.photoshop-layout-fields input[type="file"] { font-size: 12px; }
-.photoshop-layout-hint { color: var(--ink-2); font-size: 12px; }
+.photoshop-layout-fields input[type="file"] { font-size: var(--n-fs-label); }
+.photoshop-layout-hint { color: var(--ink-2); font-size: var(--n-fs-label); }
 .photoshop-layout-selection { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; overflow-wrap: anywhere; }
 .photoshop-layout-preview { min-width: 0; }
-.photoshop-layout-preview h3 { margin: 0 0 8px; font-size: 14px; }
+.photoshop-layout-preview h3 { margin: 0 0 8px; font-size: var(--n-fs-ui); }
 .photoshop-layout-canvas { padding: 8px; border: 1px solid var(--ink-2); border-radius: var(--radius); background: var(--void); }
 .photoshop-layout-canvas canvas { display: block; width: 100%; height: auto; max-width: 100%; }
 .photoshop-layout footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
-.photoshop-layout .photoshop-download:enabled { background: var(--accent-light); color: var(--void); border-color: var(--accent-light); font-weight: 600; }
-.photoshop-layout :is(button, input, textarea):focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.photoshop-layout .photoshop-download:enabled { background: var(--n-primary); color: var(--n-on-primary); border-color: var(--n-primary); font-weight: 600; }
+.photoshop-layout :is(button, input, textarea):focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
 
 @media (max-width: 680px) {
   .photoshop-layout { padding: 14px; }

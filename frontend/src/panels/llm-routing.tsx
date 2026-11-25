@@ -41,7 +41,8 @@
    apiPost THROWS on 4xx and carries the parsed body, so the call passes onErr and the
    refusal is rendered from that body — otherwise every refusal would be dead code. */
 import React, { useState } from 'react';
-import { mono, asLive, Card, State, Row, Tag, actA, inpS, taS, Json } from '../panel-kit';
+import { mono, note, asLive, Card, State, Row, Tag, actA, inpS, taS, Json } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const MOE_PATH = '/api/llm/moe/route';
 const PROMPT_CAP = 8000;          // MoERouteBody.prompt  max_length (models_llm.py:81)
@@ -59,20 +60,20 @@ function Refusal({ err }: { err: any }) {
   const asList = Array.isArray(detail) ? detail : null;
   return (
     <div role="alert" style={{ marginTop: 8, padding: 6, border: '1px solid var(--red)', borderRadius: 4 }}>
-      <div style={{ ...mono, color: 'var(--red)' }}>
+      <div style={{ ...note, color: 'var(--red)' }}>
         refused · HTTP {(err && err.status) || 'error'} · POST {MOE_PATH}
       </div>
       {asString != null && (
-        <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>{asString}</div>
+        <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>{asString}</div>
       )}
       {asList != null && asList.map((d, i) => (
-        <div key={i} style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+        <div key={i} style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
           {(Array.isArray(d && d.loc) ? d.loc : []).join('.')}: {d && d.msg}
         </div>
       ))}
       {asString == null && asList == null && (
         <>
-          <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+          <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
             no decision was computed — the response carried no readable refusal detail.
           </div>
           {body != null && <Json v={body} />}
@@ -86,7 +87,7 @@ function Refusal({ err }: { err: any }) {
 function Verdict({ out }: { out: any }) {
   if (out.collapses_tiers === false) {
     return (
-      <div style={{ ...mono, color: 'var(--amber)', marginTop: 6 }}>
+      <div style={{ ...note, color: 'var(--amber)', marginTop: 6 }}>
         collapses_tiers: false — the backend's MoE registry has no thinking mode for
         {' '}"{String(out.model)}"; the decision is forced to /no_think whatever the prompt says.
       </div>
@@ -94,13 +95,13 @@ function Verdict({ out }: { out: any }) {
   }
   if (out.thinking === true) {
     return (
-      <div style={{ ...mono, color: 'var(--green)', marginTop: 6 }}>
+      <div style={{ ...note, color: 'var(--green)', marginTop: 6 }}>
         collapses_tiers: true — thinking mode on for this prompt.
       </div>
     );
   }
   return (
-    <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 6 }}>
+    <div style={{ ...note, color: 'var(--ink-2)', marginTop: 6 }}>
       collapses_tiers: true — this model supports thinking mode; the backend judged THIS
       prompt simple enough for /no_think.
     </div>
@@ -135,7 +136,7 @@ export function LlmRoutingPanel() {
       live={asLive(out)}
       sub={out ? `${String(out.model)} · ${String(out.directive)}` : null}
     >
-      <div style={{ ...mono, color: 'var(--ink-2)', marginBottom: 6 }}>
+      <div style={{ ...note, color: 'var(--ink-2)', marginBottom: 6 }}>
         Computes the H13.4 thinking / non-thinking decision for one prompt: which directive,
         how big a token budget, and whether the model can collapse the fast/deep tier split.
       </div>
@@ -146,28 +147,28 @@ export function LlmRoutingPanel() {
         placeholder="prompt to route (e.g. explain why the router picked this backend)"
         onChange={(e) => setPrompt(e.target.value)}
       />
-      <div style={{ ...mono, color: 'var(--ink-2)', margin: '3px 0 6px' }}>
+      <div style={{ ...note, color: 'var(--ink-2)', margin: '3px 0 6px' }}>
         {prompt.length} chars · backend cap {PROMPT_CAP}
       </div>
 
       <Row>
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>model</span>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>model</span>
         <input
           style={{ ...inpS, flex: 1 }}
           value={model}
           placeholder={DEFAULT_MODEL}
           onChange={(e) => setModel(e.target.value)}
         />
-        <span style={{ ...mono, color: 'var(--ink-2)' }}>cap {MODEL_CAP}</span>
+        <span style={{ ...note, color: 'var(--ink-2)' }}>cap {MODEL_CAP}</span>
         <button className="tool-btn" disabled={!ready} onClick={preview}>PREVIEW ROUTE</button>
       </Row>
-      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>
+      <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>
         free text — no route lists the backend's MoE registry, so this panel does not invent
         one; "{DEFAULT_MODEL}" is the backend's own default and each answer's collapses_tiers
         reports whether the model it used is in that registry.
       </div>
       {prompt.trim() === '' && !busy && (
-        <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 4 }}>type a prompt to preview</div>
+        <div style={{ ...note, color: 'var(--ink-2)', marginTop: 4 }}>type a prompt to preview</div>
       )}
 
       <State e={null} loading={busy} n={null} />
@@ -187,10 +188,10 @@ export function LlmRoutingPanel() {
         </div>
       )}
 
-      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 8 }}>
+      <div style={{ ...note, color: 'var(--ink-2)', marginTop: 8 }}>
         POST {MOE_PATH} · admin tier (X-Admin-Token).
       </div>
-      <div style={{ ...mono, color: 'var(--ink-2)', marginTop: 2 }}>
+      <div style={{ ...note, color: 'var(--ink-2)', marginTop: 2 }}>
         Preview only: this request computes the decision and changes nothing on the running
         router — the live router selects its backend elsewhere.
       </div>

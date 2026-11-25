@@ -33,7 +33,7 @@ function SignalRow({ signal, evidenceById }) {
 
 function SignalLayerDown({ onRetry }) {
   return (
-    <div className="cap-row" style={{ borderColor: 'rgba(245,158,11,.45)', alignItems: 'flex-start' }}>
+    <div className="cap-row" style={{ borderColor: 'var(--amber)', alignItems: 'flex-start' }}>
       <div>
         <div className="cn">Signal Layer unavailable</div>
         <div className="cd" style={{ lineHeight: 1.55 }}>

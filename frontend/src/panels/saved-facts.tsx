@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
 import { ConfirmAction, RISK_TIER } from '../confirm';
 import { inpS, taS } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 type Store = 'memory' | 'user';
 type Fact = { entry_id: string; store: Store; value: string };
@@ -70,20 +71,20 @@ export function SaveFactForm({ initialDraft = '', memoryView, chatState }: { ini
   };
 
   return <>
-    <p style={{ fontSize: 12, margin: '0 0 8px' }}>Saved facts are shared across agents. With automatic memory on, new owner chats can include them on the selected local or cloud model.</p>
+    <p style={{ fontSize: 'var(--n-fs-label)', margin: '0 0 8px' }}>Saved facts are shared across agents. With automatic memory on, new owner chats can include them on the selected local or cloud model.</p>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'end' }}>
-      <label style={{ fontSize: 11, flex: '1 1 120px' }}>Save in
+      <label style={{ fontSize: 'var(--n-fs-meta)', flex: '1 1 120px' }}>Save in
         <select aria-label="Save in" value={store} disabled={busy || !!saved} tabIndex={0} onChange={e => setStore(e.target.value as Store)} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
           <option value="memory">Agent notes</option><option value="user">User profile</option>
         </select>
       </label>
-      <label style={{ fontSize: 11, flex: '3 1 220px', minWidth: 0 }}>Fact to save
+      <label style={{ fontSize: 'var(--n-fs-meta)', flex: '3 1 220px', minWidth: 0 }}>Fact to save
         <textarea aria-label="Fact to save" value={draft} disabled={busy} tabIndex={0} onChange={e => setDraft(e.target.value)} rows={2} style={{ ...taS, display: 'block', width: '100%', boxSizing: 'border-box', resize: 'vertical' }} />
       </label>
       <button className="tool-btn" disabled={!canSubmit} onClick={save}>{saved ? 'Save correction' : 'Save fact'}</button>
     </div>
     {draftLength > 300 && <div role="status">{draftLength}/300 characters · shorten the fact to save.</div>}
-    {notice && <p role="status" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>{notice}</p>}
+    {notice && <p role="status" style={{ fontSize: 'var(--n-fs-label)', overflowWrap: 'anywhere' }}>{notice}</p>}
   </>;
 }
 
@@ -183,28 +184,28 @@ export function SavedFacts() {
   };
 
   return <section aria-label="Saved facts" style={{ border: '1px solid var(--panel-line)', borderRadius: 'var(--radius)', padding: 14, background: 'var(--surface-2)', marginBottom: 'var(--gap)' }}>
-    <div className="dl" style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--ink-2)', marginBottom: 8 }}>Saved facts</div>
-    {injected === false && <p role="status" style={{ fontSize: 12, color: 'var(--amber)', margin: '0 0 8px' }}>Automatic memory is off; new saves are unavailable. Existing facts remain stored.</p>}
+    <div className="dl" style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 8 }}>Saved facts</div>
+    {injected === false && <p role="status" style={{ fontSize: 'var(--n-fs-label)', color: 'var(--amber)', margin: '0 0 8px' }}>Automatic memory is off; new saves are unavailable. Existing facts remain stored.</p>}
     <SaveFactForm memoryView={{ busy, canSave: !loading && !readError && injected === true, setBusy, setMessage,
       onSaved: entry => {
         if (!entry) { setRefresh(n => n + 1); return; }
         setFacts(current => [...current.filter(f => f.entry_id !== entry.entry_id), entry]);
         setUndo(null);
       } }} />
-    {message && <p role="status" style={{ fontSize: 11, color: /refused|not saved|not corrected/i.test(message) ? 'var(--amber)' : 'var(--accent-light)' }}>{message}</p>}
+    {message && <p role="status" style={{ fontSize: 'var(--n-fs-meta)', color: /refused|not saved|not corrected/i.test(message) ? 'var(--amber)' : 'var(--accent-light)' }}>{message}</p>}
     {undo && <button className="tool-btn" disabled={busy} aria-label="Undo forgotten fact" onClick={undoForget}>Undo forgotten fact</button>}
-    <div style={{ marginTop: 12, fontSize: 11, color: 'var(--ink-2)' }}>{loading ? 'Loading saved facts…' : readError ? 'Saved facts unavailable. Try again.' : facts.length ? `${facts.length} saved fact${facts.length === 1 ? '' : 's'}` : 'No saved facts.'}</div>
+    <div style={{ marginTop: 12, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{loading ? 'Loading saved facts…' : readError ? 'Saved facts unavailable. Try again.' : facts.length ? `${facts.length} saved fact${facts.length === 1 ? '' : 's'}` : 'No saved facts.'}</div>
     {readError && <button className="tool-btn" onClick={() => setRefresh(n => n + 1)}>Retry</button>}
     {!readError && facts.map(fact => <div key={fact.entry_id} style={{ borderTop: '1px solid var(--panel-line)', padding: '8px 0', overflowWrap: 'anywhere' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'start' }}>
-        <span style={{ flex: '1 1 200px', minWidth: 0, fontSize: 12 }}>{fact.value}</span>
+        <span style={{ flex: '1 1 200px', minWidth: 0, fontSize: 'var(--n-fs-label)' }}>{fact.value}</span>
         <button className="tool-btn" disabled={busy} aria-label={`Correct fact: ${fact.value}`} onClick={() => { setEditing(fact); setCorrection(fact.value); setMessage(''); }}>Correct fact</button>
         <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="Forget fact" armedLabel="Confirm forget"
           ariaLabel={`Forget fact: ${fact.value}`} disabled={busy}
           prompt="Remove this entry from saved facts for future chats? Existing chats and this session are unchanged."
           onConfirm={() => forget(fact)} />
       </div>
-      <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>Source: saved fact · {label(fact.store)}</div>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>Source: saved fact · {label(fact.store)}</div>
       {editing?.entry_id === fact.entry_id && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
         <input aria-label="Corrected fact" value={correction} disabled={busy} onChange={e => setCorrection(e.target.value)} style={{ ...inpS, flex: '1 1 220px', minWidth: 0 }} />
         <button className="tool-btn" disabled={busy || correctionLength === 0 || correctionLength > 300 || editing.value !== fact.value} onClick={() => correct(fact)}>Save correction</button>

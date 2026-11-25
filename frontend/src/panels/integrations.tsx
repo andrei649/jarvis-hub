@@ -20,7 +20,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { apiDelete, apiPost, apiPut } from '../api/client';
 import { navigateHud } from '../hud-routing';
-import { Card, Tag, inpS, mono, refusalReason, useApi } from '../panel-kit';
+import { Card, Tag, inpS, mono, note, refusalReason, useApi } from '../panel-kit';
 import { guardFlags, guardRefusal, type GuardFlags, type GuardRefusal } from '../selection-guard';
 
 export const INTEGRATIONS_PATH = '/api/admin/integrations';
@@ -61,17 +61,17 @@ export function ConsentCard({ item, refusal, onConfirm, onCancel }: {
   const titleId = `consent-${item.id}`;
   return (
     <div role="alertdialog" aria-labelledby={titleId} style={{ marginTop: 8, padding: 8, border: '1px solid var(--amber)', borderRadius: 4, background: 'var(--surface)' }}>
-      <div id={titleId} style={{ ...mono, fontSize: 10.5, color: 'var(--amber)', marginBottom: 4 }}>before you use {item.display_name}</div>
-      <dl style={{ margin: 0, fontSize: 11, display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 8px' }}>
+      <div id={titleId} style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 4 }}>before you use {item.display_name}</div>
+      <dl style={{ margin: 0, fontSize: 'var(--n-fs-meta)', display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 8px' }}>
         <dt>Who receives {f.receives}</dt><dd style={{ margin: 0 }}>{item.display_name}{f.host ? ` (${f.host})` : ''}</dd>
         <dt>Host country</dt><dd style={{ margin: 0 }}>{f.host_country || 'not recorded'}</dd>
         <dt>Data policy</dt><dd style={{ margin: 0 }}>{policyText(f)}</dd>
         <dt>Price</dt><dd style={{ margin: 0 }}>{priceText(f)} · {f.price_note}</dd>
       </dl>
-      <ul style={{ margin: '6px 0 6px 16px', padding: 0, fontSize: 10.5, color: 'var(--ink-2)' }}>
+      <ul style={{ margin: '6px 0 6px 16px', padding: 0, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
         {refusal.guards.map((g, i) => <li key={i}>{g.message}</li>)}
       </ul>
-      <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginBottom: 6 }}>Your acknowledgement is written to the audit log. Nerva asks again the next time you choose.</div>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>Your acknowledgement is written to the audit log. Nerva asks again the next time you choose.</div>
       <div style={{ display: 'flex', gap: 6 }}>
         <button className="tool-btn" onClick={() => onConfirm(guardFlags(refusal))}>I understand, use it</button>
         <button className="tool-btn" onClick={onCancel}>Cancel</button>
@@ -153,15 +153,16 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
 
   return (
     <div style={{ padding: '6px 0 8px 10px', borderLeft: '2px solid var(--panel-line)', marginBottom: 6 }}>
-      <dl style={{ margin: '0 0 6px', fontSize: 11, display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 8px' }}>
+      <dl style={{ margin: '0 0 6px', fontSize: 'var(--n-fs-meta)', display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 8px' }}>
         <dt>Receives</dt><dd style={{ margin: 0 }}>{f.receives}</dd>
-        <dt>Host</dt><dd style={{ margin: 0, ...mono }}>{f.host || 'not recorded'}</dd>
+        {/* A host is an address (mono); "not recorded" is words. */}
+        <dt>Host</dt><dd style={{ margin: 0, ...(f.host ? mono : note) }}>{f.host || 'not recorded'}</dd>
         <dt>Host country</dt><dd style={{ margin: 0 }}>{f.host_country || 'not recorded'}</dd>
         <dt>Data policy</dt><dd style={{ margin: 0 }}>{policyText(f)}{f.data_policy_note ? ` · ${f.data_policy_note}` : ''}</dd>
         <dt>Price</dt><dd style={{ margin: 0 }}>{priceText(f)} · {f.price_note}</dd>
       </dl>
 
-      <div style={{ fontSize: 11, marginBottom: 4 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', marginBottom: 4 }}>
         {item.key.set && !item.key.own
           ? <>Key <b>shared</b>: <span style={mono}>{item.key.name}</span> was set for {item.key.shared_with.join(', ') || 'another use'}, not for {item.display_name}.
               It is not tested here, and using {item.display_name} asks for its own consent.</>
@@ -173,14 +174,14 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
             : <>No key yet{item.key.names.length ? <> · <span style={mono}>{item.key.names.join(' / ')}</span></> : null}</>}
       </div>
       {item.key.stored_copy && (
-        <div style={{ fontSize: 10.5, marginBottom: 4 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', marginBottom: 4 }}>
           Nerva still holds an older copy of this key from this panel; the .env key is the one in use.
           <button className="tool-btn" style={{ marginLeft: 6 }} disabled={busy} onClick={removeKey}>remove the stored copy</button>
         </div>
       )}
       {item.key.editable && (
         <form onSubmit={(ev) => { ev.preventDefault(); saveKey(sameKeyFlags.current); }} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label htmlFor={inputId} style={{ fontSize: 10.5 }}>{item.key.set && item.key.own ? 'Replace the key' : 'API key'} for {item.display_name}</label>
+          <label htmlFor={inputId} style={{ fontSize: 'var(--n-fs-meta)' }}>{item.key.set && item.key.own ? 'Replace the key' : 'API key'} for {item.display_name}</label>
           <input id={inputId} type="password" autoComplete="off" spellCheck={false} value={value}
             onChange={(ev) => setValue(ev.target.value)} style={{ ...inpS, minWidth: 180 }} />
           <button className="tool-btn" type="submit" disabled={busy || !value.trim()}>save key</button>
@@ -190,7 +191,7 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
         </form>
       )}
       {shared && (
-        <div role="alertdialog" aria-label="the same key for other providers" style={{ marginTop: 6, padding: 6, border: '1px solid var(--amber)', borderRadius: 4, fontSize: 10.5 }}>
+        <div role="alertdialog" aria-label="the same key for other providers" style={{ marginTop: 6, padding: 6, border: '1px solid var(--amber)', borderRadius: 4, fontSize: 'var(--n-fs-meta)' }}>
           <div>{shared}</div>
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
             <button className="tool-btn" onClick={() => { sameKeyFlags.current = { same_key: true }; saveKey({ same_key: true }); }}>yes, it is the same key</button>
@@ -203,7 +204,7 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
         <button className="tool-btn" disabled={busy || !item.key.set} onClick={test} aria-label={`test ${item.display_name}`}>test</button>
         {item.kind === 'model' && item.selectable && (
           <>
-            <label htmlFor={modelId} style={{ fontSize: 10.5 }}>Model</label>
+            <label htmlFor={modelId} style={{ fontSize: 'var(--n-fs-meta)' }}>Model</label>
             <input id={modelId} list={`${modelId}-list`} value={model} onChange={(ev) => setModel(ev.target.value)} style={{ ...inpS, minWidth: 160 }} />
             <datalist id={`${modelId}-list`}>{item.models.map((m) => <option key={m} value={m} />)}</datalist>
           </>
@@ -214,12 +215,12 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
             {item.kind === 'search' ? 'use for searches' : item.kind === 'video' ? 'use for videos' : 'use this provider'}
           </button>
         )}
-        {!item.selectable && item.kind === 'model' && <span style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>used as soon as its key is set</span>}
-        {item.kind === 'search' && !item.choice_editable && <span style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>the search choice is set in .env (JARVIS_WEB_BACKEND)</span>}
-        {item.kind === 'video' && !item.choice_editable && <span style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>the video choice is set in .env (JARVIS_VIDEO_PROVIDER)</span>}
+        {!item.selectable && item.kind === 'model' && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>used as soon as its key is set</span>}
+        {item.kind === 'search' && !item.choice_editable && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>the search choice is set in .env (JARVIS_WEB_BACKEND)</span>}
+        {item.kind === 'video' && !item.choice_editable && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>the video choice is set in .env (JARVIS_VIDEO_PROVIDER)</span>}
       </div>
-      {testMsg && <div role="status" style={{ fontSize: 10.5, marginTop: 4 }}>{testMsg}</div>}
-      {msg && <div role="status" style={{ fontSize: 10.5, marginTop: 4, color: msg.startsWith('not ') ? 'var(--amber)' : 'var(--ink-2)' }}>{msg}</div>}
+      {testMsg && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>{testMsg}</div>}
+      {msg && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4, color: msg.startsWith('not ') ? 'var(--amber)' : 'var(--ink-2)' }}>{msg}</div>}
       {consent && <ConsentCard item={item} refusal={consent.refusal} onCancel={drop}
         onConfirm={(flags) => (consent.forKey
           ? saveKey({ ...sameKeyFlags.current, ...(flags.acknowledge_training ? { acknowledge_training: true as const } : {}) })
@@ -253,12 +254,12 @@ export function IntegrationsPanel() {
   return (
     <Card title="INTEGRATIONS" live={d ? 'live' : undefined} onReload={reload}
       sub={d ? `${counts.active || 0} active · ${counts.key_set || 0} key set · ${counts.error || 0} error` : null}>
-      {e && <div role="status" style={{ color: 'var(--amber)', fontSize: 11 }}>not loaded · {String(e)}</div>}
-      <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginBottom: 6 }}>
+      {e && <div role="status" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>not loaded · {String(e)}</div>}
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
         Keys are stored encrypted by Nerva and take effect without a restart. A key in <span style={mono}>.env</span> wins. Keys are never shown again.
       </div>
       {search && (
-        <div style={{ fontSize: 11, marginBottom: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', marginBottom: 6 }}>
           Searches use <b>{search.answers || 'nothing configured'}</b> · choice <span style={mono}>{search.backend}</span>
           {search.choice_source === 'env' ? ' (set in .env)' : search.choice_source === 'managed' ? ' (🔒 managed by your administrator)' : null}
           {search.choice_source === 'hub' && <button className="tool-btn" style={{ marginLeft: 6 }} onClick={() => void auto()}>choose automatically</button>}
@@ -266,14 +267,14 @@ export function IntegrationsPanel() {
         </div>
       )}
       {video && (
-        <div style={{ fontSize: 11, marginBottom: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', marginBottom: 6 }}>
           Videos use <b>{video.provider || 'nothing (off)'}</b>
           {video.choice_source === 'env' ? ' (set in .env)' : null}
           {video.choice_source === 'hub' && <button className="tool-btn" style={{ marginLeft: 6 }} onClick={() => void videoOff()}>turn video off</button>}
         </div>
       )}
       {skills && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--panel-line)', fontSize: 11 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px solid var(--panel-line)', fontSize: 'var(--n-fs-meta)' }}>
           <span>{skills.display_name}</span><Tag>skills</Tag><Tag>from Hermes</Tag>
           {skills.available
             ? <span style={{ color: 'var(--ink-2)' }}>{skills.installable} installable{skills.commit ? ` · @${skills.commit}` : ''} · no key needed</span>
@@ -285,7 +286,7 @@ export function IntegrationsPanel() {
         {KINDS.map(([k, label]) => (
           <button key={k} className="tool-btn" aria-pressed={kind === k} onClick={() => setKind(k as any)}>{label}</button>
         ))}
-        <label htmlFor="integrations-filter" style={{ fontSize: 10.5, marginLeft: 6 }}>Find</label>
+        <label htmlFor="integrations-filter" style={{ fontSize: 'var(--n-fs-meta)', marginLeft: 6 }}>Find</label>
         <input id="integrations-filter" value={q} onChange={(ev) => setQ(ev.target.value)} style={{ ...inpS, minWidth: 120 }} />
       </div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label="integrations">
@@ -295,13 +296,13 @@ export function IntegrationsPanel() {
           return (
             <li key={r.id} style={{ borderBottom: '1px solid var(--panel-line)' }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11.5 }}>{r.display_name}</span>
+                <span style={{ fontSize: 'var(--n-fs-meta)' }}>{r.display_name}</span>
                 <Tag>{r.kind}</Tag>
                 <Tag>{r.origin === 'hermes' ? 'from Hermes' : 'native'}</Tag>
                 <Tag c={color}>{label}</Tag>
                 {r.selected && r.status !== 'not_set_up' && <Tag c="var(--green)">in use</Tag>}
-                <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>{r.facts.host}{r.facts.host_country ? ` · ${r.facts.host_country}` : ''}</span>
-                <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>data {policyText(r.facts)} · price {priceText(r.facts)}</span>
+                <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{r.facts.host}{r.facts.host_country ? ` · ${r.facts.host_country}` : ''}</span>
+                <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>data {policyText(r.facts)} · price {priceText(r.facts)}</span>
                 <button className="tool-btn" style={{ marginLeft: 'auto' }} aria-expanded={expanded}
                   aria-label={`${expanded ? 'close' : r.status === 'not_set_up' ? 'set up' : 'manage'} ${r.display_name}`}
                   onClick={() => setOpen(expanded ? null : r.id)}>{expanded ? 'close' : r.status === 'not_set_up' ? 'set up' : 'manage'}</button>
@@ -311,7 +312,7 @@ export function IntegrationsPanel() {
           );
         })}
       </ul>
-      {d && !shown.length && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>nothing matches</div>}
+      {d && !shown.length && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>nothing matches</div>}
     </Card>
   );
 }

@@ -8,11 +8,14 @@
   background: var(--void-2);
   color: var(--ink);
   color-scheme: dark;
-  font: 14px/1.45 var(--font-ui);
+  font: var(--n-fs-ui)/1.45 var(--font-ui);
 }
+/* A Nerva theme in its light scheme (apply.ts puts the resolved scheme on <html>): native
+   controls inside the dialog follow it. Classic is dark only, so it keeps the rule above. */
+:root[data-scheme="light"] .chat-task-dialog { color-scheme: light; }
 
-.chat-task-dialog::backdrop { background: rgba(0, 0, 0, .72); }
-.chat-task-dialog h2 { margin: 0 0 16px; font-size: 18px; }
+.chat-task-dialog::backdrop { background: var(--n-scrim); }
+.chat-task-dialog h2 { margin: 0 0 16px; font-family: var(--n-font-title); font-size: var(--n-fs-prose); }
 .chat-task-dialog form { display: grid; gap: 14px; min-width: 0; }
 .chat-task-dialog label { display: grid; gap: 6px; min-width: 0; font-weight: 500; }
 .chat-task-dialog p { margin: 0; }
@@ -41,13 +44,16 @@
   min-width: 96px;
   padding: 10px 14px;
   border: 1px solid var(--ink-2);
-  border-radius: var(--radius);
+  border-radius: var(--n-r-control);
   background: var(--surface-2);
   color: var(--ink);
   font: inherit;
   line-height: 1.2;
 }
 
-.chat-task-dialog button[type="submit"] { background: var(--accent-light); color: var(--void); border-color: var(--accent-light); font-weight: 600; }
+/* The primary action is the theme's primary fill under its on-primary text (contract section 3):
+   every look defines the pair, Classic as its accent under --void, and a Nerva theme as the
+   fill its design gives a primary action that is not a signature (Ledger: ink). */
+.chat-task-dialog button[type="submit"] { background: var(--n-primary); color: var(--n-on-primary); border-color: var(--n-primary); font-weight: 600; }
 .chat-task-dialog button:disabled { background: var(--surface-2); color: var(--ink-2); cursor: not-allowed; opacity: 1; }
-.chat-task-dialog :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--accent-light); outline-offset: 2px; }
+.chat-task-dialog :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }

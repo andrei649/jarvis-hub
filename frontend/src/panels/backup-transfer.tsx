@@ -18,6 +18,7 @@ import React, { useRef, useState } from 'react';
 import { apiDelete, apiDownload, apiPost, apiPutBytes } from '../api/client';
 import { ConfirmAction, RISK_TIER } from '../confirm';
 import { Tag, mono, refusalReason, useApi } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export const BACKUP_CHECKPOINTS_PATH = '/api/admin/backup/checkpoints?limit=10';
 
@@ -56,7 +57,7 @@ export function BackupRowActions({ name, uploaded = false, onNote }: { name: str
     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
       {uploaded && <Tag c="var(--amber)">uploaded</Tag>}
       <button className="tool-btn" aria-label={`download ${name}`} onClick={download}>download</button>
-      <label style={{ fontSize: 10, display: 'inline-flex', gap: 3, alignItems: 'center' }}>
+      <label style={{ fontSize: 'var(--n-fs-meta)', display: 'inline-flex', gap: 3, alignItems: 'center' }}>
         <input type="checkbox" checked={replace} aria-label={`also replace credentials and hooks from ${name}`}
           onChange={(e) => setReplace(e.target.checked)} />creds
       </label>
@@ -76,7 +77,7 @@ export function StagedRestore({ staged, onDone }: { staged: Staged; onDone: (s: 
     .catch((x: any) => onDone(`not withdrawn · ${why(x)}`));
   const state = staged.state || 'waiting';
   return (
-    <div role="status" style={{ fontSize: 10, marginTop: 6, color: state === 'expired' ? 'var(--ink-2)' : 'var(--amber)' }}>
+    <div role="status" style={{ fontSize: 'var(--n-fs-meta)', marginTop: 6, color: state === 'expired' ? 'var(--ink-2)' : 'var(--amber)' }}>
       staged restore · <span style={mono}>{staged.name}</span> · {state === 'waiting' ? 'applied at the next hub start'
         : state === 'deferred' ? `deferred${staged.deferred_reason ? ` (${staged.deferred_reason})` : ''}` : 'expired, never applied'}
       {staged.action_needed ? ` · ${staged.action_needed}` : ''}
@@ -123,19 +124,19 @@ export function CheckpointList() {
   const items: any[] = Array.isArray((d as any)?.items) ? (d as any).items : [];
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', letterSpacing: 1 }}>CHECKPOINTS</div>
-      {e ? <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>checkpoints unavailable · {why(e)}</div>
-        : loading && !d ? <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>loading…</div>
-        : !items.length ? <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>no file checkpoints</div>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>CHECKPOINTS</div>
+      {e ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>checkpoints unavailable · {why(e)}</div>
+        : loading && !d ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>loading…</div>
+        : !items.length ? <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>no file checkpoints</div>
         : items.map((it, i) => (
-          <div key={it.id ?? i} style={{ display: 'flex', gap: 6, fontSize: 10, alignItems: 'center' }}>
+          <div key={it.id ?? i} style={{ display: 'flex', gap: 6, fontSize: 'var(--n-fs-meta)', alignItems: 'center' }}>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{String(it.id ?? '')}</span>
             <span style={{ color: 'var(--ink-2)' }}>{String(it.path ?? it.root ?? '')}</span>
             <span style={{ marginLeft: 'auto' }}>{it.type && <Tag>{String(it.type)}</Tag>}</span>
           </div>
         ))}
       {(d as any)?.truncated && items.length > 0 && (
-        <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>more in /checkpoints list or nerva checkpoints list</div>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>more in /checkpoints list or nerva checkpoints list</div>
       )}
     </div>
   );

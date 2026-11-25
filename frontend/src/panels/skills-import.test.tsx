@@ -81,6 +81,9 @@ describe('SkillsImportPanel — imported sidecars and governed pinned imports', 
     expect(screen.queryByText(DIGEST)).toBeNull();
     // a sidecar missing every typed key still renders, and is not invented into a name
     expect(screen.getByText('(unnamed manifest)')).toBeTruthy();
+    // a skill name is an identifier (mono); the placeholder for a missing one is words
+    expect(screen.getByText('deep-research').style.fontFamily).toBe('var(--n-font-mono)');
+    expect(screen.getByText('(unnamed manifest)').style.fontFamily).toBe('');
     expect(screen.getByText('2 imported')).toBeTruthy();
   });
 

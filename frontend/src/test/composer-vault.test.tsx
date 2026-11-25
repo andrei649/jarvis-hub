@@ -2,8 +2,11 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { InputBar } from '../cockpit';
+import { openComposerMenu } from '../home/talk/test-support';
 
-const excerpt = { name: 'Projects/Workshop.md', text: 'Choose oak for the workbench.' };
+// Vault notes is in the composer's Attach menu since the re-lay (PHASE_B_PLAN.md §5.3)
+const findVaultNotes = () => { openComposerMenu('attach'); fireEvent.click(screen.getByRole('button', { name: 'Find vault notes' })); };
+const excerpt ={ name: 'Projects/Workshop.md', text: 'Choose oak for the workbench.' };
 const other = { name: 'Archive/Workshop.md', text: 'Older plans.' };
 const reply = (attachments: typeof excerpt[]) => Response.json({ok: true, attachments, focus: null});
 const source = { vault: 'My Vault', file: 'Projects/Workshop.md', readable: true };
@@ -15,7 +18,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 async function review() {
   fireEvent.change(screen.getByPlaceholderText('Message'), { target: { value: 'Workshop plans' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Find vault notes' }));
+  findVaultNotes();
   fireEvent.click(await screen.findByRole('checkbox', { name: excerpt.name }));
 }
 
@@ -131,7 +134,7 @@ it('keeps the full draft when adding the note path exceeds the chat message limi
   vi.stubGlobal('fetch', vi.fn(async () => sourced()));
   render(<InputBar {...props} onSubmit={submit}/>);
   fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'x'.repeat(4070)}});
-  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  findVaultNotes();
   fireEvent.click(await screen.findByRole('checkbox', {name:excerpt.name}));
   fireEvent.click(screen.getByRole('checkbox', {name:/Include note path in message/}));
   fireEvent.click(screen.getByRole('button', {name:'Send'}));
@@ -209,7 +212,7 @@ it('links only validated sources and does not read notes during lookup', async (
   vi.stubGlobal('fetch', request);
   render(<InputBar {...props} onSubmit={vi.fn()}/>);
   fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'Workshop plans'}});
-  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  findVaultNotes();
   expect((await screen.findAllByRole('link', {name:'Open in Obsidian'}))[0].getAttribute('href'))
     .toBe('obsidian://open?vault=My%20Vault&file=Projects%2FWorkshop.md');
   expect(screen.getAllByRole('link', {name:'Open in Obsidian'})).toHaveLength(2);
@@ -228,7 +231,7 @@ it('shows the selected passage and sends only its canonical source name and text
   vi.stubGlobal('fetch', request);
   render(<InputBar {...props} onSubmit={submit}/>);
   fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'Workshop plans'}});
-  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  findVaultNotes();
   fireEvent.click(await screen.findByRole('button', {name:'Choose passage'}));
   const field = await screen.findByRole('textbox', {name:'Select text from this note (first 6,000 characters)'}) as HTMLTextAreaElement;
   const chosen = 'Second paragraph to send.';
@@ -251,7 +254,7 @@ it('uses displayed textarea offsets for a later passage after CRLF and lone CR l
   vi.stubGlobal('fetch', request);
   render(<InputBar {...props} onSubmit={submit}/>);
   fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'Workshop plans'}});
-  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  findVaultNotes();
   fireEvent.click(await screen.findByRole('button', {name:'Choose passage'}));
   const field = await screen.findByRole('textbox', {name:'Select text from this note'}) as HTMLTextAreaElement;
   expect(field.value).not.toContain('\r');
@@ -277,7 +280,7 @@ it('opens the search match in a long note and checks that location before sendin
   vi.stubGlobal('fetch', request);
   render(<InputBar {...props} onSubmit={submit}/>);
   fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:query}});
-  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  findVaultNotes();
   fireEvent.click(await screen.findByRole('button', {name:'Choose passage'}));
   const field = await screen.findByRole('textbox', {name:/Select text from this note .*8,201/}) as HTMLTextAreaElement;
   field.setSelectionRange(body.indexOf('indigo'), body.indexOf('indigo') + 6);
@@ -298,7 +301,7 @@ it('deselects a passage when its source is missing on recheck', async () => {
   vi.stubGlobal('fetch', request);
   render(<InputBar {...props} onSubmit={submit}/>);
   fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'Workshop plans'}});
-  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  findVaultNotes();
   fireEvent.click(await screen.findByRole('button', {name:'Choose passage'}));
   const field = await screen.findByRole('textbox', {name:'Select text from this note'}) as HTMLTextAreaElement;
   field.setSelectionRange(0, 6);
@@ -330,7 +333,7 @@ it('deselects a passage when its source changes on recheck', async () => {
   vi.stubGlobal('fetch', request);
   render(<InputBar {...props} onSubmit={submit}/>);
   fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'Workshop plans'}});
-  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  findVaultNotes();
   fireEvent.click(await screen.findByRole('button', {name:'Choose passage'}));
   const field = await screen.findByRole('textbox', {name:'Select text from this note'}) as HTMLTextAreaElement;
   field.setSelectionRange(0, 6);
@@ -349,7 +352,7 @@ it('deselects a passage when the note changes or a fresh read is denied', async 
     vi.stubGlobal('fetch', request);
     const view = render(<InputBar {...props} onSubmit={submit}/>);
     fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'Workshop plans'}});
-    fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+    findVaultNotes();
     fireEvent.click(await screen.findByRole('button', {name:'Choose passage'}));
     const field = await screen.findByRole('textbox', {name:'Select text from this note'}) as HTMLTextAreaElement;
     field.setSelectionRange(0, 6);
@@ -370,7 +373,7 @@ it('does not send a selected passage after the session changes during recheck', 
   vi.stubGlobal('fetch', request);
   const view = render(<InputBar {...props} onSubmit={submit} sessionId="first"/>);
   fireEvent.change(screen.getByPlaceholderText('Message'), {target:{value:'Workshop plans'}});
-  fireEvent.click(screen.getByRole('button', {name:'Find vault notes'}));
+  findVaultNotes();
   fireEvent.click(await screen.findByRole('button', {name:'Choose passage'}));
   const field = await screen.findByRole('textbox', {name:'Select text from this note'}) as HTMLTextAreaElement;
   field.setSelectionRange(0, 6);

@@ -2,6 +2,7 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
+import { inpS, taS } from '../panel-kit';
 import { SaveFactForm, SavedFacts } from './saved-facts';
 
 vi.mock('../api/client', () => ({ apiDelete: vi.fn(), apiGet: vi.fn(), apiPatch: vi.fn(), apiPost: vi.fn() }));
@@ -143,8 +144,11 @@ describe('SavedFacts', () => {
     await screen.findByText('Prefers tea');
     const select = screen.getByLabelText('Save in') as HTMLSelectElement;
     const draft = screen.getByLabelText('Fact to save') as HTMLTextAreaElement;
-    expect(select.style.background).toBe('var(--surface)');
-    expect(draft.style.background).toBe('var(--surface)');
+    // The panel kit's field fill (inpS / taS), not a colour of the panel's own: it follows
+    // the theme (theme/kit.css .n-field, the field role --n-field-bg: the sheet by default, a
+    // quiet fill in themes that draw fields that way).
+    expect(select.style.background).toBe(inpS.background);
+    expect(draft.style.background).toBe(taS.background);
     expect(select.tabIndex).toBe(0);
     expect(draft.tabIndex).toBe(0);
   });

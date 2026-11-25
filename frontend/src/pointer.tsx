@@ -9,6 +9,9 @@
    plainly instead of pointing at nothing. A tip an untrusted turn wrote says so. */
 import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { apiGet } from './api/client';
+import { LABEL } from './theme/type';
+import { areaAnchor, areaOfMode } from './nav/routes';
+import { pageForMode } from './nav/areas';
 
 /** The places a tip may point at; agents/core/canvas.py POINTER_ANCHORS holds the same list. */
 export const POINTER_ANCHORS = [
@@ -65,19 +68,54 @@ export function currentPointer(elements: any[], closed: string[], now = Date.now
   return null;
 }
 
-export function anchorRect(target: string, root: ParentNode = document): DOMRect | null {
-  if (!ANCHORS.has(target)) return null;
-  const el = root.querySelector(`[data-anchor="${target}"]`) as HTMLElement | null;
-  if (!el) return null;
+/** Where a tip may point when the exact `[data-anchor]` is not on this page (PHASE_B_PLAN.md §3.8),
+ *  best first, as CSS selectors:
+ *    mode.<id>   the contents-column link of that page, or the masthead link of its area
+ *                (`data-anchor="area.<id>"`; an area's own landing mode prefers the masthead link)
+ *    decisions   the docket register
+ *    console     the Find button, else the contents column's "Find a panel"
+ *    composer    the composer's own textarea (`[data-composer]`) */
+export function anchorFallbacks(target: string): string[] {
+  if (target.startsWith('mode.')) {
+    const id = target.slice(5);
+    const area = areaOfMode(id);
+    const contents = `[data-frame="contents"] a[data-page="mode:${id}"]`;
+    const masthead = area ? `[data-anchor="${areaAnchor(area)}"]` : null;
+    const landing = !!pageForMode(id)?.landing;
+    return (landing ? [masthead, contents] : [contents, masthead]).filter((s): s is string => !!s);
+  }
+  if (target === 'decisions') return ['[data-register="docket"]'];
+  if (target === 'console') return ['[data-contents="find-panel"]', '[data-find]'];
+  if (target === 'composer') return ['[data-composer]'];
+  return [];
+}
+
+function usable(el: HTMLElement): DOMRect | null {
   const r = el.getBoundingClientRect();
   if (!r.width && !r.height) return null;
-  // Under another layer (the Ambient screen, the Dossier drawer) it is not on this screen;
+  // Under another layer (the Dossier drawer, the search sheet, Cinema) it is not on this screen;
   // the pointer's own bubble does not count.
   if (typeof document.elementFromPoint === 'function') {
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     if (hit && !el.contains(hit) && !hit.closest('[data-pointer]')) return null;
   }
   return r;
+}
+
+/** The on-screen box of a tip's target. An exact `[data-anchor]` is used when there is one; only
+ *  without it do the fallbacks of anchorFallbacks() apply (`fallbacks: false` asks for the exact
+ *  anchor alone). */
+export function anchorRect(target: string, root: ParentNode = document, fallbacks: boolean = true): DOMRect | null {
+  if (!ANCHORS.has(target)) return null;
+  const exact = root.querySelector(`[data-anchor="${target}"]`) as HTMLElement | null;
+  const rectOf = exact ? usable(exact) : null;
+  if (rectOf || !fallbacks) return rectOf;
+  for (const selector of anchorFallbacks(target)) {
+    const el = root.querySelector(selector) as HTMLElement | null;
+    const rect = el ? usable(el) : null;
+    if (rect) return rect;
+  }
+  return null;
 }
 
 const sameRect = (a: DOMRect | null, b: DOMRect | null) =>
@@ -138,22 +176,22 @@ export function PointerView({ pointer, onClose }: { pointer: Pointer; onClose: (
     <>
       {rect && <div data-testid="pointer-ring" aria-hidden="true" style={{ position: 'fixed', left: rect.left - 4, top: rect.top - 4,
         width: rect.width + 8, height: rect.height + 8, border: '2px solid var(--accent-light)', borderRadius: 8,
-        boxShadow: '0 0 0 4px rgba(90,200,250,.18)', pointerEvents: 'none', zIndex: 60 }}/>}
+        boxShadow: '0 0 0 4px var(--accent-faint)', pointerEvents: 'none', zIndex: 60 }}/>}
       <div role="dialog" aria-label={tour ? `Tour: ${pointer.title || 'guide'}` : 'Tip'} data-pointer={pointer.id}
         style={{ ...place, zIndex: 61, width: BUBBLE_WIDTH, padding: '10px 12px', borderRadius: 10, background: 'var(--void-2)',
-          border: '1px solid var(--accent-light)', fontSize: 13, boxShadow: '0 8px 24px rgba(0,0,0,.45)' }}>
+          border: '1px solid var(--accent-light)', fontSize: 'var(--n-fs-ui)', boxShadow: 'var(--n-shadow-2)' }}>
         {rect && <span data-testid="pointer-arrow" aria-hidden="true" style={{ position: 'absolute', ...arrow, width: 12, height: 12,
           transform: 'rotate(45deg)', background: 'var(--void-2)' }}/>}
         <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBottom: 4 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.12em', color: 'var(--accent-light)' }}>
+          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--accent-light)' }}>
             {tour ? `${(pointer.title || 'TOUR').toUpperCase()} · ${index + 1}/${pointer.steps.length}` : 'TIP'}
           </span>
-          <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>from {pointer.agent}</span>
-          {pointer.untrusted && <span role="note" style={{ fontSize: 10, color: 'var(--warn, #e0a030)' }}>from an untrusted turn — check before acting</span>}
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>from {pointer.agent}</span>
+          {pointer.untrusted && <span role="note" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>from an untrusted turn — check before acting</span>}
           <button type="button" aria-label="Close" onClick={onClose} style={{ marginLeft: 'auto' }}>✕</button>
         </div>
         <div>{step.caption}</div>
-        {!rect && <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>(not on this screen: {step.target})</div>}
+        {!rect && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>(not on this screen: {step.target})</div>}
         {tour && (
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
             <button type="button" disabled={index === 0} onClick={() => setIndex((i) => Math.max(0, i - 1))}>Back</button>

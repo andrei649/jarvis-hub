@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva — Trust · Overview</title>
+<script>
+  /* Day edition is the default; ?theme=dark|light selects an edition before first paint. */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'dark' || t === 'light' ? t : 'light');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="briefing.css">
+<style>
+  /* ==========================================================================
+     Trust — an area page. Left: the area's contents (all 21 panels, grouped, findable).
+     Right: the panel, composed like the brief: a verdict headline, then ruled columns.
+     ========================================================================== */
+  .area { display: grid; grid-template-columns: 268px minmax(0, 1fr); min-height: 0; }
+
+  /* ---- contents: the second level, always visible, always findable ---------------- */
+  .contents { min-height: 0; overflow-y: auto; padding: 18px 20px 16px 40px; border-right: 1px solid var(--nv-rule-2); scrollbar-width: thin; scrollbar-color: var(--nv-rule-2) transparent; }
+  .contents-head { display: flex; align-items: baseline; gap: 10px; padding-top: 7px; border-top: var(--nv-rule-bold) solid var(--nv-rule-heavy); }
+  .contents-head h2 { font: 600 var(--nv-t-section)/1.2 var(--nv-font-heading); }
+  .contents-head p { font: 400 var(--nv-t-meta)/1.2 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .find { display: flex; align-items: center; gap: 8px; height: 32px; margin: 12px 0 6px; padding: 0 6px 0 9px; border: 1px solid var(--nv-rule-3); border-radius: var(--nv-r-2); background: var(--nv-paper); color: var(--nv-ink-3); }
+  .find:focus-within { border-color: var(--nv-ink); box-shadow: 0 0 0 1px var(--nv-ink); }
+  .find input { flex: 1; min-width: 0; height: 100%; border: 0; background: transparent; color: var(--nv-ink); font: 400 var(--nv-t-ui)/1 var(--nv-font-ui); outline: none; }
+  .find input::placeholder { color: var(--nv-ink-3); opacity: 1; }
+  .toc-grp { margin-top: 12px; }
+  .toc-grp h3 { margin-bottom: 2px; font: 650 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .toc-grp a { position: relative; display: flex; align-items: center; gap: 8px; min-height: 29px; padding: 0 6px 0 12px; margin-left: -12px; border-radius: 0 var(--nv-r-2) var(--nv-r-2) 0; color: var(--nv-ink-2); font: 400 var(--nv-t-ui)/1.25 var(--nv-font-ui); text-decoration: none; }
+  .toc-grp a:hover { background: var(--nv-paper-3); color: var(--nv-ink); }
+  .toc-grp a[aria-current="page"] { color: var(--nv-ink); font-weight: 650; background: var(--nv-paper-2); }
+  .toc-grp a[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; background: var(--nv-rule-heavy); }
+  .toc-grp .cnt { margin-left: auto; font: 400 var(--nv-t-meta)/1 var(--nv-font-ui-sm); color: var(--nv-ink-3); display: inline-flex; align-items: center; gap: 5px; }
+  .toc-grp .cnt b { color: var(--nv-ink); font-weight: 650; }
+  .toc-more { display: flex; align-items: center; gap: 6px; margin: 8px 0 0 -2px; padding: 4px 2px; border: 0; background: none; color: var(--nv-ink-2); font: 500 var(--nv-t-ui)/1.2 var(--nv-font-ui); }
+  .toc-more:hover { color: var(--nv-ink); }
+  .toc-hint { margin-top: 14px; padding-top: 9px; border-top: 1px solid var(--nv-rule); font: 400 var(--nv-t-meta)/1.6 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .page-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 22px; padding-top: 9px; border-top: 1px solid var(--nv-rule-2); font: 400 var(--nv-t-meta)/1.45 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .page-foot .src { margin-left: 8px; color: var(--nv-ink-2); }
+
+  /* ---- the panel ----------------------------------------------------------------- */
+  .page { min-width: 0; min-height: 0; overflow-y: auto; padding: 16px 48px 20px 36px; container: page / inline-size; scrollbar-width: thin; scrollbar-color: var(--nv-rule-2) transparent; }
+  .page-in { max-width: 1540px; }
+  /* the head sits on the same three columns as the first band, so every rule lines up */
+  .page-head { display: grid; grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.1fr) minmax(0, 1fr); column-gap: 24px; padding-bottom: 16px; }
+  .page-head > div:first-child { grid-column: 1 / 3; }
+  .kicker { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; font: 400 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); white-space: nowrap; }
+  .kicker b { color: var(--nv-ink); font: italic 600 15px/1.2 var(--nv-font-title); }
+  .crumb { display: inline-flex; align-items: center; gap: 4px; }
+  .crumb a { color: var(--nv-ink-2); text-decoration: none; }
+  .crumb a:hover { color: var(--nv-ink); text-decoration: underline; }
+  .page-head h1 { display: flex; align-items: center; gap: 14px; font: 700 var(--nv-t-headline)/1.06 var(--nv-font-display); letter-spacing: -0.018em; }
+  .seal-mark { flex: none; width: 34px; height: 34px; color: var(--nv-ink); }
+  .deck { margin-top: 5px; max-width: 64ch; font: italic 400 var(--nv-t-deck)/1.3 var(--nv-font-deck); color: var(--nv-ink-2); }
+  .standfirst { padding: 4px 0 2px 24px; border-left: 1px solid var(--nv-rule-2); align-self: stretch; }
+  .standfirst h2 { margin-bottom: 4px; font: 650 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .standfirst p { font: 400 var(--nv-t-body)/1.46 var(--nv-font-text); }
+  .standfirst p + p { margin-top: 5px; }
+  .standfirst .ref { margin: 0 2px; vertical-align: 1px; }
+
+  .band { display: grid; column-gap: 24px; align-items: start; }
+  .band + .band { margin-top: 20px; }
+  .band > section { min-width: 0; }
+  .band > section + section { padding-left: 24px; border-left: 1px solid var(--nv-rule-2); align-self: stretch; }
+  .band-1 { grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.1fr) minmax(0, 1fr); }
+  .band-2 { grid-template-columns: minmax(0, 1.72fr) minmax(0, 1fr); }
+
+  /* ---- emergency stop: one click, always ------------------------------------------ */
+  .estop-body { display: grid; gap: 10px; padding-top: 4px; }
+  .btn-stop.btn-xl { justify-self: start; height: 48px; padding: 0 20px 0 16px; gap: 10px; border-width: 2px; font-size: 16px; }
+  .btn-stop.btn-xl .i { width: 18px; height: 18px; }
+  .estop-body p { font: 400 var(--nv-t-body)/1.45 var(--nv-font-text); }
+  .estop-body .note { font: 400 var(--nv-t-meta)/1.45 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .armed { display: inline-flex; align-items: center; gap: 6px; font: 650 var(--nv-t-meta)/1 var(--nv-font-ui-sm); color: var(--nv-ink); }
+
+  /* ---- where it ran ------------------------------------------------------------------ */
+  .ran-fig { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; column-gap: 10px; }
+  .ran-fig b { font: 700 46px/1 var(--nv-font-display); letter-spacing: -0.02em; }
+  .ran-fig .of { font: 400 var(--nv-t-body)/1.3 var(--nv-font-text); }
+  .ran-fig .cloud { justify-self: end; font: 400 var(--nv-t-meta)/1.3 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .ran-fig .cloud b { font: 650 var(--nv-t-ui)/1 var(--nv-font-ui); letter-spacing: 0; color: var(--nv-ink); }
+  .split { position: relative; height: 4px; margin: 12px 0 5px; background: var(--nv-rule); border-radius: 1px; overflow: hidden; }
+  .split i { position: absolute; inset: 0 auto 0 0; background: var(--nv-ink-2); }
+  .split-cap { display: flex; justify-content: space-between; font: 400 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .split-cap b { color: var(--nv-ink); font-weight: 650; }
+  .basis-h { margin: 14px 0 6px; font: 650 var(--nv-t-meta)/1.3 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .basis small { display: block; margin-top: 1px; }
+  .ran-note { margin-top: 9px; font: 400 14px/1.45 var(--nv-font-text); color: var(--nv-ink); }
+  .ran-note + .ran-note { margin-top: 6px; }
+  .ran-note b { font-weight: 700; }
+
+  /* ---- payments ---------------------------------------------------------------------- */
+  .ledger { width: 100%; }
+  .ledger td { padding: 7px 0 8px; border-top: 1px solid var(--nv-rule); vertical-align: baseline; }
+  .ledger tr:first-child td { border-top: 0; padding-top: 2px; }
+  .ledger .who { padding-right: 12px; font: 650 13px/1.3 var(--nv-font-ui); white-space: nowrap; width: 1%; }
+  .ledger .what { font: 400 14px/1.35 var(--nv-font-text); }
+  .ledger .amt { padding-left: 12px; text-align: right; font: 700 17px/1.2 var(--nv-font-title); white-space: nowrap; }
+  .ledger .state { display: block; margin-top: 2px; font: 400 var(--nv-t-meta)/1.35 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .ledger .state.waits { color: var(--nv-ink); font-weight: 650; display: flex; align-items: center; gap: 6px; }
+  .pay-foot { margin-top: 6px; padding-top: 7px; border-top: 1px solid var(--nv-rule); font: 400 var(--nv-t-meta)/1.45 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .pay-foot .mono { color: var(--nv-ink-2); }
+  .pay-go { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; }
+
+  /* ---- the audit chain: each entry sealed onto the one before ------------------------- */
+  .chain { width: 100%; }
+  .chain th { padding: 0 0 5px; border-bottom: 1px solid var(--nv-rule-2); font: 600 var(--nv-t-meta)/1.3 var(--nv-font-ui-sm); color: var(--nv-ink-3); white-space: nowrap; }
+  .chain td { padding: 6px 0 7px; border-bottom: 1px solid var(--nv-rule); vertical-align: baseline; }
+  .chain .t { width: 56px; font: 500 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .chain .ag { width: 78px; padding-right: 10px; font: 650 13px/1.4 var(--nv-font-ui); }
+  .chain .act { padding-right: 16px; font: 400 14px/1.4 var(--nv-font-text); }
+  .chain .act .ref { margin-left: 6px; vertical-align: 1px; }
+  .chain .tr { width: 138px; padding-right: 12px; }
+  .chain .tier { height: 20px; }
+  .chain .seal { position: relative; width: 168px; padding-left: 24px; white-space: nowrap; }
+  .chain .seal .mono { color: var(--nv-ink-2); }
+  .chain .seal::before { content: ""; position: absolute; left: 7px; top: 0; bottom: -1px; width: 1.5px; background: var(--nv-ink-3); }
+  .chain tbody tr:first-child .seal::before { top: 50%; }
+  .chain .seal::after { content: ""; position: absolute; left: 3px; top: 50%; width: 10px; height: 10px; margin-top: -5px; border-radius: 2px; background: var(--nv-ink-2); box-shadow: 0 0 0 2px var(--nv-paper); transform: rotate(45deg); }
+  .chain .ok { width: 64px; text-align: right; font: 500 var(--nv-t-meta)/1.4 var(--nv-font-ui-sm); color: var(--nv-ink-2); white-space: nowrap; }
+  .chain .ok .i { vertical-align: -2px; margin-right: 3px; }
+  .chain .is-wait .act { font-weight: 400; }
+  .chain-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 16px; padding-top: 8px; font: 400 var(--nv-t-meta)/1.45 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .chain-foot .earlier { position: relative; padding-left: 24px; }
+  .chain-foot .earlier::before { content: ""; position: absolute; left: 7px; top: -9px; height: 16px; width: 1.5px; background: repeating-linear-gradient(to bottom, var(--nv-ink-3) 0 3px, transparent 3px 6px); }
+
+  /* ---- capabilities -------------------------------------------------------------------- */
+  .caps { width: 100%; }
+  .caps td { padding: 6px 0 7px; border-bottom: 1px solid var(--nv-rule); vertical-align: baseline; }
+  .caps tr:first-child td { padding-top: 2px; }
+  .caps .id { width: 1%; padding-right: 14px; white-space: nowrap; font: 500 var(--nv-t-mono)/1.4 var(--nv-font-mono); color: var(--nv-ink); }
+  .caps .what { font: 400 14px/1.35 var(--nv-font-text); color: var(--nv-ink-2); }
+  .caps .grant { width: 1%; padding-left: 12px; white-space: nowrap; text-align: left; }
+  .grant-w { display: inline-flex; align-items: center; gap: 6px; min-width: 92px; font: 500 var(--nv-t-ui)/1.2 var(--nv-font-ui); color: var(--nv-ink-2); }
+  .grant-w .i { color: var(--nv-ink-2); }
+  .grant-approval { color: var(--nv-ink); font-weight: 650; }
+  .grant-approval .i { color: var(--nv-ink); }
+  .local { margin-top: 20px; }
+  .local-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
+  .local-list li { display: flex; align-items: baseline; gap: 7px; padding: 5px 0 6px; border-bottom: 1px solid var(--nv-rule); font: 400 var(--nv-t-meta)/1.35 var(--nv-font-ui-sm); color: var(--nv-ink-3); }
+  .local-list b { font: 650 13px/1.3 var(--nv-font-ui); color: var(--nv-ink); }
+  .local-note { margin-top: 8px; font: 400 14px/1.45 var(--nv-font-text); color: var(--nv-ink); }
+
+  /* ---- widths ------------------------------------------------------------------------- */
+  .chain .seal-h { padding-left: 24px; }
+  @container page (max-width: 1320px) {
+    .page-head { grid-template-columns: minmax(0, 1fr) 340px; }
+    .page-head > div:first-child { grid-column: 1; }
+    .band-1 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 20px; }
+    .band-1 > .pay { grid-column: 1 / -1; padding-left: 0; border-left: 0; padding-top: 0; }
+    .band-2 { grid-template-columns: minmax(0, 1fr); row-gap: 20px; }
+    .band-2 > section + section { padding-left: 0; border-left: 0; }
+  }
+  @container page (max-width: 900px) {
+    .page-head { grid-template-columns: minmax(0, 1fr); row-gap: 12px; }
+    .standfirst { padding-left: 0; border-left: 0; }
+    .page-head h1 { font-size: 38px; }
+    .chain .tr { display: none; }
+  }
+  @media (max-width: 1340px) {
+    .area { grid-template-columns: 224px minmax(0, 1fr); }
+    .contents { padding-left: 24px; padding-right: 14px; }
+    .page { padding: 14px 24px 18px 26px; }
+  }
+  @media (max-height: 1040px) {
+    .page { padding-top: 12px; }
+    .contents { padding-top: 12px; }
+    .band + .band { margin-top: 16px; }
+  }
+  @media (max-width: 900px) {
+    .shell { height: auto; overflow: visible; }
+    .area { grid-template-columns: minmax(0, 1fr); }
+    .contents { border-right: 0; border-bottom: 1px solid var(--nv-rule-2); }
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 16 16"><rect x="6" y="2" width="4" height="7.5" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 16 16"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7"/></symbol>
+  <symbol id="i-diamond" viewBox="0 0 16 16"><path d="M8 2.2 13.8 8 8 13.8 2.2 8z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-tri" viewBox="0 0 16 16"><path d="M8 2.8 14 13H2z"/><path d="M8 6.8v2.9M8 11.4v.01"/></symbol>
+  <symbol id="i-unknown" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" stroke-dasharray="2 2.3"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 16 16"><path d="M13 9.6A5.5 5.5 0 0 1 6.4 3 5.5 5.5 0 1 0 13 9.6z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/></symbol>
+  <symbol id="i-glance" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 13.5h4"/></symbol>
+  <symbol id="i-local" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="8" cy="8" r="1.7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1"/><path d="M6.5 2v2M9.5 2v2M6.5 12v2M9.5 12v2M2 6.5h2M2 9.5h2M12 6.5h2M12 9.5h2"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 16 16"><path d="M4 14V2.5M4 3h7.8l-1.9 2.7 1.9 2.7H4"/></symbol>
+  <symbol id="i-scope" viewBox="0 0 16 16"><path d="M5.5 2.5h-2v11h2M10.5 2.5h2v11h-2"/></symbol>
+  <symbol id="i-gate" viewBox="0 0 16 16"><path d="M2.5 3.5h11L9.2 8.6v4.6l-2.4-1.3V8.6z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></symbol>
+  <symbol id="i-local-only" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M5.5 8h5"/></symbol>
+</svg>
+
+<div class="shell">
+
+  <!-- ============ masthead ============ -->
+  <header class="masthead">
+    <a class="nameplate" href="cockpit.html" aria-label="Nerva — home">
+      <svg class="nmark" viewBox="20 16 88 96" aria-hidden="true">
+        <line x1="40" y1="92" x2="40" y2="36"/><line x1="40" y1="36" x2="88" y2="92"/><line x1="88" y1="92" x2="88" y2="36"/>
+        <circle cx="40" cy="92" r="9"/><circle cx="40" cy="36" r="9"/><circle cx="88" cy="92" r="9"/><circle cx="88" cy="36" r="9"/><circle class="now-ring" cx="88" cy="92" r="16"/>
+      </svg>
+      Nerva
+    </a>
+    <nav class="sections" aria-label="Areas">
+      <a href="cockpit.html" title="conversation with the orchestrator, what needs you, what happened, today">Home</a>
+      <a href="#" title="decisions, missions, projects board, scheduled jobs, sessions, activity · 14 panels">Work <span class="nb nb-you"><span class="long">9 need you</span><span class="short" aria-hidden="true">9</span></span></a>
+      <a href="#" title="the 18 agents, their homes (finance, health, family, knowledge), personas · 9 panels">Agents</a>
+      <a href="#" title="saved facts, knowledge graph, vault, recall, hygiene · 14 panels">Memory</a>
+      <a href="secondary.html" aria-current="page" title="audit chain, emergency stop, capabilities, permissions, payments, secrets · 21 panels">Trust</a>
+      <a href="#" title="skills, workflows, sandbox, images, creative tools · 22 panels">Build</a>
+      <a href="#" title="channels, integrations, MCP servers, webhooks, rooms · 17 panels">Connect</a>
+      <a href="#" title="health, logs, metrics, traces, world signals · 16 panels">Observe <span class="nb nb-problem"><svg class="i i-12"><use href="#i-diamond"/></svg><span class="long">4 services down</span><span class="short" aria-hidden="true">4</span></span></a>
+      <a href="#" title="models and backends, appearance, backup, updates · 16 panels">Settings</a>
+    </nav>
+    <div class="tools">
+      <button class="search" type="button" title="Search and command — finds every area, panel, agent and action">
+        <svg class="i"><use href="#i-search"/></svg><span class="q">Search<span class="long"> or command</span></span><span class="kbd">Ctrl K</span>
+      </button>
+      <div class="seg seg-quiet" role="group" aria-label="Language"><button type="button" aria-pressed="true">EN</button><button type="button" aria-pressed="false">RO</button></div>
+      <button class="btn btn-quiet btn-tool" type="button" data-edition title="Switch edition (day / night)" aria-label="Switch to the night edition"><svg class="i ed-moon" aria-hidden="true"><use href="#i-moon"/></svg><svg class="i ed-sun" aria-hidden="true"><use href="#i-sun"/></svg><span class="lbl">Night</span></button>
+      <button class="btn btn-quiet btn-tool" type="button" title="Glance mode (idle or second screen)" aria-label="Glance mode"><svg class="i"><use href="#i-glance"/></svg><span class="lbl">Glance</span></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button class="btn btn-stop" type="button" title="One click. Halts every agent and the job queue until you resume."><svg class="i"><use href="#i-stop"/></svg>Stop all agents</button>
+    </div>
+  </header>
+
+  <!-- ============ folio: identical on every page ============ -->
+  <div class="folio" role="status" aria-label="Condition and trust signals">
+    <div class="verdict">
+      <a class="verdict-word" href="cockpit.html#d1" style="text-decoration:none" title="Degraded since 08:14 — cause and remedy are decision 1 on Home"><svg class="i i-14"><use href="#i-tri"/></svg>Degraded</a>
+      <strong>Working, with 4 local services down</strong>
+      <span><span class="f-lg">since 08:14 · </span>checked 10:50</span>
+    </div>
+    <span class="sig" title="Sealed — nothing can leave this machine"><svg class="i i-14"><use href="#i-lock"/></svg><span>Egress <b>sealed</b></span></span>
+    <span class="sig" title="The hub counts which route each run used; it is not a verified network measurement."><svg class="i i-14"><use href="#i-local"/></svg><span><b>100%</b> on this machine<span class="f-lg"> · 41 of 41 runs today</span><span class="basis-tag"> · by route</span></span></span>
+    <span class="sig" title="Microphone: On"><svg class="i i-14"><use href="#i-mic"/></svg><span>Mic <b>on</b></span></span>
+    <span class="sig" title="Model: gemma-4-31b · loaded on Ollama"><svg class="i i-14"><use href="#i-chip"/></svg><span><b class="mono">gemma-4-31b</b><span class="f-lg"> · Ollama</span></span></span>
+    <span class="sig" title="Data on screen: Live"><span class="src"><span><b>Live</b> data</span></span></span>
+    <span class="sig f-xl" title="2 of 2 running · 1 session in the last 15 min"><span>Channels <b>2 of 2</b></span></span>
+    <span class="sig f-xl st-unknown" title="Not measured by the hub yet"><svg class="i i-14"><use href="#i-unknown"/></svg><span>Latency p50 — unknown</span></span>
+    <span class="sig f-xl" title="RAM 36 of 192 GB · VRAM 23.0 of 24 GB (expected while a 31B model is loaded) · GPU load 3%"><span>RAM <b>19%</b> · VRAM <b>96%</b> · GPU <b>3%</b></span></span>
+  </div>
+
+  <main class="area">
+
+    <!-- ============ the area's contents: 21 panels, grouped, findable ============ -->
+    <nav class="contents" aria-labelledby="toc-h">
+      <header class="contents-head"><h2 id="toc-h">Trust</h2><p>21 panels</p></header>
+      <label class="find"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><span class="vh">Find a Trust panel</span><input type="text" placeholder="Find in Trust" autocomplete="off" spellcheck="false"><span class="kbd">/</span></label>
+
+      <div class="toc-grp">
+        <h3>Proof</h3>
+        <ul>
+          <li><a href="#" aria-current="page">Overview</a></li>
+          <li><a href="#">Audit chain<span class="cnt">921</span></a></li>
+          <li><a href="#">Audit anchors</a></li>
+          <li><a href="#">Retention</a></li>
+        </ul>
+      </div>
+      <div class="toc-grp">
+        <h3>Control</h3>
+        <ul>
+          <li><a href="#">Emergency stop<span class="cnt">armed</span></a></li>
+          <li><a href="#">Capabilities<span class="cnt">6</span></a></li>
+          <li><a href="#">Permissions</a></li>
+          <li><a href="#">Skill switches</a></li>
+          <li><a href="#">Desktop allowlist</a></li>
+        </ul>
+      </div>
+      <div class="toc-grp">
+        <h3>Money and secrets</h3>
+        <ul>
+          <li><a href="#">Payments<span class="cnt"><b>1 waits</b><span class="ref" aria-label="Decision 2">2</span></span></a></li>
+          <li><a href="#">Secrets</a></li>
+          <li><a href="#">Credential shares</a></li>
+        </ul>
+      </div>
+      <div class="toc-grp">
+        <h3>Posture</h3>
+        <ul>
+          <li><a href="#">Posture</a></li>
+          <li><a href="#">Data handling</a></li>
+          <li><a href="#">Signal governance</a></li>
+          <li><a href="#">Security skills</a></li>
+          <li><a href="#">Pairing</a></li>
+          <li><a href="#">Trust ops</a></li>
+        </ul>
+      </div>
+      <button class="toc-more" type="button" aria-expanded="false"><svg class="i i-14" aria-hidden="true"><use href="#i-plus"/></svg>3 more panels</button>
+      <p class="toc-hint">Every panel is also found by <span class="kbd">Ctrl K</span> from any page.</p>
+    </nav>
+
+    <!-- ============ the panel: Overview ============ -->
+    <article class="page" aria-labelledby="page-h">
+      <div class="page-in">
+
+        <header class="page-head">
+          <div>
+            <p class="kicker"><span class="crumb"><b>Trust</b><svg class="i i-12" aria-hidden="true" style="transform:rotate(-90deg)"><use href="#i-chev"/></svg>Overview</span><span>Monday, 23 November 2026 · 10:51</span></p>
+            <h1 id="page-h">The chain is intact.</h1>
+            <p class="deck">921 sealed entries, verified at 10:50. Every run today stayed on this machine, by route, and egress is sealed.</p>
+          </div>
+          <div class="standfirst">
+            <h2>What needs you here</h2>
+            <p>One payment waits: Gecko's sweep of <strong>€4,200</strong> to the savings ladder<span class="ref" aria-label="Decision 2">2</span>. Decide it on <a class="link" href="cockpit.html#d2">Home</a>.</p>
+            <p>One write failed at 08:05 — Stark's <span class="mono">file_write</span>; nothing was changed. The emergency stop is armed.</p>
+          </div>
+        </header>
+
+        <div class="band band-1">
+
+          <section class="estop" aria-labelledby="h-stop">
+            <header class="sec-head">
+              <h2 id="h-stop">Emergency stop</h2>
+              <p class="sec-meta"><span class="armed"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>Armed</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <div class="estop-body">
+              <button class="btn btn-stop btn-xl" type="button"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents</button>
+              <p>One click. Halts every agent and the job queue until you resume.</p>
+              <p class="note">Deliberately one click, with no confirmation. The same button sits in the masthead of every page.</p>
+            </div>
+          </section>
+
+          <section class="ran" aria-labelledby="h-ran">
+            <header class="sec-head">
+              <h2 id="h-ran">Where it ran</h2>
+              <p class="sec-meta"><span>today</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <div class="ran-fig"><b>100%</b><span class="of">on this machine</span><span class="cloud">cloud <b>0%</b></span></div>
+            <div class="split" role="img" aria-label="41 of 41 runs on this machine, 0 in the cloud"><i style="width:100%"></i></div>
+            <p class="split-cap"><span><b>41 of 41</b> runs today</span><span>Egress <b>sealed</b></span></p>
+            <p class="basis-h">How sure the figure is</p>
+            <ol class="basis">
+              <li class="reached">Unknown<small>no route data</small></li>
+              <li class="reached">Derived<small>local-only switch</small></li>
+              <li class="is-now" aria-current="true">By route<small>today's basis</small></li>
+              <li class="later">Verified<small>not measured yet</small></li>
+            </ol>
+            <p class="ran-note"><b>By route</b> means the hub counts which route each run used. It is not a network measurement; “verified” will replace it when the hub measures egress.</p>
+          </section>
+
+          <section class="pay" aria-labelledby="h-pay">
+            <header class="sec-head">
+              <h2 id="h-pay">Payments</h2>
+              <p class="sec-meta"><span>today</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <table class="ledger">
+              <thead class="vh"><tr><th>Agent</th><th>What</th><th>Amount</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="who">Gecko</td>
+                  <td class="what">Savings ladder sweep<span class="state waits"><svg class="i i-14" aria-hidden="true"><use href="#i-flag"/></svg>Waiting for approval<a class="ref" href="cockpit.html#d2" aria-label="Decision 2">2</a></span></td>
+                  <td class="amt">€4,200</td>
+                </tr>
+                <tr>
+                  <td class="who">Pepper</td>
+                  <td class="what">Conf Room A booking<span class="state">Settled 07:20</span></td>
+                  <td class="amt">€35</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="pay-foot"><span class="mono">payments.execute</span> needs your approval every time. Money always waits for you; it is never bulk-approved.</p>
+          </section>
+        </div>
+
+        <div class="band band-2">
+
+          <section class="audit" aria-labelledby="h-audit">
+            <header class="sec-head">
+              <h2 id="h-audit">Audit chain</h2>
+              <p class="sec-meta"><span class="st"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>Chain intact · 921 sealed entries · verified 10:50</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <table class="chain">
+              <thead>
+                <tr><th scope="col">Time</th><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Risk tier</th><th scope="col" class="seal-h">Hash</th><th scope="col" class="ok">Sealed</th></tr>
+              </thead>
+              <tbody>
+                <tr><td class="t">10:49</td><td class="ag">Jarvis</td><td class="act">Routed your question to Pepper and Stark</td><td class="tr"><span class="tier tier-0"><span class="pips" aria-hidden="true"><i></i><i></i><i></i></span>Read only</span></td><td class="seal"><span class="mono">9f2c…a41b</span></td><td class="ok"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>sealed</td></tr>
+                <tr><td class="t">09:40</td><td class="ag">Vision</td><td class="act">Indexed 17 sources into memory</td><td class="tr"><span class="tier tier-0"><span class="pips" aria-hidden="true"><i></i><i></i><i></i></span>Read only</span></td><td class="seal"><span class="mono">5ad1…77e0</span></td><td class="ok"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>sealed</td></tr>
+                <tr class="is-wait"><td class="t">08:14</td><td class="ag">Steve</td><td class="act">Proposed restart of 4 services — waiting for approval<a class="ref" href="cockpit.html#d1" aria-label="Decision 1">1</a></td><td class="tr"><span class="tier tier-3"><span class="pips" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span>Irreversible</span></td><td class="seal"><span class="mono">c03e…1d9f</span></td><td class="ok"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>sealed</td></tr>
+                <tr class="is-wait"><td class="t">08:07</td><td class="ag">Gecko</td><td class="act">Proposed transfer of €4,200 — waiting for approval<a class="ref" href="cockpit.html#d2" aria-label="Decision 2">2</a></td><td class="tr"><span class="tier tier-3"><span class="pips" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i></span>Money</span></td><td class="seal"><span class="mono">71bb…e2c4</span></td><td class="ok"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>sealed</td></tr>
+                <tr><td class="t">08:05</td><td class="ag">Stark</td><td class="act"><span class="mono">file_write</span> failed — nothing was changed</td><td class="tr"><span class="tier tier-1"><span class="pips" aria-hidden="true"><i class="on"></i><i></i><i></i></span>Reversible</span></td><td class="seal"><span class="mono">2e90…0b6a</span></td><td class="ok"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>sealed</td></tr>
+                <tr><td class="t">08:01</td><td class="ag">Ultron</td><td class="act">Blocked an outbound request to 10.0.0.x (SSRF rule)</td><td class="tr"><span class="tier tier-2"><span class="pips" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i></span>External</span></td><td class="seal"><span class="mono">aa47…93f1</span></td><td class="ok"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>sealed</td></tr>
+                <tr><td class="t">07:48</td><td class="ag">Ultron</td><td class="act">Redacted 2 PII spans in an outbound draft and held it</td><td class="tr"><span class="tier tier-2"><span class="pips" aria-hidden="true"><i class="on"></i><i class="on"></i><i></i></span>External</span></td><td class="seal"><span class="mono">0d3f…5c82</span></td><td class="ok"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>sealed</td></tr>
+                <tr><td class="t">07:14</td><td class="ag">Pepper</td><td class="act">Resolved 1 calendar conflict</td><td class="tr"><span class="tier tier-1"><span class="pips" aria-hidden="true"><i class="on"></i><i></i><i></i></span>Reversible</span></td><td class="seal"><span class="mono">b6e2…4a10</span></td><td class="ok"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>sealed</td></tr>
+              </tbody>
+            </table>
+            <div class="chain-foot">
+              <span class="earlier">8 newest of 921 · each entry is sealed onto the one before it</span>
+              <a class="btn" href="#">Open the audit chain<svg class="i i-14" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+            </div>
+          </section>
+
+          <section class="capsec" aria-labelledby="h-caps">
+            <header class="sec-head">
+              <h2 id="h-caps">Capabilities</h2>
+              <p class="sec-meta"><span>6 grants</span></p>
+              <div class="sec-tools"><span class="src">Live</span></div>
+            </header>
+            <table class="caps">
+              <thead class="vh"><tr><th>Capability</th><th>What it allows</th><th>Grant</th></tr></thead>
+              <tbody>
+                <tr><td class="id">fs.read</td><td class="what">Read workspace files</td><td class="grant"><span class="grant-w"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>Allow</span></td></tr>
+                <tr><td class="id">fs.write</td><td class="what">Modify files in /work</td><td class="grant"><span class="grant-w"><svg class="i i-14" aria-hidden="true"><use href="#i-scope"/></svg>Scoped</span></td></tr>
+                <tr><td class="id">net.outbound</td><td class="what">External HTTP via plugins</td><td class="grant"><span class="grant-w"><svg class="i i-14" aria-hidden="true"><use href="#i-gate"/></svg>Gated</span></td></tr>
+                <tr><td class="id">payments.execute</td><td class="what">Move money</td><td class="grant"><span class="grant-w grant-approval"><svg class="i i-14" aria-hidden="true"><use href="#i-flag"/></svg>Approval</span></td></tr>
+                <tr><td class="id">shell.exec</td><td class="what">Run shell commands</td><td class="grant"><span class="grant-w grant-approval"><svg class="i i-14" aria-hidden="true"><use href="#i-flag"/></svg>Approval</span></td></tr>
+                <tr><td class="id">memory.write</td><td class="what">Persist facts to the knowledge graph</td><td class="grant"><span class="grant-w"><svg class="i i-14" aria-hidden="true"><use href="#i-check"/></svg>Allow</span></td></tr>
+              </tbody>
+            </table>
+
+            <section class="local" aria-labelledby="h-local">
+              <header class="sec-head">
+                <h2 id="h-local">Local only by code</h2>
+                <p class="sec-meta"><span>4 agents · no cloud fallback</span></p>
+              </header>
+              <ul class="local-list">
+                <li><b>Frigga</b>Family</li>
+                <li><b>Ultron</b>Security &amp; Automation</li>
+                <li><b>Howard</b>Digital Twin / Archive</li>
+                <li><b>Hestia</b>House Brain</li>
+              </ul>
+              <p class="local-note">Athena is cloud only, so it is unavailable while egress is sealed.</p>
+            </section>
+          </section>
+        </div>
+
+        <footer class="page-foot">
+          <span>Every section names its source:</span>
+          <span class="src">Live</span><span>from the hub, now</span>
+          <span class="src src-demo">Demo sample</span><span>seed rows, never counted</span>
+          <span class="src src-empty">Empty</span><span>the hub returned nothing yet</span>
+        </footer>
+
+      </div>
+    </article>
+  </main>
+</div>
+
+<script>
+  var ed = document.querySelector('[data-edition]');
+  function label() {
+    var night = document.documentElement.getAttribute('data-theme') === 'dark';
+    ed.querySelector('.lbl').textContent = night ? 'Day' : 'Night';
+    ed.setAttribute('aria-label', night ? 'Switch to the day edition' : 'Switch to the night edition');
+  }
+  ed.addEventListener('click', function () {
+    var night = document.documentElement.getAttribute('data-theme') === 'dark';
+    document.documentElement.setAttribute('data-theme', night ? 'light' : 'dark');
+    label();
+  });
+  label();
+</script>
+</body>
+</html>

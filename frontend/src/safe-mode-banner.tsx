@@ -4,6 +4,7 @@
    page while it lasts and names what was left out; it cannot be dismissed, since the
    hub behaving differently from what the owner configured is the thing to notice. */
 import React from 'react';
+import { LABEL } from './theme/type';
 
 export interface SafeModeState {
   enabled: boolean;
@@ -53,11 +54,11 @@ export function SafeModeBanner({ state }: { state: SafeModeState }) {
   return (
     <div role="status" data-testid="safe-mode-banner"
       style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap', padding: '4px 12px',
-        background: 'repeating-linear-gradient(45deg, rgba(239,68,68,.16) 0 12px, rgba(239,68,68,.05) 12px 24px)',
-        borderBottom: '1px solid rgba(239,68,68,.5)', fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.14em',
-        color: 'var(--red, #ef4444)' }}>
-      <span>⚠ SAFE MODE</span>
-      <span style={{ letterSpacing: '.04em' }}>
+        background: 'repeating-linear-gradient(45deg, var(--n-bad-wash) 0 12px, transparent 12px 24px)',
+        borderBottom: '1px solid var(--red)', fontSize: 'var(--n-fs-meta)',
+        color: 'var(--red)' }}>
+      <span style={LABEL}>⚠ SAFE MODE</span>
+      <span>
         {safeModeLabel(state)} · restart without --safe-mode or JARVIS_SAFE_MODE to load them again
       </span>
     </div>

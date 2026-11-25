@@ -1,17 +1,19 @@
 .office-file-input { display: none; }
-.office-trigger { flex: 0 0 auto; border: 1px solid var(--panel-line); border-radius: 6px; background: transparent; color: var(--ink-2); padding: 5px 7px; cursor: pointer; font: 10px var(--font-mono); }
+.office-trigger { flex: 0 0 auto; border: 1px solid var(--panel-line); border-radius: 6px; background: transparent; color: var(--ink-2); padding: 5px 7px; cursor: pointer; font-family: var(--n-font-label); font-size: var(--n-fs-meta); text-transform: var(--n-label-case); letter-spacing: var(--n-label-track); }
 .office-trigger:disabled { opacity: .5; cursor: not-allowed; }
-.office-overlay { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 8px; box-sizing: border-box; background: rgba(0,0,0,.62); }
-.office-review { box-sizing: border-box; width: min(680px, 100%); max-height: calc(100dvh - 16px); overflow: auto; border: 1px solid var(--panel-line); border-radius: 8px; background: var(--panel, #101b24); color: var(--ink-1); padding: 10px; min-width: 0; font-size: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.office-overlay { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 8px; box-sizing: border-box; background: var(--n-scrim); }
+/* --panel, --ink-1 and --bg were never defined (the fallbacks always won and --ink-1 had none):
+   the review takes the overlay ground and its fields the inset well, like the other dialogs. */
+.office-review { box-sizing: border-box; width: min(680px, 100%); max-height: calc(100dvh - 16px); overflow: auto; border: 1px solid var(--panel-line); border-radius: 8px; background: var(--void-2); color: var(--ink); padding: 10px; min-width: 0; font-size: var(--n-fs-label); box-shadow: var(--n-shadow-2); }
 .office-review-head, .office-review-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .office-review-head strong { overflow-wrap: anywhere; min-width: 0; }
 .office-review label { display: grid; gap: 5px; margin: 8px 0; }
-.office-review select, .office-review textarea { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; color: var(--ink-1); background: var(--bg, #0b141c); border: 1px solid var(--panel-line); border-radius: 5px; padding: 6px; font: inherit; }
+.office-review select, .office-review textarea { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; color: var(--ink); background: var(--void); border: 1px solid var(--field-line); border-radius: 5px; padding: 6px; font: inherit; }
 .office-review textarea { resize: vertical; white-space: pre-wrap; }
 .office-thumbnail { display: block; max-width: min(100%, 320px); max-height: 180px; object-fit: contain; margin: 8px 0; }
 .office-selected { margin-top: 10px; padding: 8px; border: 1px solid var(--accent); border-radius: 5px; overflow-wrap: anywhere; }
 .office-selected p { max-height: 90px; overflow: auto; white-space: pre-wrap; }
-.office-attached { flex: none; margin: 4px 8px; padding: 6px; border: 1px solid var(--accent); border-radius: 5px; font-size: 11px; overflow-wrap: anywhere; background: var(--panel, #101b24); }
+.office-attached { flex: none; margin: 4px 8px; padding: 6px; border: 1px solid var(--accent); border-radius: 5px; font-size: var(--n-fs-meta); overflow-wrap: anywhere; background: var(--void-2); }
 .office-attached p { margin: 4px 0; max-height: 36px; overflow: auto; white-space: pre-wrap; }
 .office-attached button { margin-right: 8px; }
 .office-staged, .office-attached-item { margin: 8px 0; padding: 6px; border: 1px solid var(--panel-line); border-radius: 5px; overflow-wrap: anywhere; }
@@ -20,4 +22,4 @@
 .office-staged li span { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
 .office-staged button, .office-attached button { min-height: 32px; }
 .office-attached { max-height: min(42dvh, 340px); overflow-y: auto; }
-@media (max-width: 390px) { .office-trigger { font-size: 9px; padding: 4px; } }
+@media (max-width: 390px) { .office-trigger { font-size: var(--n-fs-meta); padding: 4px; } }
