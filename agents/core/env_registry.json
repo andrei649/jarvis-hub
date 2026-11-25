@@ -2126,6 +2126,110 @@
    "required_when": "",
    "doc": ""
   },
+  "NERVA_OS_PROJECT_INDEX": {
+   "aliases": [
+    "JARVIS_OS_PROJECT_INDEX"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_PROJECT_INDEX_PATH": {
+   "aliases": [
+    "JARVIS_OS_PROJECT_INDEX_PATH"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_PROJECT_INDEX_SCHEMA": {
+   "aliases": [
+    "JARVIS_OS_PROJECT_INDEX_SCHEMA"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_PROJECT_REGISTER_DIR": {
+   "aliases": [
+    "JARVIS_OS_PROJECT_REGISTER_DIR"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_REPOSITORY_DOCS": {
+   "aliases": [
+    "JARVIS_OS_REPOSITORY_DOCS"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": true,
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_VAULT_EXCLUDE": {
+   "aliases": [
+    "JARVIS_OS_VAULT_EXCLUDE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_VAULT_INBOX": {
+   "aliases": [
+    "JARVIS_OS_VAULT_INBOX"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "(computed)",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
+  "NERVA_OS_VAULT_INCLUDE": {
+   "aliases": [
+    "JARVIS_OS_VAULT_INCLUDE"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "",
+   "purpose": "",
+   "required_when": "",
+   "doc": ""
+  },
   "NERVA_OS_VAULT_PATH": {
    "aliases": [
     "JARVIS_OS_VAULT_PATH"
