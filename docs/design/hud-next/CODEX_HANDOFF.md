@@ -23,6 +23,12 @@ Harness CI passed on draft #1380 at `c8a0e9e4`. The integration for draft
 The editable PSD writer came from the harness branch. Its owner decision is
 tracked in [OWNER_TASKS.md](../../OWNER_TASKS.md#editable-photoshop-export).
 
+On the first hosted run of the integrated HUD, the shell manual still named
+the removed agent tag. SHL-120 now checks the reply's actual agent label.
+The same run hit Chrome's 15-second startup deadline in the orphan-cleanup
+test. The unchanged test passed with real Chrome on Windows and isolated
+Linux. The hosted run did not establish the cause of the timeout.
+
 The dated entries below preserve earlier checkpoints.
 
 | Field | Value |
