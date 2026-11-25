@@ -15,6 +15,28 @@ The previous agent (Claude) was stopped by the owner on 2026-11-25 at about 11:3
 repair. Nothing is running: no test server, no build lock, no browser. Only the read-only preview
 server on port 4180 is left, and it belongs to the Claude session.
 
+## Update, 2026-11-25 afternoon
+
+The work is now committed and pushed: commit `82f03d5f` on `claude/hud-redesign`, draft PR #1386
+into `main`. The branch is stacked on the 10 commits of draft PR #1380
+(`codex/harness-agent-selector`). The owner decided **not to merge yet**: #1386 stays a draft until
+#1380 lands and CI is green.
+
+Findings after publication (the owner's check on commit `82f03d5f`, Chromium, synthetic data):
+
+- **Step 1 below is done.** The Classic docket repair works: all four Chromium tests for Obsidian and
+  Graphite, in Romanian and English, pass. At 1100×800 the first line stays in view; the whole
+  signature still needs a 21px scroll in English and 62px in Romanian (already listed as open).
+- **Demo mode shows live hub data in the run foot.** With `?demo=1`, the foot's "Channels • N of N
+  running" and "N sessions in the last 15 min" come from the hub and carry no "Demo sample" label,
+  while the rest of the page is labelled demo. A synthetic answer with 41 sessions and a fictitious
+  channel appeared there. Fix this before any screenshot is shared publicly: in demo mode the foot
+  must draw seeded values with the demo label, or draw nothing.
+- **CI on #1386:** four checks fail — `test (ubuntu-latest)`, `hud-v2-build`,
+  `SAST (bandit — blocking gate)` and `vault-containment`. The same four fail on #1380, so part of
+  this is inherited from the base. The redesign itself adds 10 lint problems. Read the check logs
+  before changing anything; `hud-v2-build` compares the committed bundle with a fresh build.
+
 ## What the owner decided
 
 - Ledger is the default look. Every screen follows Ledger's style.
