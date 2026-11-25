@@ -44,7 +44,9 @@ export function refusalText(err: any): string {
   return 'failed: ' + (err?.message || 'offline');
 }
 
-const box = { width: '100%', minHeight: 180, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, fontFamily: 'var(--font-mono)', fontSize: 11 };
+/* A persona and its change note are the owner's words: the interface face, named because a
+   textarea does not inherit its font in Classic (the Console's prompt editor does the same). */
+const box = { width: '100%', minHeight: 180, background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 6, fontFamily: 'var(--n-font-ui)', fontSize: 'var(--n-fs-meta)' };
 
 export function SoulEditor({ id, live, onApplied, onCancel }: { id: string; live: string; onApplied: (text: string) => void; onCancel: () => void }) {
   const [text, setText] = useState(live);
@@ -88,15 +90,15 @@ export function SoulEditor({ id, live, onApplied, onCancel }: { id: string; live
         <button className="tool-btn" onClick={doDraft}>Draft description</button>
         <button className="tool-btn" onClick={onCancel}>Close</button>
       </div>
-      {preview && <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, marginTop: 4, color: preview.valid ? 'var(--green)' : 'var(--amber)' }}>
+      {preview && <div style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4, color: preview.valid ? 'var(--green)' : 'var(--amber)' }}>
         +{preview.added_lines} −{preview.removed_lines}{preview.valid ? '' : ' · ' + (preview.warnings || []).join('; ')}
       </div>}
-      {draft && <div style={{ fontSize: 11, marginTop: 4 }}>
+      {draft && <div style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>
         <span>{draft}</span>{' '}
         <button className="tool-btn" onClick={() => { setText(withDescription(text, draft)); setDraft(''); }}>Use it</button>
       </div>}
-      {note && <div role="status" style={{ fontSize: 10, color: 'var(--green)', marginTop: 4 }}>{note}</div>}
-      {error && <div role="alert" style={{ fontSize: 10, color: 'var(--amber)', marginTop: 4 }}>{error}</div>}
+      {note && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)', marginTop: 4 }}>{note}</div>}
+      {error && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>{error}</div>}
     </div>
   );
 }

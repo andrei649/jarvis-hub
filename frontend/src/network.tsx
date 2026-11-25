@@ -256,7 +256,7 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
                 <g key={'task'+i} className={dim?'net-dim':''}>
                   <line x1={ox} y1={oy} x2={tk.x} y2={tk.y} stroke="var(--panel-line)" strokeWidth=".5" opacity=".5"/>
                   <circle cx={tk.x} cy={tk.y} r={focused?4:2.6} fill="var(--void-2)" stroke={taskColor(tk.state||tk.status)} strokeWidth="1.1"/>
-                  {focused && <text x={tk.x} y={tk.y-7} textAnchor="middle" className="net-label" style={{fontSize:7.5}}>{String(tk.label||tk.title||tk.kind||'task').slice(0,18)}</text>}
+                  {focused && <text x={tk.x} y={tk.y-7} textAnchor="middle" className="net-label" style={{fontSize:'var(--n-fs-meta)'}}>{String(tk.label||tk.title||tk.kind||'task').slice(0,18)}</text>}
                 </g>
               );
             })}
@@ -269,7 +269,7 @@ function NetworkBrain({ agents, tasks = [], activeId, onSelect, focusId, setFocu
           <circle className="ambient-anim" cx={CX} cy={CY} r="30" fill="none" stroke="var(--accent)" strokeWidth=".6" opacity=".4"
             strokeDasharray="3 4" style={{transformOrigin:`${CX}px ${CY}px`, animation:motion==='calm'?'none':'spin 30s linear infinite'}}/>
           <path d={(V2.GLYPHS.jarvis)} transform={`translate(${CX},${CY}) scale(1.5)`} className="net-glyph" stroke="var(--accent-light)"/>
-          <text className="net-core-label" x={CX} y={CY+46} textAnchor="middle" fontSize="9">NERVA · CORE</text>
+          <text className="net-core-label" x={CX} y={CY+46} textAnchor="middle" style={{fontSize:'var(--n-fs-meta)'}}>NERVA · CORE</text>
         </g>
 
         {/* NODES */}

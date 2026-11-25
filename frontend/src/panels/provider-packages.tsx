@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { apiDeleteBody, apiGet, apiPost, apiPut } from '../api/client';
-import { Card, Row, Tag, asLive, inpS, mono } from '../panel-kit';
+import { Card, Row, Tag, asLive, inpS, mono, note } from '../panel-kit';
+import { LABEL_STRONG } from '../theme/type';
 
 type PackageStatus = {
   enabled: boolean;
@@ -119,7 +120,7 @@ const labelStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 3,
-  fontSize: 11,
+  fontSize: 'var(--n-fs-meta)',
   color: 'var(--ink-2)',
 };
 
@@ -486,19 +487,19 @@ export function ProviderPackagesPanel() {
       sub={subSummary}
       onReload={() => { void reload(); }}
     >
-      <p style={{ fontSize: 12, color: 'var(--ink-2)', margin: '0 0 8px' }}>
+      <p style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)', margin: '0 0 8px' }}>
         Owner-governed signed provider packages, host-encrypted credentials, and revisioned model selection.
         Staging, approval, and promotion remain inert and never implicitly select a model.
       </p>
 
       {statusError && (
-        <div role="alert" style={{ ...mono, color: 'var(--red)', marginBottom: 8 }}>
+        <div role="alert" style={{ ...note, color: 'var(--red)', marginBottom: 8 }}>
           {statusError}
         </div>
       )}
 
       {selectionRefusal && (
-        <div role="alert" style={{ ...mono, color: 'var(--amber)', marginBottom: 8 }}>
+        <div role="alert" style={{ ...note, color: 'var(--amber)', marginBottom: 8 }}>
           selection status · {selectionRefusal}
         </div>
       )}
@@ -507,7 +508,7 @@ export function ProviderPackagesPanel() {
         <div
           role={banner.kind === 'error' ? 'alert' : 'status'}
           style={{
-            ...mono,
+            ...note,
             color: banner.kind === 'error' ? 'var(--red)' : 'var(--green)',
             border: `1px solid ${banner.kind === 'error' ? 'var(--red)' : 'var(--panel-line)'}`,
             borderRadius: 4,
@@ -521,7 +522,7 @@ export function ProviderPackagesPanel() {
 
       {pkgStatus && (
         <Row>
-          <span style={mono}>
+          <span style={note}>
             plugin gate: <strong>{pkgStatus.enabled ? 'enabled' : 'disabled'}</strong> ·
             runtime: {pkgStatus.runtime_present ? 'present' : 'absent'} ·
             selects_model: {String(pkgStatus.selects_model)}
@@ -534,7 +535,7 @@ export function ProviderPackagesPanel() {
 
       {/* 1. Package Inventory & Artifact Inspection */}
       <section aria-label="Package inventory" style={sectionBox}>
-        <h4 style={{ ...mono, margin: 0 }}>Package inventory &amp; inspection</h4>
+        <h4 style={{ ...LABEL_STRONG, fontSize: 'var(--n-fs-meta)', margin: 0 }}>Package inventory &amp; inspection</h4>
         <form onSubmit={handleInspect} style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
           <input
             aria-label="Inspect artifact ID"
@@ -549,7 +550,7 @@ export function ProviderPackagesPanel() {
         </form>
 
         {inventory.length === 0 ? (
-          <p style={{ fontSize: 11.5, color: 'var(--ink-2)', margin: '8px 0 0' }}>
+          <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '8px 0 0' }}>
             No artifacts loaded in this session yet. Stage a signed candidate below or inspect an existing artifact ID.
           </p>
         ) : (
@@ -612,7 +613,7 @@ export function ProviderPackagesPanel() {
 
       {/* 2. Stage Signed Candidate */}
       <form onSubmit={handleStage} aria-label="Stage signed package" style={sectionBox}>
-        <h4 style={{ ...mono, margin: 0 }}>Stage signed candidate</h4>
+        <h4 style={{ ...LABEL_STRONG, fontSize: 'var(--n-fs-meta)', margin: 0 }}>Stage signed candidate</h4>
         <div style={fieldGrid}>
           <label style={labelStyle}>
             Candidate ref
@@ -771,7 +772,7 @@ export function ProviderPackagesPanel() {
 
       {/* 3. Admission Lifecycle: Propose, Permanent Owner Decision, Promote, Revoke */}
       <section aria-label="Package admission lifecycle" style={sectionBox}>
-        <h4 style={{ ...mono, margin: 0 }}>Admission lifecycle (propose · decide · promote · revoke)</h4>
+        <h4 style={{ ...LABEL_STRONG, fontSize: 'var(--n-fs-meta)', margin: 0 }}>Admission lifecycle (propose · decide · promote · revoke)</h4>
         <div style={fieldGrid}>
           <label style={labelStyle}>
             Artifact ID to propose
@@ -818,7 +819,7 @@ export function ProviderPackagesPanel() {
           </label>
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 11.5, color: 'var(--ink-2)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           <input
             type="checkbox"
             checked={permanentConsent}
@@ -873,9 +874,9 @@ export function ProviderPackagesPanel() {
 
       {/* 4. Host-Owned Encrypted Credentials */}
       <section aria-label="Provider credentials" style={sectionBox}>
-        <h4 style={{ ...mono, margin: 0 }}>Host-encrypted provider credentials</h4>
+        <h4 style={{ ...LABEL_STRONG, fontSize: 'var(--n-fs-meta)', margin: 0 }}>Host-encrypted provider credentials</h4>
         {credStatus && (
-          <p style={{ ...mono, margin: '6px 0 0', color: 'var(--ink-2)' }}>
+          <p style={{ ...note, margin: '6px 0 0', color: 'var(--ink-2)' }}>
             credential status: {credStatus.configured ? 'configured' : 'absent'} · generation {credStatus.generation}
           </p>
         )}
@@ -942,9 +943,9 @@ export function ProviderPackagesPanel() {
 
       {/* 5. Revisioned Provider Selection */}
       <section aria-label="Provider selection" style={sectionBox}>
-        <h4 style={{ ...mono, margin: 0 }}>Revisioned provider model selection</h4>
+        <h4 style={{ ...LABEL_STRONG, fontSize: 'var(--n-fs-meta)', margin: 0 }}>Revisioned provider model selection</h4>
         {selection && (
-          <p style={{ ...mono, margin: '6px 0 0', color: 'var(--ink-2)' }}>
+          <p style={{ ...note, margin: '6px 0 0', color: 'var(--ink-2)' }}>
             current selection: <strong>{selection.status}</strong>
             {selection.provider ? ` · ${selection.provider} (${selection.model})` : ''}
             {typeof selection.revision === 'number' ? ` · revision ${selection.revision}` : ''}
@@ -997,7 +998,7 @@ export function ProviderPackagesPanel() {
           </label>
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 11.5, color: 'var(--ink-2)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           <input
             type="checkbox"
             checked={ackUnknownPrice}
@@ -1005,7 +1006,7 @@ export function ProviderPackagesPanel() {
           />
           I acknowledge unknown model price
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 11.5, color: 'var(--ink-2)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
           <input
             type="checkbox"
             checked={ackDataPolicy}

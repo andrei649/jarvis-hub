@@ -53,10 +53,10 @@ function FieldEditor({ channel, field, onChanged }: { channel: string; field: Fi
   const clear = () => done(apiDelete(`/api/admin/channels/${channel}/secret/${field.name}`, { admin: true }), `${field.name} removed`);
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '3px 0' }}>
-      <label htmlFor={id} style={{ fontSize: 10.5, minWidth: 180 }}>{field.label}</label>
+      <label htmlFor={id} style={{ fontSize: 'var(--n-fs-meta)', minWidth: 180 }}>{field.label}</label>
       {field.secret ? <Tag c={field.set ? 'var(--green)' : 'var(--ink-2)'}>{field.set ? 'set' : 'not set'}</Tag> : null}
       {field.needs_reentry && <Tag c="var(--amber)">server changed · enter it again</Tag>}
-      {field.source && <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{SOURCE[field.source] || field.source}</span>}
+      {field.source && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{SOURCE[field.source] || field.source}</span>}
       {field.editable ? (
         <>
           {field.kind === 'bool'
@@ -71,7 +71,7 @@ function FieldEditor({ channel, field, onChanged }: { channel: string; field: Fi
           <button className="tool-btn" disabled={busy} onClick={save}>save</button>
           {field.secret && field.set && field.source === 'hub' && <button className="tool-btn" disabled={busy} onClick={clear}>remove</button>}
         </>
-      ) : !field.secret && field.value ? <span style={{ ...mono, fontSize: 10.5 }}>{field.value}</span> : null}
+      ) : !field.secret && field.value ? <span style={{ ...mono, fontSize: 'var(--n-fs-meta)' }}>{field.value}</span> : null}
       {field.applies === 'now' && <Tag>applies now</Tag>}
     </div>
   );
@@ -88,21 +88,21 @@ export function ChannelsConfigPanel() {
   return (
     <Card title="CHANNELS" live={d ? 'live' : undefined} onReload={reload}
       sub={d ? `${rows.filter((r) => r.running).length} running of ${rows.length}` : null}>
-      {e && <div role="status" style={{ color: 'var(--amber)', fontSize: 11 }}>not loaded · {String(e)}</div>}
-      <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginBottom: 6 }}>
+      {e && <div role="status" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>not loaded · {String(e)}</div>}
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
         Secrets are stored encrypted and never shown again. A value in <span style={mono}>.env</span> wins. Channels start with Nerva, so most changes apply after a restart.
       </div>
       {waiting.length > 0 && (
-        <div role="status" style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 6 }}>
+        <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 6 }}>
           Restart Nerva to apply the changes to {waiting.join(', ')} (Console → Admin → Restart / Update).
         </div>
       )}
-      {note && <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginBottom: 4 }}>{note}</div>}
+      {note && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>{note}</div>}
       <ul aria-label="channels" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {rows.map((r) => (
           <li key={r.id} style={{ borderBottom: '1px solid var(--panel-line)', padding: '5px 0' }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 11.5 }}>{r.label}</span>
+              <span style={{ fontSize: 'var(--n-fs-meta)' }}>{r.label}</span>
               <Tag c={r.running ? 'var(--green)' : 'var(--ink-2)'}>{r.running ? 'running' : 'not running'}</Tag>
               {r.restart_required && <Tag c="var(--amber)">restart to apply</Tag>}
               <button className="tool-btn" style={{ marginLeft: 'auto' }} aria-expanded={open === r.id}
@@ -110,7 +110,7 @@ export function ChannelsConfigPanel() {
             </div>
             {open === r.id && (
               <div style={{ marginTop: 4 }}>
-                {r.note && <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginBottom: 4 }}>{r.note}</div>}
+                {r.note && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>{r.note}</div>}
                 {r.fields.map((f) => <FieldEditor key={`${f.name}:${f.value ?? ""}:${f.set}`} channel={r.id} field={f} onChanged={changed} />)}
               </div>
             )}

@@ -1,0 +1,118 @@
+/* =====================================================================================
+   Nerva · owner axes (contract v1, ./CONTRACT.md §1)
+   -------------------------------------------------------------------------------------
+   The appearance choices that act on top of any theme: density, motion and the typeface
+   override. They read the attributes theme/apply.ts puts on <html> (data-density,
+   data-motion resolved from `system`, data-font) and work for every look, Classic
+   included. Every selector that sets a role a theme also sets names the look as well, so it
+   outranks a theme file's own base block (:is(:root, .n-theme-scope)[data-look="<id>"], 0,2,0)
+   and its breakpoint blocks (:root[data-look="<id>"], 0,2,0) and, loading later, ties with and
+   beats its light block (0,3,0). The typeface rules name the looks in an :is() list instead of
+   a bare [data-look] (it weighs the same, 0,1,0), because a Nerva theme and Classic give up
+   different faces.
+   ===================================================================================== */
+
+/* ---- density: the spacing steps -------------------------------------------------------
+   normal is tokens.css. compact is about 25% tighter, comfy about 20% looser. Spacing belongs
+   to this axis and no theme sets it (contract §3), so these are plain values. --n-panel-pad
+   and the legacy --pad / --gap of a Nerva theme are defined from these steps, so they follow. */
+:root[data-look][data-density="compact"] {
+  --n-s-1: 3px;
+  --n-s-2: 6px;
+  --n-s-3: 9px;
+  --n-s-4: 12px;
+  --n-s-5: 15px;
+  --n-s-6: 18px;
+  --n-s-8: 24px;
+  --n-s-10: 30px;
+  --n-s-12: 36px;
+}
+:root[data-look][data-density="comfy"] {
+  --n-s-1: 5px;
+  --n-s-2: 10px;
+  --n-s-3: 14px;
+  --n-s-4: 19px;
+  --n-s-5: 24px;
+  --n-s-6: 29px;
+  --n-s-8: 38px;
+  --n-s-10: 48px;
+  --n-s-12: 58px;
+}
+
+/* ---- density: control heights ---------------------------------------------------------
+   Control heights are a theme role (contract §3): each look draws its own (Console 28/24px,
+   Presence 36/30px and 40/34px from 2200px, tokens.css 36/28px for Ledger and Classic). So
+   density scales what the look resolved instead of replacing it: compact x0.875, comfy x1.2.
+   Compact never raises a look's height, and never takes one below the 24px target minimum
+   (WCAG 2.5.8) unless the look itself draws it smaller.
+   A custom property cannot refer to itself, so the look's own heights are read on <html>,
+   where the theme files and their breakpoint blocks put them, into --n-look-control-h(-sm)
+   (internal to this file: components read --n-control-h), and the scaled heights are declared
+   on <body>, which every HUD surface sits inside, portals included. A .n-theme-scope preview
+   of a look that sets its own heights redeclares them, so it shows them at normal density. */
+:root[data-look]:is([data-density="compact"], [data-density="comfy"]) {
+  --n-look-control-h:    var(--n-control-h);
+  --n-look-control-h-sm: var(--n-control-h-sm);
+}
+:root[data-look][data-density="compact"] body {
+  --n-control-h:    min(var(--n-look-control-h),    max(24px, calc(var(--n-look-control-h) * 0.875)));
+  --n-control-h-sm: min(var(--n-look-control-h-sm), max(24px, calc(var(--n-look-control-h-sm) * 0.875)));
+}
+:root[data-look][data-density="comfy"] body {
+  --n-control-h:    calc(var(--n-look-control-h) * 1.2);
+  --n-control-h-sm: calc(var(--n-look-control-h-sm) * 1.2);
+}
+
+/* ---- motion: calm is still -----------------------------------------------------------
+   The durations a component reads go to zero, and nothing animates or transitions. The
+   near-zero duration (not `none`) keeps animationend/transitionend firing for code that
+   waits on them; !important because some animations are inline styles. `system` arrives
+   here already resolved: apply.ts writes calm when the OS asks for reduced motion. */
+:root[data-look][data-motion="calm"] {
+  --n-dur-1: 0ms;
+  --n-dur-2: 0ms;
+}
+:root[data-motion="calm"] *,
+:root[data-motion="calm"] *::before,
+:root[data-motion="calm"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+/* ---- typeface: the owner's override (contract §5) ------------------------------------
+   `theme` sets nothing: each look keeps its own faces, and a theme's pairing comes back.
+   Any other choice replaces every face of a Nerva theme except mono: the interface, label,
+   reading, title and display faces, so a theme that draws its labels or titles in a face of
+   their own (Threshold's condensed sans, Ledger's serif titles) follows the choice too.
+   Classic keeps its voice: the choice replaces its interface and reading faces, and its labels
+   stay mono. (Inside .hud-root, bridge.css derives Classic's faces from styles.css's own
+   .hud-root[data-font] --font-ui, which these stacks match.) Identifiers keep --n-font-mono in
+   every look. A .n-theme-scope preview keeps its theme's own faces.
+
+   The choice's stack is named once, on <html>, in --n-font-chosen (internal to this file:
+   components read the roles). Its rules weigh (0,2,0) and nothing else sets it.
+   The two rules that hand it to the roles weigh (0,3,0), :root + the looks' :is() + the
+   choices' :is(), like a [data-look] rule above: they outrank a theme's base block and
+   breakpoint blocks (0,2,0) and, loading later, its light block (0,3,0); in Classic they
+   outrank bridge.css's :root[data-look="obsidian"|"graphite"] block (0,2,0). */
+:root[data-font="system-sans"]    { --n-font-chosen: system-ui, -apple-system, "Segoe UI", sans-serif; }
+:root[data-font="system-serif"]   { --n-font-chosen: Georgia, "Times New Roman", serif; }
+:root[data-font="system-mono"]    { --n-font-chosen: ui-monospace, "SFMono-Regular", Consolas, monospace; }
+:root[data-font="jetbrains-mono"] { --n-font-chosen: "JetBrains Mono", ui-monospace, monospace; }
+
+/* one compound selector each: whitespace before the second :is() would make it a descendant */
+:root:is([data-look="ledger"], [data-look="presence"], [data-look="briefing"], [data-look="workbench"], [data-look="threshold"], [data-look="console"], [data-look="atlas"]):is([data-font="system-sans"], [data-font="system-serif"], [data-font="system-mono"], [data-font="jetbrains-mono"]) {
+  --n-font-ui:      var(--n-font-chosen);
+  --n-font-label:   var(--n-font-chosen);
+  --n-font-text:    var(--n-font-chosen);
+  --n-font-title:   var(--n-font-chosen);
+  --n-font-display: var(--n-font-chosen);
+}
+:root:is([data-look="obsidian"], [data-look="graphite"]):is([data-font="system-sans"], [data-font="system-serif"], [data-font="system-mono"], [data-font="jetbrains-mono"]) {
+  --n-font-ui:   var(--n-font-chosen);
+  --n-font-text: var(--n-font-chosen);
+}

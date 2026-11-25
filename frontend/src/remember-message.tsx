@@ -142,15 +142,15 @@ function EditSavedFact({ forgetting, draft, setDraft, store, setStore, busy, set
   };
 
   return <div style={{ display: 'grid', gap: 14, minWidth: 0, marginTop: 16 }}>
-    <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>{forgetting ? 'Choose one fact to remove from shared memory for future chats.' : 'Select the exact saved fact to replace. Review the original and replacement before saving.'}</p>
-    <label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 12, fontWeight: 600 }}>Saved fact store
-      <select aria-label="Saved fact store" value={store} disabled={busy} onChange={e => { setStore(e.target.value as Store); setSelected(''); setUndo(null); }} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, minHeight: 44, boxSizing: 'border-box', fontSize: 13 }}>
+    <p style={{ margin: 0, fontSize: 'var(--n-fs-ui)', lineHeight: 1.5 }}>{forgetting ? 'Choose one fact to remove from shared memory for future chats.' : 'Select the exact saved fact to replace. Review the original and replacement before saving.'}</p>
+    <label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 'var(--n-fs-label)', fontWeight: 600 }}>Saved fact store
+      <select aria-label="Saved fact store" value={store} disabled={busy} onChange={e => { setStore(e.target.value as Store); setSelected(''); setUndo(null); }} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, minHeight: 44, boxSizing: 'border-box', fontSize: 'var(--n-fs-ui)' }}>
         <option value="memory">Agent notes</option><option value="user">User profile</option>
       </select>
     </label>
     <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
-    {loading ? <p role="status" style={{ margin: 0 }}>Loading saved facts…</p> : !facts.length && !needsReload ? <p role="status" style={{ margin: 0 }}>No saved facts in this store.</p> : <label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 12, fontWeight: 600 }}>Saved fact to {forgetting ? 'forget' : 'replace'}
-      <select value={selected} disabled={busy || !facts.length || needsReload} onChange={e => setSelected(e.target.value)} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, minHeight: 44, boxSizing: 'border-box', fontSize: 13 }}>
+    {loading ? <p role="status" style={{ margin: 0 }}>Loading saved facts…</p> : !facts.length && !needsReload ? <p role="status" style={{ margin: 0 }}>No saved facts in this store.</p> : <label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 'var(--n-fs-label)', fontWeight: 600 }}>Saved fact to {forgetting ? 'forget' : 'replace'}
+      <select value={selected} disabled={busy || !facts.length || needsReload} onChange={e => setSelected(e.target.value)} style={{ ...inpS, display: 'block', width: '100%', minWidth: 0, minHeight: 44, boxSizing: 'border-box', fontSize: 'var(--n-fs-ui)' }}>
         <option value="">Select a saved fact</option>
         {facts.map(fact => <option key={fact.entry_id} value={fact.entry_id}>{fact.value}</option>)}
       </select>
@@ -158,11 +158,11 @@ function EditSavedFact({ forgetting, draft, setDraft, store, setStore, busy, set
     <button type="button" className="tool-btn" disabled={busy || loading} onClick={() => { setSelected(''); setReload(n => n + 1); }} style={{ justifySelf: 'start', minHeight: 44 }}>Reload saved facts</button>
     </div>
     {old && <div style={{ minWidth: 0, padding: 12, border: '1px solid var(--panel-line)', borderRadius: 6, background: 'var(--surface-2)' }}>
-      <strong style={{ display: 'block', fontSize: 12 }}>Original saved fact</strong>
-      <output style={{ display: 'block', marginTop: 6, fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{old.value}</output>
+      <strong style={{ display: 'block', fontSize: 'var(--n-fs-label)' }}>Original saved fact</strong>
+      <output style={{ display: 'block', marginTop: 6, fontSize: 'var(--n-fs-ui)', lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{old.value}</output>
     </div>}
-    {!forgetting && <><label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 12, fontWeight: 600 }}>Replacement fact
-      <textarea aria-label="Replacement fact" value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} rows={3} style={{ ...taS, display: 'block', width: '100%', minHeight: 96, boxSizing: 'border-box', resize: 'vertical', fontSize: 13, lineHeight: 1.5 }} />
+    {!forgetting && <><label style={{ display: 'grid', gap: 6, minWidth: 0, fontSize: 'var(--n-fs-label)', fontWeight: 600 }}>Replacement fact
+      <textarea aria-label="Replacement fact" value={draft} disabled={busy} onChange={e => setDraft(e.target.value)} rows={3} style={{ ...taS, display: 'block', width: '100%', minHeight: 96, boxSizing: 'border-box', resize: 'vertical', fontSize: 'var(--n-fs-ui)', lineHeight: 1.5 }} />
     </label>
     {length > 300 && <p role="status" style={{ margin: 0 }}>{length}/300 characters · shorten the fact to save.</p>}
     {old && duplicate && <p role="status" style={{ margin: 0 }}>That fact is already saved in this store.</p>}</>}
@@ -199,7 +199,7 @@ export function RememberMessageDialog({ text, opener, onClose }: { text: string;
       if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); onClose(); }
     }}>
     <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-      <h2 id={title} style={{ margin: 0, fontSize: 18 }}>Remember message</h2>
+      <h2 id={title} style={{ margin: 0, fontSize: 'var(--n-fs-prose)' }}>Remember message</h2>
       <button type="button" className="tool-btn" onClick={onClose} style={{ minHeight: 44, minWidth: 44 }}>Close</button>
     </header>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
@@ -208,7 +208,7 @@ export function RememberMessageDialog({ text, opener, onClose }: { text: string;
       {mode !== 'forget' && <button type="button" className="tool-btn" disabled={busy} onClick={() => setMode('forget')} style={{ minHeight: 44 }}>Forget a saved fact</button>}
     </div>
     {mode !== 'save' ? <EditSavedFact key={mode} forgetting={mode === 'forget'} draft={draft} setDraft={setDraft} store={store} setStore={setStore} busy={busy} setBusy={setBusy} /> : <>
-      <p style={{ fontSize: 12 }}>Edit the fact before saving it for future chats.</p>
+      <p style={{ fontSize: 'var(--n-fs-label)' }}>Edit the fact before saving it for future chats.</p>
       <SaveFactForm chatState={{ draft, store, busy, setDraft, setStore, setBusy }} />
     </>}
   </dialog>;

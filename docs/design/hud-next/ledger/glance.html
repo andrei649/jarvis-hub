@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva — Glance</title>
+<script>
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'dark' || t === 'light' ? t : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="ledger.css">
+<style>
+  /* Glance: the day's balance, read from across the room or from a second screen.
+     A few large figures, the same rules as the page, nothing that moves by itself.
+     On an always-on OLED panel the whole sheet steps a few pixels every ten minutes
+     (an instant step, never an animation; off under prefers-reduced-motion), and the
+     large figures are set in ink-2, not full ink. */
+  .glance {
+    --gx: clamp(32px, 4.2vw, 120px);
+    height: 100vh; min-height: 560px; display: flex; flex-direction: column;
+    padding: 28px var(--gx) 28px; overflow: hidden;
+    transform: translate(var(--shift-x, 0px), var(--shift-y, 0px));
+  }
+  .g-main { margin: auto 0; padding: 24px 0 8px; }
+  .g-top { display: flex; align-items: center; gap: 14px; padding-bottom: 16px; border-bottom: 1px solid var(--rule); font: var(--w-reg) var(--t-label)/1 var(--font-sans); letter-spacing: 0.015em; color: var(--ink-3); }
+  .g-top .brand__mark { width: 24px; height: 24px; color: var(--ink-2); }
+  .g-top .brand__name { font: var(--w-bold) 20px/1 var(--font-serif-head); color: var(--ink-2); }
+  .g-top .return { margin-left: auto; }
+
+  .g-clock { align-self: end; display: flex; align-items: baseline; gap: 28px; padding-bottom: 22px; }
+  .g-clock time { font: var(--w-reg) clamp(64px, 6vw, 140px)/0.9 var(--font-serif-display); letter-spacing: -0.03em; color: var(--ink-3); }
+  .g-clock p { font: var(--w-reg) clamp(18px, 1.35vw, 28px)/1.3 var(--font-serif-sub); color: var(--ink-3); }
+  .g-clock p span { display: block; font: var(--w-reg) clamp(13px, 0.8vw, 16px)/1.4 var(--font-sans); letter-spacing: 0.015em; }
+
+  .g-balance { display: grid; grid-template-columns: 1.05fr 1fr 1fr 1fr; column-gap: 56px; padding: 22px 0 26px; border-top: var(--heavy) solid var(--rule-ink); border-bottom: 1px solid var(--rule-2); }
+  .g-cell { position: relative; min-width: 0; }
+  .g-cell + .g-cell::before { content: ""; position: absolute; top: 4px; bottom: 0; left: -28px; width: 1px; background: var(--rule); }
+  .g-label { display: flex; align-items: center; gap: 8px; font: var(--w-reg) clamp(13px, 0.8vw, 16px)/1.2 var(--font-sans); letter-spacing: 0.015em; color: var(--ink-3); }
+  .g-label .mk { width: 13px; height: 13px; color: var(--ink-2); }
+  .g-label .mk--seal { color: var(--seal); }
+  .g-fig { margin-top: 10px; font: var(--w-reg) clamp(64px, 5.6vw, 128px)/0.95 var(--font-serif-display); letter-spacing: -0.025em; color: var(--ink-2); white-space: nowrap; }
+  .g-fig--seal { color: var(--seal); font-size: clamp(84px, 7.4vw, 168px); line-height: 0.8; margin-top: 4px; }
+  .g-fig--word { font-size: clamp(54px, 4.6vw, 108px); }
+  .g-what { margin-top: 12px; font: var(--w-reg) clamp(19px, 1.35vw, 28px)/1.25 var(--font-serif-sub); color: var(--ink); text-wrap: balance; }
+  .g-note { margin-top: 8px; font: var(--w-reg) clamp(13px, 0.8vw, 16px)/1.45 var(--font-sans); letter-spacing: 0.012em; color: var(--ink-3); }
+  .g-note b { color: var(--ink-2); font-weight: var(--w-semi); }
+
+  .g-now { display: flex; align-items: center; gap: 14px; padding: 16px 0 17px; font: italic var(--w-reg) clamp(17px, 1.15vw, 24px)/1.3 var(--font-serif-text); color: var(--ink-2); border-bottom: 3px double var(--rule-2); }
+  .g-now .mk { width: 14px; height: 14px; color: var(--ink-2); }
+  .g-now .steps-mini { margin-left: auto; display: flex; gap: 4px; font: normal var(--w-reg) clamp(12px, 0.75vw, 15px)/1 var(--font-sans); letter-spacing: 0.015em; color: var(--ink-3); }
+  .g-now .steps-mini span { padding-top: 7px; min-width: 92px; border-top: var(--heavy) solid var(--rule-2); }
+  .g-now .steps-mini .is-done { border-top-color: var(--ink-3); }
+  .g-now .steps-mini .is-now { border-top: var(--heavy) dotted var(--ink-2); color: var(--ink-2); }
+  .g-now .since { font: normal var(--w-reg) clamp(12px, 0.75vw, 15px)/1 var(--font-sans); letter-spacing: 0.015em; color: var(--ink-3); }
+
+  .g-foot { display: flex; align-items: center; gap: 22px; padding-top: 16px; font: var(--w-reg) var(--t-label)/1 var(--font-sans); letter-spacing: 0.015em; color: var(--ink-3); white-space: nowrap; }
+  .g-foot dl { display: flex; gap: 22px; min-width: 0; }
+  .g-foot dl > div { display: inline-flex; align-items: center; gap: 7px; }
+  .g-foot dd { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-weight: var(--w-semi); }
+  .g-foot dd .more { font-weight: var(--w-reg); color: var(--ink-3); }
+  .g-foot .stop { margin-left: auto; }
+
+  @media (max-width: 1339px) {
+    .g-balance { column-gap: 40px; }
+    .g-cell + .g-cell::before { left: -20px; }
+    .g-now .steps-mini { display: none; }
+    .g-foot dl > div:nth-child(n+5) { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="mk-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.4" fill="currentColor"/></symbol>
+  <symbol id="mk-attn" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 2.4a5.6 5.6 0 0 0 0 11.2z" fill="currentColor"/></symbol>
+  <symbol id="mk-work" viewBox="0 0 16 16"><path d="M4 2.5l9.5 5.5L4 13.5z" fill="currentColor"/></symbol>
+  <symbol id="mk-here" viewBox="0 0 16 16"><rect x="2.75" y="2.75" width="10.5" height="10.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6" y="6" width="4" height="4" fill="currentColor"/></symbol>
+  <symbol id="mk-key" viewBox="0 0 16 16"><path d="M8 2.2l5.8 5.8L8 13.8 2.2 8z" fill="currentColor"/></symbol>
+  <symbol id="mk-seal" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7.25" fill="currentColor"/><path d="M5.4 10.9V5.1l5.2 5.8V5.1" fill="none" style="stroke: var(--knock, var(--paper))" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="mk-seal-open" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 10.7V5.3l4.8 5.4V5.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 16 16"><rect x="6" y="1.8" width="4" height="7.6" rx="2"/><path d="M3.4 7.6a4.6 4.6 0 0 0 9.2 0M8 12.2v2.2"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12"/></symbol>
+</svg>
+
+<main class="glance" aria-label="Glance — Monday, 23 November 2026">
+  <header class="g-top">
+    <svg class="brand__mark" viewBox="0 0 128 128" aria-hidden="true">
+      <circle cx="64" cy="64" r="59" fill="none" stroke="currentColor" stroke-width="5"/>
+      <g stroke="currentColor" stroke-width="9" stroke-linecap="round" fill="none"><line x1="42" y1="90" x2="42" y2="38"/><line x1="42" y1="38" x2="86" y2="90"/><line x1="86" y1="90" x2="86" y2="38"/></g>
+      <g fill="currentColor"><circle cx="42" cy="38" r="8"/><circle cx="42" cy="90" r="8"/><circle cx="86" cy="38" r="8"/><circle cx="86" cy="90" r="8"/></g>
+    </svg>
+    <span class="brand__name">Nerva</span>
+    <span>Glance · the day at a distance · read only</span>
+    <a class="link return" href="cockpit.html">Return to the page <span class="kbd">Esc</span></a>
+  </header>
+
+  <div class="g-main">
+  <div class="g-clock">
+    <time datetime="2026-11-23T10:51">10:51</time>
+    <p>Monday, 23 November<span>București · 9° · Mist</span></p>
+  </div>
+
+  <section class="g-balance" aria-label="The day's balance">
+    <div class="g-cell">
+      <p class="g-label"><svg class="mk mk--seal" aria-hidden="true"><use href="#mk-seal-open"/></svg>Need you</p>
+      <p class="g-fig g-fig--seal tnum">9</p>
+      <p class="g-what">await your signature</p>
+      <p class="g-note"><b>3 typed</b> · 1 review, then confirm · 2 one click, with undo. Signing happens on the page, never from here.</p>
+    </div>
+    <div class="g-cell">
+      <p class="g-label"><svg class="mk" aria-hidden="true"><use href="#mk-attn"/></svg>Health · since 08:14</p>
+      <p class="g-fig g-fig--word">Degraded</p>
+      <p class="g-what">4 services down</p>
+      <p class="g-note">Nothing blocked: the model is served by Ollama. Checked 10:50.</p>
+    </div>
+    <div class="g-cell">
+      <p class="g-label"><svg class="mk" aria-hidden="true"><use href="#mk-here"/></svg>Where work ran · today</p>
+      <p class="g-fig tnum">100%</p>
+      <p class="g-what">on this machine</p>
+      <p class="g-note"><b>By route</b> · 41 of 41 runs. Egress sealed: nothing can leave this machine.</p>
+    </div>
+    <div class="g-cell">
+      <p class="g-label"><svg class="mk" aria-hidden="true"><use href="#mk-work"/></svg>Next · in 9 min</p>
+      <p class="g-fig tnum">11:00</p>
+      <p class="g-what">1:1 with Cosmina</p>
+      <p class="g-note">Office. Then <b>14:00</b> Raiffeisen quarterly review, prep 13:15.</p>
+    </div>
+  </section>
+
+  <p class="g-now" role="status">
+    <svg class="mk" aria-hidden="true"><use href="#mk-work"/></svg>
+    <span>Jarvis is writing your answer — gathering, asking Pepper and Stark</span>
+    <span class="since">asked 10:48 · 3 min so far · running on this machine</span>
+    <span class="steps-mini" aria-hidden="true"><span class="is-done">Classify</span><span class="is-done">Route</span><span class="is-now">Gather</span><span>Synthesize</span></span>
+  </p>
+  </div>
+
+  <footer class="g-foot">
+    <dl aria-label="Trust signals">
+      <div><dt>Egress</dt><dd><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg>Sealed</dd></div>
+      <div><dt>Runs on this machine</dt><dd>100%<span class="more">· by route</span></dd></div>
+      <div><dt>Microphone</dt><dd><svg class="ico" aria-hidden="true" style="width:13px;height:13px"><use href="#i-mic"/></svg>On</dd></div>
+      <div><dt>Model</dt><dd><code>gemma-4-31b</code></dd></div>
+      <div><dt>Data on screen</dt><dd><svg class="mk mk--sm" aria-hidden="true"><use href="#mk-ok"/></svg>Live<span class="more">· checked 10:50</span></dd></div>
+      <div><dt>Audit chain</dt><dd><svg class="mk mk--sm mk--chain" aria-hidden="true"><use href="#mk-seal"/></svg>Intact<span class="more">· 921 sealed</span></dd></div>
+    </dl>
+    <button class="btn btn--seal stop" type="button" title="One click. Halts every agent and the job queue until you resume."><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg>Stop all agents</button>
+  </footer>
+</main>
+
+<script>
+  /* OLED care: step the sheet a few pixels every ten minutes (instant, not animated).
+     Skipped entirely when the viewer prefers reduced motion. */
+  (function () {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var steps = [[0, 0], [4, 2], [2, 5], [-3, 3], [-4, -1], [1, -4]], i = 0, el = document.querySelector('.glance');
+    setInterval(function () {
+      i = (i + 1) % steps.length;
+      el.style.setProperty('--shift-x', steps[i][0] + 'px');
+      el.style.setProperty('--shift-y', steps[i][1] + 'px');
+    }, 600000);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') location.href = 'cockpit.html'; });
+  })();
+</script>
+</body>
+</html>

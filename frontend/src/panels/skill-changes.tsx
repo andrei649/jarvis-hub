@@ -12,7 +12,8 @@
    (POST /api/actions/{card}/decide); the answer says what happened to the skill — applied
    and shown, applied but sandboxed, refused and why — instead of a bare "approved". */
 import React, { useState } from 'react';
-import { Row, Tag, actA, arr, mono, refusalReason } from '../panel-kit';
+import { Row, Tag, actA, arr, mono, note, refusalReason } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export const SKILL_CHANGES_PATH = '/api/skills/proposals';
 export const SKILL_CHANGES_SHOWN = 5;
@@ -69,18 +70,20 @@ export function ChangeDiff({ text }: { text: string }) {
   const color = (l: string) => l.startsWith('@@') ? 'var(--accent-light)'
     : (l.startsWith('+') && !l.startsWith('+++')) ? 'var(--green)'
     : (l.startsWith('-') && !l.startsWith('---')) ? 'var(--red)' : 'var(--ink-2)';
-  return <pre data-testid="skill-change-diff" style={{ ...mono, fontSize: 10.5, lineHeight: 1.45, whiteSpace: 'pre-wrap',
+  return <pre data-testid="skill-change-diff" style={{ ...mono, fontSize: 'var(--n-fs-meta)', lineHeight: 1.45, whiteSpace: 'pre-wrap',
     overflowWrap: 'anywhere', maxHeight: 320, overflow: 'auto', margin: '6px 0 0', padding: 8,
     background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
     {text.split('\n').map((l, i) => <div key={i} style={{ color: color(l) }}>{l || ' '}</div>)}
   </pre>;
 }
 
-export function SkillChangesInbox({ reply, error, onDecided }:
-  { reply: any; error?: string | null; onDecided?: () => void }) {
+/* `demo` (PHASE_B_PLAN.md §1.4): while the demo sample is on, every decision control is disabled,
+   as the Decision Inbox's own requests are; the changes are still shown with their diffs. */
+export function SkillChangesInbox({ reply, error, onDecided, demo = false }:
+  { reply: any; error?: string | null; onDecided?: () => void; demo?: boolean }) {
   const [outcome, setOutcome] = useState<Record<string, string>>({});
   if (error) {
-    return <div style={{ ...mono, fontSize: 10, color: 'var(--amber)', marginTop: 8 }}>
+    return <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 8 }}>
       skill changes could not be read · {error}
     </div>;
   }
@@ -89,6 +92,7 @@ export function SkillChangesInbox({ reply, error, onDecided }:
   // The hub sends at most a page of proposals and counts the rest (review-H318c n-2).
   const total = rows.length + (Number(reply && reply.more) || 0);
   const decide = (p: Proposal, approved: boolean) => {
+    if (demo) return;
     const id = String(p.id || '');
     setOutcome((o) => ({ ...o, [id]: approved ? 'applying…' : 'rejecting…' }));
     actA(`/api/actions/${encodeURIComponent(String(p.card))}/decide`, { approved },
@@ -97,34 +101,37 @@ export function SkillChangesInbox({ reply, error, onDecided }:
   };
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', letterSpacing: 1 }}>
+      <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
         SKILL CHANGES · {total} awaiting you
       </div>
+      {demo && <p role="note" style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '4px 0 0' }}>
+        The demo sample is on: these skill changes cannot be decided here. Exit the demo to decide them.
+      </p>}
       {rows.slice(0, SKILL_CHANGES_SHOWN).map((p, i) => (
         <div key={p.id || i} data-testid="skill-change">
           <Row>
-            <span style={{ ...mono, color: 'var(--ink-2)' }}>change to skill '{p.skill}'</span>
+            <span style={{ ...note, color: 'var(--ink-2)' }}>change to skill '{p.skill}'</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
               <Tag>{originLabel(p.origin)}</Tag>
               {(p.flags || []).map((f) => <Tag key={f} c="var(--red)">{f}</Tag>)}
               {p.drifted && <Tag c="var(--amber)">the skill changed since · approving applies nothing</Tag>}
               <button className="tool-btn" title={refusedByHub(p) ? 'the hub will refuse this change: reject it'
-                : 'approve skill change'} disabled={!p.card || refusedByHub(p)}
+                : 'approve skill change'} disabled={demo || !p.card || refusedByHub(p)}
                 onClick={() => decide(p, true)}>✓</button>
-              <button className="tool-btn" title="reject skill change" disabled={!p.card}
+              <button className="tool-btn" title="reject skill change" disabled={demo || !p.card}
                 onClick={() => decide(p, false)}>✕</button>
             </span>
           </Row>
-          {!p.card && <div style={{ ...mono, fontSize: 10, color: 'var(--amber)' }}>
+          {!p.card && <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
             no approval card could be queued for it: reload to try again
           </div>}
           <ChangeDiff text={String(p.diff || '')} />
-          {outcome[String(p.id || '')] && <div role="status" style={{ ...mono, fontSize: 10, marginTop: 4 }}>
+          {outcome[String(p.id || '')] && <div role="status" style={{ ...note, fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>
             {outcome[String(p.id || '')]}
           </div>}
         </div>
       ))}
-      {total > SKILL_CHANGES_SHOWN && <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+      {total > SKILL_CHANGES_SHOWN && <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
         {total - Math.min(rows.length, SKILL_CHANGES_SHOWN)} more after these are decided
       </div>}
     </div>

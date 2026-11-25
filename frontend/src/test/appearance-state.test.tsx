@@ -2,7 +2,8 @@ import { act, renderHook, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useAppearance } from '../appearance';
 
-const defaults = {accent:'cyan',look:'obsidian',density:'normal',motion:'system',scanline:'on',dotgrid:'off'};
+const defaults = {accent:'cyan',look:'ledger',scheme:'dark',density:'normal',motion:'system',scanline:'on',dotgrid:'off'};
+const CACHE = 'hud.appearance.v1:/';
 const result = (patch={}, configured=true) => new Response(JSON.stringify({configured,preferences:{...defaults,...patch}}));
 const deferred = () => {let resolve!: (value:Response)=>void; let reject!: (error:Error)=>void; const promise=new Promise<Response>((yes,no)=>{resolve=yes;reject=no;}); return {promise,resolve,reject};};
 beforeEach(() => {localStorage.clear(); delete window.__NERVA_BASE_PATH__;});
@@ -198,6 +199,91 @@ it('acknowledges a completed save after unmount without replaying it on reload',
   const next=renderHook(()=>useAppearance());
   await waitFor(()=>expect(next.result.current.status).toBe('synced'));
   expect(writes).toBe(1);
+});
+
+/* Theme contract v1 §7 — the Ledger default, the scheme axis and the cache migration. */
+it('lands a new browser on Ledger, dark, without uploading the defaults', async () => {
+  const fetch=vi.fn().mockImplementation(async()=>new Response(JSON.stringify({configured:false,preferences:{}})));vi.stubGlobal('fetch',fetch);
+  const {result:hook}=renderHook(()=>useAppearance());
+  expect(hook.current.preferences).toMatchObject({look:'ledger',scheme:'dark'});
+  await waitFor(()=>expect(hook.current.status).toBe('local'));
+  expect(hook.current.preferences).toMatchObject({look:'ledger',scheme:'dark'});
+  expect(fetch.mock.calls.every(call=>call[1].method==='GET')).toBe(true);
+  expect(JSON.parse(localStorage.getItem(CACHE)!)).toMatchObject({version:2,preferences:{look:'ledger',scheme:'dark'}});
+});
+it('ignores the old default look of a version-1 cache and keeps every real choice', async () => {
+  localStorage.setItem(CACHE,JSON.stringify({version:1,preferences:{...defaults,look:'obsidian',scheme:undefined,accent:'amber',density:'compact'}}));
+  const fetch=vi.fn().mockImplementation(async()=>new Response(JSON.stringify({configured:false,preferences:{}})));vi.stubGlobal('fetch',fetch);
+  const {result:hook}=renderHook(()=>useAppearance());
+  expect(hook.current.preferences).toMatchObject({look:'ledger',accent:'amber',density:'compact'});
+  await waitFor(()=>expect(hook.current.status).toBe('local'));
+  expect(fetch.mock.calls.every(call=>call[1].method==='GET')).toBe(true);
+  // rewritten as version 2: the migration happens once
+  expect(JSON.parse(localStorage.getItem(CACHE)!)).toMatchObject({version:2,preferences:{look:'ledger',accent:'amber'}});
+});
+it('keeps a version-1 Graphite and a version-2 Obsidian: those were chosen', () => {
+  vi.stubGlobal('fetch',vi.fn().mockReturnValue(new Promise(()=>{})));
+  localStorage.setItem(CACHE,JSON.stringify({version:1,preferences:{look:'graphite'}}));
+  expect(renderHook(()=>useAppearance()).result.current.preferences.look).toBe('graphite');
+  cleanup();
+  localStorage.setItem(CACHE,JSON.stringify({version:2,preferences:{look:'obsidian'}}));
+  expect(renderHook(()=>useAppearance()).result.current.preferences.look).toBe('obsidian');
+});
+it('treats a pre-sync hud.look of obsidian as the old default too', () => {
+  vi.stubGlobal('fetch',vi.fn().mockReturnValue(new Promise(()=>{})));
+  localStorage.setItem('hud.look','obsidian'); localStorage.setItem('hud.accent','violet');
+  expect(renderHook(()=>useAppearance()).result.current.preferences).toMatchObject({look:'ledger',accent:'violet'});
+  cleanup();
+  localStorage.setItem('hud.look','graphite');
+  expect(renderHook(()=>useAppearance()).result.current.preferences.look).toBe('graphite');
+});
+it('leaves a pending explicit Obsidian in the journal and uploads it', async () => {
+  localStorage.setItem(CACHE,JSON.stringify({version:1,preferences:{look:'obsidian'}}));
+  localStorage.setItem(CACHE+':edit:pending',JSON.stringify({time:1,patch:{look:'obsidian'}}));
+  let server={...defaults};
+  const fetch=vi.fn().mockImplementation(async(_p,init)=>{
+    if(init.method==='PUT'){const {_revision,...patch}=JSON.parse(init.body);server={...server,...patch};}
+    return result(server);
+  });vi.stubGlobal('fetch',fetch);
+  const {result:hook}=renderHook(()=>useAppearance());
+  expect(hook.current.preferences.look).toBe('obsidian');
+  await waitFor(()=>expect(hook.current.status).toBe('synced'));
+  expect(server.look).toBe('obsidian');
+  expect(hook.current.preferences.look).toBe('obsidian');
+});
+it('syncs the scheme like every other field and coerces an unknown one to dark', async () => {
+  let server={...defaults};
+  const fetch=vi.fn().mockImplementation(async(_p,init)=>{
+    if(init.method==='PUT'){const {_revision,...patch}=JSON.parse(init.body);server={...server,...patch};}
+    return result(server);
+  });vi.stubGlobal('fetch',fetch);
+  const {result:hook}=renderHook(()=>useAppearance());
+  await waitFor(()=>expect(hook.current.status).toBe('synced'));
+  act(()=>hook.current.setPreference('scheme','system'));
+  await waitFor(()=>expect(hook.current.status).toBe('synced'));
+  expect(server.scheme).toBe('system');expect(hook.current.preferences.scheme).toBe('system');
+  act(()=>hook.current.setPreference('scheme','sepia'));
+  await waitFor(()=>expect(hook.current.status).toBe('synced'));
+  expect(server.scheme).toBe('dark');
+  const puts=fetch.mock.calls.filter(call=>call[1].method==='PUT').map(call=>JSON.parse(call[1].body));
+  expect(puts.map(({_revision,...patch})=>patch)).toEqual([{scheme:'system'},{scheme:'dark'}]);
+});
+it('reads a server document without a scheme as dark', async () => {
+  vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>new Response(JSON.stringify({configured:true,preferences:{look:'atlas'}}))));
+  const {result:hook}=renderHook(()=>useAppearance());
+  await waitFor(()=>expect(hook.current.status).toBe('synced'));
+  expect(hook.current.preferences).toMatchObject({look:'atlas',scheme:'dark'});
+});
+it('ignores a preference key outside the fixed fields', async () => {
+  const fetch=vi.fn().mockImplementation(async()=>result());vi.stubGlobal('fetch',fetch);
+  const {result:hook}=renderHook(()=>useAppearance());
+  await waitFor(()=>expect(hook.current.status).toBe('synced'));
+  // Typed callers cannot name such a key; the shared AppearanceProvider passes plain strings.
+  const untyped=hook.current.setPreference as (key:string,value:string)=>void;
+  act(()=>untyped('custom_css','body{display:none}'));
+  expect(Object.keys(localStorage).filter(key=>key.includes(':edit:'))).toEqual([]);
+  expect(fetch.mock.calls.every(call=>call[1].method==='GET')).toBe(true);
+  expect(hook.current.preferences).not.toHaveProperty('custom_css');
 });
 
 it('defaults old replies to theme and preserves an explicit offline font through reload', async () => {

@@ -80,7 +80,8 @@
        section A. Stated between the sections, and section A is deliberately NOT reloaded
        after a POST. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
+import { useApi, arr, mono, note, asLive, Card, State, Row, Tag, act, inpS, taS, Json } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const TRACES_PATH = '/api/workflows/traces';
 const HIER_PATH = '/api/workflows/hierarchical';
@@ -116,9 +117,16 @@ function abs(tsSec: any): string | null {
   try { return new Date(n * 1000).toLocaleString(); } catch { return null; }
 }
 
-const dim = { ...mono, fontSize: 10, color: 'var(--ink-2)' };
-const amber = { ...mono, fontSize: 10.5, color: 'var(--amber)', lineHeight: 1.5 };
-const red = { ...mono, fontSize: 10.5, color: 'var(--red)', lineHeight: 1.5 };
+/* Messages, notes and hints are words: the interface face (contract §5). The few identifiers
+   the dim voice carries keep mono as dimId: a request key named as a field (limit, manager,
+   max_retries) and a row number. The goal field's label mixes its key with a word, so it is
+   dim; the synthesis head is a label, dimLabel. An id slot (a step, a pipeline, a crew
+   member) is mono while it holds the id, and the interface face when it says "(… absent)". */
+const dim = { ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' };
+const dimId = { ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' };
+const dimLabel = { ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' };
+const amber = { ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', lineHeight: 1.5 };
+const red = { ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', lineHeight: 1.5 };
 
 /* Rendered whenever the runs list is empty and the read did NOT fail. Wording is the point:
    it reports the ambiguity instead of resolving it in either direction. */
@@ -152,7 +160,7 @@ function StepRow({ s }: { s: any }) {
   return (
     <div style={{ padding: '5px 0 6px', borderBottom: '1px solid var(--panel-line)' }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ ...mono, fontSize: 11 }}>{str(s && s.step) || '(step id absent)'}</span>
+        <span style={{ ...(str(s && s.step) ? mono : note), fontSize: 'var(--n-fs-meta)' }}>{str(s && s.step) || '(step id absent)'}</span>
         {str(s && s.kind) && <Tag>kind {s.kind}</Tag>}
         {str(s && s.agent) && <Tag>agent {s.agent}</Tag>}
         {ms != null && <Tag>{ms} ms</Tag>}
@@ -249,7 +257,7 @@ export function WorkflowTracesPanel() {
         <State e={e} loading={loading} n={null} />
 
         <Row>
-          <span style={dim}>limit</span>
+          <span style={dimId}>limit</span>
           <select
             aria-label="trace limit"
             value={limit}
@@ -285,7 +293,7 @@ export function WorkflowTracesPanel() {
                 >
                   {open === i ? '▾' : '▸'}
                 </button>
-                <span style={{ ...mono, fontSize: 11 }}>
+                <span style={{ ...(str(r && r.pipeline_name) || str(r && r.pipeline_id) ? mono : note), fontSize: 'var(--n-fs-meta)' }}>
                   {str(r && r.pipeline_name) || str(r && r.pipeline_id) || '(pipeline id absent)'}
                 </span>
                 {elapsed != null && <Tag>{elapsed} s total</Tag>}
@@ -302,7 +310,7 @@ export function WorkflowTracesPanel() {
               {open === i && (
                 <div style={{ padding: '2px 0 8px 18px' }}>
                   {str(r && r.pipeline_id) && (
-                    <div style={dim}>pipeline_id {r.pipeline_id}</div>
+                    <div style={dimId}>pipeline_id {r.pipeline_id}</div>
                   )}
                   {term && (
                     <div style={{ ...amber, marginTop: 3 }}>
@@ -382,7 +390,7 @@ export function WorkflowTracesPanel() {
         />
 
         <Row>
-          <span style={dim}>manager</span>
+          <span style={dimId}>manager</span>
           <select
             aria-label="manager"
             value={manager}
@@ -403,7 +411,7 @@ export function WorkflowTracesPanel() {
         )}
 
         <Row>
-          <span style={dim}>max_retries</span>
+          <span style={dimId}>max_retries</span>
           <input
             aria-label="max_retries"
             type="number"
@@ -430,7 +438,7 @@ export function WorkflowTracesPanel() {
         {crew.map((m, i) => (
           <div key={i} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={dim}>#{i + 1}</span>
+              <span style={dimId}>#{i + 1}</span>
               <input
                 aria-label={'crew ' + (i + 1) + ' id'}
                 value={m.id}
@@ -531,7 +539,7 @@ export function WorkflowTracesPanel() {
               return (
                 <div key={i} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ ...mono, fontSize: 11 }}>{str(m && m.id) || '(id absent)'}</span>
+                    <span style={{ ...(str(m && m.id) ? mono : note), fontSize: 'var(--n-fs-meta)' }}>{str(m && m.id) || '(id absent)'}</span>
                     <Tag>agent that produced the final attempt: {str(m && m.agent) || '(absent)'}</Tag>
                     {att != null && <Tag>{att} attempts</Tag>}
                     {m && m.redistributed === true && (
@@ -554,7 +562,7 @@ export function WorkflowTracesPanel() {
               );
             })}
 
-            <div style={{ ...dim, marginTop: 6 }}>manager synthesis (final)</div>
+            <div style={{ ...dimLabel, marginTop: 6 }}>manager synthesis (final)</div>
             {typeof res.final === 'string' && res.final !== ''
               ? <Json v={res.final} max={200} />
               : <div style={amber}>(final was empty — the crew produced no results to synthesize)</div>}

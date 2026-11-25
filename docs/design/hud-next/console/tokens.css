@@ -1,0 +1,116 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Nerva Console — tokens
+   One token set, two themes. Every colour is written once as
+   light-dark(<daylight>, <night>) in OKLCH; the theme is nothing more than
+   `color-scheme` on <html>. Slot names mirror the Workspace sheet (--ws-bg,
+   --ws-surface, --ws-text-muted, --ws-s1…) so the two can converge on one file.
+
+   Colour grammar (the whole identity in four lines):
+     neutral  — everything that is normal. Normal is never coloured.
+     signal   — amber. Lit ONLY where something is waiting for the owner.
+     fault    — red.   Lit ONLY where something is broken, failed or stopped.
+     There is no green, no blue and no brand colour.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root { color-scheme: dark; }                       /* the declared default */
+:root[data-theme="dark"]  { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; --nv-fw-regular: 400; --nv-fw-medium: 500; --nv-fw-strong: 650; }
+
+:root {
+  /* ── Surfaces (all opaque) ─────────────────────────────────────────────── */
+  --nv-bg:            light-dark(oklch(0.930 0.006 85), oklch(0.150 0.004 75));  /* frame, bars, wells where things happen now */
+  --nv-surface:       light-dark(oklch(0.975 0.004 85), oklch(0.184 0.004 75));  /* panes */
+  --nv-surface-2:     light-dark(oklch(1.000 0.000 0),  oklch(0.224 0.005 75));  /* raised: decision pane, inputs, owner turns */
+  --nv-surface-hover: light-dark(oklch(0.905 0.007 85), oklch(0.258 0.006 75));  /* hover, pressed, keycaps */
+  --nv-lens:          light-dark(oklch(0.966 0.006 85), oklch(0.198 0.005 75));  /* the magnified last minutes of the time axis */
+
+  /* ── Lines ─────────────────────────────────────────────────────────────── */
+  --nv-border:        light-dark(oklch(0.885 0.006 85), oklch(0.272 0.005 75));  /* hairline: rows, pane edges */
+  --nv-border-strong: light-dark(oklch(0.780 0.008 85), oklch(0.360 0.006 75));  /* buttons, tags */
+  --nv-input-border:  light-dark(oklch(0.560 0.010 85), oklch(0.540 0.008 75));  /* text fields: 3:1 on every surface */
+
+  /* ── Ink ───────────────────────────────────────────────────────────────── */
+  --nv-text:          light-dark(oklch(0.205 0.010 80), oklch(0.955 0.006 85));  /* readings, body */
+  --nv-text-muted:    light-dark(oklch(0.360 0.010 80), oklch(0.810 0.006 85));  /* secondary */
+  --nv-text-subtle:   light-dark(oklch(0.455 0.010 80), oklch(0.690 0.006 85));  /* labels, units; 4.5:1 on every surface */
+  --nv-mark:          light-dark(oklch(0.600 0.008 80), oklch(0.520 0.006 80));  /* non-text marks only: idle ticks, grid */
+
+  /* ── Signal: amber = waiting for the owner ─────────────────────────────── */
+  --nv-signal-text:   light-dark(oklch(0.480 0.115 62), oklch(0.830 0.140 80));  /* words and numbers */
+  --nv-signal-line:   light-dark(oklch(0.590 0.150 62), oklch(0.830 0.140 80));  /* rails, glyphs: 3:1 as graphics */
+  --nv-signal-fill:   light-dark(oklch(0.810 0.150 74), oklch(0.830 0.140 80));  /* pins, tier tags */
+  --nv-on-signal:     light-dark(oklch(0.220 0.030 70), oklch(0.190 0.030 75));  /* ink on a signal fill */
+  --nv-signal-soft:   light-dark(oklch(0.948 0.048 80), oklch(0.245 0.038 78));  /* wash behind ink text */
+
+  /* ── Fault: red = broken, failed or stopped ────────────────────────────── */
+  --nv-fault-text:    light-dark(oklch(0.500 0.190 28), oklch(0.735 0.160 28));
+  --nv-fault-line:    light-dark(oklch(0.560 0.210 28), oklch(0.700 0.180 28));
+  --nv-fault-fill:    light-dark(oklch(0.540 0.200 28), oklch(0.700 0.180 28));
+  --nv-on-fault:      light-dark(oklch(0.990 0.000 0),  oklch(0.170 0.030 28));
+  --nv-fault-soft:    light-dark(oklch(0.950 0.030 28), oklch(0.240 0.045 28));
+
+  /* ── Focus and selection are ink, never a colour ───────────────────────── */
+  --nv-focus:         var(--nv-text);
+  --nv-selected:      var(--nv-surface-2);
+  --nv-backdrop:      light-dark(oklch(0.2 0.01 80 / 0.35), oklch(0 0 0 / 0.55)); /* transient layers only */
+
+  /* ── Type ──────────────────────────────────────────────────────────────── */
+  /* Rendered here with Bahnschrift (a DIN 1451 design installed on Windows,
+     not redistributable). Production self-hosts Barlow and Barlow Semi
+     Condensed (SIL OFL) — the open face closest to this DIN character — and
+     maps font-stretch 87.5% to the Semi Condensed files. */
+  --nv-font-ui:   "Bahnschrift", "Barlow", "Segoe UI", system-ui, sans-serif;
+  --nv-font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --nv-wdth-data: 87.5%;    /* tables, labels, chrome: semi-condensed */
+  --nv-wdth-text: 100%;     /* conversation and decision text: normal width */
+
+  --nv-fs-key:    11px;     /* keycaps, pin numerals — the only 11px text */
+  --nv-fs-meta:   12px;     /* column heads, units, provenance */
+  --nv-fs-cell:   13px;     /* table cells, controls, navigation */
+  --nv-fs-body:   14px;     /* conversation, decision titles */
+  --nv-fs-lead:   16px;     /* selected decision title */
+  --nv-fs-figure: 20px;     /* figures in rows */
+  --nv-fs-stake:  36px;     /* the one figure that matters */
+
+  --nv-lh-cell:   18px;
+  --nv-lh-body:   21px;
+
+  /* Bahnschrift's Regular is a sturdy DIN Mittelschrift, and light text on a
+     dark ground spreads: night uses a lighter grade than daylight (see the
+     data-theme="light" rule at the top of this file). */
+  --nv-fw-regular: 350;
+  --nv-fw-medium:  450;
+  --nv-fw-strong:  600;
+
+  /* ── Space: 4px base, 8px rhythm ───────────────────────────────────────── */
+  --nv-s1: 2px;  --nv-s2: 4px;  --nv-s3: 6px;  --nv-s4: 8px;
+  --nv-s5: 12px; --nv-s6: 16px; --nv-s7: 20px; --nv-s8: 24px; --nv-s9: 32px;
+
+  /* ── Rows and controls ─────────────────────────────────────────────────── */
+  --nv-row-scan:    24px;   /* scan-only rows */
+  --nv-row:         28px;   /* compact default */
+  --nv-row-comfort: 32px;
+  --nv-row-lead:    48px;   /* tier-3 decisions */
+  --nv-control:     28px;
+  --nv-bar:         44px;   /* top bar */
+  --nv-strip:       30px;   /* status line */
+  --nv-keyline:     26px;
+
+  /* ── Shape ─────────────────────────────────────────────────────────────── */
+  --nv-r1: 2px;   /* pins, tags, keycaps */
+  --nv-r2: 4px;   /* buttons, fields */
+  --nv-r3: 6px;   /* the raised decision sheet, transient layers */
+  --nv-hair: 1px;
+
+  /* ── Elevation: panes are flat; only transient layers cast a shadow ────── */
+  --nv-shadow-pop: 0 0 0 1px var(--nv-border-strong), 0 12px 32px light-dark(oklch(0.2 0.01 80 / 0.18), oklch(0 0 0 / 0.5));
+
+  /* ── Motion: nothing loops; a state change is one short step ───────────── */
+  --nv-dur-1: 120ms;   /* hover, press */
+  --nv-dur-2: 180ms;   /* a state changing */
+  --nv-ease:  cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --nv-dur-1: 0ms; --nv-dur-2: 0ms; }
+}

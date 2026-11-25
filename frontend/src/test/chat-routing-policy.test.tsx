@@ -1,11 +1,16 @@
+/* The declared routing policy of the agent the owner writes to, before sending. Since the Ledger
+   cutover it is the conversation register's (PHASE_B_PLAN.md §5.3): its head says "with <agent> ·
+   <policy>", and the composer's "To" picker lists the selectable agents with their policies. The
+   classic ChatMode header that carried it was deleted at the stage 5 cleanup. */
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
-import { ChatMode } from '../modes3';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { TalkRegister } from '../home/talk/TalkRegister';
+import { V2 } from '../data';
 import { loadJarvisData } from '../api/loaders';
 import { selectableChatAgents } from '../chat-routing-policy';
+import { resetPolling } from '../signals/poll';
 
-const t = { directLine: 'DIRECT LINE', focusHintChat: 'focus', placeholder: 'Message', channel: 'CHAT', transmit: 'Send' };
 const agents = [
   { id: 'jarvis', name: 'Jarvis', chat_routing: 'orchestrated', rosterSource: 'api', enabled: true },
   { id: 'frigga', name: 'Frigga', chat_routing: 'local', rosterSource: 'api', enabled: true },
@@ -13,42 +18,56 @@ const agents = [
   { id: 'seed', name: 'Seed Fiction', chat_routing: 'local', enabled: true },
 ];
 
-const props = { messages: [], thinking: null, onStop: vi.fn(), onSubmit: vi.fn(), onProv: vi.fn(), mic: false, setMic: vi.fn(), lang: 'en', t, agent: 'jarvis', sessionId: '', selectedTurn: true, outcome: null, power: null, agents, demo: false, onSelectAgent: vi.fn() };
-afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
+/** The conversation page as App draws it ('chat', the register at full width). */
+const page = (over: Record<string, unknown> = {}) => <TalkRegister variant="chat" turns={[]} messages={[]} thinking={null}
+  onStop={vi.fn()} onSubmit={vi.fn()} onProv={vi.fn()} lang="en" t={V2.I18N.en} agent="jarvis" sessionId="s" selectedTurn
+  agents={agents} demo={false} onSelectAgent={vi.fn()} recipientStatus="ready" messageScope="jarvis:s" {...over} />;
+const policy = () => document.querySelector('[data-register="talk"] .n-talk__policy')?.textContent;
+const picker = () => screen.queryByRole('combobox', { name: 'To' }) as HTMLSelectElement | null;
+
+beforeEach(() => { resetPolling(); vi.stubGlobal('fetch', vi.fn(async () => Response.json({}))); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); resetPolling(); });
 
 it('shows the selected live agent and its policy, then changes the native picker', () => {
   const onSelectAgent = vi.fn();
-  const { rerender } = render(<ChatMode {...props} onSelectAgent={onSelectAgent} />);
-  expect(screen.getByRole('combobox', { name: 'Selected agent' }).querySelector('option:checked')?.textContent).toBe('Jarvis');
-  expect(screen.getByText('Routing policy · Orchestrated')).toBeTruthy();
-  const picker = screen.getByRole('combobox', { name: 'Selected agent' }) as HTMLSelectElement;
-  expect([...picker.options].map(option => option.value)).toEqual(['jarvis', 'frigga']);
-  fireEvent.change(picker, { target: { value: 'frigga' } });
+  const { rerender } = render(page({ onSelectAgent }));
+  expect(picker()!.selectedOptions[0].textContent).toBe('Jarvis · Orchestrated');
+  expect(policy()).toBe('Orchestrated');
+  // only the live roster's enabled agents can be chosen: not the disabled one, not a seed row
+  expect([...picker()!.options].map(option => option.value)).toEqual(['jarvis', 'frigga']);
+  fireEvent.change(picker()!, { target: { value: 'frigga' } });
   expect(onSelectAgent).toHaveBeenCalledWith('frigga');
-  rerender(<ChatMode {...props} agent="frigga" onSelectAgent={onSelectAgent} />);
-  expect(screen.getByRole('combobox', { name: 'Selected agent' }).querySelector('option:checked')?.textContent).toBe('Frigga');
-  expect(screen.getByText('Routing policy · Local')).toBeTruthy();
-  expect(document.querySelector('.chat-glyph path')?.getAttribute('d')).not.toBeNull();
+  rerender(page({ agent: 'frigga', onSelectAgent }));
+  expect(picker()!.selectedOptions[0].textContent).toBe('Frigga · Local');
+  expect(policy()).toBe('Local');
+  expect(document.querySelector('[data-register="talk"] .n-talk__with b')?.textContent).toBe('Frigga');
 });
 
 it('labels demo, missing and unknown routing evidence without claiming local execution', () => {
-  const view = render(<ChatMode {...props} demo agent="athena" />);
-  expect(screen.getByText('Routing policy · Demo sample')).toBeTruthy();
-  expect(screen.queryByRole('combobox', { name: 'Selected agent' })).toBeNull();
-  view.rerender(<ChatMode {...props} agents={[]} agent="jarvis" />);
-  expect(screen.getByText('Routing policy · Unavailable')).toBeTruthy();
-  expect(screen.queryByRole('combobox', { name: 'Selected agent' })).toBeNull();
-  view.rerender(<ChatMode {...props} agents={[{ id: 'jarvis', name: 'Jarvis', rosterSource: 'api', chat_routing: 'surprise' }]} />);
-  expect(screen.getByText('Routing policy · Unknown')).toBeTruthy();
-  view.rerender(<ChatMode {...props} agents={[...agents.slice(0, 2), { id: 'athena', name: 'Athena', rosterSource: 'api', chat_routing: 'cloud_only', enabled: false }]} agent="athena" />);
-  expect(screen.getByText('Routing policy · Unavailable')).toBeTruthy();
-  expect((screen.getByRole('combobox', { name: 'Selected agent' }) as HTMLSelectElement).selectedOptions[0].textContent).toBe('Athena');
-  expect((screen.getByRole('combobox', { name: 'Selected agent' }) as HTMLSelectElement).selectedOptions[0].disabled).toBe(true);
+  const view = render(page({ demo: true, agent: 'athena' }));
+  expect(policy()).toBe('Demo sample');
+  expect(picker()).toBeNull();
+  // no roster served (the hub's /api/agents did not answer): the declared policy is not known, and
+  // that is never "Unavailable", which only the served roster can say (below: a disabled agent)
+  view.rerender(page({ agents: [], agent: 'jarvis' }));
+  expect(policy()).toBe('Routing policy unknown');
+  expect(policy()).not.toMatch(/local/i);
+  expect(picker()).toBeNull();
+  view.rerender(page({ agents: [{ id: 'jarvis', name: 'Jarvis', rosterSource: 'api', chat_routing: 'surprise' }] }));
+  expect(policy()).toBe('Routing policy unknown');
+  expect(policy()).not.toMatch(/local/i);
+  view.rerender(page({ agents: [...agents.slice(0, 2), { id: 'athena', name: 'Athena', rosterSource: 'api', chat_routing: 'cloud_only', enabled: false }], agent: 'athena' }));
+  expect(policy()).toBe('Unavailable');
+  // the current recipient cannot be chosen again: it is shown, disabled, and selected
+  expect(picker()!.selectedOptions[0].textContent).toBe('Athena');
+  expect(picker()!.selectedOptions[0].disabled).toBe(true);
 });
 
 it('uses Romanian routing labels', () => {
-  render(<ChatMode {...props} lang="ro" agents={[{ id: 'jarvis', name: 'Jarvis', rosterSource: 'api', chat_routing: 'cloud_preferred' }]} />);
-  expect(screen.getByText('Politica de rutare · Preferă cloud')).toBeTruthy();
+  render(page({ lang: 'ro', t: V2.I18N.ro, agents: [{ id: 'jarvis', name: 'Jarvis', rosterSource: 'api', chat_routing: 'cloud_preferred' }] }));
+  expect(policy()).toBe('Preferă cloud');
+  expect(document.querySelector('[data-register="talk"] .n-talk__policy')?.getAttribute('title'))
+    .toBe('Politica declarată înainte de trimitere; modelul folosit se vede după răspuns.');
 });
 
 it('marks only authenticated roster rows selectable and drops stale policy on fallback', async () => {

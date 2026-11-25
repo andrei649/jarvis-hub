@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPost, apiPut } from '../api/client';
 import { Card } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 type MoAPreset = {
   name: string;
@@ -185,18 +186,21 @@ export function MoaPresetsPanel() {
       sub={active ? `active · moa:${active}` : `${presets.length} preset(s)`}
       onReload={() => { void reload(); }}
     >
-      <p style={{ fontSize: 11, color: 'var(--ink-2)', marginBottom: 8 }}>
+      <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 8 }}>
         Mixture-of-Agents committees (H032): 2–6 proposers run in parallel under quorum timeout, synthesized by one aggregator while inheriting strict-local, approved-model, and H513 consent gates across every member.
       </p>
+      {/* Status lines, the active-committee sentence and the committee's answer are words, so
+          they inherit the interface face (contract §5). The model id, the quorum telemetry and
+          the run history (figures and log records) keep mono. */}
       {note && (
-        <div role="status" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: note.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginBottom: 8 }}>
+        <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: note.startsWith('refused') ? 'var(--red)' : 'var(--amber)', marginBottom: 8 }}>
           {note}
         </div>
       )}
 
       {active && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--green)' }}>
+          <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--green)' }}>
             global active committee: moa:{active}
           </span>
           <button type="button" className="tool-btn" disabled={busy} onClick={() => { void setActive(null); }}>
@@ -207,18 +211,18 @@ export function MoaPresetsPanel() {
 
       <div style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
         {presets.length === 0 && (
-          <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>no MoA presets configured yet</div>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>no MoA presets configured yet</div>
         )}
         {presets.map((p) => (
           <div
             key={p.name}
             style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', padding: '6px 8px', border: '1px solid var(--panel-line)', borderRadius: 4 }}
           >
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{p.model_id}</span>
-            <span style={{ fontSize: 10, color: p.pure_local ? 'var(--green)' : 'var(--amber)' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--n-fs-meta)' }}>{p.model_id}</span>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: p.pure_local ? 'var(--green)' : 'var(--amber)' }}>
               {p.pure_local ? 'local-only' : 'hybrid'}
             </span>
-            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+            <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
               [{p.proposers.join(', ')}] → {p.aggregator} · quorum {p.min_quorum}/{p.proposers.length}
             </span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
@@ -236,7 +240,7 @@ export function MoaPresetsPanel() {
       </div>
 
       <div style={{ borderTop: '1px solid var(--panel-line)', paddingTop: 10, marginBottom: 12 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-2)', marginBottom: 6 }}>
+        <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
           SAVE COMMITTEE PRESET
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 6, marginBottom: 6 }}>
@@ -253,7 +257,7 @@ export function MoaPresetsPanel() {
       </div>
 
       <div style={{ borderTop: '1px solid var(--panel-line)', paddingTop: 10 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-2)', marginBottom: 6 }}>
+        <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
           SYNTHESIS TESTBENCH &amp; QUORUM TELEMETRY
         </div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
@@ -277,16 +281,16 @@ export function MoaPresetsPanel() {
         </div>
         {runResult && (
           <div style={{ padding: 8, border: '1px solid var(--panel-line)', borderRadius: 4, marginBottom: 8 }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, whiteSpace: 'pre-wrap' }}>{runResult.answer}</div>
+            <div style={{ fontSize: 'var(--n-fs-meta)', whiteSpace: 'pre-wrap' }}>{runResult.answer}</div>
             {runResult.telemetry && (
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-2)', marginTop: 4 }}>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>
                 quorum {runResult.telemetry.succeeded}/{runResult.telemetry.total_proposers} · speedup {runResult.telemetry.parallel_speedup}x · {runResult.telemetry.total_ms} ms
               </div>
             )}
           </div>
         )}
         {recent.slice(0, 5).map((r, idx) => (
-          <div key={`${r.preset}-${r.ts}-${idx}`} style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-2)' }}>
+          <div key={`${r.preset}-${r.ts}-${idx}`} style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             moa:{r.preset} · {r.ok ? 'ok' : 'failed'} · quorum {r.succeeded}/{r.total_proposers} · speedup {r.parallel_speedup}x · {r.total_ms} ms
           </div>
         ))}

@@ -105,14 +105,21 @@ describe('MoaPresetsPanel (H032)', () => {
 
     await screen.findByText('saved moa:council');
     expect(screen.getByText('moa:council')).toBeTruthy();
+    // Contract §5: a status line is words (the interface face); the preset's model id keeps mono.
+    expect(screen.getByText('saved moa:council').style.fontFamily).toBe('');
+    expect(screen.getByText('moa:council').style.fontFamily).toBe('var(--font-mono)');
 
     fireEvent.click(screen.getByText('activate council'));
     await screen.findByText('activated moa:council');
+    expect(screen.getByText('global active committee: moa:council').style.fontFamily).toBe('');
 
     fireEvent.change(screen.getByLabelText('committee prompt'), { target: { value: 'Compare RAID-1 vs ZFS mirror' } });
     fireEvent.click(screen.getByText('run committee'));
     await screen.findByText('Synthesized committee response');
     expect(screen.getByText(/speedup 1.95x/)).toBeTruthy();
+    // The committee's answer is words; the quorum telemetry is figures and keeps mono.
+    expect(screen.getByText('Synthesized committee response').style.fontFamily).toBe('');
+    expect(screen.getByText(/speedup 1.95x/).style.fontFamily).toBe('var(--font-mono)');
 
     fireEvent.click(screen.getByText('clear active'));
     await screen.findByText('cleared active MoA preset');

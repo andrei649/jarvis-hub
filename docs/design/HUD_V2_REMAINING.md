@@ -1,5 +1,600 @@
 # HUD v2 — Remaining work (next PR)
 
+## The HUD's structure: the Ledger frame (Phase B, 2026-11-24, branch `claude/hud-redesign`, not merged)
+
+The HUD v2 shell is deleted: the top bar with its badges and 40px clock, the scrolling ticker and
+"ALL NOMINAL", the sixteen-mode rail with its phone drawer and tabs, the roster and context
+columns, the command palette with its globe menu, Ambient, the Console overlay and the fixed
+CONSOLE and WORLD buttons. Every theme now draws one structure, the **Ledger frame**
+(`frontend/src/frame/`; specification `docs/design/hud-next/PHASE_B_PLAN.md`, interfaces
+`docs/design/hud-next/PHASE_B_INTERFACES.md`):
+
+- **Masthead:** nine areas (Home, Work, Agents, Memory, Trust, Build, Connect, Observe, Settings)
+  with their attention notes, **Search or run a command · Ctrl K**, EN | RO, the scheme toggle,
+  Glance and **Stop all agents** (one click; resuming is only on Trust › Emergency stop, typed).
+  From 1100px the row measures itself and gives up words in a fixed order (every word stays in the
+  control's name and tooltip); below 760px the areas open as a drawer.
+- **Running head:** six signals (egress, local route, microphone, model, data on screen, audit
+  chain), each with its basis and the time it was checked, then the approval mode (a stricter mode
+  is one click, a looser one two steps, also when the mode is folded into a button) and the
+  interrupts; from 1100px it is one line that measures itself and gives up words in a fixed order
+  (each stays in the item's name, title or popover); below 760px it is one line of marks.
+  **Running foot:** agents by exception, the machine's meters (from 1680px), the channels and
+  sessions (at every width; below 2200px the session count without its window), the version.
+  **Notices** sit under the head; the demo notice gives the sample's address (`/v2/?demo=1`).
+- **Home** (`/v2/cockpit`) is Today in three registers: **the day** (a verdict computed from real
+  readings, today, while you were away), **the conversation** (a multi-line composer with To, Mode,
+  Attach, Voice, Options and Send; the working reply shows only what the chat stream reports) and
+  **the docket** (the blocked requests, signed with friction by risk tier: one click, two steps or
+  a typed phrase; no key ever signs). At 2200px and wider a fourth register shows the agents by
+  exception and the record's newest entries.
+- **Ctrl K** finds every area, page and Console panel, every agent ("Open …" and "Write to …") and
+  the read-only actions; the HUD v2 palette's appearance rows keep their words. It never signs,
+  rejects, defers, stops or changes a mode.
+- **Routes** are unchanged and four are added (`/v2/work`, `/v2/timeline`, `/v2/artifacts`,
+  `/v2/glance`). `/v2/console` is **All pages**, a site map; `/v2/console/<id>` is that panel as a
+  page of its area, beside the area's contents column; World is Observe › World signals; Glance
+  replaces Ambient (`a`); Cinema (`m`) keeps the mesh, the orb and the wall. The number keys follow
+  the masthead.
+- **Retired for honesty:** the cockpit's cognition trace and its live scoring subscription (stages,
+  timings and routed agents the chat stream does not report; `GET /api/cognition/stream` is still
+  served and the parity gate lists it as uncalled), "ALL NOMINAL", "EGRESS SEALED" and the bare
+  "% LOCAL" figure.
+
+*Verified 2026-11-25 by the final gate after the final round, on the final build.* The bundle in `agents/web/v2`
+and `agents/web/workspace` is this gate's `npm run build` of 2026-11-25 09:32:17 (Vite 8.3.6; entry
+`assets/index-lG61P7Tc.js` and `assets/index-Dq-NCigC.css`, with `assets/pages-HdAx9YSN.css`; 46 asset files,
+3,576,605 bytes; `index.html` SHA-256 `F024B896…A039836524`). The gate rebuilt once, under the shared build lock,
+for its one product change (`frontend/src/docket/Docket.tsx`, the docket's first-paint scroll; *Fixed in the final
+round*, below): against the build step's bundle of 09:10:27 (`index-Ct8IRirK.js`, byte for byte the final round's
+own build of 08:24:25) only the main chunk differs (20 bytes shorter) and 14 lazy chunks are renamed at the same
+sizes; every stylesheet is the same file. An adversarial verifier was reading the worktree and running its own
+browser on other ports at the same time, so its runs overlapped this rebuild. Before the runs below no file under
+`frontend/src` or `frontend/e2e` was newer than this bundle apart from the lanes' own output; the newest source is
+`frontend/src/docket/Docket.signature.test.tsx` and the newest spec `frontend/e2e/ledger-shots.spec.ts` (both this
+gate's, written before the build). What ran on these sources and this bundle:
+
+- **Types:** `npx tsc --noEmit` in `frontend`, `npx tsc --noEmit -p .` in `mobile` and
+  `npm run typecheck:e2e`: no errors (TypeScript 7.0.2), before and after the gate's change.
+- **Vitest,** the full frontend suite (`npx vitest run --reporter=dot`): 442 files, 5,023 tests, all passed (346 s); the two more than before are this gate's, in `src/docket/Docket.signature.test.tsx`. On the build step's sources,
+  before the gate's change, it had passed with 442 files and 5,021 tests.
+- **pytest:** `test_hud_v2_parity`, `test_design_manifest`, `test_pwa_v2`,
+  `test_appearance_preferences`, `test_route_parity_guard`, `test_openapi_parity_guard`,
+  `test_route_auth_matrix`, `test_web_base_path`, `test_h12_5_autonomy_dryrun`, `test_observer_since`
+  and `test_codeql_posture` (`-q -o addopts="" --timeout=300 -p no:cacheprovider`): 153 passed.
+  `node --experimental-strip-types frontend/scripts/generate-desktop-routes.mjs --check`: the native route
+  list is current (exit 0). Both ran before the rebuild; after it, and after these documents were written,
+  `test_hud_v2_parity` and `test_codeql_posture` ran again (27 passed), and so did
+  `npx vitest run src/test/hud-p3-2-reconciliation` (3 passed).
+- **The render matrix** (`frontend/e2e/ledger-shots.spec.ts`, every gate: `sec-heads`, `register-inset`,
+  `area-frame`, `docket-1280` and `docket-sign` among them): 507 tests passed in 1.6 hours (93 minutes, slowed by the verifier's runs and this gate's other lanes on the same machine). `frontend/e2e/artifacts/ledger/runs/gf-20261125-093223` holds 523 records with 0 failed gates (`report.json`: that run, 523 shots, failed `[]`). One walk reloaded a page once, as the matrix's `mounted()` does and records (`area-frame-threshold-dark-ro`; a second miss fails); it passed. Its gates, records each, none failed: overflow, page scroll, minimum font, contrast, console, external requests and the running head 255 (every page shot); masthead 237; `sec-heads` 319 and `register-inset` 319 (the 255 page shots and the group's 64); `area-frame` 248 (the 216 area-page shots and its own group of 32, whose every record found 64 area columns, 8 pages at 4 widths, live and demo, drawn with their top rule only; in the card looks the registers in them are cards from 760px, none inside another, and none is framed at 390px); `docket-1280` 3; `docket-sign` 32 (448 measures of the open entry's sign line and first line, in the walk at 1280×800 and 1440×900 and on fresh loads at 1280×800, 1340×900, 1440×900, 390×844 and 1100×800, demo and 128 entries; the docket's body was scrolled in 6 of them, 3–4px in Classic in Romanian at 1280×800 and 21px in Classic in English at 1100×800, each time the whole entry and its signature then in view); masthead-fit 42, runhead-fit 28, runhead-held 16, runhead-marks 16, runhead-popovers 6, runhead-window 12, runhead-surroundings 28, runfoot-phone 20 and frame-ellipsis 32. `register-inset` held, in the page shots, 2,906 texts, 322 controls and 11 totals in 90 framed registers (Classic · Obsidian, 52 shots; the nearest 16px from each edge) and found the 180 ruled ones unpadded; in the group's walks 73,869 texts, 10,805 controls and 780 totals in 2,120 framed registers (the nearest 8px, the 760–1099px cap) and 2,040 drawn with rules, none framed below 760px. `sec-heads` measured 93 section heads, 270 register heads, 33 totals and 57 rows of heads side by side in the page shots, and in the group 4,672, 4,160, 1,762 and 1,152 with 0 problems. Its 70 fit records (`masthead-fit-*`, `runhead-fit-*`) took exactly the steps of the 04:13 final gate's run (`runs/gi-20261125-042933`): the masthead's worst case is 5 steps at 1100px in Classic · Obsidian in Romanian (`notes tight brand stop find`), no running-head case takes two lines, and the looks that read the running head's labels at 1340–1440px are those listed under *Known limits*.
+- **The main lane's specs** (`hud`, `a11y`, `a11y-modes`, `reachability`, `layout`, `contrast` and
+  `status-chrome-layout`, with the main config's project, timeouts and workers): 47 passed in 7.5 minutes (`hud` 6, `a11y` 3, `a11y-modes` 6, `reachability` 10, `layout` 7, `contrast` 5, `status-chrome-layout` 10), against the fixture
+  hub, not serve.py.
+- **The eleven fixture-backed lanes** (TEMP and TMP in the gate's own scratch folder): routing 6 (its 4 desktop-width checks are skipped in its phone project, by design), base path 16, appearance 6, appearance fonts 2, composer images 6, turn latency 2, image failure 2, mediation 2, gallery 2, dispatch 1 and cloud image 2: 47 passed. Routing and base path ran after the matrix: routing's first try, while the matrix ran, could not start its server (its app port is the matrix's 45130) and ran no test.
+- **The Home registers lane** (`frontend/playwright.home-registers.config.ts`: `home-registers.spec.ts` and
+  `talk-recipient.spec.ts`): 49 passed in 3.0 minutes (42 in `home-registers.spec.ts`, 7 in `talk-recipient.spec.ts`).
+- **Lane isolation,** checked statically: every main-lane project of `frontend/playwright.config.ts` that can
+  collect them (the browser matrix's chromium, firefox, webkit and mobile-chrome, and the default chromium) has
+  `HOME_LANE_SPECS` (`talk-recipient.spec.ts`, `home-registers.spec.ts`) in its `testIgnore`; the footage project
+  exists only under `FOOTAGE=1` and matches only `footage.spec.ts`; and `home-registers.spec.ts`,
+  `talk-recipient.spec.ts` and `ledger-shots.spec.ts` each skip in a file-level `beforeEach` outside their own
+  project (`home-registers`, `home-registers`, `ledger-shots`). And by listing (`--list` with the web server removed): no main-lane project collects a Home-lane test (573 tests in the default chromium project, 2,292 under `E2E_BROWSER_MATRIX=1`); the footage project collects only its 5; and the 507 `ledger-shots.spec.ts` tests each project collects are the ones it skips.
+
+Every Playwright run drove this bundle through an isolated fixture server with its own temporary data home under
+the gate's scratch folder (`e2e/support/base_path_server.py`, or the lane's own server), never the live hub, and
+`agents/web/v2/index.html` kept its 09:32:17 modification time from before each run to after it. Where it ran:
+Windows, Chromium only, through the cached `chromium_headless_shell` build 1228 (the repo's Playwright expects
+build 1254, which is not installed). The verifier's browser and fixture hubs ran on the same machine at the same
+time, on other ports; no run here used them.
+
+**Not run on this build:**
+- CI;
+- Firefox;
+- WebKit;
+- a real device;
+- the native app;
+- serve.py's own main lane. The main lane's specs ran only against the fixture hub, which starts
+  without the hub's lifespan, so no model, channel or scheduler was running;
+- the owner's screen, 2560×1353 at 1.5×. The matrix renders that size and scale in headless Chromium,
+  not on the owner's display;
+- a card look at the compact or the comfortable density. The register's margin follows the density there (the
+  spacing steps a look's `--n-panel-pad` and Classic's `--n-s-4` are made of), but no run renders a card look at
+  either density.
+
+`ChatMode`, `TrustMode` and the variant-less `Conversation` and `InputBar` layouts are deleted; their
+feature tests render the Ledger components.
+
+*Seen by eye on this gate's run* (cropped and zoomed). Taken for this gate on the same fixture hub and the final
+bundle, each a fresh load (so the docket is as it first paints, not after a gate scrolled it), with every
+register's and area column's padding, its nearest text and control, and the docket's sign line against its body's
+view measured (scratch files, not kept in the repo): Home in Atlas light, Threshold dark and Classic · Obsidian dark
+at 1920×1080 and 1280×800, English, live and demo; Home in Ledger dark at 1920px, live and demo; Trust, Work and
+Timeline in Atlas light and Classic · Obsidian dark at 1920 and 1340px; Home in Romanian at 1340×900 and 320×720
+(Ledger dark, Classic · Obsidian dark and Atlas light, live and demo) and, in the demo, Classic · Obsidian and
+Graphite at 1280×800, 1340×900 and 1440×900.
+- **Home in the card looks.** In Atlas light at 1920px the day, the conversation and the docket are three rounded
+  sheets; every title, meta, row and control keeps 20px from the sheet's sides ("Wednesday 25 November" 20px in from
+  the left, "09:33" ending 20px in from the right; "Docket" and its "Unknown — switched off on the hub"), the rule
+  under each head stops at that margin, and the composer sits 20px in from the sides and 20px above the sheet's
+  bottom (its own 16px and the sheet's 20px collapse; 36px before the repair). Threshold dark and Classic · Obsidian
+  dark draw the same with 16px, at 1920 and 1280px. "More in Home · 10 pages" sits under the day's sheet, outside it.
+- **The docket at first paint** (demo). At 1280×800 in Atlas light, Threshold dark and Classic · Obsidian dark the
+  open entry is whole in the docket's body as first drawn, the body unscrolled: in Obsidian "IRREVERSIBLE STEVE CTO /
+  BUILDS RAISED …", the title on two lines, the why, the three request ids, "IF YOU SIGN", "TO UNDO" and "IF YOU WAIT"
+  each on one line (the term column grows to Classic's widest term), then the sign box "SIGN HERE — TYPE restart",
+  its field and "SIGN" whole, then "Other things waiting: …" and the total with its double rule, 16px above the frame.
+  Threshold shows the reason, Preview, Edit, then sign, Defer, Reject and Reject group as well. In Romanian at
+  1280×800 in Classic · Obsidian and Graphite the body is scrolled 4px (the gate's scroll), and the state line "Mostră
+  demo — semnarea este dezactivată.", "IREVERSIBIL …", the title, "DACĂ SEMNEZI", "CA SĂ ANULEZI", "DACĂ AȘTEPȚI",
+  the sign box with "SEMNEAZĂ" and the total "6 INTRĂRI · 9 CERERI / 4 CU SEMNĂTURĂ SCRISĂ 2 ÎN DOI PAȘI 0 DINTR-UN
+  CLIC" are all whole; at 1340×900 and 1440×900 nothing is scrolled and nothing hidden. The closed titles there are
+  133.2px wide in both Classic looks at 1280px (one 16px margin since the repair; Graphite's were 125.2px with its
+  20px), 168.7px at 1340px and 213.2px at 1440px, each cut with an ellipsis.
+- **Home at 320px in Romanian** (demo, Ledger dark, Classic · Obsidian dark and Atlas light). The two-row masthead,
+  the running head as marks, the day band stacked, then "6 așteaptă semnătura ta" drawn with rules (no frame in any
+  look below 760px), its body unscrolled: "Mostră demo — semnarea este dezactivată.", then "Ireversibil Steve CTO /
+  Builds cerută la … 3 cereri grupate de hub" and the open entry's title. Before this gate's change the same loads
+  opened the body scrolled 88px (Ledger) to 124px (Obsidian), the title at its top and the state line and the tier
+  word above it out of view. The page does not scroll sideways, and the running foot is pinned under the column.
+- **Area pages** (Trust, Work, Timeline; Atlas light and Classic · Obsidian dark; 1920 and 1340px). The page's own
+  title ("Trust", "Work", "Timeline") stands on the page ground under the area column's top rule, 0px from the
+  column's left edge like the contents column beside it, and the registers are cards in that column, no card inside
+  a card: Trust's "The record" and "Your authority", Work's four registers in two rows, Timeline's "Today by agent",
+  every title and meta 20px (Atlas) or 16px (Obsidian) inside its card. In Obsidian at 1920px Trust's two heads are
+  level, Work's two rows of heads level.
+- **Home in Ledger dark at 1920px: unchanged.** The three registers drawn with rules, no boxes and no padding (0px on
+  every side), as before the register-inset round; the matrix's `home-1920-ledger-dark.png` shows the same.
+- **Romanian Home at 1340px.** The masthead and the running head each on one row; the conversation's and the
+  docket's heads on one line, level; in Atlas and Obsidian every title, meta and control 20 or 16px inside its frame,
+  in Ledger none padded; in the demo the open entry and its sign line whole in every look (above).
+
+*Seen by eye on the 00:46 final gate's run* (cropped and zoomed; the 00:46:06 build, which draws the rule
+looks exactly as this one does, while its Classic shots show the registers without their margin; what this
+gate looked at again is above). The matrix's screenshots are in `frontend/e2e/artifacts/ledger/`; the "While you
+were away" heads, the register heads at the widths where a head wraps, the day band's popovers at 320px,
+Trust's heads and the demo's heads beside the docket's figure were taken for that gate on the fixture hub
+(scratch files, not kept in the repo), with what each head measured. That day was a Wednesday too, so the day
+register's title reads "Wednesday 25 November", longer than the "Tuesday 24 November" of the earlier gates'
+shots.
+- **"While you were away"**, with the fixture hub's answers. Ledger dark, English, at 1920 and 2560px
+  (1.5×): the title is whole on one line, and its aside, "since 00:00 (start of today)" and "Unknown —
+  switched off on the hub", sits whole on the line under it, starting under the title (it ends 43px inside
+  the register at 1920px, 52px at 2560px). Classic · Obsidian dark, English, at 1920px: "WHILE YOU WERE
+  AWAY" on one line, then the aside wrapped between its two parts, "since 00:00 (start of today)" and
+  "UNKNOWN — SWITCHED OFF ON THE HUB", each whole on its own line from the left; nothing cut (the 18:12
+  final gate had seen the title one word per line and the label cut after "SWITCHED"). Classic · Graphite
+  dark, Romanian, at 1680px: "CÂT AI LIPSIT" on one line, and "din 00:00 (începutul zilei)" with
+  "NECUNOSCUT — OPRIT PE HUB" whole on the line under it. No part had to be cut, so none carries a tooltip.
+  The matrix's own `home-1920-ledger-dark.png` and `home-2560-ledger-dark.png` show the same.
+- **At 320px, the day band's popovers** (Ledger and Classic · Obsidian, dark, English and Romanian): each
+  opens inside the window, the verdict's and Today's at 20–320px and While you were away's at 0–300px, and
+  no word of theirs lies outside it. "While you were away" / "Cât ai lipsit" keeps its first letter and its
+  "since 00:00 (start of today)" / "din 00:00 (începutul zilei)" line, and Today's "Empty · checked 01:57" /
+  "Gol · actualizat la 01:57" keeps its end (the round's first verifier had read "ât ai lipsit" and "HILE
+  YOU WERE AWAY", and the end of "checked" cut, in the same places). In Classic · Obsidian in English the
+  source label under "WHILE YOU WERE AWAY" is wider than the popover's row, so it is cut with an ellipsis at
+  its reason, "UNKNOWN — SWITCHED OFF ON THE …", its mark and state word whole, as the kit's rule says (the
+  matrix's `sec-heads` (c) checks that such a cut keeps its whole text in a tooltip or name).
+- **Home's register heads side by side**, Ledger dark. In English at 1680px the conversation's meta ("with
+  Jarvis · Routing policy unknown" and "Search earlier conversations") drops under its title at the right,
+  and the day, conversation and docket heads are all 71px, their rules on one line. In Romanian at
+  1100px ("cu Jarvis · Politica de rutare necunoscută", "Caută în conversațiile anterioare") both heads
+  are 69px and level, and at 1680 and 1800px all three are 71px and level. Where nothing wraps the heads
+  keep their own height (52px to 1339px, 58px from 1340px), and in the demo sample too (the repair; they
+  were 59px from 1340px before it). In the demo sample in English at 1680–1920px, the day's head is the one
+  that wraps today: "Demo sample" and the time do not fit beside "Wednesday 25 November" in the 396px day
+  register, so they drop under the date at the right, and the three heads are 73px (75px in Classic ·
+  Obsidian at 1680px) with their rules on one line; that is the shared row doing its work, not the
+  docket's figure (in Romanian, "miercuri 25 noiembrie" fits, and every head is 58px).
+- **The docket's figure** (demo): in Presence dark at 2560px (1.5×) the four heads (the day, the
+  conversation, "6 await your signature", the agents) are each on one line and 66px, level; the large "6"
+  sits on the title's baseline and its top stays about 5px under the register's top rule. In
+  `home-demo-1280-obsidian-dark.png` (the matrix) the "6" also sits on the title's baseline, inside its
+  head, level with the conversation's head.
+- **Trust's heads** (Classic · Obsidian and Graphite, dark, live, English at 1340 and 1440px, Romanian at
+  1340px): the record's meta ("Audit chain · every action, sealed" and "UNKNOWN — SWITCHED OFF ON THE HUB";
+  in Romanian "Lanț de audit · fiecare acțiune, sigilată", "NECUNOSCUT — OPRIT PE HUB") drops under "The
+  record" / "Registrul" from the left, and "Your authority" / "Autoritatea ta" beside it takes the same
+  74px, so the rules under the two heads lie on one line. The matrix's Trust shots at 1920 and 2560px have
+  both heads on one line each, level, and its Work shots show both rows of Work's 2×2 heads level.
+- **The floating window in Romanian** (`runhead-window-floating-ledger-dark-ro.png`, 420×620): the
+  controls the last round translated wrap onto a second row ("NERVA · CONVERSAȚIE" on two lines inside its
+  button, "Deschide în aplicație", "Resetează poziția și mărimea", then "Ascunde conversația"), and the
+  compositor's sentence takes two lines; it starts with ": " because the matrix's mock bridge names no
+  compositor (the real shell always does). Nothing is drawn over anything (`runhead-surroundings` passes
+  on the whole window).
+
+The PNG files in `frontend/e2e/artifacts/ledger/` that this gate's matrix run did not write are failure shots of
+old code, kept because those gates save a picture only when they fail: when that run ended, 283 of the 716 there
+were older than it (187 `sec-heads-*`, the red runs of the section-heads round, its repair, the register-inset
+round, its repair and the final round, each on the bundle from before its round; 68 `runhead-held-*` and 8
+`frame-ellipsis-*`, the frame writer's demonstration of 2026-11-24; 20 `area-frame-*`, the final round's red run),
+and 30 written during it are this gate's red run on the build step's bundle
+(`sec-heads-home-*-demo-fresh-390x844.png`, the docket scrolled at first paint). The matrix run itself failed no
+gate, and `report.json` and the run folder `runs/gf-20261125-093223` are its record. The verifier ran its own
+browser at the same time and may have written here too.
+
+*Fixed in the final round (2026-11-25; built 08:24:25 and, byte for byte, 09:10:27) and by its final gate
+(rebuilt 09:32:17).*
+- **The area page's own frame** (variant A). `frontend/src/frame/frame.css` `.n-areapage__main` drew the look's panel
+  treatment with no inner margin, so in every card look the page's title sat 0px from its frame on every area page
+  and the registers inside were cards inside a card. Now the column draws only the look's top rule
+  (`border-top: var(--n-panel-top)`; transparent ground, `border: 0 solid transparent`, no radius, no shadow) in every
+  look: the values Ledger, Briefing and Presence already had, so nothing moves there. Evidence: new unit tests
+  (`src/frame/kit/kit-css.test.ts` › "the area page's column is not a card", 2 tests) and a new gate, `area-frame`
+  (`frontend/e2e/ledger-shots.spec.ts`: on every area page shot, (a) no fill, no side or bottom border and no shadow
+  on the column; (b) no register drawn as a card with a framed ancestor up to the column; and its own group of 32
+  walks, eight area pages × the 16 looks and schemes × English and Romanian, live and demo, at 1920, 1280, 760 and
+  390px). On a copy of the repair's bundle (`index-fJ6wzuz6.js`, served through a scratch wrapper of the fixture hub)
+  `area-frame` failed in 38 of 86 records (`frontend/e2e/artifacts/ledger/runs/d15-red-2`: all 20 card-look walks and
+  the 18 Classic · Obsidian Trust, Work and Timeline shots; the 12 rule-look walks passed); on the round's build all
+  86 passed (`runs/d15-green-1`), and on the final build all 248 records pass (*Verified* above).
+- **The Classic docket's sign line** (the register-inset round's *Still open* item). In Classic, at 1280×800, the
+  open entry's signature lay below what the docket's body shows at first paint (in the demo 22px in English, 49px in
+  Romanian; 12px in Romanian at 1340–1440×900). Where Classic spent the height: each consequence term ("IF YOU SIGN"
+  92px, "CA SĂ ANULEZI" 109px wide in a 74px column) took two lines, 21px (English) to 44px (Romanian); the risk line
+  took a second line (16px); the foot wrapped (18–22px). The fix is a theme role, `--n-term-max`
+  (`frontend/src/theme/CONTRACT.md` §3; `0px` by default, `max-content` in Classic's bridge block), which the kit's
+  consequence column grows to where a page opts in (`--consequence-term-max`; only the docket's open entry does, so
+  Trust's emergency-stop sheet does not move). That closes every case but Classic in Romanian at 1280×800 (3px
+  short, from Classic's mono capitals on the risk line and the total); there `frontend/src/docket/Docket.tsx`
+  `useSignatureInView` scrolls the docket's body by what is hidden, at first paint and when the window resizes, until
+  the owner scrolls or opens another entry (it scrolls 4px; nothing else moves). Evidence: unit tests
+  (`theme-contrast.test.ts` › "a consequence's term column", `kit-css.test.ts` › "a consequence's term column",
+  `docket/docket-css.test.ts`, `docket/Docket.signature.test.tsx`) failed 12 of 122 on the earlier sources (a mirror)
+  and pass; `docket-1280` and `docket-sign` (below) failed on the repair's bundle (`runs/d15-red-2`:
+  `home-demo-1280-obsidian-dark`, and the 4 Classic Home walks with 49, 22 and 12px hidden) and pass on the round's
+  build and on the final one.
+- **The docket's first-paint scroll, at phone widths and in one column** (found by this gate). As the round built it,
+  `useSignatureInView` scrolled the body at most until the open entry's title reached the top of the view. Where the
+  signature cannot fit at all (at 320 and 390px in every look; at 1100px in Romanian in Atlas and both Classic looks) it therefore
+  scrolled 51–124px at a phone and 62–67px at 1100px, which hid the docket's state line ("Demo sample — signing is
+  disabled.") and the entry's first line, its tier word ("Irreversible"), who asked and when, at first paint, and at
+  a phone showed no more of the signature. Now it scrolls only where the whole open entry, from its first line to its
+  signature, then stays in view (`signatureScroll(view, signBottom, entryTop)`); elsewhere it scrolls nothing, and
+  Classic in Romanian at 1280×800 still scrolls 4px. Evidence: `src/docket/Docket.signature.test.tsx` (9 tests; two
+  new, two rewritten) failed 4 on the round's `Docket.tsx` (served from a mirror in memory, the working tree
+  untouched) and passes 9 on the new one; the gate's probe of fresh loads in the demo found the body scrolled 88px
+  (Ledger, 320 and 390px), 106px (Atlas, 320px) and 62px (Obsidian, Romanian, 1100px) on the build step's bundle, and
+  0 at each on the final one. `docket-1280` and `docket-sign` now also require the open entry's first line in the
+  body's view, and `docket-sign` adds a fresh load at 390×844 and 1100×800 where the body must not be scrolled past
+  that line unless the signature is then whole: on a copy of the build step's bundle (`index-Ct8IRirK.js`) `docket-sign` failed in 30 of the 32 Home records of the `sec-heads` group (`frontend/e2e/artifacts/ledger/runs/gf-red-20261125-093301`; every look but Console in English: on a fresh load the body was scrolled 51–104px at 390×844 and, in Romanian in Atlas and both Classic looks, 62–67px at 1100×800, the entry's first line 12–64px above the view), while `sec-heads` and `register-inset` passed in all 32;
+  on the final build it passes (*Verified* above).
+
+*Fixed in the register-inset round's repair (2026-11-25, after that round's gate; `index-fJ6wzuz6.js`, rebuilt by its
+build step at 07:37:41).* The round's gate and its adversarial verifier found the margin, as first drawn, cutting and
+squeezing columns that had been whole, and taking room from the docket's body.
+- **Registers are drawn with rules below 760px in every look.** At a phone's 280px column a 12px margin a side cut
+  Work's "switched off on the hub" at 320px, ran Timeline's source labels 27px past the frame and squeezed Trust's
+  capabilities into overlapping columns at 320–390px. Now `frontend/src/frame/kit/kit.css` draws a register below
+  760px with its top rule only (no frame, fill, radius, shadow or margin), in every look.
+- **The margin is capped at `--n-s-2` from 760 to 1099px** (one column; 16px a side had made Health's figures 7px
+  wider than their register at 760px).
+- **The foot takes a footed register's bottom margin.** A register with a foot pads no bottom of its own; an empty
+  block after the foot carries the margin and collapses with the foot's last part's own margin (the docket's total,
+  the composer: 16px each), the larger of the two rather than their sum. Added, they had taken 16–20px from the
+  docket's body at 1280×800 (Atlas in Romanian lost 5px of the open sign line), and the composer sat 36px above
+  Atlas's frame (20px now).
+- **Classic takes `--n-s-4`** (16px in both looks, `theme/bridge.css`), not its `--pad` (Graphite's 20px wrapped the
+  docket's foot in Romanian at 1280px).
+- **The gates.** `docket-1280` measures the open entry's sign line against the docket body's view as first drawn,
+  not only against the window (it had passed with 38px of it below the view in Classic · Obsidian); a new gate,
+  `docket-sign`, measures it in the `sec-heads` group's Home walks at 1280×800 and 1440×900 in every look and
+  scheme, English and Romanian, demo and 128 entries; `register-inset` (a) requires a footed register's foot to
+  end its margin or more above the frame, (b) counts each total's box with the texts and controls, and a new (d)
+  requires that below 760px no register is framed; and the walks wait until no animation or transition runs
+  before they measure.
+  Evidence: the repair's unit tests failed 4 of 102 on the round's stylesheets (a mirror; `kit-css.test.ts`: the
+  `--n-s-2` cap, the rules below 760px, the foot's margin; `theme-contrast.test.ts`: Classic's one `--n-s-4`) and
+  pass; on a copy of the round's bundle (the 04:13:13 build, `index-C8Y5Dl7Z.js`) the repaired gates failed in 41
+  of 118 records (`runs/r2-red-2`: `register-inset` in the 40 card-look records of the `sec-heads` group, by (a),
+  (b) and (d); `docket-1280` in `home-demo-1280-obsidian-dark`; `docket-sign` in 6 Home records), and on the
+  repair's build `register-inset` passed in all 118 (`runs/r2-green-3`: in the page shots 54 framed and 108 ruled
+  registers, 1,187 texts, 113 controls and 10 totals held, the nearest 16px from each edge), while `docket-1280`
+  (1 record) and `docket-sign` (4: Classic, English and Romanian) still failed: the Classic sign line, which the
+  final round fixed (above).
+
+*Fixed in the register-inset round (2026-11-25, after the 00:46 final gate; built at 02:46:05 and again,
+byte for byte the same, at 04:13:13).*
+- **A register's words and controls no longer touch its frame in the card looks.** The final screenshots after
+  the 00:46 final gate showed a defect no gate measured: in every look that draws its panels as cards (Atlas,
+  Console, Threshold and Workbench, light and dark; Classic · Obsidian and Graphite) a register is a framed or
+  filled card, and its title, meta, rows and controls sat on the frame (Atlas light at 2560px: "Wednesday 25
+  November" 1px inside the day register's left border and "02:19" ending at its right one; Trust's "The record"
+  flush with its frame in Classic · Obsidian), and a total's double rule sat on the frame's bottom edge. Now a
+  theme role, `--n-register-pad` (`frontend/src/theme/CONTRACT.md` §3), is the register's inner margin: `0px`
+  by default (`theme/tokens.css`), set by each card look in its base block from its own `--n-panel-pad` (Atlas
+  20px, Console 12px, Threshold and Workbench 16px) and for Classic in `theme/bridge.css`'s Classic block (as the
+  round built it from `--pad`, 16px in Obsidian and 20px in Graphite; since the repair `--n-s-4`, 16px in both).
+  Ledger, Briefing and Presence draw registers with rules and leave it at 0, so nothing moves in them.
+  `frontend/src/frame/kit/kit.css` makes it the register's own padding on the sides and at the bottom (not the
+  top: the head's strut already sets the title well under the top edge, so Home's shared row of heads and
+  Trust's `useHeadRow` are unchanged), so the rule under the head, every row's hairline, a total's rules and a
+  scrolling body's scrollbar stay with the register's column and the frame keeps its margin outside them;
+  as the round built it, below 760px it took at most `--n-s-3` (12px; the repair, above, draws registers with
+  rules there and caps the margin at `--n-s-2` from 760 to 1099px). No kit or page stylesheet asks which look is
+  on. The cost is the margin's room: at 1280px the docket's closed titles are 24px (Console) to 40px (Atlas)
+  narrower, every cut title keeping its ellipsis and its whole text in its tooltip and accessible name, and, as
+  the round built it, a register's scrolling body showed 12–20px less, which in Classic hid more of the docket's
+  open sign line at first paint (the repair gave the bottom margin to the foot, and the final round closed the
+  sign line, above).
+  Evidence: the round's new unit tests (`src/test/theme-contrast.test.ts`, "the register's inner margin", 3
+  tests; `src/frame/kit/kit-css.test.ts`, "a register keeps its words off its frame", 4 tests) failed in 6 of 7
+  on the stylesheets from before the round (read from a mirror; the seventh, no stylesheet asks for the look,
+  held already) and all pass now. A new gate, `register-inset` (`frontend/e2e/ledger-shots.spec.ts`, on every
+  page shot and at every width and pass of the `sec-heads` group): a framed register must keep a margin above
+  0 on the left, the right and the bottom, no visible text or control may come closer to the frame than that
+  margin less 0.5px, and a register drawn with rules must have none. On the bundle from before the round (the
+  00:46:06 build, a copy served through a scratch wrapper of the fixture hub, `agents/web/v2` untouched) it
+  failed in 58 of 118 records (`frontend/e2e/artifacts/ledger/runs/in-red1-20261125-025627`: all 18 Classic ·
+  Obsidian page shots of Home, Trust and Work at 1280–2560px and the 40 card-look records of the `sec-heads`
+  group; 2,654 problems, text 0.0px from the frame and −0.39px at worst), while the 60 rule-look records and
+  `sec-heads` passed; on the round's build all 118 passed (`runs/in-green1-20261125-031922`; the nearest text
+  12px from the left edge, 11.8px from the right and 12px from the bottom), and so did the other 67 Obsidian
+  page shots (`runs/in-green-rest-20261125-040345`). In the rule looks the renders did not change: of 108
+  (Home, Trust and Glance; Ledger, Briefing and Presence, dark and light; 1280, 1920 and 2560px; live and demo)
+  shot with a fixed page clock, 97 were byte-identical and 11 differed by 5–55 pixels with every element box
+  identical, as two loads of the same bundle differ. That round's final gate ran the full matrix on its build of
+  04:13:13 (`runs/gi-20261125-042933`: 475 tests, 491 records, 0 failed gates); what it saw by eye then (the
+  docket's sign line partly hidden in Classic, the area page's title on its frame) is what the repair and the final
+  round fixed (above). This gate's full matrix on the final build is under *Verified* above.
+
+*Fixed in the last round (2026-11-24, after the 18:12 final gate), and in its repair (after the round's first
+gate; built at 23:24:37 and again, with `confirm.tsx`, at 00:46:06).*
+- **"While you were away" and the other section heads.** The 18:12 final gate found by eye a defect that no
+  gate covered (it is also in a render from 11:25): the day register's "While you were away" head could not
+  fit its aside ("since 00:00 (start of today)" and the source label "Unknown — switched off on the hub"), so
+  the title was squeezed to one word per line and the aside ran past the section, in English in every look
+  measured but Threshold and Console (by 1.4px in Ledger up to 128px in Classic at 1680 and 1920px) and in
+  Romanian in Classic (21–57px); in Classic · Obsidian at 1920px the label was cut off after "SWITCHED". The
+  cause was the kit's `.n-sec__aside` (`white-space: nowrap`, with no wrap and no ellipsis). Now one rule
+  in the kit (`frontend/src/frame/kit/kit.css`, `Register.tsx`), at every width and with no breakpoint,
+  draws every section head, register head and total as a row of a title and the words beside it: where
+  they do not fit together, the words beside the title take the line under it, so the title keeps the row
+  and is never squeezed or cut; words wider than the row wrap between their parts; a part still wider than
+  the row alone is cut with an ellipsis (a source label only at its reason, never at its state word or
+  mark; links and buttons never) and keeps its whole text in a tooltip while it is cut (`useCutTitles`).
+  The same rule fixed its siblings: a register title is never cut any more (it wraps, on its strut), which
+  mends Trust's record at 320–390px (its title squeezed to nothing, its meta running up to 247px past the
+  row) and at 1440px in Classic · Obsidian ("The reco…").
+- **"While you were away" at 320px** (moved here from *Other*). The day band's popovers (the verdict, Today,
+  While you were away) are at least 320px wide (`frontend/src/home/day/day.css`) and open from their cell at
+  the page's 20px margin without `contain`, so at a 320px window they reached 20px past it and the window cut
+  their section heads with no ellipsis, in every look, English and Romanian, live and demo: the first letter
+  of "While you were away" / "Cât ai lipsit" and the start of its "since 00:00…", its mark, and the end of
+  Today's "· checked HH:MM" (the round's first verifier read "ât ai lipsit" and "HILE YOU WERE AWAY" in its
+  shots). It was so before the last round too. The repair keeps every popover inside the window: below a
+  340px window `frontend/src/frame/kit/kit.css` lets a day-band popover drop its minimum width and take at
+  most its cell and the margin (`.n-disclosure > .n-dayband__panel`), so the three now sit at 20–320px and
+  0–300px; from 340px day.css's 320px stands. Evidence: on the round's own bundle (`index-Bt-Rj1xJ.js`) the
+  repaired `sec-heads` group found 380 popover lines past the window, all at 320px, in 32 records, and 188
+  words cut around them (`frontend/e2e/artifacts/ledger/runs/h2-red-r1b-20261124-234225`); on the repair's
+  build none (`runs/h2-green-20261124-235818`), and none on the 00:46:06 build or on the final build
+  (*Verified* above; the 00:46 final gate's shots at 320px are described under *Seen by eye*).
+- **The register heads line up** (item 7). On **Home**, from 1100px the heads of the registers side by side
+  share one row (a CSS subgrid in `frontend/src/home/home.css`, the last round), so the rules under them lie
+  on one line whichever head wraps: in Ledger at 1680px in English the conversation's meta drops under its
+  title, and the rules, 13px apart before (heads of 58, 71 and 58px), are level, all three heads 71px. On
+  **Trust** (the repair), whose two registers keep their own heights, the heads share one height through a
+  new kit hook, `useHeadRow` (`frontend/src/frame/kit/Register.tsx`, called once in `TrustOverview.tsx`): in
+  Classic · Obsidian and Graphite at 1340 and 1440px in English and 1340px in Romanian, where the record's
+  meta drops under its title, both heads are 74px and their rules level (the round's first verifier had
+  found them 74 and 58px, 16px apart, in those 6 cases; before the round they were level only because the
+  record's title was cut to "The reco…"). **The docket's figure** (the repair) no longer makes heads taller:
+  nothing inside a register title takes a taller line than the title's (`kit.css`), so the docket's title
+  sits on the strut's line with the others and, with nothing wrapping, every head beside it is 52, 58 or
+  66px as before; the shared row had made them 1–8px taller in the demo sample and whenever the docket draws
+  its figure live (66 to 74px in Presence at 2560px). When nothing wraps the heads are as tall as before;
+  below 1100px, and in a browser without subgrid, each of Home's heads keeps its own height.
+- **The gate.** `sec-heads` in `frontend/e2e/ledger-shots.spec.ts`, on every page shot of the matrix and as
+  its own group of 64 (Home and Trust, every look and scheme, English and Romanian, 12 widths from 320 to
+  2560px, the fixture hub's answers and then the demo sample, the day band's popovers below 1680px): a
+  title takes no more lines than it would alone and is not cut where alone it would be whole; nothing of a
+  head is drawn past its row or over its title; a cut text ends in an ellipsis drawn in its row and keeps
+  its whole text in a title or a name. The Home lane's `heads` tests now also check that the rules under
+  the heads side by side are level (within 0.5px). Both fail on the old code: the round's writer served the
+  bundle from before the round (`index-xBl5R8XK.js`) through a scratch copy of the fixture hub, and the
+  `sec-heads` group failed 64 of 64 with 2,021 problems, every one of the 42 cases the 18:12 gate had
+  measured among them, while 8 of the run's 36 Home and Trust page shots failed it
+  (`frontend/e2e/artifacts/ledger/runs/heads-red-matrix2-20261124-202555`), and the Home lane's four Home
+  `heads` tests failed (rules 1–13px apart). On the round's bundle the same records passed
+  (`runs/heads-green-matrix-20261124-203911`). **The repair** made the gate find what its first verifier
+  found by eye and by probe: (d) the rules under the heads of registers side by side (Home from 1100px,
+  Trust's and Work's columns from 1340px) must be level within 0.5px, whichever head wraps; (e) where none
+  of them wraps, each must be exactly a register head's height (`--register-head-h`); the day band's
+  popovers are gated, not only reported (a popover past the window, or a word in it cut by the window or the
+  page, fails); and Home gets a third pass, a stubbed live docket of 128 entries from 1100px, so the
+  docket's figure is measured live as well as in demo. The Home lane's `heads` tests got the same
+  no-wrap height check. On the round's own bundle (`index-Bt-Rj1xJ.js`) `sec-heads` failed in 38 of 100
+  records (`runs/h2-red-r1b-20261124-234225`: the 6 Trust cases by (d), 252 cases beside the docket's figure
+  by (e), the 320px popovers) and the Home lane's two demo `heads` tests on Home failed; on the repair's
+  build all passed (`runs/h2-green-20261124-235818`, 140 records, and the Home lane's 49). The final gate's
+  run on the final build is under *Verified* above.
+- **Two leftovers.** The floating desktop window's controls (Float chat, the drag handle, Open in app,
+  Reset layout, Hide chat, the resize button's name and the compositor's status line) now follow the HUD's
+  language (`frontend/src/desktop.tsx`, `DESKTOP_STRINGS`; "Open in app" in the conversation's own words);
+  and the line about a dropped change of recipient now ends only where a turn is really sent (`runTurn`
+  after its refusal checks, `runVision` after its busy check), so a hands-free voice turn that is sent ends
+  it, and one refused while a reply is being written ends nothing. The doc comment above `RUNHEAD_FIT_STEPS`
+  in `frontend/src/frame/RunningHead.tsx` no longer quotes the second round's measured savings. Their tests
+  (`src/test/desktop.test.tsx`, `src/test/chat-routing-app.test.tsx`) were shown failing on the old code by
+  their writer, with the old files served in memory.
+- **The Vitest test that failed now and then** (`src/frame/RunningHead.test.tsx` › "below 760px closes its
+  popover on Escape (back to its button) and on a press outside, dropping a choice not confirmed"; the round's
+  first gate traced it). The cause was in `frontend/src/confirm.tsx`, not in the test: `ConfirmAction` moved
+  the focus onto a confirmation in a passive effect, a commit after drawing it, so an Escape arriving in
+  between had `RunningHead` put the focus on the mode's button, then React ran the pending effect, the
+  confirmation took the focus back and was removed in the same update, and the focus fell to the page. In a
+  browser that needs an Escape within the few milliseconds before the confirmation takes the focus. The
+  focus now moves in layout effects, in the commit that draws the confirm button or the phrase box; nothing
+  else changed, and the test is as it was. New tests in `src/test/confirm.test.tsx` (the focus is on the
+  confirmation as soon as it is drawn, two steps and typed) failed on the old file; the RunningHead test,
+  run alone, failed in 4 of 8 runs on the old file and in none of 24 on the new one (its writer's runs); the
+  00:46 final gate ran it alone 10 more times on its sources (10 passed; neither `confirm.tsx` nor the test
+  has changed since), and the full suite passes on the final sources (*Verified* above).
+
+*Fixed in the polish rounds (2026-11-24).* **Running head:** it now fits on one line at every width from
+1100px and its items can no longer overlap. The head measures itself (`frontend/src/frame/fit.ts`) and takes
+steps in order: source, short, egress, values, tight, labels, mode, cut, lines (PHASE_B_PLAN.md §4.2,
+amendment); the egress and model items are grids whose value column never narrows below the mark plus an
+ellipsis, so a line that is too long overflows, which the fit detects, instead of colliding. The earlier
+overlap at 1340–2200px (an early render at 1920px in Classic · Obsidian drew "Egress" over "sent to local
+runners") is gone; that render was not kept, because `frontend/e2e/artifacts/ledger/home-1920-obsidian-dark.png`
+is overwritten by every matrix run and now holds the fixed render. The record that it is gone is the gate:
+the 20 `runhead-fit-*` records of `runs/r5-final-20261124-171109` (excluding the resize cases) show all eight
+items whole, apart and on top at every measured width (`"ok": true`). Folding the approval mode into a
+button (the `mode` step) keeps the same two-step loosening in its popover. Evidence: the running-head fit
+cases of the matrix (Ledger, Classic · Obsidian, Presence and Atlas; English and Romanian; the widest values
+and the hub's own answers) in `frontend/e2e/artifacts/ledger/runs/matrix-final2-20261124-120824`, the
+rerun in `runs/runhead-final-20261124-123235` and `runs/atlas-final-20261124-124142`, the 17:00 bundle's
+in `runs/r5-final-20261124-171109`, the 21:05 build's in `runs/lg-20261124-213020`, the 00:46:06 build's in
+`runs/fz-20261125-010015` and the final build's in `runs/gi-20261125-042933` (`runs/r4-final-20261124-151248`, on
+the 15:12 build, is superseded). **Masthead:** with
+every attention note at its widest at once (128 need you, 12 services down, the record broken at entry
+412907; stubbed readings) the nine areas fit the row at every measured width from 1100px through the ten
+measured steps (`FIT_STEPS`; the first, `search`, applies only from 1680px); on the 17:00 bundle, the 21:05
+one, the 00:46:06 one and the final one the worst case, 1100px Obsidian in Romanian, takes 5 of them (`notes`,
+`tight`, `brand`, `stop`, `find`), as does the comfortable density in Romanian at 1100px, and no case reaches
+`tighter` or the scrolling fallback (`masthead-fit-*.json` in `runs/r5-final-20261124-171109`,
+`runs/lg-20261124-213020`, `runs/fz-20261125-010015` and `runs/gi-20261125-042933`; the second round's worst
+case took 7, before the fit took steps back). **Phone and floating window:** below 760px
+the running head is one compact line of marks; in the main window the approval mode stays changeable in its
+popover, with the same two-step loosening, and only the marks variant (the 420px floating window, Glance) shows
+it as a read-only button; below 1100px the head takes no fit step (a looser choice asked in a popover keeps the mode folded). The foot's groups wrap without
+dividers; register heads on Home and the chat page keep their whole title (the meta wraps under it).
+**Talk:** a change of recipient asked for while a reply is written stays as a question when the reply ends
+(reworded, Send held) instead of being carried out, and survives leaving Home and coming back; a roster the
+hub did not serve reads "Routing policy unknown", never "Unavailable".
+
+*Fixed in the third polish round (2026-11-24).* **Fit:** after the walk fits, each step it took is tried back,
+the lossiest first, and stays back only where the line still fits without it and without cutting a value
+further or adding a line (`frame/fit.ts` `fitRow`, `stepBack`), for the masthead and the running head; the
+second round's cumulative walk kept `tight` together with `labels` where the labels alone would have
+fitted. **Folded approval mode:** a looser choice waiting for its second step holds the mode where it was
+asked (`data-hold`: from 1100px a refit neither folds a choice asked in the line nor unfolds one asked in a
+popover; below 1100px a choice asked in a popover keeps the mode folded); the head still follows the window,
+so below 760px what waits goes with the mode into the marks' popover, which opens with it; the hub's answer
+holds nothing (where a fit folds the mode while it is on screen, the popover opens with it). The mode's box,
+confirmation and answer are kept inside the window like the other popovers (at 390px with a held fold they
+had run off the left edge, as the last review found); a press
+outside the fold's popover never drops a confirmation or refusal drawn in the line; a focus inside the mode
+follows it to the fold's button or the checked radio, and after a write it goes to the radio of the mode in
+force, not to the page. **Glance:** in a short window (the 420×800 floating size, a half-height browser) the
+sheet scrolls from its top and nothing is drawn over anything; every popover of the running head's marks
+opens inside the window (`Disclosure` `contain`: below its button, above it where below would leave the window, as at the bottom of Glance's screen; below 760px below the whole head, inset from its sides); the
+interrupts are a button with a popover like the other marks. **Stop:** the halted stop carries a tooltip with
+its whole sentence (it had only the accessible name); this was listed with the third round, but it is an
+earlier round's change: `StopButton.tsx` last changed at 10:49, before the round's frame changes of
+16:48–16:57. **Docket:** the rows sit in one subgrid table, so the
+tier word, the title and the hand line up across rows and the tier column grows to the widest tier word of
+the look and the language; below 760px a closed row is two lines; at 320 and 390px the total no longer
+draws "9 requests" over "4 typed". **Talk:** with the roster not served and a selected agent that cannot be
+confirmed, the composer says so, the head reads "not confirmed" and the To offers Jarvis (nothing switches by
+itself); a change of recipient dropped because a served roster no longer offers the agent is said on one
+line with Dismiss; a refusal and a question name the agent as the owner knew it (the last name the roster
+gave). **Ctrl K:** "Write to <agent>" uses the conversation's own words (Romanian "Scrie-i lui Frigga");
+the sheet's "Scrie către" is gone. **Fixture hub:** the proxy keeps its connections to the app alive and
+reuses them, which removes the socket exhaustion (`WinError 10048`) that left a page unmounted in long
+runs; the render matrix still reloads a page that never mounts once and records it. Evidence: the render
+matrix of the 17:00:15 build (`index-xBl5R8XK.js`, after the last change to `frontend/src` at 16:57 and to
+the matrix spec at 16:58; the final gate of 18:12 rebuilt the same files and ran the matrix again,
+`runs/fg-20261124-181737`, 427 records, 0 failed gates), `frontend/e2e/artifacts/ledger/runs/r5-final-20261124-171109`:
+427 records, 0 failed gates, status `passed`, no page reloaded, and `agents/web/v2/index.html` kept its
+modification time through the run (the number of Playwright tests was not recorded in the run folder). Its
+records include `runhead-window-*` (12: Glance and the floating window, Ledger dark, Obsidian and Atlas light,
+English and Romanian), `runhead-popovers-*` (6: every popover of the main window's head inside the window, on
+top and opaque, at 1280, 1920 and 390px), `runhead-held-*` (16: the confirmation of a looser choice asked in
+the line, in the fold and below 760px, and a refusal, while the window is resized), `runhead-fit-*` and
+`masthead-fit-*`. The earlier run `runs/r4-final-20261124-151248` (373 records, 0 failed gates) ran on the 15:12
+build, before the 15:42 rebuild and the 16:48-16:57 frame changes, and is superseded. The final gate of 18:12
+re-ran the Home lane (49 passed; before it, last run at 15:44 on the 15:42 build) and the full Vitest suite on
+these files (441 files, 4,967 tests passed). All of these runs, and the last round's first gate's on the
+21:05 build (`runs/lg-20261124-213020`), are superseded by the final gate's on the final build (*Verified*
+above). The Home lane is `frontend/playwright.home-registers.config.ts` with `e2e/home-registers.spec.ts` (the
+register heads at 13 widths from 320 to 1920px, the held question at four widths, the docket's rows in 16
+look-and-scheme pairs at five widths, English and Romanian) and `e2e/talk-recipient.spec.ts`, a manual lane
+on its own port that the main lane ignores and that writes no record files (its result is the run's own
+output); the Vitest suites that cover this round's changes are those of `frame/`, `docket/`, `home/talk/`,
+`nav/` and `src/test/chat-*`.
+
+*Still open:* a native-speaker review of the Romanian copy (the composer's question, the Dossier and the
+Ctrl K sheet now all say "Scrie-i lui <agent>"; the Romanian labels of the attention notes, the kit and the
+running head are also unreviewed, and so are the floating window's controls the last round put into
+Romanian: "Deschide conversația plutitoare", "Resetează poziția și mărimea", "Ascunde conversația",
+"NERVA · CONVERSAȚIE" and the compositor's sentence); the native app has none of this structure (`mobile/PARITY.md`, "HUD
+structure"). **Not verified:** the owner's real screen (2560×1353 at 1.5×), Firefox, WebKit, CI, a real
+device, the native app, serve.py's own main lane and a card look at the compact or comfortable density; every browser run was the cached Chromium 1228 headless shell (`layout.spec.ts`
+records the sub-760px phone surface as an open owner call). **Known limits of the running head:** with the
+hub's own answers the labels are read, not drawn, at some widths from 1340 to 1440px, because the line does
+not fit without that step. On the newest runs (the measured widths 1340, 1366 and 1440px;
+`runhead-fit-*-fixture-*.json` in `runs/r5-final-20261124-171109`, in the 18:12 final gate's
+`runs/fg-20261124-181737`, in the last round's first gate's `runs/lg-20261124-213020` on the 21:05 build, in
+the 00:46 final gate's `runs/fz-20261125-010015` on the 00:46:06 build and in this final gate's
+`runs/gi-20261125-042933` on the final build, which all agree) that is Classic · Obsidian in English at
+1340 and 1366px and in Romanian at all three, Atlas in English at 1340px and in Romanian at all three,
+Ledger in Romanian at 1340px, and Presence in Romanian at 1340 and 1366px; Ledger and Presence in English
+keep their labels (at most with closer spacing) at all three. With the widest values (a cloud model with the
+ledger's count and a 47-character model id) every look reads its labels at 1340–1440px, and some also fold
+the mode or cut a value there. The step order is the second round's measured one and the step back only
+removes steps, so a look that needs `labels` to fit keeps it. The doc comment above `RUNHEAD_FIT_STEPS` no
+longer quotes the second round's measured savings: the last round rewrote it to describe the walk, the step
+back and the sub-pixel cut, and to point to the run records for the steps each width keeps. "Offline · last good reading" cannot be drawn together with the long model id (an offline hub
+reports no model), so the gate measures it on its own, at every width. **Other:** the docket's hand column is shared by all closed rows below 1680px, so the widest hand sets every title's
+width (Classic Romanian at 1280px: "DESCHIDE CA SĂ SEMNEZI" leaves titles 133.2px in both Classic looks since the
+register-inset round and its repair gave them a 16px margin, 165px before; cut with an ellipsis and a tooltip), and an engine without subgrid (before Chromium 117, Safari 16, Firefox 71) falls back to
+fixed columns where Classic's wide tier word can still overlap the title; "Request 2" drawn over
+"REVERSIBLE" in Obsidian docket rows at 600 and 740px was reported by the frame writer before the rows were
+lined up; the docket check now covers 740px and passes, 600px is not measured, and the frame gates' paint
+check (`runhead-surroundings`, 28 records) covers the floating window, Glance's sheet and, within 32px of the
+head, the marks below 760px, not every page of the main window; that paint gate's limits stand (in-flow pseudo-elements
+such as Find's key cap, box shadows, outlines, clashes only in ascenders or descenders, and scroll
+positions between first shown and the end); the floating window's "scrolled to the end" check finds no
+scroller with the fixture's empty transcript, so a populated transcript is not exercised; the fixture proxy
+still prints `ConnectionAbortedError` (`WinError 10053`) when a browser aborts a request mid-answer, and its
+browser-facing side still opens one connection per request; a hands-free voice turn made while a recipient
+question is open is refused while the reply that opened the question is still being written (`runTurn`
+refuses every voice turn while any reply is in flight, so nothing is sent), and it goes to the current
+recipient only after that reply has ended, leaving the question open (PHASE_B_PLAN.md §12 item 12, the
+default until the owner decides); with busy readings the running foot can take a second line at some widths
+(not re-measured since the third round). Left by the last round and its repair: Work's 2×2 registers
+(`frontend/src/pages/WorkOverview.tsx`) do not share a head height (the repair gave Trust `useHeadRow`, not
+Work); `sec-heads` measures their two rows of heads at 1920 and 2560px in every matrix shot of Work (Ledger
+dark and light, Classic · Obsidian, live and demo) and they are level, but a Work head that wraps where its
+neighbour does not would put them apart, and the gate would fail; the
+kit's stylesheet names a day-band class (`.n-dayband__panel`, below 340px) whose better place is
+`frontend/src/home/day/day.css` or `contain` on the day band's disclosures; the docket's large figure now
+takes the title's line height at every width, a visible change where the docket stands alone too (its
+title on the strut's line, the figure's ink 5–9px under the register's top rule); the cost of `useHeadRow`'s
+observers on Trust was not measured; `frontend/src/frame/kit/index.ts` re-exports none of `useCutTitles`,
+`CUT_TITLE_ATTRIBUTE`, `useHeadRow` and `HEAD_ROW_PROPERTY` (`TrustOverview.tsx` imports `useHeadRow` from
+`frame/kit/Register`, as other modules import the kit's marks and strings directly), while
+`frontend/src/theme/CONTRACT.md` §8b lists Phase A's primitives only and Phase B's register classes and hooks
+(`.n-register__main` and those four among them) are recorded in `docs/design/hud-next/PHASE_B_INTERFACES.md`
+§7; the floating window's drag
+handle is named "Move floating chat" ("Mută conversația plutitoare"), which does not contain its visible
+words (WCAG 2.5.3), and it is mouse-only; the native decision notification's title and the tray menu are
+English only, and `desktop/README.md` names only the English labels. The register-inset round's two open items (the docket's sign line
+at first paint in Classic; the area page's own frame) are closed by its repair and the final round (*Fixed*, above).
+Left by the final round (2026-11-25): Projects' Kanban section (`frontend/src/panels/kanban/kanban.css`) fills
+itself with `--n-bg`, which is now the page ground under the transparent area column, so its inset well no longer
+shows (it still reads); Trust's emergency-stop consequence keeps the fixed 74px term column (it does not opt in to
+`--n-term-max`), so in Classic its terms still take two lines ("WOULD / HALT"); in Classic in English at 1280×800 the
+open entry's signature fits by about 1px with no scroll (with other fonts the docket's scroll would take it); at
+1100px (one column) in Romanian in Atlas and Classic part of the signature lies below the docket body's view at
+first paint (62px in Classic · Obsidian)
+(the plan promises it whole at 1280×800 and from 1340px; the docket no longer scrolls there, since that hid the
+entry's tier word); the final round's survey of the 159 area pages ran English live and Romanian demo only, not all
+four language × sample pairs. **Smaller:** "More in Home · 10 pages", under the day's sheet and outside it, starts at
+the sheet's outer edge, not at its margin; the floating window, which draws no register, starts its docket line and
+the compositor's status line 2–10px from its left edge (the register-inset round's writer's measure, not
+re-measured here). The `a11y-modes` lane
+still surfaces, without failing on them, axe's "needs review" findings: the EN | RO radios and a
+few icon buttons (label in name), and an `aria-label` on an element with no role in the Jobs
+blueprint gallery (the final gate's run listed only these; a main-lane run on the morning of 2026-11-24
+also listed one in a Decision Inbox row, which the fixture-hub runs since have not listed). The main and `gap` chunks of the built bundle are each above
+Vite's 500 kB warning (on the final build `index-lG61P7Tc.js` is 929,774 bytes and `gap-DJPyrv3U.js` 955,795; the workspace's `workspace-CsQlVwPq.js` 551,521).
+
 ## Search chat history
 
 Owners can find retained messages from the Chat and Cockpit composer using
@@ -588,10 +1183,14 @@ see `mobile/docs/h1825-briefing-wall.md` and `mobile/docs/h1825-briefing-sources
   `speak()` tries `streamTts` first (framed chunks played back-to-back, `voice.ts:206`) and falls
   back to whole-reply `/tts` on 409 when the server opt-in is off. *Remaining H5.16 tail lives in
   BACKLOG (synthesize mid-stream; browser wake-word).*
-- ~~**Streaming cognition**: upgrade to a real SSE stream.~~ ✅ **DONE (verified 2026-07-04):**
-  `app.tsx` subscribes to `/api/cognition/stream` and maps cognition frames into the cockpit trace.
+- ~~**Streaming cognition**: upgrade to a real SSE stream.~~ ✅ **DONE (verified 2026-07-04)**, then
+  **retired (2026-11-24, Phase B):** the cockpit trace that drew the stream's frames as four stages,
+  with timings and routed agents the chat stream does not report, went with the HUD v2 shell; the
+  working reply shows what the stream says. The route stays served and is on the parity gate's
+  uncalled list (`tests/test_hud_v2_parity.py`).
 - ~~**Strict-local / mic trust badge** (H12.10).~~ ✅ **DONE (verified
-  2026-07-04):** `shell.tsx` renders strict-local and mic-muted badges from the live trust payload.
+  2026-07-04)**; since Phase B the running head's Egress and Microphone items say it, from the
+  trust payload read fail-closed (`frontend/src/signals/trust-signals.ts`).
 
 ## 5. Settings / preferences UI
 - ~~The design‑only `TweaksPanel` was dropped. Accent + language persist (palette toggles), but
@@ -600,6 +1199,22 @@ see `mobile/docs/h1825-briefing-wall.md` and `mobile/docs/h1825-briefing-sources
   ✅ **DONE (2026-07-04, #523):** the command palette now exposes look, density
   (compact/normal/comfy), motion (lively/calm), scanline, and dotgrid controls; all are
   client-side HUD preferences persisted by `App`.
+- **Themes and Personalisation (2026-11-23, branch `claude/hud-redesign`, not merged):** the
+  HUD moved to the **Ledger** design as its default and every screen takes its visual language
+  through a theme system (`frontend/src/theme/`, contract in `frontend/src/theme/CONTRACT.md`).
+  Nine looks: Ledger (default), Presence, Briefing, Workbench, Threshold, Console and Atlas, each
+  with a dark and a light scheme, plus Classic Obsidian and Graphite (dark only). A new
+  `scheme` preference (`dark` · `light` · `system`) syncs with the other appearance fields
+  (server `agents/core/appearance.py`, `PUT /api/preferences/appearance`). The owner switches
+  theme, scheme, density, motion, typeface, language and the Classic accent on **Settings →
+  Personalisation** (`/v2/console/appearance`), a page with live previews; the command palette
+  keeps its Look rows and adds the new looks, the scheme rows and "Personalisation…".
+  Native follows the look's palette but not the scheme (`mobile/PARITY.md`).
+  The Ledger page structure (masthead, Home with the day, the conversation and the docket, nine
+  areas) is built (Phase B, 2026-11-24; "The HUD's structure" at the top of this file); the
+  palette's rows live on in the Ctrl K sheet, word for word.
+  *Still open:* Literata and Barlow are self-hosted (`frontend/src/theme/fonts.css`); Barlow Semi Condensed
+  (Threshold, Console) and Source Sans 3 (Briefing) are not, and render in their stand-ins.
 
 ## 6. Toolchain / CI hardening
 - ~~**CI frontend‑build + stale‑bundle guard**~~ ✅ **EXISTS** — the `hud-v2-build` job in
@@ -655,7 +1270,8 @@ The 2026‑06‑09 backend waves (PR #178/#180) shipped new surfaces **with no H
 the still‑open depth items above. Snapshot: backend ≈299 routes; HUD v2 actively calls ~50, partially
 ~10; **~37 write/recent endpoints lack any UI control**. New since the 2026‑06‑05 plan:
 
-- `GET /api/cognition/stream` (SSE, NTH‑1 ✅ backend) — ✅ consumed by the cockpit trace.
+- `GET /api/cognition/stream` (SSE, NTH‑1 ✅ backend) — consumed by the HUD v2 cockpit trace until
+  Phase B retired that trace (2026-11-24); still served, now uncalled.
 - Sender pairing gate (H12.19, 4 routes) — not in Comms.
 - Cloud auth‑profile rotation (H12.20, `GET /api/llm/auth-profiles`) — not in Admin.
 - Transcript → governed tasks (H12.25, `POST /api/transcripts/ingest`) — no surface.
@@ -816,7 +1432,8 @@ Remaining: isolated per-job provider/model/workdir/toolsets/skills, cross-profil
 real scheduler/channel proof. Tick uses the active application timezone (including DST) and refuses to compete with a live scheduler.
 
 H146 followup: the topbar Automations entry now opens a roomy dedicated Jobs workspace;
-Console integration remains. Custom creation uses a native modal with initial focus,
+Console integration remains. (Since Phase B the top bar is gone: the workspace is Work › Scheduled
+jobs, `/v2/jobs`, also found by Ctrl K under "Automations".) Custom creation uses a native modal with initial focus,
 Tab containment, Escape/cancel and focus restoration. Browser proof uses mocked job reads;
 no live channel was enabled. Generated OpenAPI types now include all four added job routes.
 

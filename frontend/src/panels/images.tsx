@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Card, asLive, taS } from '../panel-kit';
+import { Card, asLive, codeS, taS } from '../panel-kit';
 import { appUrl } from '../base-path';
 import { imageStatus, proposeCloudImage, proposeKreaResume, proposeKreaEnhance, proposeDeepInfraRefresh, cloudOptionsValid, type CloudImageOptions, type CloudImageProviderId, type CloudImageQuality, proposeImage, imageTask, imageBlob, editValid, type ImageCapability, type ImageTask } from '../api/images';
 
@@ -240,13 +240,13 @@ export function ImagesPanel() {
     } finally { if (epoch.current === current) { submitting.current = null; setBusy(false); } }
   };
   return <Card title="IMAGES" sub="Image generation · owner instance" live={asLive(configuration)}>
-    <p style={{ fontSize: 12 }}>Propose an image, approve its exact prompt in the Decision Inbox, then view the saved PNG here.</p>
-    <div role="status" style={{ fontSize: 12 }}>
+    <p style={{ fontSize: 'var(--n-fs-label)' }}>Propose an image, approve its exact prompt in the Decision Inbox, then view the saved PNG here.</p>
+    <div role="status" style={{ fontSize: 'var(--n-fs-label)' }}>
       {configError || (configuration ? configured ? 'Configured · connection untested.'
         : provider === 'cloud' ? 'Cloud image generation is disabled or incomplete.' : 'Local image generation is disabled or incomplete.' : 'Checking configuration…')}
     </div>
     <button className="tool-btn" onClick={() => setConfigVersion(value => value + 1)}>Check configuration</button>
-    {submitted === null && message && <div role="status" style={{fontSize:12}}>{message}</div>}
+    {submitted === null && message && <div role="status" style={{fontSize:'var(--n-fs-label)'}}>{message}</div>}
     {catalogRefreshTaskId && <p>Catalog refresh task {catalogRefreshTaskId} · review it in the <a href={appUrl('/v2/console/decision-inbox')}>Decision Inbox</a>, then check configuration.</p>}
     {submitted === null ? <><form onSubmit={submit}>
       <label>Image provider <select aria-label="Image provider" value={provider} onChange={e=>{setProvider(e.target.value as 'local'|'cloud'); setCloudMode('create'); setCloudReferences(''); setKreaUseStyle(false); setKreaStyleUrls('');}}>
@@ -278,7 +278,7 @@ export function ImagesPanel() {
         {kreaStyleGuided && <label><input aria-label="Use style references" type="checkbox" checked={kreaUseStyle}
           onChange={e=>{setKreaUseStyle(e.target.checked); if (!e.target.checked) setKreaStyleUrls('');}} />Use style references for generation</label>}
       </div>}
-      {(provider === 'local' ? canEdit : cloudCanEdit) && <div role="radiogroup" aria-label="Generation mode" style={{ marginTop: 10, fontSize: 12 }}>
+      {(provider === 'local' ? canEdit : cloudCanEdit) && <div role="radiogroup" aria-label="Generation mode" style={{ marginTop: 10, fontSize: 'var(--n-fs-label)' }}>
         <label style={{ marginRight: 12 }}>
           <input type="radio" name="image-mode" checked={(provider === 'local' ? mode : cloudMode) === 'create'} onChange={() => provider === 'local' ? setMode('create') : setCloudMode('create')} /> New image
         </label>
@@ -299,20 +299,20 @@ export function ImagesPanel() {
         <textarea aria-label="Image prompt" value={prompt} maxLength={4000} required style={{ ...taS, minHeight: 100 }}
           onChange={event => setPrompt(event.target.value)} />
       </label>
-      {provider === 'cloud' && cloudEditing && <label style={{display:'block',fontSize:12}}>
+      {provider === 'cloud' && cloudEditing && <label style={{display:'block',fontSize:'var(--n-fs-label)'}}>
         {cloudCapability?.reference_kind === 'fal_media_url' ? 'Cloud reference image URLs' : 'Cloud reference artifact IDs'}
         <textarea aria-label={cloudCapability?.reference_kind === 'fal_media_url' ? 'Cloud reference image URLs' : 'Cloud reference artifact IDs'}
-          value={cloudReferences} required maxLength={16 * 2049} style={taS} onChange={e=>setCloudReferences(e.target.value)} />
+          value={cloudReferences} required maxLength={16 * 2049} style={codeS} onChange={e=>setCloudReferences(e.target.value)} />
         <small>One {cloudCapability?.reference_kind === 'fal_media_url' ? 'HTTPS fal.media URL' : 'saved artifact ID'} per line · maximum {cloudCapability?.max_reference_images}.</small>
       </label>}
-      {provider === 'cloud' && kreaStyleGuided && kreaUseStyle && <label style={{display:'block',fontSize:12}}>
+      {provider === 'cloud' && kreaStyleGuided && kreaUseStyle && <label style={{display:'block',fontSize:'var(--n-fs-label)'}}>
         Krea style reference URLs
         <textarea aria-label="Krea style reference URLs" value={kreaStyleUrls} required maxLength={10 * 2049}
-          style={taS} onChange={e=>setKreaStyleUrls(e.target.value)} />
+          style={codeS} onChange={e=>setKreaStyleUrls(e.target.value)} />
         <small>One explicit HTTPS style URL per line · maximum {cloudCapability?.max_style_references}. Style-guided generation does not edit a source image.</small>
       </label>}
       {provider === 'local' && editing ? <>
-        <label style={{ display: 'block', fontSize: 12 }}>Reference artifact ID
+        <label style={{ display: 'block', fontSize: 'var(--n-fs-label)' }}>Reference artifact ID
           <input aria-label="Reference artifact ID" value={reference} required pattern="[a-f0-9]{32}"
             onChange={event => setReference(event.target.value.trim())} style={{ width: '100%' }} />
         </label>
@@ -320,12 +320,12 @@ export function ImagesPanel() {
           <input aria-label="Additional reference IDs" value={additionalReferences} maxLength={100} onChange={e => setAdditionalReferences(e.target.value)} />
           <small>References are resized to the first image and blended equally before editing.</small>
         </label>}
-        <label style={{ display: 'block', fontSize: 12 }}>Change strength · {strength}%
+        <label style={{ display: 'block', fontSize: 'var(--n-fs-label)' }}>Change strength · {strength}%
           <input aria-label="Change strength" type="range" min={1} max={100} value={strength}
             onChange={event => setStrength(Number(event.target.value))} style={{ width: '100%' }} />
         </label>
-        <div style={{ fontSize: 11, margin: '5px 0' }}>Keeps the reference's own size · 20 steps · random seed · local service only</div>
-      </> : provider === 'local' ? <div style={{ fontSize: 11, margin: '5px 0' }}>{selectedBackend?.protocol === 'openai_images' ? '512 × 512 · local service only' : '512 × 512 · 20 steps · random seed · local service only'}</div> : null}
+        <div style={{ fontSize: 'var(--n-fs-meta)', margin: '5px 0' }}>Keeps the reference's own size · 20 steps · random seed · local service only</div>
+      </> : provider === 'local' ? <div style={{ fontSize: 'var(--n-fs-meta)', margin: '5px 0' }}>{selectedBackend?.protocol === 'openai_images' ? '512 × 512 · local service only' : '512 × 512 · 20 steps · random seed · local service only'}</div> : null}
       <button className="tool-btn" type="submit" disabled={!submittable}>{(provider === 'local' ? editing : cloudEditing)
         ? 'Propose edit' : provider === 'cloud' && cloudProvider?.id === 'krea' && kreaUseStyle
           ? 'Propose style-guided image' : 'Propose image'}</button>
@@ -336,15 +336,15 @@ export function ImagesPanel() {
         if (!/^\d+$/.test(existingId) || !Number.isSafeInteger(id) || id < 1) return;
         rememberTask(id); setSubmitted(''); setTaskId(id); setWatching(true);
       }}>
-        <label style={{ fontSize: 12 }}>Existing image task ID
+        <label style={{ fontSize: 'var(--n-fs-label)' }}>Existing image task ID
           <input aria-label="Existing image task ID" value={existingId} inputMode="numeric" pattern="[0-9]+" required
             onChange={event => setExistingId(event.target.value)} style={{ width: '100%' }} />
         </label>
         <button className="tool-btn" type="submit">Watch existing task</button>
       </form></> : <>
-      {submitted && <p style={{ fontSize: 12, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{submitted}</p>}
-      {taskId && <p style={{ fontSize: 12 }}>Task {taskId}</p>}
-      <div role="status" aria-live="polite" style={{ fontSize: 12, margin: '8px 0' }}>{message}</div>
+      {submitted && <p style={{ fontSize: 'var(--n-fs-label)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{submitted}</p>}
+      {taskId && <p style={{ fontSize: 'var(--n-fs-label)' }}>Task {taskId}</p>}
+      <div role="status" aria-live="polite" style={{ fontSize: 'var(--n-fs-label)', margin: '8px 0' }}>{message}</div>
       <a href={appUrl("/v2/console/decision-inbox")} style={{ color: 'var(--accent-light)' }}>Open Decision Inbox</a>
       {taskId && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
         <button className="tool-btn" onClick={check}>Check status</button>
@@ -360,13 +360,13 @@ export function ImagesPanel() {
         <p>Original image · task {enhanceSource.taskId}</p>
         <img src={enhanceSource.url} alt="Original image" width={enhanceSource.artifact.width} height={enhanceSource.artifact.height}
           style={{width:'100%',height:'auto',display:'block'}} />
-        <figcaption style={{fontSize:11}}><a href={enhanceSource.url} download={'nerva-image-'+enhanceSource.artifact.id+'.png'}>Download original PNG</a>
+        <figcaption style={{fontSize:'var(--n-fs-meta)'}}><a href={enhanceSource.url} download={'nerva-image-'+enhanceSource.artifact.id+'.png'}>Download original PNG</a>
           <span style={{overflowWrap:'anywhere'}}> · {enhanceSource.artifact.id}</span></figcaption>
       </figure>}
       {imageUrl && task?.artifact && <figure style={{ margin: '12px 0' }}>
         <img src={imageUrl} alt="Generated image" width={task.artifact.width} height={task.artifact.height}
           style={{ width: '100%', height: 'auto', display: 'block' }} />
-        <figcaption style={{ fontSize: 11 }}>
+        <figcaption style={{ fontSize: 'var(--n-fs-meta)' }}>
           <a href={imageUrl} download={'nerva-image-' + task.artifact.id + '.png'} style={{ color: 'var(--accent-light)' }}>Download PNG</a>
           <span style={{ overflowWrap: 'anywhere' }}> · {task.artifact.id}</span>
         </figcaption>
@@ -378,7 +378,7 @@ export function ImagesPanel() {
         }}>Edit this image</button>}
       </figure>}
       <p><a href={appUrl("/v2/console/media-gallery")}>Open Media Gallery</a> · Catalog recording must be enabled for generated images to appear there.</p>
-      <p style={{ fontSize: 11 }}>A new proposal is a separate request. It does not cancel an earlier task.</p>
+      <p style={{ fontSize: 'var(--n-fs-meta)' }}>A new proposal is a separate request. It does not cancel an earlier task.</p>
       <button className="tool-btn" disabled={busy} onClick={reset}>New proposal</button>
     </>}
   </Card>;

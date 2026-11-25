@@ -11,6 +11,16 @@
 > two owner commands — the A5 licence flip, then `git tag v1.0.0` on `main` — the capability program is a
 > 1.x roadmap, and A8 was cleared by the owner on 2026-08-28 (see the A9 item below).*
 
+## Editable Photoshop export
+
+- [ ] 2026-11-25 · Drafts #1380 and #1386 inherit `ag-psd@34.2.2` from
+  `8ee710ec`. The HUD uses it for **Download PSD** with editable text layers.
+  Choose whether to preserve the existing PSD writer on a separate draft
+  and remove it from these candidates, or keep editable PSD in scope and
+  evaluate a Nerva writer. The canvas preview and the Word, Excel and Blender
+  exports use independent paths. An exception for the package requires all
+  four conditions in the finish-line decision and explicit owner approval.
+
 ## 🔴 Owner gates that block tagging a release (and ultimately 1.0)
 
 - [ ] **E1.2b — authorize representative owner-local route evidence** — provide an

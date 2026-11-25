@@ -17636,6 +17636,8 @@ export interface components {
             accent?: string | null;
             /** Look */
             look?: string | null;
+            /** Scheme */
+            scheme?: string | null;
             /** Density */
             density?: string | null;
             /** Motion */

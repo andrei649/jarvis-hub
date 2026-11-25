@@ -2,6 +2,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { InputBar } from '../cockpit';
+import { openComposerMenu } from '../home/talk/test-support';
 
 const t = { transmit: 'Transmit', placeholder: 'Message', channel: 'Chat' };
 const digest = 'a'.repeat(64);
@@ -11,6 +12,7 @@ it('offers board results for a live ordinary message and leaves private boards u
   const fetcher = vi.fn();
   vi.stubGlobal('fetch', fetcher);
   const view = render(<InputBar t={t} selectedTurn agent="frigga" sessionId="chat-one" />);
+  openComposerMenu('attach');   // Board result is in the composer's Attach menu since the re-lay
   const board = screen.getByRole('button', { name: 'Attach board result' }) as HTMLButtonElement;
   expect(board.disabled).toBe(false);
   fireEvent.change(screen.getByPlaceholderText('Message'), { target: { value: '/new' } });
@@ -39,6 +41,7 @@ it('previews staged results for Obsidian without cloud consent or changing the c
   render(<InputBar t={t} selectedTurn agent="athena" sessionId="save-only" onSubmit={submit}/>);
   const input = screen.getByPlaceholderText('Message') as HTMLInputElement;
   fireEvent.change(input, { target: { value: 'Unsent owner question' } });
+  openComposerMenu('attach');
   fireEvent.click(screen.getByRole('button', { name: 'Attach board result' }));
   fireEvent.change(await screen.findByRole('combobox', { name: 'Completed task' }), { target: { value: 't_1' } });
   fireEvent.click(await screen.findByRole('button', { name: 'Attach full result' }));
@@ -122,6 +125,7 @@ it('sends two reviewed worker outputs in order with one comparison question', as
   const submit = vi.fn(() => true);
   render(<InputBar t={t} selectedTurn agent="frigga" sessionId="together" onSubmit={submit}/>);
   const input = screen.getByPlaceholderText('Message');
+  openComposerMenu('attach');   // stays open: the review returns focus to its trigger in the menu
   for (const card of cards) {
     fireEvent.click(screen.getByRole('button', { name: 'Attach board result' }));
     const picker = await screen.findByRole('combobox', { name: 'Completed task' });
@@ -178,6 +182,7 @@ it('requires fresh affirmative consent for a cloud-capable recipient and each st
   }));
   const submit = vi.fn(() => true);
   render(<InputBar t={t} selectedTurn agent="athena" sessionId="cloud" onSubmit={submit}/>);
+  openComposerMenu('attach');
   fireEvent.click(screen.getByRole('button', { name: 'Attach board result' }));
   fireEvent.change(await screen.findByRole('combobox', { name: 'Completed task' }), { target: { value: 't_one' } });
   fireEvent.click(await screen.findByRole('button', { name: 'Attach full result' }));

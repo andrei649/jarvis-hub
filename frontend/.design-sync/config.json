@@ -10,7 +10,6 @@
     "MODE_LIVE_KEYS": null,
     "ICONS": null,
     "App": null,
-    "WorldAwareApp": null,
     "WorldIntelligenceMode": null
   },
   "libOverrides": {
@@ -18,11 +17,6 @@
   },
   "readmeHeader": ".design-sync/conventions.md",
   "overrides": {
-    "ContextColumn": {"viewport": "1280x720"},
-    "TopBar": {"viewport": "1280x720", "cardMode": "column"},
-    "Rail": {"viewport": "1280x720"},
-    "Tabs": {"viewport": "1280x720"},
-    "Ticker": {"cardMode": "column"},
     "AutonomyMode": {"viewport": "1440x810"},
     "BuildMode": {"viewport": "1440x810"},
     "AdminMode": {"viewport": "1440x810"},

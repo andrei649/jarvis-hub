@@ -149,6 +149,8 @@ describe('CreativePanel — the market brief reads the body, not the status', ()
 
     fireEvent.click(screen.getByText('brief'));
     await waitFor(() => expect(screen.getByText('no quote')).toBeTruthy());
+    // "no quote" is words, so it is not set in the figures' mono (contract §5).
+    expect(screen.getByText('no quote').style.fontFamily).toBe('');
 
     expect(bodyOf(fn, '/api/market/brief').watches).toEqual([{ symbol: 'AAPL', low: 240, high: null, note: '' }]);
     expect(screen.getByText('AAPL: no quote supplied')).toBeTruthy();

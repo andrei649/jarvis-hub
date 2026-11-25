@@ -226,7 +226,7 @@ export function useComposerImages(prompt='',agent='jarvis',sessionId='',selected
 
 export function ComposerImages({draft,disabled=false}:{draft:ReturnType<typeof useComposerImages>;disabled?:boolean}){
   const d=draft.destination;
-  return <div style={{padding:'6px 8px',fontSize:11}}>
+  return <div style={{padding:'6px 8px',fontSize:'var(--n-fs-meta)'}}>
     <button type="button" className="tool-btn" disabled={disabled} onClick={draft.loadActiveImages}>Use previous image</button>
     {draft.activeState==='loading'&&<span role="status"> Checking earlier images…</span>}
     {draft.activeState==='unavailable'&&<span role="status"> Earlier images are unavailable in this session. Attach them again if needed.</span>}

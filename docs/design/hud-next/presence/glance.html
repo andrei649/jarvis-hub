@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva — Glance</title>
+<script>
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'light' || t === 'dark' ? t : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="presence.css">
+<style>
+  /* ---- Glance: the idle screen, a second monitor, a wall ---------------------
+     A few values at the size of road signs, in a strict order: the time, what
+     Jarvis is doing, what needs you, then health, locality and the next event.
+     Nothing scrolls, nothing moves by itself. It never shows the conversation —
+     a glance screen can face a room — only the presence's own status sentence.
+     OLED: the largest static element (the clock) is the dimmest ink, and the
+     whole frame drifts a few pixels every ten minutes (README §5).            */
+  body { overflow: hidden; }
+  .glance { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; height: 100vh; padding: 4.5rem 6rem 2rem; }
+
+  .g-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; column-gap: var(--sp-7); }
+  .g-time { font-size: var(--fs-clock); line-height: 0.8; font-weight: var(--fw-light); letter-spacing: -0.035em; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .g-date { margin-top: 1.75rem; font-size: 1.5rem; color: var(--ink-3); }
+  .g-date b { color: var(--ink-2); font-weight: var(--fw-medium); }
+
+  /* the one thing in colour: what needs you */
+  .g-needs { justify-self: end; text-align: right; padding-bottom: 0.25rem; }
+  .g-needs__n { display: flex; align-items: baseline; justify-content: flex-end; gap: var(--sp-4); }
+  .g-needs .g-needs__n b { font-size: 9rem; line-height: 0.8; font-weight: var(--fw-light); color: var(--yours); letter-spacing: -0.02em; }
+  .g-needs__n span { font-size: 2.25rem; color: var(--ink-1); }
+  .g-needs p { margin-top: 1.25rem; font-size: 1.375rem; color: var(--ink-2); }
+  .g-needs p b { color: var(--ink-1); font-weight: var(--fw-medium); }
+
+  /* the presence: the mark at reading distance, and one plain sentence */
+  .g-now { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 2.25rem; align-items: center; align-self: center; padding: 2.5rem 0; }
+  .g-now .mark { width: 10.5rem; height: 10.5rem; }
+  .g-now .mark .mark__ring { stroke-width: 1.25; }
+  .g-say { font-size: 3.75rem; line-height: 1.1; letter-spacing: var(--track-display); color: var(--ink-1); text-wrap: balance; }
+  .g-meta { margin-top: 1rem; font-size: 1.375rem; color: var(--ink-3); }
+  .g-steps { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: 0.5rem; vertical-align: 0.05em; }
+  .g-steps i { width: 0.75rem; height: 0.75rem; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink-faint); }
+  .g-steps i.is-done { background: var(--ink-2); box-shadow: none; }
+  .g-steps i.is-now { background: var(--ink-1); box-shadow: 0 0 0 3px var(--ground), 0 0 0 4.5px var(--ink-1); margin: 0 0.25rem; }
+
+  /* three more values, each with what it rests on */
+  .g-values { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); }
+  .g-v { padding: 1.75rem 2rem 1.75rem 0; min-width: 0; }
+  .g-v + .g-v { padding-left: 2rem; border-left: 1px solid var(--line); }
+  .g-v__k { display: flex; align-items: center; gap: 0.625rem; font-size: 1.125rem; color: var(--ink-3); }
+  .g-v__k .ic { width: 1.25rem; height: 1.25rem; }
+  .g-v__v { margin-top: 0.625rem; font-size: 4rem; line-height: 1; font-weight: var(--fw-light); letter-spacing: -0.01em; color: var(--ink-1); white-space: nowrap; }
+  .g-v__v small { font-size: 2rem; font-weight: var(--fw-text); color: var(--ink-2); letter-spacing: 0; }
+  .g-v__d { margin-top: 0.75rem; font-size: 1.25rem; line-height: 1.35; color: var(--ink-2); }
+  .g-v--attention .g-v__k { color: var(--yours); }
+
+  /* the tell-tales still show, small; the stop is still one click away */
+  .g-foot { display: flex; align-items: center; gap: var(--sp-5); padding-top: 1.25rem; border-top: 1px solid var(--line); font-size: var(--fs-body); color: var(--ink-3); white-space: nowrap; }
+  .g-foot span { display: inline-flex; align-items: center; gap: 0.4375rem; }
+  .g-foot b { color: var(--ink-2); font-weight: var(--fw-medium); }
+  .g-foot .wake { margin-left: auto; }
+  .g-foot .btn { margin-left: var(--sp-3); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-mic" viewBox="0 0 16 16"><rect x="5.75" y="1.75" width="4.5" height="7.5" rx="2.25"/><path d="M3.25 7.75a4.75 4.75 0 0 0 9.5 0M8 12.5v2"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-attention" viewBox="0 0 16 16"><path d="M8 2.5 14 13H2z"/><path d="M8 6.5v3M8 11.2v.1"/></symbol>
+    <symbol id="i-here" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10" rx="1.5"/><path d="M2.5 6.75h11M5.5 2v3M10.5 2v3"/></symbol>
+  </defs>
+</svg>
+
+<main class="glance" aria-label="Glance">
+
+  <header class="g-head">
+    <div>
+      <p class="g-time"><time datetime="2026-11-23T10:51">10:51</time></p>
+      <p class="g-date"><b>Monday 23 November</b> · București · Mist, 9°</p>
+    </div>
+    <div class="g-needs">
+      <p class="g-needs__n"><b>9</b><span>need you</span></p>
+      <p>I need you on <b>three things.</b> Three more can wait.</p>
+    </div>
+  </header>
+
+  <section class="g-now" aria-label="What Jarvis is doing">
+    <svg class="mark" viewBox="0 0 96 96" role="img" aria-label="Jarvis is working: step 3 of 4. The ring is closed: egress is sealed. The bead: something is waiting for you.">
+      <circle class="mark__ring" cx="48" cy="48" r="44"/>
+      <path class="mark__path mark__path--rest" d="M65 67V29"/>
+      <path class="mark__path mark__path--done" d="M31 67V29L65 67"/>
+      <circle class="mark__node mark__node--done" cx="31" cy="67" r="5.5"/>
+      <circle class="mark__node mark__node--done" cx="31" cy="29" r="5.5"/>
+      <circle class="mark__halo" cx="65" cy="67" r="10.5"/>
+      <circle class="mark__node mark__node--done" cx="65" cy="67" r="5.5"/>
+      <circle class="mark__node mark__node--rest" cx="65" cy="29" r="4.5"/>
+      <circle class="mark__bead" cx="79.1" cy="16.9" r="6.5"/>
+    </svg>
+    <div>
+      <p class="g-say">Answering you — gathering from Pepper and Stark</p>
+      <p class="g-meta">Jarvis · step 3 of 4 <span class="g-steps" aria-hidden="true"><i class="is-done"></i><i class="is-done"></i><i class="is-now"></i><i></i></span> · started 10:51 · on this machine</p>
+    </div>
+  </section>
+
+  <section class="g-values" aria-label="Health, locality and the next event">
+    <div class="g-v g-v--attention">
+      <p class="g-v__k"><svg class="ic"><use href="#i-attention"/></svg>Health · checked 10:50</p>
+      <p class="g-v__v">Degraded</p>
+      <p class="g-v__d">4 local services down since 08:14 — nothing is blocked</p>
+    </div>
+    <div class="g-v">
+      <p class="g-v__k"><svg class="ic"><use href="#i-here"/></svg>On this machine · by route</p>
+      <p class="g-v__v">100% <small>41 of 41 runs</small></p>
+      <p class="g-v__d">Egress sealed — nothing can leave this machine</p>
+    </div>
+    <div class="g-v">
+      <p class="g-v__k"><svg class="ic"><use href="#i-cal"/></svg>Next · in 9 min</p>
+      <p class="g-v__v">11:00</p>
+      <p class="g-v__d">1:1 with Cosmina · Office</p>
+    </div>
+  </section>
+
+  <footer class="g-foot" aria-label="Trust signals">
+    <span><svg class="ic"><use href="#i-here"/></svg>Egress <b>Sealed</b></span>
+    <span><svg class="ic"><use href="#i-mic"/></svg>Microphone <b>On</b></span>
+    <span>Model <b class="mono">gemma-4-31b</b></span>
+    <span><span class="live-dot" aria-hidden="true"></span>Data <b>Live</b></span>
+    <span class="wake">Any key or a click returns to Home</span>
+    <button class="btn btn--danger btn--s" type="button"><svg class="ic"><use href="#i-stop"/></svg>Stop all agents</button>
+  </footer>
+
+</main>
+</body>
+</html>

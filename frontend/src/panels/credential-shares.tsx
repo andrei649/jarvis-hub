@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { apiPost } from '../api/client';
 import { mono } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 // H496 — guest turns use none of the owner's credentials unless the owner shares one
 // integration here. Each share is recorded (who, when) and written to the audit log.
@@ -36,16 +37,16 @@ export function CredentialShares({ value, reload }) {
     }
   };
   return <section aria-label="Credentials shared with guests" style={{ marginTop: 12 }}>
-    <div style={mono}>credentials shared with guests</div>
-    <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+    <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>credentials shared with guests</div>
+    <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
       Guests (household tokens, paired chat senders, other API keys) use none of your
       credentials. Share one integration only when guests should spend it.
     </p>
     {value.error && <div role="alert" style={{ color: 'var(--amber)' }}>{value.error}</div>}
-    {shares.length === 0 && <div style={{ fontSize: 11 }}>Nothing is shared.</div>}
-    {shares.map(row => <div key={row.integration} style={{ padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
+    {shares.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)' }}>Nothing is shared.</div>}
+    {shares.map(row => <div key={row.integration} style={{ padding: '6px 0', borderBottom: '1px solid var(--panel-line)' }}>
       <span style={mono}>{row.integration}</span>
-      {row.note && <span style={{ fontSize: 11, color: 'var(--ink-2)' }}> · {row.note}</span>}
+      {row.note && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}> · {row.note}</span>}
       <button className="tool-btn" style={{ marginLeft: 8 }} disabled={busy}
         aria-label={`Stop sharing ${row.integration}`} onClick={() => post(row.integration, false)}>
         stop sharing

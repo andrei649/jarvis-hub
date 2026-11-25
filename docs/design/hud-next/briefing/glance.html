@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="nerva-themes" content="dark light">
+<title>Nerva — Glance · 10:51</title>
+<script>
+  /* Glance runs idle for hours, often on an OLED second screen: its default is the Night
+     edition. ?theme=light shows the Day edition. */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme');
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+  })();
+</script>
+<link rel="stylesheet" href="../_kit/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="briefing.css">
+<style>
+  /* ==========================================================================
+     Glance — the front page of the brief, read from across the room.
+     Strict order: what needs you, then the state of the house, then the next thing.
+     Nothing scrolls, nothing animates. By night the ink drops a step: an idle page
+     should not be the brightest thing in the room.
+     ========================================================================== */
+  :root[data-theme="dark"] .glance { --nv-ink: oklch(0.880 0.008 95); --nv-ink-2: oklch(0.740 0.008 95); --nv-ink-3: oklch(0.660 0.008 95); }
+  .glance { height: 100vh; min-height: 640px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; padding: 44px 96px 40px; overflow: hidden; color: var(--nv-ink); background: var(--nv-paper); }
+
+  .g-top { display: flex; align-items: center; gap: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--nv-rule-2); font: 400 20px/1.2 var(--nv-font-ui); color: var(--nv-ink-3); }
+  .g-top .nmark { width: 30px; height: 30px; }
+  .g-top .name { font: 700 30px/1 var(--nv-font-display); letter-spacing: -0.015em; color: var(--nv-ink); }
+  .g-top .kick { font: italic 600 22px/1 var(--nv-font-title); color: var(--nv-ink-2); }
+  .g-top .when { margin-left: auto; display: inline-flex; align-items: baseline; gap: 14px; }
+  .g-top .when b { font: 600 34px/1 var(--nv-font-ui); color: var(--nv-ink); letter-spacing: -0.01em; }
+
+  .g-lead { align-self: center; padding: 24px 0 8px; }
+  .g-lead h1 { font: 700 128px/1.0 var(--nv-font-display); letter-spacing: -0.025em; }
+  .g-lead p { margin-top: 18px; max-width: 40ch; font: italic 400 44px/1.22 var(--nv-font-deck); color: var(--nv-ink-2); text-wrap: balance; }
+
+  .g-vals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 4px solid var(--nv-rule-heavy); }
+  .g-vals > div { padding: 22px 28px 26px; min-width: 0; }
+  .g-vals > div + div { border-left: 1px solid var(--nv-rule-2); }
+  .g-vals > div:first-child { padding-left: 0; }
+  .g-v { display: flex; align-items: center; gap: 16px; min-height: 84px; font: 700 76px/1 var(--nv-font-display); letter-spacing: -0.02em; }
+  .g-flag { display: inline-grid; place-items: center; min-width: 84px; height: 84px; padding: 0 14px; background: var(--nv-flag-bg); color: var(--nv-flag-ink); box-shadow: inset 0 0 0 2px var(--nv-flag-edge); border-radius: var(--nv-r-2); }
+  .g-word { display: inline-flex; align-items: center; gap: 14px; font: 700 56px/1 var(--nv-font-display); letter-spacing: -0.015em; }
+  .g-word .i { width: 44px; height: 44px; stroke-width: 1.6; color: var(--nv-ink); }
+  .g-l { margin-top: 12px; font: 600 26px/1.25 var(--nv-font-ui); }
+  .g-s { margin-top: 6px; font: 400 20px/1.35 var(--nv-font-ui); color: var(--nv-ink-3); }
+
+  .g-foot { display: flex; align-items: center; gap: 18px; margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--nv-rule-2); font: 400 20px/1.3 var(--nv-font-ui); color: var(--nv-ink-2); }
+  .g-foot .nmark { width: 40px; height: 40px; --nmark-bg: var(--nv-paper); }
+  .g-foot .live b { color: var(--nv-ink); font-weight: 650; }
+  .g-sigs { margin-left: auto; display: flex; gap: 0; white-space: nowrap; }
+  .g-sigs > span { display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; border-left: 1px solid var(--nv-rule-2); }
+  .g-sigs > span:first-child { border-left: 0; }
+  .g-sigs > span:last-child { padding-right: 0; }
+  .g-sigs b { color: var(--nv-ink); font-weight: 650; }
+  .g-sigs .i { width: 20px; height: 20px; color: var(--nv-ink-2); }
+  .g-sigs .src { font-size: 20px; color: var(--nv-ink-2); }
+  .g-sigs .src::before { width: 9px; height: 9px; }
+
+  @media (max-width: 1500px) {
+    .glance { padding: 32px 56px 30px; }
+    .g-lead h1 { font-size: 96px; }
+    .g-lead p { font-size: 34px; }
+    .g-v { font-size: 60px; min-height: 68px; }
+    .g-flag { min-width: 68px; height: 68px; }
+    .g-word { font-size: 44px; }
+    .g-word .i { width: 34px; height: 34px; }
+    .g-l { font-size: 22px; }
+    .g-s, .g-foot { font-size: 17px; }
+    .g-sigs .src { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-tri" viewBox="0 0 16 16"><path d="M8 2.8 14 13H2z"/><path d="M8 6.8v2.9M8 11.4v.01"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 16 16"><rect x="6" y="2" width="4" height="7.5" rx="2"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2"/></symbol>
+</svg>
+
+<main class="glance" aria-label="Glance">
+
+  <header class="g-top">
+    <svg class="nmark" viewBox="20 16 88 96" aria-hidden="true">
+      <line x1="40" y1="92" x2="40" y2="36"/><line x1="40" y1="36" x2="88" y2="92"/><line x1="88" y1="92" x2="88" y2="36"/>
+      <circle cx="40" cy="92" r="9"/><circle cx="40" cy="36" r="9"/><circle cx="88" cy="92" r="9"/><circle cx="88" cy="36" r="9"/>
+    </svg>
+    <span class="name">Nerva</span>
+    <span class="kick">The brief, at a glance</span>
+    <span class="when"><span>Monday, 23 November</span><b>10:51</b></span>
+  </header>
+
+  <section class="g-lead" aria-labelledby="g-h">
+    <h1 id="g-h">Nine actions need you.</h1>
+    <p>Three are irreversible or money; the&nbsp;restart of 4&nbsp;local&nbsp;services leads.</p>
+  </section>
+
+  <section class="g-vals" aria-label="At a glance">
+    <div>
+      <p class="g-v"><span class="g-flag">9</span></p>
+      <p class="g-l">need you</p>
+      <p class="g-s">6 decisions · 4 now, 2 can wait</p>
+    </div>
+    <div>
+      <p class="g-v"><span class="g-word"><svg class="i" aria-hidden="true"><use href="#i-tri"/></svg>Degraded</span></p>
+      <p class="g-l">4 services down</p>
+      <p class="g-s">since 08:14 · nothing is blocked</p>
+    </div>
+    <div>
+      <p class="g-v">100%</p>
+      <p class="g-l">on this machine</p>
+      <p class="g-s">41 of 41 runs today · by route</p>
+    </div>
+    <div>
+      <p class="g-v">11:00</p>
+      <p class="g-l">1:1 with Cosmina</p>
+      <p class="g-s">in 9 min · Office</p>
+    </div>
+  </section>
+
+  <footer class="g-foot">
+    <svg class="nmark" viewBox="20 16 88 96" role="img" aria-label="Reply in progress, step 3 of 4">
+      <line x1="40" y1="92" x2="40" y2="36"/><line x1="40" y1="36" x2="88" y2="92"/><line class="todo" x1="88" y1="92" x2="88" y2="36"/>
+      <circle cx="40" cy="92" r="9"/><circle cx="40" cy="36" r="9"/><circle cx="88" cy="92" r="9"/><circle class="now-ring" cx="88" cy="92" r="16"/><circle class="todo" cx="88" cy="36" r="8"/>
+    </svg>
+    <span class="live"><b>Jarvis</b> is answering you — gathering, asking Pepper and Stark.</span>
+    <span class="g-sigs">
+      <span><svg class="i" aria-hidden="true"><use href="#i-lock"/></svg>Egress <b>sealed</b></span>
+      <span><svg class="i" aria-hidden="true"><use href="#i-mic"/></svg>Mic <b>on</b></span>
+      <span><span class="src"><span><b>Live</b> data · checked 10:50</span></span></span>
+    </span>
+  </footer>
+
+</main>
+</body>
+</html>

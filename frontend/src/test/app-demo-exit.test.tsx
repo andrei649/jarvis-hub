@@ -1,11 +1,55 @@
+/* Leaving the demo is a provenance boundary, not a URL toggle (PHASE_B_PLAN.md §8.3, rewritten for
+   the Ledger frame at the cutover). In the click that exits the demo every demo-owned surface is
+   cleared before the demo notice goes: the conversation's seed, the roster, and the hub snapshot
+   the frame and Home read (the day, the docket's demo flag, the running head). A demo refresh still
+   in flight when the owner leaves is rejected, and only the next live answer is drawn.
+
+   Home is a stand-in that writes out what App hands it (the hub snapshot, the conversation, the
+   demo flag) on every render, so a render that mixes the demo's evidence into the live page is
+   caught even if a later effect repairs it. The frame around it is the real one: its notice and
+   its running head ("Data on screen") are read from the page. */
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { V2 } from '../data';
+import { resetPolling } from '../signals/poll';
 
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   loadJarvisData: vi.fn(),
 }));
+
+/** What App hands Home on each render, as plain data. */
+const home = vi.hoisted(() => ({
+  renders: [] as Array<Record<string, any>>,
+  evidence(props: any): Record<string, any> {
+    const hub = props.hub;
+    return {
+      demo: props.demo,
+      hub: {
+        state: hub.state, demo: hub.demo, serverUp: hub.serverUp, agents: hub.agents, weather: hub.weather,
+        calendar: hub.calendar, ticker: hub.ticker, tasks: hub.tasks, llm: hub.llm, trust: hub.trust, sys: hub.sys,
+        locality: hub.locality, sources: hub.sources,
+      },
+      messages: props.talk.messages,
+      agents: props.talk.agents,
+      agent: props.talk.agent,
+      outcome: props.talk.outcome,
+      turns: props.turns,
+    };
+  },
+}));
+
+vi.mock('../home/Home', async () => {
+  const { createElement } = await import('react');
+  return {
+    Home: (props: any) => {
+      const evidence = home.evidence(props);
+      home.renders.push(evidence);
+      return createElement('output', { 'data-testid': 'home-evidence' }, JSON.stringify(evidence));
+    },
+  };
+});
 
 vi.mock('../api/loaders', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/loaders')>();
@@ -24,7 +68,7 @@ vi.mock('../api/live', () => ({
 }));
 
 vi.mock('../analytics', () => ({ initAnalytics: vi.fn(), trackPageview: vi.fn() }));
-vi.mock('../voice', () => ({ useVoice: () => ({ active: false, toggle: vi.fn() }) }));
+vi.mock('../voice', () => ({ useVoice: () => ({ active: false, toggle: vi.fn(), status: 'idle' }) }));
 vi.mock('../LiveSourceChip', () => ({ LiveSourceChip: () => null, liveSourceState: () => null }));
 
 vi.mock('../primitives', () => ({
@@ -35,83 +79,30 @@ vi.mock('../primitives', () => ({
   ICONS: { brain: '' },
 }));
 
+// Cinema is all that is left of the HUD v2 shell module (and the only place the mesh is drawn since
+// the cutover): a stand-in that writes out the inputs App hands it, so a Cinema left open across the
+// demo's exit is checked like Home.
 vi.mock('../shell', async () => {
   const { createElement } = await import('react');
-  const output = (testId: string, value: unknown) => createElement(
-    'output',
-    { 'data-testid': testId },
-    JSON.stringify(value),
-  );
   return {
-    TopBar: (props: any) => output('topbar-evidence', {
-      agents: props.agents,
-      localPct: props.localPct,
-      live: props.live,
-      trust: props.trust,
-      llm: props.llm,
-      demo: props.demo,
-      serverUp: props.serverUp,
-    }),
-    Ticker: ({ items }: any) => output('ticker-evidence', items),
-    RosterColumn: (props: any) => output('roster-evidence', {
-      agents: props.agents,
-      sys: props.sys,
-      llm: props.llm,
-    }),
-    ContextColumn: (props: any) => output('context-evidence', {
-      decisions: props.decisions,
-      weather: props.weather,
-      calendar: props.calendar,
-      heartbeat: props.heartbeat,
-    }),
-    Rail: () => null,
-    RailDrawer: () => null,
-    MODES: [],
-    useRailCollapsed: () => [true, () => {}],
-    Tabs: () => null,
-    Palette: () => null,
-    Ambient: () => null,
-    CinemaMesh: (props: any) => output('cinema-evidence', props),
+    CinemaMesh: (props: any) => createElement('output', { 'data-testid': 'cinema-evidence' }, JSON.stringify({
+      demo: props.demo, agents: props.agents, tasks: props.tasks, llm: props.llm, trust: props.trust, sources: props.sources,
+      localPct: props.localPct ?? null, localPctSource: props.localPctSource ?? null, decisions: props.decisions,
+      calendar: props.calendar, heartbeat: props.heartbeat, serverUp: props.serverUp,
+    })),
   };
 });
 
-vi.mock('../cockpit', async () => {
-  const { createElement } = await import('react');
-  return {
-    Conversation: ({ messages }: any) => createElement(
-      'output',
-      { 'data-testid': 'conversation-evidence' },
-      JSON.stringify(messages),
-    ),
-    CognitionStream: () => null,
-    InputBar: () => null,
-    buildTrace: () => ({ stages: [], selected: [], conf: 0 }),
-    traceFromCognition: () => ({ stages: [], selected: [], conf: 0 }),
-  };
-});
+vi.mock('../cockpit', () => ({
+  Conversation: () => null,
+  InputBar: () => null,
+}));
 
-vi.mock('../mesh', async () => {
-  const { createElement } = await import('react');
-  return {
-    NeuralMesh: (props: any) => createElement(
-      'output',
-      { 'data-testid': 'mesh-evidence' },
-      JSON.stringify({
-        agents: props.agents,
-        tasks: props.tasks,
-        llm: props.llm,
-        trust: props.trust,
-        sources: props.sources,
-        demo: props.demo,
-      }),
-    ),
-  };
-});
+vi.mock('../mesh', () => ({ NeuralMesh: () => null }));
 
 vi.mock('../modes', () => ({
   AgentsMode: () => null,
   Dossier: () => null,
-  TrustMode: () => null,
   MemoryMode: () => null,
 }));
 vi.mock('../modes2', () => ({
@@ -120,7 +111,7 @@ vi.mock('../modes2', () => ({
   ObserveMode: () => null,
   InteropMode: () => null,
 }));
-vi.mock('../modes3', () => ({ ChatMode: () => null, CommsMode: () => null, AdminMode: () => null }));
+vi.mock('../modes3', () => ({ CommsMode: () => null, AdminMode: () => null }));
 vi.mock('../modes4', () => ({
   FinanceMode: () => null,
   HealthMode: () => null,
@@ -128,10 +119,9 @@ vi.mock('../modes4', () => ({
   FamilyMode: () => null,
 }));
 vi.mock('../gap', () => ({
-  ConsoleOverlay: () => null,
+  ConsolePanel: () => null,
   FirstRunGate: () => null,
-  shouldShowFirstRun: () => false,
-  FIRST_RUN_DISMISS_KEY: 'hud.first-run-dismissed',
+  ProjectsMode: () => null,
 }));
 vi.mock('../artifacts', () => ({ ArtifactsPanel: () => null, artifactsTabLabel: () => 'Artifacts' }));
 
@@ -145,8 +135,11 @@ function deferred<T>() {
 }
 
 const UNKNOWN_LLM = { state: 'unknown', model: null, residents: [] };
-const EMPTY_TRUST = { mic: 'on', strict_local: false };
-const EMPTY_SOURCES = { tasks: false, trust: false };
+/** The hub snapshot before the first live answer: Checking…, nothing carried over. */
+const CHECKING_HUB = {
+  state: 'unknown', demo: false, serverUp: false, agents: [], weather: null, calendar: [], ticker: [], tasks: [],
+  llm: UNKNOWN_LLM, trust: null, sys: null, locality: null, sources: {},
+};
 
 function dataSnapshot(label: string, demo: boolean) {
   return {
@@ -166,9 +159,19 @@ function dataSnapshot(label: string, demo: boolean) {
   };
 }
 
+/** The demo's evidence: App's own seed, and what the demo loader committed. */
+const DEMO_EVIDENCE = ['Morning Jarvis', 'Raiffeisen quarterly review', 'Bucharest', 'SEEDED DEMO'];
+
+const latest = () => home.renders[home.renders.length - 1];
+const dataSignal = () => document.querySelector('[data-frame="runhead"] [data-signal="data"]')?.getAttribute('data-state') ?? null;
+const demoCalls = () => mocks.loadJarvisData.mock.calls.filter(([demo]) => demo === true);
+
 beforeEach(() => {
+  resetPolling();
   localStorage.clear();
+  localStorage.setItem('hud.seen', '1');
   window.history.replaceState({}, '', '/v2/?demo=1');
+  home.renders.length = 0;
   mocks.apiGet.mockReset();
   mocks.apiGet.mockResolvedValue({});
   mocks.loadJarvisData.mockReset();
@@ -176,64 +179,101 @@ beforeEach(() => {
 
 describe('App demo-to-live provenance', () => {
   it('clears seeded evidence with the URL and rejects a late demo refresh', async () => {
+    const seededDemo = deferred<any>();
     const staleDemo = deferred<any>();
     const currentLive = deferred<any>();
+    const demoCycles = [seededDemo, staleDemo];
     mocks.loadJarvisData.mockImplementation((demo: boolean) => (
-      demo ? staleDemo.promise : currentLive.promise
+      demo ? (demoCycles.shift() ?? deferred<any>()).promise : currentLive.promise
     ));
 
     render(<App />);
     await waitFor(() => expect(mocks.loadJarvisData).toHaveBeenCalledWith(true, expect.any(Function)));
-    const demoScope = mocks.loadJarvisData.mock.calls.find(([demo]) => demo === true)![1] as () => boolean;
-    expect(demoScope()).toBe(true);
-    expect(screen.getByText(/DEMO DATA/)).toBeTruthy();
-    expect(document.body.textContent).toContain('Morning Jarvis');
-    expect(document.body.textContent).toContain('Raiffeisen quarterly review');
-    expect(document.body.textContent).toContain('Bucharest');
+    const firstScope = demoCalls()[0][1] as () => boolean;
+    expect(firstScope()).toBe(true);
+    // the demo notice, and App's own seed handed to Home
+    expect(screen.getByText('Demo sample on screen — seeded data, not your live hub.')).toBeTruthy();
+    expect(latest().demo).toBe(true);
+    expect(latest().hub.state).toBe('demo');
+    expect(latest().agents).toEqual(V2.AGENTS);
 
-    fireEvent.click(screen.getByRole('button', { name: 'exit demo' }));
+    // the demo loader commits its corpus: the hub carries it to Home and the frame
+    await act(async () => { seededDemo.resolve({ ...dataSnapshot('SEEDED DEMO', true), weather: V2.WEATHER, calendar: V2.CALENDAR }); });
+    for (const seen of DEMO_EVIDENCE) expect(document.body.textContent).toContain(seen);
+    expect(dataSignal()).toBe('demo');
+
+    // a second demo refresh is asked (the sheet's "Refresh live data") and is still in flight
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    const sheet = screen.getByRole('dialog', { name: 'Search or run a command' });
+    fireEvent.change(within(sheet).getByRole('combobox'), { target: { value: 'refresh' } });
+    fireEvent.click(sheet.querySelector('[data-command="action:refresh"]') as HTMLElement);
+    await waitFor(() => expect(demoCalls()).toHaveLength(2));
+    const lateScope = demoCalls()[1][1] as () => boolean;
+    expect(lateScope()).toBe(true);
+
+    const beforeExit = home.renders.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Exit demo' }));
 
     expect(window.location.search).toBe('');
-    expect(screen.queryByText(/DEMO DATA/)).toBeNull();
-    expect(document.body.textContent).not.toContain('Morning Jarvis');
-    expect(document.body.textContent).not.toContain('Raiffeisen quarterly review');
-    expect(document.body.textContent).not.toContain('Bucharest');
-    expect(JSON.parse(screen.getByTestId('topbar-evidence').textContent || '{}')).toEqual({
-      agents: [],
-      localPct: null,
-      live: false,
-      trust: EMPTY_TRUST,
-      llm: UNKNOWN_LLM,
-      demo: false,
-      serverUp: false,
+    expect(document.querySelector('[data-notice="demo"]')).toBeNull();
+    expect(screen.queryByText(/Demo sample on screen/)).toBeNull();
+    for (const seen of DEMO_EVIDENCE) expect(document.body.textContent).not.toContain(seen);
+    // in the same event: no render of the live page ever carried the demo's evidence or its label
+    const afterExit = home.renders.slice(beforeExit);
+    expect(afterExit.length).toBeGreaterThan(0);
+    for (const r of afterExit) {
+      expect(r.demo).toBe(false);
+      expect(r.hub.demo, 'a live render still holding the demo hub').toBe(false);
+      expect(r.hub.state).not.toBe('demo');
+      for (const seen of DEMO_EVIDENCE) expect(JSON.stringify(r)).not.toContain(seen);
+    }
+    expect(latest()).toEqual({
+      demo: false, hub: CHECKING_HUB, messages: [], agents: [], agent: 'jarvis', outcome: null, turns: [],
     });
-    expect(JSON.parse(screen.getByTestId('ticker-evidence').textContent || 'null')).toEqual([]);
-    expect(JSON.parse(screen.getByTestId('roster-evidence').textContent || '{}')).toEqual({
-      agents: [], sys: null, llm: UNKNOWN_LLM,
-    });
-    expect(JSON.parse(screen.getByTestId('conversation-evidence').textContent || 'null')).toEqual([]);
-    expect(JSON.parse(screen.getByTestId('context-evidence').textContent || '{}')).toEqual({
-      decisions: [], weather: null, calendar: [], heartbeat: [],
-    });
-    expect(JSON.parse(screen.getByTestId('mesh-evidence').textContent || '{}')).toEqual({
-      agents: [],
-      tasks: [],
-      llm: UNKNOWN_LLM,
-      trust: EMPTY_TRUST,
-      sources: EMPTY_SOURCES,
-      demo: false,
-    });
+    // the running head says it is checking: neither the demo sample nor live
+    expect(dataSignal()).toBe('unknown');
 
     await waitFor(() => expect(mocks.loadJarvisData).toHaveBeenCalledWith(false, expect.any(Function)));
     const liveScope = mocks.loadJarvisData.mock.calls.find(([demo]) => demo === false)![1] as () => boolean;
-    expect(demoScope()).toBe(false);
+    expect(firstScope()).toBe(false);
+    expect(lateScope()).toBe(false);
     expect(liveScope()).toBe(true);
+
+    // the demo refresh that was in flight lands late: nothing of it is drawn
     await act(async () => { staleDemo.resolve(dataSnapshot('STALE DEMO', true)); });
     expect(document.body.textContent).not.toContain('STALE DEMO');
     expect(document.body.textContent).not.toContain('Morning Jarvis');
+    expect(latest().hub).toEqual(CHECKING_HUB);
+    expect(dataSignal()).toBe('unknown');
 
     await act(async () => { currentLive.resolve(dataSnapshot('CURRENT LIVE', false)); });
     await waitFor(() => expect(document.body.textContent).toContain('CURRENT LIVE AGENT'));
     expect(document.body.textContent).not.toContain('STALE DEMO');
+    expect(latest().demo).toBe(false);
+    expect(latest().hub.state).toBe('live');
+    expect(latest().hub.agents).toEqual([{ id: 'current live', name: 'CURRENT LIVE AGENT', status: 'active' }]);
+    await waitFor(() => expect(dataSignal()).toBe('live'));
+  });
+
+  // the old shell's mesh-evidence claim, moved to Cinema (PHASE_B_PLAN.md §8.2 row 31: the mesh lives
+  // in Cinema now): leaving the demo with Cinema open hands it no demo evidence, in the same event
+  it('clears what Cinema draws from in the click that exits the demo', async () => {
+    const seededDemo = deferred<any>();
+    mocks.loadJarvisData.mockImplementation((demo: boolean) => (demo ? seededDemo.promise : deferred<any>().promise));
+    render(<App />);
+    await act(async () => { seededDemo.resolve({ ...dataSnapshot('SEEDED DEMO', true), weather: V2.WEATHER, calendar: V2.CALENDAR }); });
+    fireEvent.keyDown(window, { key: 'm' });
+    const cinema = () => JSON.parse(screen.getByTestId('cinema-evidence').textContent || '{}');
+    expect(cinema().demo).toBe(true);
+    expect(JSON.stringify(cinema())).toContain('SEEDED DEMO');
+    expect(cinema().localPct).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Exit demo' }));
+    const after = cinema();
+    expect(after).toMatchObject({
+      demo: false, agents: [], tasks: [], llm: UNKNOWN_LLM, localPct: null, localPctSource: null,
+      decisions: [], calendar: [], heartbeat: [], serverUp: false,
+    });
+    for (const seen of [...DEMO_EVIDENCE, 'SEEDED DEMO']) expect(JSON.stringify(after)).not.toContain(seen);
   });
 });

@@ -1,24 +1,16 @@
 import React from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic4, ICONS as IK4, Glyph as Gl4 } from './ui';
+import { PageSection } from './pages/PageSection';
 /* HUD v2 · MODES IV — Finance, Health, Knowledge, Family (agent homes) */
 
-function MP({ icon, title, status, children }){
-  return (
-    <div className="panel scroll" style={{flex:1}}>
-      <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
-      <div className="panel-head"><Ic4 d={IK4[icon]} size={14}/><span className="ttl">{title}</span>{status&&<span className="st">{status}</span>}</div>
-      <div className="panel-body">{children}</div>
-    </div>
-  );
-}
 function SubH4({ children, style }: { children?: any; style?: any }){ return <div className="sub-h" style={style}>{children}</div>; }
 
 /* ============ FINANCE ============ */
 function FinanceMode({ t }){
   const F = V2.FINANCE;
   return (
-    <MP icon="finance" title={t.finance} status="Gecko">
+    <PageSection title={t.finance} meta="Gecko">
       <div className="fin-hero">
         <div><div className="fin-nw">{F.net_worth}</div><div className="fin-nwl">net worth · <span style={{color:'var(--green)'}}>{F.mom} MoM</span></div></div>
       </div>
@@ -51,11 +43,11 @@ function FinanceMode({ t }){
               <span style={{textAlign:'right',color:p.state==='approve'?'var(--amber)':'var(--ink-2)'}}>{p.amt}</span></div>
           ))}
           {F.pending.length > 0 && (
-            <div className="pay-pending"><span style={{color:'var(--amber)',fontFamily:'var(--font-mono)',fontSize:11}}>pending approval · {F.pending.filter(p=>p.state==='approve').length}</span></div>
+            <div className="pay-pending"><span style={{color:'var(--amber)',fontSize:'var(--n-fs-meta)'}}>pending approval · {F.pending.filter(p=>p.state==='approve').length}</span></div>
           )}
         </div>
       </div>
-    </MP>
+    </PageSection>
   );
 }
 
@@ -70,7 +62,7 @@ function HealthMode({ t }){
   const H = V2.HEALTH;
   const maxW=Math.max(...H.week.map(d=>d.v));
   return (
-    <MP icon="health" title={t.health} status="Hercules">
+    <PageSection title={t.health} meta="Hercules">
       <div className="health-top">
         <div className="rings-card">
           <svg width="120" height="120" viewBox="0 0 120 120">
@@ -85,7 +77,7 @@ function HealthMode({ t }){
         </div>
         <div className="mem-grid" style={{flex:1}}>
           {H.metrics.map((m,i)=>(
-            <div className="stat-card" key={i}><div className="sv" style={{fontSize:20}}>{m.v}</div><div className="sl">{m.k}</div><div style={{fontSize:10,color:'var(--ink-2)',marginTop:4}}>{m.sub}</div></div>
+            <div className="stat-card" key={i}><div className="sv" style={{fontSize:'var(--n-fs-title)'}}>{m.v}</div><div className="sl">{m.k}</div><div style={{fontSize:'var(--n-fs-meta)',color:'var(--ink-2)',marginTop:4}}>{m.sub}</div></div>
           ))}
         </div>
       </div>
@@ -100,15 +92,17 @@ function HealthMode({ t }){
         </div>
         <div>
           <SubH4>PLAN</SubH4>
+          {/* A done step says so with its ✓ and the quiet ink (--n-text-3, readable by contract), not
+              with the legacy `.cal-row.past` opacity, which drew it at 40% and failed contrast. */}
           {H.plan.map((p,i)=>(
-            <div className={'cal-row '+(p.done?'past':'')} key={i} style={{gridTemplateColumns:'70px 1fr'}}>
-              <span className="tm">{p.time}</span><div><div className="ti">{p.done?'✓ ':''}{p.title}</div><div className="vw">{p.detail}</div></div>
+            <div className="cal-row" data-done={p.done ? '' : undefined} key={i} style={{gridTemplateColumns:'70px 1fr'}}>
+              <span className="tm">{p.time}</span><div><div className="ti" style={p.done ? { color: 'var(--n-text-3)' } : undefined}>{p.done?'✓ ':''}{p.title}</div><div className="vw">{p.detail}</div></div>
             </div>
           ))}
           <div className="verified-row" style={{marginTop:10}}><Ic4 d={IK4.shield} size={12}/>{H.sync}</div>
         </div>
       </div>
-    </MP>
+    </PageSection>
   );
 }
 
@@ -116,7 +110,7 @@ function HealthMode({ t }){
 function KnowledgeMode({ t }){
   const K = V2.KNOWLEDGE;
   return (
-    <MP icon="knowledge" title={t.knowledge} status="Vision · OSINT">
+    <PageSection title={t.knowledge} meta="Vision · OSINT">
       <div className="admin-grid">
         <div>
           <SubH4>RESEARCH QUEUE</SubH4>
@@ -141,7 +135,7 @@ function KnowledgeMode({ t }){
           ))}
         </div>
       </div>
-    </MP>
+    </PageSection>
   );
 }
 
@@ -149,7 +143,7 @@ function KnowledgeMode({ t }){
 function FamilyMode({ t }){
   const F = V2.FAMILY;
   return (
-    <MP icon="family" title={t.family} status="Frigga">
+    <PageSection title={t.family} meta="Frigga">
       <div className="fam-banner"><Ic4 d={IK4.shield} size={14}/> Local-only space · all family data stays on-device, never leaves the machine.</div>
       <div className="admin-grid">
         <div>
@@ -174,7 +168,7 @@ function FamilyMode({ t }){
           ))}
         </div>
       </div>
-    </MP>
+    </PageSection>
   );
 }
 

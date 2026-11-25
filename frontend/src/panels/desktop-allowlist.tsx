@@ -37,22 +37,24 @@
    live in APPS on the backend and are NOT in this payload, so re-labelling client-side
    would be inventing text the route never sent. */
 import React from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag } from '../panel-kit';
+import { useApi, arr, mono, note, asLive, Card, State, Row, Tag } from '../panel-kit';
+import { MONO } from '../theme/type';
 
 const ALLOWLIST_PATH = '/api/desktop/allowlist';
 
-/* Section header: a key name plus the provenance of whatever the rows below assert. */
+/* Section header: a key name plus the provenance of whatever the rows below assert. The key
+   is the payload's own field name, so it is set as an identifier, in its own case. */
 const Head = ({ k, note }) => (
   <div style={{ marginTop: 10, marginBottom: 2 }}>
-    <div style={{ ...mono, fontSize: 10, letterSpacing: '.08em', color: 'var(--ink-2)' }}>{k}</div>
-    <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>{note}</div>
+    <div style={{ ...MONO, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{k}</div>
+    <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{note}</div>
   </div>
 );
 
 /* A key that did not arrive as an array is NOT zero rows — `arr()` would quietly yield []
    and the group would read as "this install allows nothing here". Say what is true. */
 const Missing = ({ k }) => (
-  <Row><span style={{ ...mono, color: 'var(--amber)' }}>{k + ' not in payload'}</span></Row>
+  <Row><span style={{ ...note, color: 'var(--amber)' }}>{k + ' not in payload'}</span></Row>
 );
 
 export function DesktopAllowlistPanel() {
@@ -124,7 +126,7 @@ export function DesktopAllowlistPanel() {
             ))
             : <Missing k="recording" />}
 
-          <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 8, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 8, lineHeight: 1.5 }}>
             User-tier read (user_guard). Constant vocabulary — no orchestrator, no desktop I/O — so this
             route has no 503 and no {'{ok:false}'} path; a blank panel above means the read itself was
             refused, not an empty allowlist.

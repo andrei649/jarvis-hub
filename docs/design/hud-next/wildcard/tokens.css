@@ -1,0 +1,144 @@
+/* ==========================================================================
+   Nerva · Threshold — token sheet
+   --------------------------------------------------------------------------
+   One token set, two themes. Every colour token is written once as
+   light-dark(<daylight>, <night>); the theme is switched by `color-scheme`
+   on <html>, which the page sets from ?theme= before first paint.
+
+   Colour is in OKLCH. Three inks do all the talking:
+     ink      everything Nerva knows, says and does on its own authority
+     line     "this is yours" — the line, what waits at it, verdicts, the
+              mode. Nothing else may use it.
+     bad      something failed, and the one control that halts everything.
+   There is no colour for "fine": normal is drawn in ink.
+
+   Certainty is drawn with the stroke, in both themes:
+     solid = known · dashed = derived or not yet · dotted = unknown
+
+   Names are neutral (--nv-*) so the HUD and the Workspace app (--ws-*) can
+   both converge on this sheet: same 4px grid, same radii 6 / 10 / 14.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark; /* night is the default; see README §2 */
+
+  /* ---- surfaces: three opaque levels, lighter = nearer ------------------ */
+  --nv-ground:      light-dark(oklch(0.926 0.008 85), oklch(0.148 0.004 85)); /* the window; your side */
+  --nv-machine:     light-dark(oklch(0.985 0.004 85), oklch(0.187 0.005 85)); /* "this machine": Nerva's side */
+  --nv-raise:       light-dark(oklch(1.000 0.000 0),  oklch(0.226 0.006 85)); /* things held at the line */
+  --nv-raise-2:     light-dark(oklch(0.952 0.006 85), oklch(0.266 0.006 85)); /* fields, your own messages, hover */
+
+  /* ---- ink: four steps with fixed roles -------------------------------- */
+  --nv-ink:         light-dark(oklch(0.205 0.010 80), oklch(0.952 0.008 85)); /* primary text */
+  --nv-ink-2:       light-dark(oklch(0.375 0.010 80), oklch(0.805 0.008 85)); /* secondary text */
+  --nv-ink-3:       light-dark(oklch(0.480 0.010 80), oklch(0.690 0.008 85)); /* labels, metadata (>= 4.5:1 on every surface) */
+  --nv-ink-4:       light-dark(oklch(0.660 0.008 80), oklch(0.500 0.006 85)); /* non-text only: icons at rest, disabled, rules that mean "empty" */
+
+  /* ---- rules: the machine's own edges ---------------------------------- */
+  --nv-rule:        light-dark(oklch(0.890 0.006 85), oklch(0.283 0.005 85)); /* hairline inside a surface */
+  --nv-rule-strong: light-dark(oklch(0.760 0.008 85), oklch(0.400 0.006 85)); /* the machine's perimeter, field borders */
+
+  /* ---- the line: the one hue -------------------------------------------
+     At night the line colour is light: yellow text, yellow marks.
+     By day it is a highlighter and a sign on paper: ink text over a yellow
+     swipe, yellow fills keyed in ink. Same meaning, drawn for each medium.  */
+  --nv-line:        light-dark(oklch(0.868 0.172 92), oklch(0.868 0.170 92));  /* fill: nodes, armed verdicts, the mode */
+  --nv-line-ink:    light-dark(oklch(0.205 0.010 80), oklch(0.868 0.170 92));  /* text and edges that are yours */
+  --nv-line-hl:     light-dark(oklch(0.880 0.165 93), transparent);            /* the daylight highlighter behind text that is yours */
+  --nv-on-line:     light-dark(oklch(0.205 0.030 85), oklch(0.205 0.030 85));  /* text on a line-coloured fill */
+  --nv-line-key:    light-dark(oklch(0.205 0.010 80), transparent);            /* keyline: yellow on daylight paper is outlined in ink, like a sign */
+  --nv-line-mark:   light-dark(oklch(0.205 0.010 80), oklch(0.868 0.170 92));  /* hairlines that belong to the line: stems, rungs */
+  --nv-line-wash:   light-dark(oklch(0.958 0.050 95), oklch(0.250 0.034 90));  /* quiet band behind a held notice */
+  --nv-mark-fill:   light-dark(oklch(0.868 0.172 92), transparent);            /* the yellow ground under a "yours" mark by day */
+  --nv-locked-bg:   light-dark(oklch(0.958 0.050 95), transparent);            /* a verdict that is yours but not armed */
+  /* The line itself at rest. At night it is a dim ochre rail, not a lit stripe:
+     the screen is on all day and may be OLED, so nothing bright stays parked in
+     one place. The bright yellow is spent only on what changes: the nodes. */
+  --nv-rail:        light-dark(oklch(0.868 0.172 92), oklch(0.560 0.105 86));
+  --nv-rail-key:    light-dark(oklch(0.205 0.010 80), transparent);
+
+  /* ---- failure and the stop -------------------------------------------- */
+  --nv-bad:         light-dark(oklch(0.505 0.190 27), oklch(0.725 0.160 28));
+  --nv-bad-wash:    light-dark(oklch(0.958 0.025 27), oklch(0.255 0.040 27));
+
+  /* ---- status vocabulary (always a shape and a word; colour is the third cue) */
+  --nv-status-ok:        var(--nv-ink-2);    /* solid dot · ink, not green */
+  --nv-status-attention: var(--nv-line-ink); /* half-filled node · it wants you */
+  --nv-status-problem:   var(--nv-bad);      /* cross · something failed */
+  --nv-status-unknown:   var(--nv-ink-3);    /* dotted ring · "Unknown" */
+  --nv-status-stale:     var(--nv-ink-3);    /* ring with a hand · "checked hh:mm" */
+
+  --nv-focus:       light-dark(oklch(0.205 0.010 80), oklch(0.868 0.170 92));
+
+  /* ---- type -------------------------------------------------------------
+     One DIN-family face, two widths. Width carries role:
+       normal (100%)         sentences you read
+       semi-condensed (87.5) labels, titles, numerals, anything you scan
+     Rendered here with Bahnschrift (installed, DIN 1451 drawing, wdth axis).
+     Production: Barlow + Barlow Semi Condensed (SIL OFL, self-hosted).
+     Mono is JetBrains Mono, used only for identifiers, hashes, addresses
+     and tool names.                                                       */
+  --nv-font:        Bahnschrift, Barlow, "DIN Next", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --nv-font-mono:   "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --nv-width-read:  100%;
+  --nv-width-scan:  87.5%;
+
+  --nv-fs-micro:    12px;   /* floor for words: key hints, tags, column heads */
+  --nv-fs-meta:     13px;   /* secondary text, metadata */
+  --nv-fs-ui:       14px;   /* controls, lists, table cells */
+  --nv-fs-read:     15px;   /* replies — what you read for a minute at a time */
+  --nv-fs-title:    17px;   /* a decision's title */
+  --nv-fs-verdict:  22px;   /* the one health sentence */
+  --nv-fs-count:    38px;   /* how many wait for you */
+  --nv-fs-glance:   112px;  /* second-screen numerals */
+
+  --nv-lh-tight:    1.2;
+  --nv-lh-ui:       1.4;
+  --nv-lh-read:     1.55;
+
+  /* Optical grade: light-on-dark type spreads, so at night running text drops one
+     step (300) and comes back to 400 in daylight. 12px text is always 400.      */
+  --nv-w-regular:   300;
+  --nv-w-small:     400;
+  --nv-w-strong:    600;
+  --nv-w-light:     300;    /* large numerals */
+
+  /* ---- space: 4px grid --------------------------------------------------- */
+  --nv-s-1: 4px;  --nv-s-2: 8px;  --nv-s-3: 12px; --nv-s-4: 16px;
+  --nv-s-5: 20px; --nv-s-6: 24px; --nv-s-8: 32px; --nv-s-10: 40px;
+
+  /* ---- shape: short concentric scale ------------------------------------ */
+  --nv-r-1: 6px;   /* controls, tags, fields */
+  --nv-r-2: 10px;  /* held cards, the composer */
+  --nv-r-3: 14px;  /* the machine */
+
+  /* ---- elevation: two steps, no blur larger than 24px, never on content -- */
+  --nv-shadow-sheet: light-dark(0 1px 2px oklch(0.2 0.01 80 / 0.06), none);       /* the machine as paper on a desk */
+  --nv-shadow-raise: light-dark(0 1px 0 oklch(0.2 0.01 80 / 0.05), none);
+  --nv-shadow-float: light-dark(0 8px 24px oklch(0.2 0.01 80 / 0.14), 0 8px 24px oklch(0 0 0 / 0.5)); /* palette, menus only */
+
+  /* ---- motion: still by default ----------------------------------------- */
+  --nv-dur-state:   140ms;  /* one transition when a state changes */
+  --nv-dur-layer:   200ms;  /* a transient layer entering */
+  --nv-ease:        cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ---- layout ------------------------------------------------------------ */
+  --nv-bar-h:       60px;   /* the two-sided top bar */
+  --nv-lintel-h:    52px;   /* the machine's plate: trust signals */
+  --nv-line-w:      3px;    /* the line itself */
+  --nv-yours-w:     680px;  /* your side: 820 at 2200+, 680 at 1920, 500 below 1600, 440 below 1360 */
+  --nv-report-w:    392px;
+  --nv-context-w:   400px;  /* the day column, 2200+ only */
+  --nv-gutter:      12px;
+}
+
+:root[data-theme="light"] { color-scheme: light; --nv-w-regular: 400; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+
+@media (min-width: 2200px) { :root { --nv-yours-w: 820px; --nv-report-w: 440px; } }
+@media (max-width: 1599px) { :root { --nv-yours-w: 500px; } }
+@media (max-width: 1359px) { :root { --nv-yours-w: 440px; --nv-bar-h: 56px; } }
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --nv-dur-state: 0ms; --nv-dur-layer: 0ms; }
+}

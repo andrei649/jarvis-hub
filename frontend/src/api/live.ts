@@ -487,7 +487,7 @@ export function useLiveModes(): LiveModes {
       if (!current(loadId)) return;
       await apiGet('/api/payments').then((p: any) => {
         const list = arr(p, 'payments');
-        // Keep the broker `id` so TrustMode can POST /api/payments/{id}/approve|reject|settle.
+        // Keep the broker `id` with each row (the Trust overview decides payments from its own /api/payments read).
         if (list && list.length) { set('PAYMENTS', list.map((x: any) => ({ id: x.id || x.payment_id || '', pcap: x.mandate_id || x.payee || '', desc: x.memo || x.desc || '', amt: String(x.currency || '') + (x.amount != null ? x.amount : ''), state: x.state || x.status || 'pending' }))); mark('PAYMENTS'); }
       }).catch(() => {});
       if (!current(loadId)) return;

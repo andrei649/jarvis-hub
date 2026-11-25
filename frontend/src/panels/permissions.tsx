@@ -19,7 +19,9 @@
    · A refused revoke renders as a refusal carrying the backend's own reason (onErr is
      mandatory for a governance control — panel-kit.tsx explains why). */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, act } from '../panel-kit';
+// The panel keeps its last answer in a `note` state, so the kit's note style is noteS here.
+import { useApi, arr, mono, note as noteS, asLive, Card, State, Row, Tag, act } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 const LEDGER_PATH = '/api/permissions';
 
@@ -77,23 +79,23 @@ export function PermissionsPanel() {
     >
       <State e={e} loading={loading} n={d ? 1 : 0} />
       {d && !enabled && (
-        <div role="status" style={{ fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>
+        <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>
           ledger off ({d.flag || 'JARVIS_PERMISSION_LEDGER'}) — legacy callers are allowed and nothing is recorded
         </div>
       )}
       {d && (
-        <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           default-deny: {denyRules.length} rules · {categories.join(' · ') || '—'} · immutable
         </div>
       )}
       {d && grants.length > 0 && (
-        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+        <label style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
           <input type="checkbox" checked={showInactive} onChange={(ev) => setShowInactive(ev.target.checked)} />
           show consumed / revoked / expired
         </label>
       )}
       {d && grants.length === 0 && (
-        <div style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 6 }}>
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
           no grants recorded — a first contact asks; the owner decides in the decision inbox
         </div>
       )}
@@ -108,18 +110,18 @@ export function PermissionsPanel() {
           </span>
           <Tag c={SCOPE_COLOR[g.scope]}>{g.scope}</Tag>
           <Tag c={STATUS_COLOR[g.status] || 'var(--ink-2)'}>{g.status}</Tag>
-          <span title={'granted by ' + (g.granted_by || '—') + ' · ' + stamp(g.created_at)} style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)' }}>
+          <span title={'granted by ' + (g.granted_by || '—') + ' · ' + stamp(g.created_at)} style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
             {g.granted_by || '—'}
           </span>
           {g.immutable ? (
-            <span title="never entries are immutable" aria-label="immutable" style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>locked</span>
+            <span title="never entries are immutable" aria-label="immutable" style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>locked</span>
           ) : g.status === 'active' ? (
             <button className="tool-btn" onClick={() => revoke(g)}>revoke</button>
           ) : null}
         </Row>
       ))}
       {note && (
-        <div role="alert" style={{ fontSize: 10, color: note.startsWith('refused') ? 'var(--amber)' : 'var(--ink-2)', marginTop: 6 }}>
+        <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: note.startsWith('refused') ? 'var(--amber)' : 'var(--ink-2)', marginTop: 6 }}>
           {note}
         </div>
       )}

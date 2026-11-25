@@ -14,6 +14,7 @@ import {
   signOut, signOutEverywhere, type OwnerSession,
 } from './api/owner-session';
 import { getToken, setToken } from './api/client';
+import { LABEL } from './theme/type';
 
 function needsSignIn(s: OwnerSession | null, wanted: boolean): boolean {
   if (!s || s.signed_in) return false;
@@ -47,8 +48,8 @@ export function OwnerSignIn() {
 
   if (session?.signed_in) {
     return (
-      <div data-testid="owner-session-chip" style={{ position: 'fixed', left: 12, bottom: 12, zIndex: 900,
-        fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.08em' }}>
+      <div data-testid="owner-session-chip" style={{ ...LABEL, position: 'fixed', left: 12, bottom: 12, zIndex: 900,
+        fontSize: 'var(--n-fs-meta)' }}>
         {menu ? (
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="tool-btn" type="button" onClick={() => { void signOut(); setMenu(false); }}>SIGN OUT</button>
@@ -86,15 +87,15 @@ export function OwnerSignIn() {
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="owner-sign-in-title" data-testid="owner-sign-in"
       style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'grid', placeItems: 'center',
-        background: 'rgba(3,8,14,.86)', backdropFilter: 'blur(6px)', padding: 16 }}>
+        background: 'var(--n-scrim)', backdropFilter: 'blur(6px)', padding: 16 }}>
       <form onSubmit={submit} style={{ width: 'min(380px, 100%)', display: 'grid', gap: 12, padding: 22,
-        background: 'var(--surface, #0b1622)', border: '1px solid var(--panel-line, rgba(120,190,240,.2))',
-        borderRadius: 'var(--radius, 6px)', color: 'var(--ink, #d8e6f2)' }}>
-        <div id="owner-sign-in-title" style={{ fontFamily: 'var(--font-mono)', letterSpacing: '.14em', fontSize: 12,
-          color: 'var(--accent-light, #8fe0ff)' }}>
+        background: 'var(--surface)', border: '1px solid var(--panel-line)',
+        borderRadius: 'var(--radius, 6px)', color: 'var(--ink)' }}>
+        <div id="owner-sign-in-title" style={{ ...LABEL, fontSize: 'var(--n-fs-label)',
+          color: 'var(--accent-light)' }}>
           {guest ? 'USE A GUEST TOKEN' : 'SIGN IN TO NERVA'}
         </div>
-        <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'var(--ink-2, #9fb3c4)' }}>
+        <div style={{ fontSize: 'var(--n-fs-label)', lineHeight: 1.45, color: 'var(--ink-2)' }}>
           {httpsRequired && !guest ? HTTPS_REQUIRED : guest
             ? 'Paste the user token the owner gave you. It is kept in this browser only.'
             : 'This hub is reached over the network. Enter the owner secret (the admin token) to open a session in this browser.'}
@@ -103,13 +104,13 @@ export function OwnerSignIn() {
           aria-label={guest ? 'Guest token' : 'Owner secret'}
           placeholder={guest ? 'guest token' : 'owner secret'}
           onChange={(e) => setSecret(e.target.value)}
-          style={{ padding: '9px 10px', background: 'var(--void-2, #050b12)', color: 'inherit',
-            border: '1px solid var(--panel-line, rgba(120,190,240,.2))', borderRadius: 4, fontFamily: 'var(--font-mono)' }} />
-        {error ? <div role="alert" style={{ fontSize: 12, color: 'var(--red, #ef4444)' }}>{error}</div> : null}
+          style={{ padding: '9px 10px', background: 'var(--void-2)', color: 'inherit',
+            border: '1px solid var(--panel-line)', borderRadius: 4, fontFamily: 'var(--font-mono)' }} />
+        {error ? <div role="alert" style={{ fontSize: 'var(--n-fs-label)', color: 'var(--red)' }}>{error}</div> : null}
         <button className="tool-btn" type="submit" disabled={busy || !secret.trim()}
           style={{ justifyContent: 'center' }}>{busy ? 'SIGNING IN…' : guest ? 'USE TOKEN' : 'SIGN IN'}</button>
         <button type="button" onClick={() => { setGuest(!guest); setError(''); setSecret(''); }}
-          style={{ background: 'none', border: 0, color: 'var(--ink-2, #9fb3c4)', fontSize: 11.5, cursor: 'pointer',
+          style={{ background: 'none', border: 0, color: 'var(--ink-2)', fontSize: 'var(--n-fs-meta)', cursor: 'pointer',
             textDecoration: 'underline' }}>
           {guest ? 'Sign in as the owner instead' : 'I have a guest token'}
         </button>

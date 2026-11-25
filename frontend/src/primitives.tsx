@@ -70,12 +70,14 @@ function fmtDate(d,lang){
   return `${days[d.getDay()]} ${pad(d.getDate())} ${mon[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-/* Meter */
+/* Meter — a reading and its bar. The HUD v2 classes (.meter .ml .mt .mf) draw it in
+   Classic; the .n-meter classes (theme/kit.css) draw it in a Nerva theme: a flat ink bar
+   on the pressed ground, the reading in ink beside its label. */
 function Meter({ label, val, unit }: { label?: any; val?: any; unit?: any }){
   return (
-    <div className="meter">
-      <div className="ml"><span>{label}</span><span>{val}{unit||'%'}</span></div>
-      <div className="mt"><div className="mf" style={{width:`${Math.min(100,val)}%`}}></div></div>
+    <div className="meter n-meter">
+      <div className="ml n-meter__head"><span className="n-meter__label">{label}</span><span className="n-meter__value">{val}{unit||'%'}</span></div>
+      <div className="mt n-meter__track"><div className="mf n-meter__fill" style={{width:`${Math.min(100,val)}%`}}></div></div>
     </div>
   );
 }

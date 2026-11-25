@@ -1,0 +1,156 @@
+/* =====================================================================================
+   Theme · Ledger  (the reference port: copy its shape for every other theme)
+   -------------------------------------------------------------------------------------
+   Source: docs/design/hud-next/ledger/ (tokens.css, ledger.css, README.md).
+   Idea: Nerva keeps books. Everything it does is a sealed entry; nothing risky happens
+   without the owner's signature. Type and rules carry structure; colour is ink on paper
+   or its carbon. One colour, vermilion (the seal), means only the owner's hand.
+     Carbon (dark, default)  paper-toned ink on a soft green-black
+     Paper  (light)          ink on a faintly green ledger paper
+   Status is never carried by hue alone in Ledger's own components (a shape plus a word);
+   the status roles below are low-chroma so older screens that still colour status keep
+   working without competing with the seal.
+   ===================================================================================== */
+
+:is(:root, .n-theme-scope)[data-look="ledger"] {
+  color-scheme: dark;
+
+  --n-bg:          oklch(0.176 0.008 165);
+  --n-bg-2:        oklch(0.204 0.009 165);
+  --n-bg-3:        oklch(0.240 0.010 165);
+  --n-sheet:       oklch(0.212 0.010 165);
+  --n-sheet-2:     oklch(0.232 0.010 165);
+  --n-scrim:       oklch(0.120 0.010 165 / 0.62);
+
+  --n-text:        oklch(0.912 0.014 138);
+  --n-text-2:      oklch(0.775 0.014 145);
+  --n-text-3:      oklch(0.660 0.014 150);
+
+  --n-rule:        oklch(0.268 0.010 165);
+  --n-rule-2:      oklch(0.340 0.012 165);
+  --n-rule-field:  oklch(0.540 0.014 160);
+  --n-rule-heavy:  oklch(0.640 0.014 150);
+
+  --n-accent:      oklch(0.705 0.185 35);
+  --n-accent-text: oklch(0.705 0.185 35);
+  --n-accent-wash: oklch(0.255 0.042 35);
+  --n-on-accent:   oklch(0.160 0.012 165);
+
+  --n-stop:        oklch(0.705 0.185 35);
+  --n-on-stop:     oklch(0.160 0.012 165);
+
+  --n-ok:          oklch(0.780 0.060 150);
+  --n-warn:        oklch(0.810 0.090 80);
+  --n-bad:         oklch(0.740 0.085 12);
+  --n-info:        oklch(0.780 0.040 232);
+  --n-cloud:       oklch(0.770 0.070 295);
+  --n-ok-wash:     oklch(0.255 0.030 150);
+  --n-warn-wash:   oklch(0.265 0.035 80);
+  --n-bad-wash:    oklch(0.255 0.035 12);
+
+  --n-focus:       oklch(0.912 0.014 138);
+  --n-selection:   oklch(0.330 0.050 35);
+
+  /* Emphasis and primary actions are ink: in Ledger the vermilion is spent only on the
+     owner's hand (a signature asked for, given or recorded, and the stop). Legacy screens
+     reach these through the bridge, so the old accent-coloured chrome turns to ink. */
+  --n-emph:       var(--n-text);
+  --n-emph-wash:  var(--n-bg-3);
+  --n-primary:    var(--n-text);
+  --n-on-primary: var(--n-bg);
+
+  /* the three voices: serif for what Nerva writes and what you sign, a DIN-like sans for
+     the instrument and your own words, mono for identifiers only */
+  --n-font-ui:      "Barlow", "Bahnschrift", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --n-font-label:   var(--n-font-ui);
+  --n-font-text:    "Literata", "Sitka Text", Georgia, serif;
+  --n-font-title:   "Literata", "Sitka Subheading", Georgia, serif;
+  --n-font-display: "Literata", "Sitka Display", Georgia, serif;
+  --n-font-mono:    "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --n-label-case:   none;
+  --n-label-track:  0;
+  --n-label-weight: 400;
+  /* Barlow and Literata are self-hosted (src/theme/fonts.css), so 500 is a true medium; the
+     tokens.css weights 400 / 500 / 600 / 700 apply as they are. */
+
+  /* rules, not boxes; only a seal is round */
+  --n-r-0: 0;
+  --n-r-1: 2px;
+  --n-r-2: 4px;
+  --n-r-3: 4px;
+  --n-panel-bg:     transparent;
+  --n-panel-border: 0 solid transparent;
+  --n-panel-top:    2px solid var(--n-rule-heavy);
+  --n-panel-radius: 0;
+  --n-panel-shadow: none;
+
+  --n-shadow-1:     none;
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 18px 40px -16px oklch(0 0 0 / 0.6);
+  --n-shadow-sheet: 0 0 0 1px oklch(0.540 0.014 160), 0 22px 48px -18px oklch(0 0 0 / 0.7);
+
+  --n-measure: 66ch;
+  --n-col-gap: 56px;
+}
+
+:is(:root, .n-theme-scope)[data-look="ledger"][data-scheme="light"] {
+  color-scheme: light;
+
+  --n-bg:          oklch(0.979 0.006 150);
+  --n-bg-2:        oklch(0.958 0.008 150);
+  --n-bg-3:        oklch(0.932 0.010 150);
+  --n-sheet:       oklch(0.997 0.002 150);
+  --n-sheet-2:     oklch(0.985 0.004 150);
+  --n-scrim:       oklch(0.205 0.022 165 / 0.32);
+
+  --n-text:        oklch(0.205 0.022 165);
+  --n-text-2:      oklch(0.375 0.020 165);
+  --n-text-3:      oklch(0.485 0.016 165);
+
+  --n-rule:        oklch(0.880 0.010 150);
+  --n-rule-2:      oklch(0.770 0.012 155);
+  --n-rule-field:  oklch(0.555 0.014 160);
+  --n-rule-heavy:  oklch(0.205 0.022 165);
+
+  --n-accent:      oklch(0.535 0.200 33);
+  --n-accent-text: oklch(0.535 0.200 33);
+  --n-accent-wash: oklch(0.958 0.024 45);
+  --n-on-accent:   oklch(0.992 0.004 150);
+
+  --n-stop:        oklch(0.535 0.200 33);
+  --n-on-stop:     oklch(0.992 0.004 150);
+
+  --n-ok:          oklch(0.450 0.070 150);
+  --n-warn:        oklch(0.480 0.090 70);
+  --n-bad:         oklch(0.470 0.100 12);
+  --n-info:        oklch(0.450 0.050 235);
+  --n-cloud:       oklch(0.470 0.090 295);
+  --n-ok-wash:     oklch(0.950 0.020 150);
+  --n-warn-wash:   oklch(0.950 0.030 80);
+  --n-bad-wash:    oklch(0.950 0.025 12);
+
+  --n-focus:       oklch(0.205 0.022 165);
+  --n-selection:   oklch(0.900 0.050 45);
+
+  --n-shadow-2:     0 0 0 1px var(--n-rule-2), 0 16px 36px -18px oklch(0.205 0.022 165 / 0.35);
+  --n-shadow-sheet: 0 0 0 1px oklch(0.205 0.022 165), 0 20px 44px -20px oklch(0.205 0.022 165 / 0.38);
+}
+
+/* The gutter narrows with the page, as the design draws it (56 / 48 / 40px). */
+@media (max-width: 1679px) { :root[data-look="ledger"] { --n-col-gap: 48px; } }
+@media (max-width: 1339px) { :root[data-look="ledger"] { --n-col-gap: 40px; } }
+
+/* The owner's screen (2560 x 1353 CSS px, read from a little further away): reading sizes
+   step up by one; measures stay where they were. */
+@media (min-width: 2200px) {
+  :root[data-look="ledger"] {
+    --n-fs-meta: 13px;   --n-lh-meta: 17px;
+    --n-fs-label: 14px;  --n-lh-label: 20px;
+    --n-fs-ui: 15px;     --n-lh-ui: 22px;
+    --n-fs-own: 16px;    --n-lh-own: 25px;
+    --n-fs-prose: 18px;  --n-lh-prose: 29px;
+    --n-fs-title: 24px;  --n-lh-title: 29px;
+    --n-fs-verdict: 36px; --n-lh-verdict: 42px;
+    --n-fs-figure: 50px;  --n-lh-figure: 56px;
+    --n-page-x: 40px; --n-col-gap: 64px;
+  }
+}

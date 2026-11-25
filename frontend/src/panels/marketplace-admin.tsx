@@ -95,8 +95,9 @@
 
    All three writes are admin tier (actA → X-Admin-Token); /skills is read at user tier. */
 import React, { useState } from 'react';
-import { useApi, mono, asLive, Card, State, Row, Tag, Btn, actA, inpS, Json } from '../panel-kit';
+import { useApi, mono, note, asLive, Card, State, Row, Tag, Btn, actA, inpS, Json } from '../panel-kit';
 import { ConfirmAction, RISK_TIER } from '../confirm';
+import { LABEL, IDENT } from '../theme/type';
 
 const PUBLISH_PATH = '/api/skills/marketplace/publish';
 const INSTALL_ZIP_PATH = '/api/skills/marketplace/install-zip';
@@ -116,22 +117,24 @@ const why = (err: any): string => {
     || 'request failed';
 };
 
+/* A section head. A route inside it is an IDENT span (theme/type.ts): the mono face in its
+   own case and spacing (contract §5). */
 const H = ({ children }) => (
-  <div style={{ ...mono, fontSize: 9.5, letterSpacing: '.14em', color: 'var(--ink-2)', margin: '10px 0 5px' }}>{children}</div>
+  <div style={{ ...LABEL, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', margin: '10px 0 5px' }}>{children}</div>
 );
 const Note = ({ children }) => (
-  <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 4, lineHeight: 1.5 }}>{children}</div>
+  <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4, lineHeight: 1.5 }}>{children}</div>
 );
 const Fail = ({ msg, status }: { msg: any; status?: any }) => (
-  <div role="alert" style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--red)' }}>
+  <div role="alert" style={{ ...note, fontSize: 'var(--n-fs-meta)', marginTop: 6, color: 'var(--red)' }}>
     {msg} · HTTP {status == null ? '?' : status}
   </div>
 );
 const Good = ({ children }) => (
-  <div style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--green)' }}>{children}</div>
+  <div style={{ ...note, fontSize: 'var(--n-fs-meta)', marginTop: 6, color: 'var(--green)' }}>{children}</div>
 );
 const Amber = ({ children }) => (
-  <div role="status" style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--amber)' }}>{children}</div>
+  <div role="status" style={{ ...note, fontSize: 'var(--n-fs-meta)', marginTop: 6, color: 'var(--amber)' }}>{children}</div>
 );
 
 export function MarketplaceAdminPanel() {
@@ -226,7 +229,7 @@ export function MarketplaceAdminPanel() {
       <State e={e} loading={loading} n={names.length} />
 
       {/* ── 1 · PUBLISH FROM DISK ─────────────────────────────────────── */}
-      <H>PUBLISH FROM DISK · POST {PUBLISH_PATH}</H>
+      <H>PUBLISH FROM DISK · <span style={IDENT}>POST {PUBLISH_PATH}</span></H>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <input
           style={{ ...inpS, flex: 1 }}
@@ -263,9 +266,9 @@ export function MarketplaceAdminPanel() {
       )}
 
       {/* ── 2 · INSTALL PACKAGE ───────────────────────────────────────── */}
-      <H>INSTALL PACKAGE (.zip) · POST {INSTALL_ZIP_PATH}</H>
+      <H>INSTALL PACKAGE (.zip) · <span style={IDENT}>POST {INSTALL_ZIP_PATH}</span></H>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="file" accept=".zip,application/zip" aria-label="skill package zip" onChange={onFile} style={{ ...mono, fontSize: 10 }} />
+        <input type="file" accept=".zip,application/zip" aria-label="skill package zip" onChange={onFile} style={{ ...note, fontSize: 'var(--n-fs-meta)' }} />
         <button className="tool-btn" disabled={zipBusy || !b64} onClick={install}>
           {zipBusy ? 'installing…' : 'install package'}
         </button>
@@ -296,7 +299,7 @@ export function MarketplaceAdminPanel() {
       </Note>
 
       {/* ── 3 · UNINSTALL ─────────────────────────────────────────────── */}
-      <H>INSTALLED TREE · UNINSTALL · POST {UNINSTALL_PATH}</H>
+      <H>INSTALLED TREE · UNINSTALL · <span style={IDENT}>POST {UNINSTALL_PATH}</span></H>
       {names.map((k) => {
         const s = (map && map[k]) || {};
         return (
@@ -309,7 +312,7 @@ export function MarketplaceAdminPanel() {
       })}
       {armed && (
         <div style={{ marginTop: 8, padding: 8, border: '1px solid var(--red)', borderRadius: 4 }}>
-          <div style={{ ...mono, fontSize: 10.5, color: 'var(--red)' }}>confirm removal of “{armed}”</div>
+          <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--red)' }}>confirm removal of “{armed}”</div>
           <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} block armed onCancel={() => { setArmed(null); setUn(null); }}
             label={`remove ${armed}`} phrase={unName.trim()} onConfirm={confirmRemove}
             prompt={<>type the folder, <b>{unName.trim() || '…'}</b>, to delete skills/{unName.trim() || '…'}</>}
@@ -323,7 +326,7 @@ export function MarketplaceAdminPanel() {
                   value={unName}
                   onChange={(ev) => setUnName(ev.target.value)}
                 />
-                <label style={{ ...mono, fontSize: 10, display: 'flex', gap: 4, alignItems: 'center', color: 'var(--ink-2)' }}>
+                <label style={{ ...note, fontSize: 'var(--n-fs-meta)', display: 'flex', gap: 4, alignItems: 'center', color: 'var(--ink-2)' }}>
                   <input type="checkbox" aria-label="purge registry row matching the folder string" checked={purge} onChange={(ev) => setPurge(!!ev.target.checked)} />
                   purge · also unpublish (delete the registry row and its package blob)
                 </label>
@@ -364,7 +367,7 @@ export function MarketplaceAdminPanel() {
         : <Note>purge was not requested: the registry row and its package blob are untouched, so the marketplace
             INSTALL control can restore the skill — through the moderation/signature gate.</Note>)}
 
-      <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         all three writes are <b>admin tier</b> (actA · X-Admin-Token); the installed-tree read above is GET /skills at
         user tier, and a failed read shows as “offline · …” rather than as an empty tree. Registry rows, review status
         and package rollback live in the SKILLS MARKETPLACE panel — install-zip writes no registry row, so a

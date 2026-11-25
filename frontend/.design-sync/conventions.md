@@ -53,11 +53,10 @@ span to tint them. `Icon` takes its path from the exported `ICONS` map:
 ## Idiomatic example
 
 ```jsx
-import { Meter, Icon, ICONS, Ticker, V2 } from 'jarvis-hud-v2';
+import { Meter, Icon, ICONS, V2 } from 'jarvis-hud-v2';
 
 <div className="hud-root" style={{ background: 'var(--void)', minHeight: '100vh', padding: 16 }}>
-  <Ticker items={V2.TICKER} t={V2.I18N.en} />
-  <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 12, marginTop: 12 }}>
+  <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 12 }}>
     <aside style={{ background: 'var(--surface)', border: '1px solid var(--panel-line)',
                     borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
       <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-ui)' }}>

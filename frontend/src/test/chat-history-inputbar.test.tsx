@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { InputBar } from '../cockpit';
 import { V2 } from '../data';
+import { composerField, openComposerMenu } from '../home/talk/test-support';
 
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal ||= function () { this.setAttribute('open', ''); };
@@ -26,8 +27,10 @@ it('makes saved-text search available from the shared EN/RO composer and keeps a
   const props = { selectedTurn: true, agent: 'jarvis', sessionId: 'current', recipientStatus: 'ready' as const,
     onSubmit: vi.fn(), t: V2.I18N.en };
   const view = render(<InputBar {...props} />);
-  const draft = screen.getByPlaceholderText(V2.I18N.en.placeholder) as HTMLInputElement;
+  const draft = screen.getByPlaceholderText('Message Jarvis…') as HTMLTextAreaElement;
+  expect(draft).toBe(composerField());
   fireEvent.change(draft, { target: { value: 'My unsent follow-up' } });
+  openComposerMenu('options');   // the search is in the composer's Options menu since the re-lay
   fireEvent.click(screen.getByRole('button', { name: 'Search chat history' }));
   expect(screen.getByRole('dialog', { name: 'Search chat history' })).toBeTruthy();
   expect(calls).not.toContain('/sessions/resume');
@@ -49,6 +52,8 @@ it('makes saved-text search available from the shared EN/RO composer and keeps a
 it('shows the same search control in Romanian', () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({})));
   render(<InputBar selectedTurn agent="jarvis" sessionId="current" recipientStatus="ready" lang="ro" t={V2.I18N.ro} />);
+  expect(composerField().getAttribute('placeholder')).toBe('Mesaj către Jarvis…');
+  openComposerMenu('options');
   fireEvent.click(screen.getByRole('button', { name: 'Caută în conversații' }));
   expect(screen.getByRole('dialog', { name: 'Caută în conversații' })).toBeTruthy();
 });
@@ -66,8 +71,9 @@ it('stages a sourced passage for the current recipient and keeps it after a refu
   const props = { selectedTurn: true, agent: 'jarvis', sessionId: 'current', recipientStatus: 'ready' as const,
     onSubmit, t: V2.I18N.en };
   const view = render(<InputBar {...props} />);
-  const draft = screen.getByPlaceholderText(V2.I18N.en.placeholder) as HTMLInputElement;
+  const draft = composerField();
   fireEvent.change(draft, { target: { value: 'What should we do next?' } });
+  openComposerMenu('options');
   fireEvent.click(screen.getByRole('button', { name: 'Search chat history' }));
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'old task' } });
   fireEvent.click(screen.getByRole('button', { name: 'Search' }));
@@ -79,7 +85,9 @@ it('stages a sourced passage for the current recipient and keeps it after a refu
   await screen.findByText('Chat source: past · message 3 · assistant');
   expect(onSubmit).not.toHaveBeenCalled();
   expect(draft.value).toBe('What should we do next?');
+  openComposerMenu('options');
   expect(screen.getByRole('button', { name: 'Use previous image' }).hasAttribute('disabled')).toBe(true);
+  openComposerMenu('attach');
   expect(screen.getByRole('button', { name: 'Attach board result' }).hasAttribute('disabled')).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: V2.I18N.en.transmit }));
   expect(onSubmit).toHaveBeenCalledOnce();

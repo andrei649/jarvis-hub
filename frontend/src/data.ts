@@ -101,7 +101,9 @@ const DOSSIER = {
 };
 
 /* cognition scoring keywords (from product) — generic placeholders only; the personal terms were
-   scrubbed 2026-09-01 (owner decision). Mirrors agents/web/static/data.js; cockpit.tsx buildTrace consumes it. */
+   scrubbed 2026-09-01 (owner decision). Mirrors agents/web/static/data.js. The HUD's own reader
+   (cockpit.tsx buildTrace) was retired with the cockpit trace in Phase B; the table stays the v1
+   copy's twin. */
 const COGNITION_SCORING = [
   {keyword:'calendar',weight:.82,agents:['pepper']},{keyword:'meeting',weight:.78,agents:['pepper']},
   {keyword:'schedule',weight:.75,agents:['pepper']},{keyword:'email',weight:.67,agents:['pepper','veronica','stark']},
@@ -231,18 +233,17 @@ const KG = {
 /* i18n — EN primary, RO toggle */
 const I18N = {
   en:{
-    sub:'PERSONAL INTELLIGENCE · OS', online:'ONLINE', local:'% LOCAL', agents:'AGENTS',
-    situation:'SITUATION', allnominal:'ALL NOMINAL', cockpit:'Cockpit', agentsMode:'Agents',
+    sub:'PERSONAL INTELLIGENCE · OS', online:'ONLINE', agents:'AGENTS',
+    situation:'SITUATION', cockpit:'Cockpit', agentsMode:'Agents',
     trust:'Trust', memory:'Memory', autonomy:'Autonomy', build:'Build', observe:'Observe',
     interop:'Interop', admin:'Admin', roster:'ROSTER', system:'SYSTEM', network:'NEURAL NETWORK',
     conversation:'CONVERSATION', cognition:'COGNITION', context:'CONTEXT', weather:'WEATHER',
-    schedule:'TODAY', decisions:'DECISION QUEUE', heartbeat:'HEARTBEAT', placeholder:'Speak or type a command…',
-    transmit:'TRANSMIT', channel:'VOICE · LOCAL', directReply:'Direct reply',
+    // The composer (PHASE_B_PLAN.md §5.3): `placeholder` names the recipient ({agent} is filled
+    // with their name); `channel` is kept for the key set but no longer rendered.
+    schedule:'TODAY', decisions:'DECISION QUEUE', heartbeat:'HEARTBEAT', placeholder:'Message {agent}…',
+    transmit:'Send', channel:'VOICE · LOCAL', directReply:'Direct reply',
     directReplyHelp:'Ask supported models to skip extended thinking for this message', cogempty:'Send a message to watch Jarvis think —',
     cogempty2:'classify → route → gather → synthesize', think:'thinking', focusHint:'click a node to focus · click core to reset',
-    killTitle:'EMERGENCY STOP', killSub:'halt all agents', armed:'ARMED · all systems nominal',
-    engaged:'ENGAGED · all agents halted', locality:'COMPUTE LOCALITY', auditTitle:'AUDIT CHAIN',
-    verified:'chain verified · no tampering detected', capsTitle:'CAPABILITY GRANTS', payTitle:'PAYMENTS LEDGER',
     memTitle:'MEMORY & KNOWLEDGE', recall:'FUSED RECALL', spaces:'TOPIC SPACES · DECAY', kgTitle:'KNOWLEDGE GRAPH',
     asof:'AS OF', enterAmbient:'AMBIENT', exitAmbient:'press ESC or click to wake', pending:'pending decisions',
     cmd:'COMMAND', langName:'EN',
@@ -254,18 +255,15 @@ const I18N = {
     timeTravel:'Time travel — knowledge as of',
   },
   ro:{
-    sub:'INTELIGENȚĂ PERSONALĂ · OS', online:'ONLINE', local:'% LOCAL', agents:'AGENȚI',
-    situation:'SITUAȚIE', allnominal:'TOTUL NOMINAL', cockpit:'Cabină', agentsMode:'Agenți',
+    sub:'INTELIGENȚĂ PERSONALĂ · OS', online:'ONLINE', agents:'AGENȚI',
+    situation:'SITUAȚIE', cockpit:'Cabină', agentsMode:'Agenți',
     trust:'Încredere', memory:'Memorie', autonomy:'Autonomie', build:'Construire', observe:'Observă',
     interop:'Interop', admin:'Admin', roster:'ECHIPĂ', system:'SISTEM', network:'REȚEA NEURALĂ',
     conversation:'CONVERSAȚIE', cognition:'COGNIȚIE', context:'CONTEXT', weather:'VREME',
-    schedule:'AZI', decisions:'COADĂ DECIZII', heartbeat:'PULS', placeholder:'Vorbește sau scrie o comandă…',
-    transmit:'TRIMITE', channel:'VOCE · LOCAL', directReply:'Răspuns direct',
+    schedule:'AZI', decisions:'COADĂ DECIZII', heartbeat:'PULS', placeholder:'Mesaj către {agent}…',
+    transmit:'Trimite', channel:'VOCE · LOCAL', directReply:'Răspuns direct',
     directReplyHelp:'Cere modelelor compatibile să sară peste gândirea extinsă pentru acest mesaj.', cogempty:'Trimite un mesaj ca să vezi cum gândește Jarvis —',
     cogempty2:'clasifică → rutează → adună → sintetizează', think:'gândește', focusHint:'apasă un nod · apasă nucleul pt. reset',
-    killTitle:'OPRIRE URGENȚĂ', killSub:'oprește toți agenții', armed:'ARMAT · toate sistemele nominale',
-    engaged:'ACTIVAT · toți agenții opriți', locality:'LOCALITATE CALCUL', auditTitle:'LANȚ DE AUDIT',
-    verified:'lanț verificat · fără modificări', capsTitle:'PERMISIUNI', payTitle:'REGISTRU PLĂȚI',
     memTitle:'MEMORIE & CUNOAȘTERE', recall:'RECALL FUZIONAT', spaces:'SPAȚII · DEGRADARE', kgTitle:'GRAF DE CUNOAȘTERE',
     asof:'LA DATA', enterAmbient:'AMBIANT', exitAmbient:'apasă ESC sau click pentru trezire', pending:'decizii în așteptare',
     cmd:'COMANDĂ', langName:'RO',

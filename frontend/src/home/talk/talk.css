@@ -1,0 +1,685 @@
+/* =====================================================================================
+   home/talk — the conversation register (PHASE_B_PLAN.md §5.3), drawn as
+   docs/design/hud-next/ledger/ledger.css draws it, through the --n-* roles only: no colour
+   literal, type from the --n-fs-* scale (nothing under 12px), labels in the theme's voice.
+   Phase A's primitives (n-btn, n-seg, n-field, n-link, n-kbd, n-tag, …) and the kit's blocks
+   (n-register, n-mk, n-src, …) are used, never redefined. The classes this file owns:
+
+     n-talk, __with, __role, __policy, __unconfirmed, __search,
+       __body, __foot                                               the register
+     n-transcript                                                   the log region
+     n-turn (--owner --reply --system --vision), __time, __who,
+       __body, __said, __attach, __sources, __ran, __warn, __foot,
+       __receipt, __details                                         a turn
+     n-working, __tools, __line, __status, __stop, __stop-ico,
+       __meta; n-steps, __step (--done --now --todo), __label       a reply being written
+     n-footnote, __line, __where, __more, __warn, __tools, __tool   where it ran, what it called
+     n-slip, __head, __list, __row, __title, __why, __link,
+       __away, __handoff, __failed                                  the approval slip
+     n-acts, __btn                                                  a reply's action budget
+     n-tmenu, __panel, __item (--embed), __choice, __help, __hint   Attach, Options, More
+     n-composer-wrap, n-composer, __recipient, __head, __to, __k, __name,
+       __policy, __pick, __select, __chev, __switch, __held, __answers,
+       __dropped, __mode,
+       __means, __own, __why-mode, __field, __label, __input,
+       __count, __bar, __tool, __ico, __chev-sm, __voice, __stt,
+       __vstate, __keys, __send, __why, __staged, __voiceset       the composer
+
+   The composer sits at the foot of the conversation register with its head (To, Mode). Its
+   classic layout (no head, for ChatMode) was deleted with ChatMode at the stage 5 cleanup.
+   ===================================================================================== */
+
+/* ---- the register ------------------------------------------------------------------------ */
+.n-talk { min-height: 0; }
+.n-talk .n-talk__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+/* one run of text ("with Jarvis · Prime Orchestrator · Orchestrated"): inline-block, never a flex
+   box, which would make each run an item and drop the spaces at its edges */
+.n-talk__with {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.n-talk__policy { color: var(--n-text-2); }
+/* the selected agent the roster could not confirm: said in words beside its name */
+.n-talk__unconfirmed { color: var(--n-text); }
+.n-talk__search { font-size: var(--n-fs-meta); line-height: var(--n-lh-meta); white-space: nowrap; }
+
+/* ---- the transcript: one log region, the newest entry sitting on the composer ------------ */
+.n-transcript {
+  /* the containing block of what is positioned inside it, so it is clipped with the scroll */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--n-s-1) var(--n-s-4) 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--n-rule-2) transparent;
+}
+.n-transcript > * { flex: none; }
+/* short conversations are bottom-anchored on the composer */
+.n-transcript > :first-child { margin-top: auto; }
+.n-transcript:focus-visible { outline: 2px solid var(--n-focus); outline-offset: -2px; }
+
+/* The who column holds a short name in the label voice: 64px fits six letters in a Classic look
+   (mono, uppercase, tracked: "JARVIS", "SYSTEM") and seven in a Nerva one; a longer name ends in
+   an ellipsis and is whole in its title. */
+.n-turn {
+  display: grid;
+  grid-template-columns: 40px 64px minmax(0, 1fr);
+  column-gap: 14px;
+  align-items: baseline;
+}
+.n-turn__time {
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-own);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--n-text-3);
+}
+.n-turn__who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-own);
+  color: var(--n-text);
+}
+.n-turn__body { min-width: 0; }
+.n-turn__said { margin: 0; overflow-wrap: anywhere; color: var(--n-text); }
+
+/* the owner's words: the instrument face, semibold, as typed */
+.n-turn--owner {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: var(--n-hair) solid var(--n-rule);
+}
+.n-transcript > .n-turn--owner:first-child { border-top: 0; }
+.n-turn--owner .n-turn__said {
+  font-family: var(--n-font-ui);
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+  white-space: pre-wrap;
+}
+/* Nerva's words: the reading face, the measure capped */
+.n-turn--reply, .n-turn--system, .n-turn--vision { margin-top: 6px; }
+.n-turn--reply .n-turn__body, .n-turn--system .n-turn__body, .n-turn--vision .n-turn__body { max-width: 660px; }
+.n-turn--reply .n-turn__said, .n-turn--vision .n-turn__said {
+  font-family: var(--n-font-text);
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-prose);
+  line-height: var(--n-lh-prose);
+  text-wrap: pretty;
+}
+.n-turn--system .n-turn__said {
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-turn__attach, .n-turn__ran, .n-turn__warn, .n-turn__receipt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--n-s-1);
+  margin: var(--n-s-1) 0 0;
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-3);
+}
+.n-turn__warn { color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-turn__ran code, .n-footnote code, .n-working code {
+  font-family: var(--n-font-mono);
+  font-size: var(--n-fs-meta);
+}
+.n-turn__sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--n-s-1) var(--n-s-2);
+  margin: var(--n-s-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.n-turn__sources li {
+  padding: 1px var(--n-s-2);
+  border: var(--n-hair) solid var(--n-rule-2);
+  border-radius: var(--n-r-1);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-2);
+}
+.n-turn__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--n-s-1) var(--n-s-4);
+  margin-top: var(--n-s-1);
+}
+.n-turn__details {
+  margin-top: var(--n-s-2);
+  padding-top: var(--n-s-2);
+  border-top: var(--n-hair) solid var(--n-rule);
+  color: var(--n-text-2);
+}
+
+/* ---- the working reply: steps as ruled segments, the current one dotted; nothing moves ---- */
+.n-working { margin: 2px 0 var(--n-s-2); }
+/* a step's words wrap rather than being cut ("Început — l-ai întrebat pe Stark"); a longer step
+   takes more of the row; where a row is too narrow (phone widths, the floating window) the steps
+   stack, each under its own rule */
+.n-steps {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(min-content, auto);
+  column-gap: var(--n-s-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.n-steps__step {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 6px;
+  border-top: var(--n-heavy) solid var(--n-rule-2);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-3);
+}
+.n-steps__step--done { border-top-color: var(--n-text-2); color: var(--n-text-2); }
+.n-steps__step--now { border-top-style: dotted; border-top-color: var(--n-text); color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-steps__label { min-width: 0; overflow-wrap: break-word; }
+.n-working__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--n-s-3);
+  margin: var(--n-s-1) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-working__tools li { display: inline-flex; align-items: center; gap: 5px; }
+.n-working__tools li[data-state="failed"] { color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-working__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--n-s-2) var(--n-s-3);
+  margin: var(--n-s-2) 0 0;
+}
+.n-working__status {
+  font-family: var(--n-font-text);
+  font-style: italic;
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+  color: var(--n-text);
+}
+.n-working__stop { margin-left: auto; }
+.n-working__stop-ico { width: 9px; height: 9px; flex: none; fill: currentColor; }
+.n-working__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--n-s-1) var(--n-s-4);
+  margin: 6px 0 0;
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-3);
+}
+.n-working__meta > span { display: inline-flex; align-items: center; gap: 5px; }
+.n-working__meta b { color: var(--n-text-2); font-weight: var(--n-w-reg); }
+
+/* ---- the footnote: where it was sent, what it called ------------------------------------------ */
+.n-footnote {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-3);
+}
+.n-footnote__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--n-s-1) var(--n-s-4);
+  margin: 0;
+}
+.n-footnote__where, .n-footnote__warn, .n-footnote__tools, .n-footnote__tool {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.n-footnote__tools { gap: 5px var(--n-s-3); }
+.n-footnote__warn, .n-footnote__tool[data-state="failed"] { color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-footnote__more { font-size: var(--n-fs-meta); }
+
+/* ---- the approval slip: it links, it never decides -------------------------------------------- */
+.n-slip {
+  margin-top: var(--n-s-2);
+  padding: 7px 0;
+  border-top: var(--n-hair) solid var(--n-rule-2);
+  border-bottom: var(--n-hair) solid var(--n-rule-2);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text);
+}
+.n-slip[data-count="1"] { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--n-s-2); }
+.n-slip__head { display: inline-flex; align-items: center; gap: var(--n-s-2); margin: 0; }
+.n-slip__head b { font-weight: var(--n-w-semi); }
+.n-slip__list { flex: 1 1 auto; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.n-slip__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--n-s-2); }
+.n-slip__why { color: var(--n-text-2); }
+.n-slip__link { margin-left: auto; white-space: nowrap; }
+/* the floating window: decided in the main window, reached through the window's handoff */
+.n-slip__away {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--n-s-1) var(--n-s-2);
+  margin: var(--n-s-1) 0 0;
+  color: var(--n-text-2);
+}
+.n-slip__handoff { margin-left: auto; }
+.n-slip__failed { flex-basis: 100%; color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-slip__failed code { font-family: var(--n-font-mono); font-size: var(--n-fs-meta); font-weight: var(--n-w-reg); }
+
+/* ---- the action budget: on the newest reply, and on hover or focus elsewhere ---------------------- */
+.n-acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  margin-left: auto;
+  transition: opacity var(--n-dur-1) var(--n-ease);
+}
+.n-acts__btn, .n-acts > button {
+  appearance: none;
+  margin: 0;
+  padding: 0 7px;
+  min-height: 24px;
+  border: 0;
+  border-radius: var(--n-r-1);
+  background: none;
+  box-shadow: none;
+  color: var(--n-text-2);
+  font-family: var(--n-font-ui);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-label);
+  cursor: pointer;
+}
+.n-acts__btn:hover, .n-acts > button:hover, .n-acts__btn[aria-expanded="true"] { background: var(--n-bg-2); color: var(--n-text); }
+.n-acts__btn:focus-visible, .n-acts > button:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-turn--reply .n-acts, .n-turn--owner .n-acts { opacity: 0; }
+.n-turn--reply[data-newest] .n-acts,
+.n-turn:hover .n-acts,
+.n-turn:focus-within .n-acts { opacity: 1; }
+@media (hover: none) { .n-turn--reply .n-acts, .n-turn--owner .n-acts { opacity: 1; } }
+
+/* ---- menus: Attach, Options, More (they open above their button) ----------------------------------- */
+.n-tmenu { position: relative; display: inline-flex; }
+.n-tmenu__panel {
+  position: absolute;
+  z-index: 40;
+  bottom: calc(100% + var(--n-s-2));
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 248px;
+  max-width: min(380px, calc(100vw - 24px));
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  padding: var(--n-s-1) 0;
+  border-radius: var(--n-r-2);
+  background: var(--n-sheet);
+  box-shadow: var(--n-shadow-2);
+  color: var(--n-text);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  text-align: left;
+}
+.n-tmenu__panel[hidden] { display: none; }
+.n-tmenu--end .n-tmenu__panel { left: auto; right: 0; }
+.n-tmenu__item,
+.n-tmenu__item--embed > button,
+.n-tmenu__item--embed > div > button:first-child {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--n-s-1);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: var(--n-s-1) var(--n-s-3);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  text-align: left;
+  cursor: pointer;
+}
+.n-tmenu__item--embed { display: block; width: 100%; min-height: 0; padding: 0; }
+.n-tmenu__item:hover:not(:disabled),
+.n-tmenu__item--embed > button:hover:not(:disabled),
+.n-tmenu__item--embed > div > button:first-child:hover:not(:disabled) { background: var(--n-bg-2); color: var(--n-text); }
+.n-tmenu__item:focus-visible,
+.n-tmenu__item--embed > button:focus-visible,
+.n-tmenu__item--embed > div > button:first-child:focus-visible { outline: 2px solid var(--n-focus); outline-offset: -2px; }
+.n-tmenu__item:disabled,
+.n-tmenu__item--embed > button:disabled { color: var(--n-text-3); cursor: default; }
+.n-tmenu__item[aria-pressed="true"],
+.n-tmenu__item[aria-expanded="true"] { background: var(--n-emph-wash); font-weight: var(--n-w-semi); box-shadow: inset 2px 0 0 var(--n-emph); }
+.n-tmenu__choice { display: flex; flex-direction: column; }
+.n-tmenu__help, .n-tmenu__hint {
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-3);
+}
+.n-tmenu__help { padding: 0 var(--n-s-3) var(--n-s-2); }
+
+/* ---- the composer: the one other framed surface, because it is where you write ------------------- */
+.n-composer-wrap { flex: none; }
+.n-composer {
+  position: relative;
+  margin: var(--n-s-2) var(--n-s-3) var(--n-s-3);
+  border: var(--n-hair) solid var(--n-rule-field);
+  border-radius: var(--n-r-1);
+  background: var(--n-sheet);
+  color: var(--n-text);
+}
+.n-composer-wrap--home .n-composer,
+.n-composer-wrap--chat .n-composer { margin: var(--n-s-2) 0 var(--n-s-4); }
+.n-composer-wrap--floating .n-composer { margin: var(--n-s-2) 0 var(--n-s-3); }
+.n-composer:focus-within { border-color: var(--n-text); box-shadow: 0 0 0 var(--n-hair) var(--n-text); }
+/* why there is no recipient (being checked, or dropped and why), over the composer: said in words,
+   which Send's description points at; never told by a status hue alone */
+.n-composer__recipient {
+  margin: var(--n-s-2) 0 0;
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  font-weight: var(--n-w-semi);
+  color: var(--n-text);
+}
+
+.n-composer__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--n-s-2);
+  min-height: 32px;
+  padding: 0 var(--n-s-3);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-2);
+}
+.n-composer__to { display: inline-flex; align-items: center; gap: var(--n-s-1); min-width: 0; white-space: nowrap; }
+.n-composer__k {
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  color: var(--n-text-3);
+}
+.n-composer__name { font-weight: var(--n-w-semi); font-size: var(--n-fs-label); color: var(--n-text); }
+.n-composer__policy { color: var(--n-text-2); }
+.n-composer__pick { position: relative; display: inline-flex; align-items: center; min-width: 0; }
+.n-composer__select {
+  appearance: none;
+  min-width: 0;
+  max-width: 280px;
+  margin: 0;
+  padding: 2px 20px 2px var(--n-s-1);
+  border: 0;
+  border-radius: var(--n-r-1);
+  background: transparent;
+  color: var(--n-text);
+  font: inherit;
+  font-weight: var(--n-w-semi);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.n-composer__select:hover { background: var(--n-bg-2); }
+.n-composer__select:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+.n-composer__select option { background: var(--n-sheet); color: var(--n-text); }
+.n-composer__chev {
+  position: absolute;
+  right: var(--n-s-1);
+  width: 11px;
+  height: 11px;
+  pointer-events: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  color: var(--n-text-3);
+}
+.n-composer__switch {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--n-s-2);
+  order: 10;
+  padding: var(--n-s-2) 0;
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text);
+}
+/* why the question's switch waits (the hub did not serve the roster): its description, in words */
+.n-composer__held { color: var(--n-text-2); }
+/* the question dropped (a served roster no longer offers the agent): one line where it was, saying
+   why and who is written to now, with Dismiss beside it */
+.n-composer__dropped {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--n-s-2);
+  order: 11;
+  margin: 0;
+  padding: var(--n-s-2) 0;
+  border-top: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text);
+}
+/* the two answers stay together when the question wraps */
+.n-composer__answers { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--n-s-2); }
+.n-composer__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--n-s-1);
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.n-composer__mode b { font-weight: var(--n-w-semi); color: var(--n-text); }
+.n-composer__means, .n-composer__why-mode { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* an agent's own override is the fact that matters: kept when the meaning is folded away */
+.n-composer__own { flex: none; color: var(--n-text); font-weight: var(--n-w-semi); }
+.n-composer__why-mode { color: var(--n-text-3); }
+
+.n-composer__field { position: relative; }
+.n-composer__input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(var(--n-lh-own) * 2 + 12px);
+  max-height: calc(var(--n-lh-own) * 6 + 12px);
+  margin: 0;
+  padding: 10px var(--n-s-3) 2px;
+  overflow-y: auto;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  font-weight: var(--n-w-reg);
+  font-size: var(--n-fs-own);
+  line-height: var(--n-lh-own);
+}
+.n-composer__input::placeholder { color: var(--n-text-3); opacity: 1; }
+.n-composer__count {
+  display: block;
+  padding: 0 var(--n-s-3);
+  text-align: right;
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--n-text-3);
+}
+.n-composer__count[data-over] { color: var(--n-text); font-weight: var(--n-w-semi); }
+
+.n-composer__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 0 var(--n-s-2) var(--n-s-2) var(--n-s-1);
+}
+.n-composer__ico {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.n-composer__chev-sm {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  color: var(--n-text-3);
+}
+.n-composer__stt { color: var(--n-text-3); font-weight: var(--n-w-reg); font-size: var(--n-fs-meta); }
+/* a muted or unsupported microphone is said in words (never by fading the control) */
+.n-composer__vstate { color: var(--n-text); font-weight: var(--n-w-semi); font-size: var(--n-fs-meta); }
+.n-composer__keys {
+  display: inline-flex;
+  gap: var(--n-s-3);
+  margin-left: auto;
+  margin-right: var(--n-s-3);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  white-space: nowrap;
+  color: var(--n-text-3);
+}
+.n-composer__keys code { font-family: var(--n-font-mono); font-weight: var(--n-w-semi); color: var(--n-text-2); }
+.n-composer__send { flex: none; }
+.n-composer__why {
+  margin: 0;
+  padding: 0 var(--n-s-3) var(--n-s-2);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-2);
+}
+.n-composer__staged {
+  margin: 0 var(--n-s-3) var(--n-s-2);
+  padding: var(--n-s-2) 0;
+  border-top: var(--n-hair) solid var(--n-rule-2);
+  border-bottom: var(--n-hair) solid var(--n-rule-2);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-composer-wrap--home .n-composer__staged,
+.n-composer-wrap--chat .n-composer__staged,
+.n-composer-wrap--floating .n-composer__staged { margin: 0 0 var(--n-s-2); }
+.n-composer__staged p { margin: 0 0 var(--n-s-1); }
+.n-composer__staged pre {
+  max-height: 170px;
+  margin: var(--n-s-1) 0 0;
+  padding: var(--n-s-2);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: var(--n-hair) solid var(--n-rule-2);
+  border-radius: var(--n-r-1);
+}
+.n-composer__voiceset { padding: var(--n-s-1) var(--n-s-3) var(--n-s-2); }
+
+/* ---- widths (the shared breakpoints, frame/frame.css) ------------------------------------------- */
+@media (min-width: 2200px) {
+  .n-turn { grid-template-columns: 44px 68px minmax(0, 1fr); column-gap: 16px; }
+  .n-turn--owner { margin-top: 22px; padding-top: 20px; }
+  .n-turn--reply { margin-top: 9px; }
+  .n-composer__input { min-height: calc(var(--n-lh-own) * 3 + 14px); }
+}
+/* the 1280 window: tighter columns; the field starts at one line and grows to six */
+@media (max-width: 1339px) {
+  .n-turn { grid-template-columns: 38px 64px minmax(0, 1fr); column-gap: 12px; }
+  .n-composer__input { min-height: calc(var(--n-lh-own) + 14px); }
+}
+@media (max-width: 1099px) {
+  .n-composer__means { display: none; }
+}
+@media (max-width: 759px) {
+  /* the head's meta has its own line here (home/home.css): "with Jarvis · <policy>" and "Search
+     earlier conversations" wrap where they must, every word kept */
+  .n-talk__with { overflow: visible; white-space: normal; }
+  .n-talk__search { white-space: normal; text-align: left; }
+  .n-turn { grid-template-columns: 34px 58px minmax(0, 1fr); column-gap: var(--n-s-2); }
+  .n-steps { grid-auto-flow: row; grid-auto-columns: auto; row-gap: var(--n-s-1); }
+  .n-composer__keys { display: none; }
+  .n-composer__send { margin-left: auto; }
+}
+
+/* ---- the floating window (420 x 620): the conversation alone ------------------------------------ */
+.n-talk--floating {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 var(--n-s-3);
+}
+.n-talk--floating .n-talk__body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.n-talk--floating .n-talk__foot { flex: none; }
+.n-talk--floating .n-turn { grid-template-columns: 34px 58px minmax(0, 1fr); column-gap: var(--n-s-2); }
+.n-talk--floating .n-steps { grid-auto-flow: row; grid-auto-columns: auto; row-gap: var(--n-s-1); }
+.n-composer-wrap--floating .n-composer__input { min-height: calc(var(--n-lh-own) + 14px); }
+.n-composer-wrap--floating .n-composer__keys,
+.n-composer-wrap--floating .n-composer__means,
+.n-composer-wrap--floating .n-composer__stt { display: none; }
+.n-composer-wrap--floating .n-composer__send { margin-left: auto; }

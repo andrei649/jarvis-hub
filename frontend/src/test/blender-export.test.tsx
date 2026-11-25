@@ -1,10 +1,11 @@
 import React from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { BlenderModel, blenderMeshRequest, hasInconsistentWinding, hasInwardClosedShell, parseBlenderObj } from '../blender-export';
 import { apiExportBlender } from '../api/client';
 import { Conversation, InputBar } from '../cockpit';
 import { V2 } from '../data';
+import { composerField, openComposerMenu } from '../home/talk/test-support';
 
 const pyramid = 'o Beacon\nv -2 -2 0\nv 2 -2 0\nv 2 2 0\nv -2 2 0\nv 0 0 3\nf 1 2 3 4\nf -5 -4 -1\nf -4 -3 -1\nf -3 -2 -1\nf -2 -5 -1\n';
 const points = 'o Beacon\nv -2 -2 0\nv 2 -2 0\nv 2 2 0\nv -2 2 0\nv 0 0 3\n';
@@ -47,8 +48,10 @@ it('warns for a consistently reversed closed shell but not outward, open or dege
 it('keeps the owner draft, recipient and normal Send when Blender mode is toggled', () => {
   const onSubmit = vi.fn(() => false);
   render(<InputBar selectedTurn agent="frigga" sessionId="here" recipientStatus="ready" onSubmit={onSubmit} t={V2.I18N.en}/>);
-  const input = screen.getByPlaceholderText(V2.I18N.en.placeholder) as HTMLInputElement;
+  const input = screen.getByPlaceholderText('Message Frigga…') as HTMLTextAreaElement;
+  expect(input).toBe(composerField());
   fireEvent.change(input, { target: { value: 'A Beacon square pyramid with a 4×4 base at z=0 and centered tip at z=3.' } });
+  openComposerMenu('options');   // the Blender toggle is in the composer's Options menu since the re-lay
   fireEvent.click(screen.getByRole('button', { name: 'Make editable Blender model' }));
   fireEvent.click(screen.getByText('Review instruction to send'));
   expect(screen.getByText(/Create an editable Blender model from this brief:/).textContent).toBe(blenderMeshRequest(input.value));
@@ -80,16 +83,21 @@ it('shows a projected review only for completed OBJ replies, and downloads only 
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   const reply = { role: 'agent', who: 'frigga', text: `\`\`\`wavefront\n${pyramid}\`\`\``, _turnId: 1, _complete: true };
   const view = render(<Conversation messages={[reply]} thinking={null} exportAllowed lang="en" />);
-  expect(screen.getByRole('img', { name: /Projected geometry preview: 5 vertices, 5 faces, 1 objects/ })).toBeTruthy();
-  expect(screen.getByText('Beacon (5)')).toBeTruthy();
-  expect(screen.getByText(/Some neighboring faces have inconsistent winding/)).toBeTruthy();
+  // the reply's own preview sits in its words (data-turn-body, the Ledger transcript)
+  const body = document.querySelector('[data-turn="reply"] [data-turn-body]') as HTMLElement;
+  expect(within(body).getByRole('img', { name: /Projected geometry preview: 5 vertices, 5 faces, 1 objects/ })).toBeTruthy();
+  expect(within(body).getByText('Beacon (5)')).toBeTruthy();
+  expect(within(body).getByText(/Some neighboring faces have inconsistent winding/)).toBeTruthy();
   expect(fetch).not.toHaveBeenCalled();
-  const review = screen.getByRole('button', { name: 'Review Blender model' });
-  fireEvent.click(review);
+  // "Review Blender model" is in the reply's More menu since the re-lay (PHASE_B_PLAN.md §5.3, §8.3)
+  const more = openComposerMenu('more', document.querySelector('[data-turn="reply"]') as HTMLElement);
+  const opener = more.firstElementChild as HTMLButtonElement;
+  fireEvent.click(within(more).getByRole('button', { name: 'Review Blender model' }));
   expect(screen.getByRole('dialog', { name: 'Review Blender model' })).toBeTruthy();
   expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close model review' }));
   fireEvent.click(screen.getByRole('button', { name: 'Close model review' }));
-  expect(document.activeElement).toBe(review);
+  // focus returns to the control that opened it: More, since the item hides with its menu
+  expect(document.activeElement).toBe(opener);
   fireEvent.click(screen.getByRole('button', { name: 'Download Blender project' }));
   await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
   expect(fetch.mock.calls[0][0]).toBe('/api/canvas/blender-export');

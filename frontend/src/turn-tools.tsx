@@ -7,9 +7,21 @@
      place as the call moves from requested to running to done or failed.
    - Approvals: the end frame's `pending_approvals` are the ids of the cards this turn put
      in the decision inbox. Each is listed under the reply as a link that opens the inbox on
-     that card (`?card=<id>`); the decision itself is only ever made there. */
+     that card (`?card=<id>`); the decision itself is only ever made there.
+   - Phase B (PHASE_B_PLAN.md §2.3, §5.3): the links navigate in the app (decisionsHref +
+     openDecisionsCard, docket/links.ts; never navigateHud, which would encode the `?`), and
+     under the Ledger frame TurnApprovals is the approval slip (home/talk/ApprovalSlip.tsx): it
+     links to the request's docket entry, or to the Decisions page on that card when the docket
+     does not hold it. It links; it never decides.
+   - The floating desktop window (?desktop=floating) always shows the conversation alone, so a
+     link there never navigates in place: the classic note keeps its full navigation to the
+     inbox card without desktop=floating (as before Phase B), and the slip sends the owner to the
+     main window (§5.1). */
 import React from 'react';
 import { appUrl } from './base-path';
+import { isFloatingDesktop } from './desktop';
+import { decisionsHref, openDecisionsCard } from './docket/links';
+import { ApprovalSlip, inAppClick } from './home/talk/ApprovalSlip';
 
 export type ToolCard = { key: string; tool: string; state: 'requested' | 'running' | 'done' | 'failed' | 'stopped'; event: string };
 
@@ -57,7 +69,7 @@ export function TurnTools({ tools }: { tools?: ToolCard[] }) {
     <div className="turn-tools" role="list" aria-label="tools this turn ran" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '4px 0' }}>
       {tools.map((c) => (
         <span role="listitem" key={c.key} data-state={c.state} className="turn-tool"
-          style={{ fontFamily: 'var(--font-mono)', fontSize: 10, border: '1px solid var(--panel-line)', borderRadius: 4, padding: '2px 6px', color: COLOUR[c.state] }}>
+          style={{ fontSize: 'var(--n-fs-meta)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: '2px 6px', color: COLOUR[c.state] }}>
           ⚙ {c.tool} · {LABEL[c.state]}
         </span>
       ))}
@@ -71,12 +83,16 @@ export function approvalIds(raw: unknown): number[] {
   return raw.filter((x) => Number.isInteger(x) && (x as number) > 0).slice(0, 20) as number[];
 }
 
-export function TurnApprovals({ ids }: { ids?: number[] }) {
+export function TurnApprovals({ ids, slip = false, floating = false, lang = 'en' }: { ids?: readonly number[]; slip?: boolean; floating?: boolean; lang?: string }) {
   if (!Array.isArray(ids) || !ids.length) return null;
+  if (slip) return <ApprovalSlip ids={ids} lang={lang} floating={floating} />;
+  // The floating window: a full navigation to the card, without desktop=floating, as before.
+  const away = floating || isFloatingDesktop();
   return (
-    <div className="turn-approvals" role="note" style={{ fontSize: 11, color: 'var(--amber)', margin: '4px 0' }}>
+    <div className="turn-approvals" role="note" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', margin: '4px 0' }}>
       {ids.length === 1 ? '1 action waits' : `${ids.length} actions wait`} for your decision:{' '}
-      {ids.map((id, i) => <span key={id}>{i ? ', ' : ''}<a href={appUrl(`/v2/console/decision-inbox?card=${id}`)}
+      {ids.map((id, i) => <span key={id}>{i ? ', ' : ''}<a href={away ? appUrl(`/v2/console/decision-inbox?card=${id}`) : decisionsHref(id)}
+        onClick={away ? undefined : inAppClick(() => openDecisionsCard(id))}
         style={{ color: 'var(--accent-light)' }}>card #{id}</a></span>)}
       {' · decided only in the Decision Inbox'}
     </div>

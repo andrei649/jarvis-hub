@@ -1,0 +1,724 @@
+/* =====================================================================================
+   Nerva · kit (contract v1, layer 6)
+   -------------------------------------------------------------------------------------
+   The canonical component classes behind the panel kit (src/panel-kit.tsx) and
+   src/primitives.tsx, which about 137 Console panels and most modes are built from, and the
+   primitives Phase B builds on (CONTRACT.md §8b: the names are shared, so they are not
+   redefined elsewhere). Everything here is drawn from the --n-* roles and the type scale in
+   tokens.css, including the derived roles (emph, emph-wash, primary, on-primary, field-bg);
+   no colour literal, nothing smaller than --n-fs-meta (12px).
+
+   Two selector tiers, because some kit elements also carry an HUD v2 class that styles.css
+   still draws for Classic (.panel on Card, .tool-btn on Btn, .meter on Meter):
+
+     .n-tag, .n-chip, .n-state, .n-row, .n-field (.n-input, .n-textarea), .n-json,
+     .n-seg, .n-link, .n-kbd
+         plain class rules, every theme. Classic reaches them through the --n-* roles
+         bridge.css derives from the HUD v2 palette (its label voice is mono, uppercase).
+
+     .n-card, .n-btn, .n-meter
+         `.n-x:not(<legacy class>)`  a standalone element, any theme (Classic included);
+         `NERVA .n-x`                every element, in a Nerva theme.
+         An element that carries the legacy class keeps the HUD v2 look in Classic, with
+         its corner brackets, exactly as hand-written .panel and .tool-btn elements do.
+         Every variant is written in both tiers: in a Nerva page the NERVA base rule (0,3,0)
+         outranks a standalone variant (0,2,0), so a variant needs its NERVA twin to win.
+
+   NERVA is spelled out in each rule as
+     :is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-x
+       :where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))
+   The first part matches a page with no data-look (the default, Ledger) or any Nerva look,
+   and a .n-theme-scope preview of a Nerva theme, so a new theme id needs no edit here. The
+   :where() tail keeps the rule out of a Classic preview scope placed inside a Nerva page
+   (a Personalisation theme card), where the page's <html> would otherwise still match; it
+   adds no specificity, so a NERVA rule stays at (0,3,0) plus its own classes, above every
+   styles.css rule it meets. Status tones add a wash and a mark only in a Nerva theme:
+   Classic tags never had either, so they keep the HUD v2 hairline chip with its coloured text.
+
+   Figures that line up in a column (a row's value, a meter's reading, a count, a tag) ask for
+   `lining-nums tabular-nums` themselves (contract §3, --n-numerals): lining is named again
+   because font-variant-numeric replaces the inherited value rather than adding to it.
+   ===================================================================================== */
+
+
+/* ---- tag: a small chip of data (a state, a count, a kind, an id) --------------------
+   The panel kit sets the text colour inline (the caller's `c`, or --n-text-2), so these
+   rules carry the shape, the type and, in a Nerva theme, the tone's wash and mark.
+   Tags keep the case they were written in: they carry identifiers and hashes, so the
+   theme's label case is not applied here, only its label face. */
+.n-tag {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px calc(var(--n-s-1) * 1.5);
+  border: var(--n-hair) solid var(--n-rule-2);
+  border-radius: var(--n-r-1);
+  background: transparent;
+  color: var(--n-text-2);
+  font-family: var(--n-font-label);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  font-variant-numeric: lining-nums tabular-nums;
+  vertical-align: baseline;
+  overflow-wrap: break-word;
+}
+.n-tag--ok     { color: var(--n-ok); }
+.n-tag--warn   { color: var(--n-warn); }
+.n-tag--bad    { color: var(--n-bad); }
+.n-tag--info   { color: var(--n-info); }
+.n-tag--cloud  { color: var(--n-cloud); }
+.n-tag--accent { color: var(--n-accent-text); }
+.n-tag--emph   { color: var(--n-emph); }
+
+/* the wash: the tone's own soft surface; info and cloud have no wash role, so they sit
+   on the quiet fill, where the contract guarantees their text reads */
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-tag--ok:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))   { background: var(--n-ok-wash);   border-color: transparent; }
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-tag--warn:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) { background: var(--n-warn-wash); border-color: transparent; }
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-tag--bad:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))  { background: var(--n-bad-wash);  border-color: transparent; }
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) :is(.n-tag--info, .n-tag--cloud):where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) { background: var(--n-bg-2); border-color: transparent; }
+/* accent: the theme's own accent (a caller that passes --n-accent or --n-accent-text; in
+   Ledger, the owner's hand). The accent *fill* role does not read on the accent wash (1.2:1
+   in some light schemes), so a tag on the wash takes the accent *text* role, which the
+   contract holds to 4.5:1 there. The caller's colour is an inline style (callers and tests
+   read style.color), so only !important replaces it. Classic keeps the caller's colour, as
+   it keeps the chip without a wash. */
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-tag--accent:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  background: var(--n-accent-wash);
+  border-color: transparent;
+  color: var(--n-accent-text) !important;
+}
+/* emphasis: a caller's legacy --accent / --accent-light. Since 2026-11-23 the bridge maps
+   both to --n-emph (contract §6), so toneOf() files them here instead of under the accent,
+   which in Ledger is spent only on the owner's hand. A highlighted name, count or state:
+   the emphasis ink at semibold in the neutral frame, on no wash, because --n-emph is held
+   to 4.5:1 on every ground and no wash guarantees that. !important for the same reason as
+   the accent above, and so the tag reads whatever the legacy token resolves to. */
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-tag--emph:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  color: var(--n-emph) !important;
+  font-weight: var(--n-w-semi);
+}
+
+/* the mark: a status tag never speaks in hue alone. ● ok · ◐ attention · ■ problem ·
+   ○ information · ◇ left the machine. Drawn, not typed, so it adds no text to the tag. */
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) :is(.n-tag--ok, .n-tag--warn, .n-tag--bad, .n-tag--info, .n-tag--cloud):where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))::before {
+  content: "";
+  display: inline-block;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  vertical-align: 0;
+  background: currentColor;
+}
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-tag--ok:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))::before {
+  border-radius: var(--n-r-pill);
+}
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-tag--warn:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))::before {
+  border: 1.5px solid currentColor;
+  border-radius: var(--n-r-pill);
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+}
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-tag--info:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))::before {
+  border: 1.5px solid currentColor;
+  border-radius: var(--n-r-pill);
+  background: transparent;
+}
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-tag--cloud:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *))::before {
+  width: 6px;
+  height: 6px;
+  margin: 0 6px 0 1px;
+  border: 1.5px solid currentColor;
+  background: transparent;
+  transform: rotate(45deg);
+}
+
+
+/* ---- chip: where a panel's data comes from (PanelChip: LIVE / SEED) -----------------
+   A shape and a word: live is a filled dot, seeded is a ring inside a dashed rule, the
+   way a demo sample is labelled. The words are the panel kit's, unchanged. */
+.n-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: calc(var(--n-s-1) * 1.5);
+  flex: none;
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  color: var(--n-text-2);
+  white-space: nowrap;
+}
+.n-chip__mark {
+  flex: none;
+  align-self: center;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--n-r-pill);
+}
+.n-chip--live .n-chip__mark { background: var(--n-ok); }
+.n-chip--seed {
+  padding: 0 calc(var(--n-s-1) * 1.5);
+  border: var(--n-hair) dashed var(--n-rule-field);
+  color: var(--n-text);
+}
+.n-chip--seed .n-chip__mark { border: 1.5px solid var(--n-warn); background: transparent; }
+
+
+/* ---- state: a line that says what a panel could not show, with a mark and words ------
+   loading ▶ · empty ○ · error ■ · unknown (dashed) ○ · stale (clock) ○ · refused ⊘ */
+.n-state {
+  display: flex;
+  align-items: baseline;
+  gap: var(--n-s-2);
+  margin: 0;
+  padding: var(--n-s-1) 0;
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+.n-state::before {
+  content: "";
+  flex: none;
+  align-self: center;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  color: var(--n-text-3);
+  border: 1.5px solid currentColor;
+  border-radius: var(--n-r-pill);
+}
+.n-state--loading::before {
+  width: 0;
+  height: 0;
+  border-width: 5px 0 5px 8px;
+  border-color: transparent;
+  border-left-color: var(--n-text-2);
+  border-radius: 0;
+}
+.n-state--error { color: var(--n-text); }
+.n-state--error::before {
+  width: 9px;
+  height: 9px;
+  border: 0;
+  border-radius: 0;
+  background: var(--n-bad);
+}
+.n-state--unknown::before { border-style: dashed; }
+.n-state--stale { color: var(--n-text-3); }
+.n-state--stale::before {
+  background: linear-gradient(currentColor, currentColor) no-repeat 50% 1px / 1.5px 3.5px;
+}
+.n-state--refused { color: var(--n-text); }
+.n-state--refused::before {
+  color: var(--n-text);
+  background: linear-gradient(135deg, transparent 42%, currentColor 42% 58%, transparent 58%);
+}
+
+
+/* ---- row: a ruled line of a panel, label on the left, value or action on the right --
+   Rows stack into a column, so their figures are tabular: values line up row to row. */
+.n-row {
+  display: flex;
+  align-items: center;
+  gap: var(--n-s-2);
+  padding: calc(var(--n-s-1) * 1.5) 0;
+  border-bottom: var(--n-hair) solid var(--n-rule);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+
+/* ---- field: input, select, textarea -------------------------------------------------
+   .n-input and .n-textarea are the names Phase B writes (contract §8b); they are aliases of
+   .n-field and take exactly its rules. The fill is the field role (--n-field-bg: the sheet
+   by default; a theme that draws inputs on a quiet fill points it there). panel-kit's
+   inpS / taS / codeS are the same values as inline objects, for the call sites that spread
+   them; new markup uses the class. */
+:is(.n-field, .n-input, .n-textarea) {
+  box-sizing: border-box;
+  min-height: var(--n-control-h);
+  padding: var(--n-s-1) var(--n-s-2);
+  border: var(--n-hair) solid var(--n-rule-field);
+  border-radius: var(--n-r-1);
+  background: var(--n-field-bg);
+  color: var(--n-text);
+  font-family: var(--n-font-ui);
+  font-size: var(--n-fs-ui);
+  line-height: var(--n-lh-ui);
+  transition: border-color var(--n-dur-1) var(--n-ease);
+}
+:is(.n-field, .n-input, .n-textarea)::placeholder { color: var(--n-text-3); opacity: 1; }
+:is(.n-field, .n-input, .n-textarea):hover { border-color: var(--n-text-3); }
+:is(.n-field, .n-input, .n-textarea):focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+:is(.n-field, .n-input, .n-textarea):disabled { border-color: var(--n-rule-2); color: var(--n-text-3); cursor: not-allowed; }
+textarea:is(.n-field, .n-input, .n-textarea) {
+  display: block;
+  width: 100%;
+  min-height: calc(var(--n-lh-ui) * 3 + var(--n-s-2) * 2);
+  padding: var(--n-s-2);
+  resize: vertical;
+}
+/* code, JSON and identifiers typed into a field: the theme's mono at the label step
+   (contract §5), what the owner writes in prose stays in the instrument face above */
+.n-field--code {
+  font-family: var(--n-font-mono);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  font-variant-ligatures: none;
+  tab-size: 2;
+}
+
+
+/* ---- json: a read-only block of data -------------------------------------------------- */
+.n-json {
+  margin: var(--n-s-2) 0 0;
+  padding: var(--n-s-2) var(--n-s-3);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  background: var(--n-bg-2);
+  border: var(--n-hair) solid var(--n-rule);
+  border-radius: var(--n-r-1);
+  color: var(--n-text-2);
+  font-family: var(--n-font-mono);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  font-variant-ligatures: none;
+  tab-size: 2;
+}
+
+
+/* ---- button ---------------------------------------------------------------------------
+   n-btn      a ruled outline in ink at --n-control-h, in the label voice
+   --sm       the small control height (rows, panel heads)
+   --primary  a primary action that is not a signature (Send, Save, Run): --n-primary /
+              --n-on-primary. Ledger points primary at its ink, most themes at their accent.
+   --ink      an ink button: --n-text fill, --n-bg text, whatever the theme
+   --accent   the theme's accent fill: --n-accent / --n-on-accent. In Ledger the accent is
+              the owner's hand, so this button is for signing only (a signature asked for or
+              given); everything else that is primary takes --primary.
+   --quiet    a framed quiet button: the quiet control edge (--n-rule-2), the secondary ink
+   --bare     a borderless text button in the emphasis ink: no frame, no fill at rest; the
+              focus ring is the same 2px + 2px ring as every control
+   --danger   the stop's colours, for destructive actions
+   Every button takes the control shape, --n-r-control (Atlas: a pill). Btn and Card's reload
+   also carry .tool-btn, which keeps the HUD v2 button in Classic.
+   A pressed button (:active, aria-pressed) sits on the pressed ground in ink, so it is
+   always text on bg-3, a pair the contract test checks; filled buttons keep their fill. */
+.n-btn:not(.tool-btn),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--n-s-2);
+  box-sizing: border-box;
+  min-height: var(--n-control-h);
+  padding: 0 var(--n-s-3);
+  border: var(--n-hair) solid var(--n-rule-field);
+  border-radius: var(--n-r-control);
+  background: transparent;
+  box-shadow: none;
+  color: var(--n-text);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-w-med);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  text-decoration: none;
+  text-shadow: none;
+  cursor: pointer;
+  transition: background-color var(--n-dur-1) var(--n-ease), color var(--n-dur-1) var(--n-ease), border-color var(--n-dur-1) var(--n-ease), filter var(--n-dur-1) var(--n-ease);
+}
+.n-btn:not(.tool-btn):hover,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):hover {
+  background: var(--n-bg-2);
+  border-color: var(--n-rule-field);
+  color: var(--n-text);
+}
+.n-btn:not(.tool-btn):focus-visible,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):focus-visible {
+  outline: 2px solid var(--n-focus);
+  outline-offset: 2px;
+}
+
+.n-btn--sm:not(.tool-btn),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--sm:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  min-height: var(--n-control-h-sm);
+  padding: 0 var(--n-s-2);
+}
+
+/* quiet: framed by the quiet control edge, in the secondary ink; the pointer brings the
+   plain button's hover (the field edge, the quiet fill, the ink) */
+.n-btn--quiet:not(.tool-btn),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--quiet:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  border-color: var(--n-rule-2);
+  color: var(--n-text-2);
+}
+
+/* bare: a word that acts. No frame and no fill at rest; the pointer brings the quiet fill
+   (as Ledger's borderless tools do), the frame never appears */
+.n-btn--bare:not(.tool-btn),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--bare:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  padding: 0 var(--n-s-2);
+  border-color: transparent;
+  background: transparent;
+  color: var(--n-emph);
+}
+.n-btn--bare:not(.tool-btn):hover,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--bare:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):hover {
+  border-color: transparent;
+  color: var(--n-emph);
+}
+
+/* pressed: the pressed ground, in ink (after quiet and bare, so it wins their hover) */
+.n-btn:not(.tool-btn):is(:active, [aria-pressed="true"]),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):is(:active, [aria-pressed="true"]) {
+  background: var(--n-bg-3);
+  color: var(--n-text);
+}
+
+/* filled buttons keep their fill under the pointer and when pressed (the plain hover and
+   pressed rules above would take it) */
+.n-btn--primary:not(.tool-btn),
+.n-btn--primary:not(.tool-btn):is(:hover, :active, [aria-pressed="true"]),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--primary:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--primary:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):is(:hover, :active, [aria-pressed="true"]) {
+  background: var(--n-primary);
+  border-color: var(--n-primary);
+  color: var(--n-on-primary);
+  font-weight: var(--n-w-semi);
+}
+.n-btn--ink:not(.tool-btn),
+.n-btn--ink:not(.tool-btn):is(:hover, :active, [aria-pressed="true"]),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--ink:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--ink:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):is(:hover, :active, [aria-pressed="true"]) {
+  background: var(--n-text);
+  border-color: var(--n-text);
+  color: var(--n-bg);
+  font-weight: var(--n-w-semi);
+}
+/* In Ledger the vermilion means the owner's hand: --accent is for signing only. */
+.n-btn--accent:not(.tool-btn),
+.n-btn--accent:not(.tool-btn):is(:hover, :active, [aria-pressed="true"]),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--accent:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--accent:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):is(:hover, :active, [aria-pressed="true"]) {
+  background: var(--n-accent);
+  border-color: var(--n-accent);
+  color: var(--n-on-accent);
+  font-weight: var(--n-w-semi);
+}
+.n-btn--danger:not(.tool-btn),
+.n-btn--danger:not(.tool-btn):is(:hover, :active, [aria-pressed="true"]),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--danger:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--danger:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):is(:hover, :active, [aria-pressed="true"]) {
+  background: var(--n-stop);
+  border-color: var(--n-stop);
+  color: var(--n-on-stop);
+  font-weight: var(--n-w-semi);
+}
+/* ... and answer the pointer. Primary, accent and danger as Ledger's own stop button does
+   (ledger.css .btn--stop:hover): 6% brighter. Measured on every theme file with the contract
+   test's maths, their text stays at 4.5:1 or more through it. The ink button lightens to the
+   secondary ink instead: a brightness step barely moves a near-white or near-black fill, and
+   --n-bg on --n-text-2 is a pair the contract already holds to 4.5:1. */
+:is(.n-btn--primary, .n-btn--accent, .n-btn--danger):not(.tool-btn):hover:not(:disabled, [aria-disabled="true"]),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) :is(.n-btn--primary, .n-btn--accent, .n-btn--danger):where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):hover:not(:disabled, [aria-disabled="true"]) {
+  filter: brightness(1.06);
+}
+.n-btn--ink:not(.tool-btn):hover:not(:disabled, [aria-disabled="true"]),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--ink:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):hover:not(:disabled, [aria-disabled="true"]) {
+  background: var(--n-text-2);
+  border-color: var(--n-text-2);
+}
+
+/* last, so a disabled filled button gives up its fill too */
+.n-btn:not(.tool-btn):is(:disabled, [aria-disabled="true"]),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):is(:disabled, [aria-disabled="true"]) {
+  background: transparent;
+  border-color: var(--n-rule-2);
+  color: var(--n-text-3);
+  filter: none;
+  cursor: not-allowed;
+}
+.n-btn--bare:not(.tool-btn):is(:disabled, [aria-disabled="true"]),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-btn--bare:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):is(:disabled, [aria-disabled="true"]) {
+  border-color: transparent;
+}
+
+
+/* ---- seg: a segmented control ----------------------------------------------------------
+   A radio group drawn as joined buttons (contract §8b): role="radiogroup" on the .n-seg,
+   role="radio" with aria-checked on each child button (the component owns the arrow keys
+   and the roving tabindex; aria-pressed toggles are drawn the same way). The children share
+   their edges and the two ends take the control shape, --n-r-control. The choice is the
+   emphasis treatment and never rests on colour alone: the emphasis wash, the ink at
+   semibold, a 2px bar under the word in the emphasis ink. The word stays in --n-text, the
+   ink the contract holds to 4.5:1 on --n-emph-wash. The pointer inks a word and puts a quiet
+   rule under it, with no fill: several themes draw the emphasis wash on --n-bg-2, the fill a
+   hover would otherwise take (the Personalisation page's choices answer the same way). Every
+   child draws its own frame (no clipping container), so the 2px + 2px focus ring stays
+   whole; a hovered, chosen or focused child is lifted above its neighbours. */
+.n-seg {
+  display: inline-flex;
+  align-items: stretch;
+  vertical-align: middle;
+  isolation: isolate;
+}
+.n-seg > * {
+  appearance: none;
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--n-s-1);
+  box-sizing: border-box;
+  min-height: var(--n-control-h-sm);
+  margin: 0;
+  padding: 0 var(--n-s-3);
+  border: var(--n-hair) solid var(--n-rule-field);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--n-text-2);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-w-med);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--n-dur-1) var(--n-ease), color var(--n-dur-1) var(--n-ease);
+}
+.n-seg > * + * { margin-inline-start: calc(-1 * var(--n-hair)); }
+.n-seg > :first-child {
+  border-start-start-radius: var(--n-r-control);
+  border-end-start-radius: var(--n-r-control);
+}
+.n-seg > :last-child {
+  border-start-end-radius: var(--n-r-control);
+  border-end-end-radius: var(--n-r-control);
+}
+.n-seg > :hover { z-index: 1; color: var(--n-text); box-shadow: inset 0 -2px 0 var(--n-rule-field); }
+.n-seg > :active { background: var(--n-bg-3); color: var(--n-text); }
+.n-seg > :is([aria-checked="true"], [aria-pressed="true"]) {
+  z-index: 1;
+  background: var(--n-emph-wash);
+  color: var(--n-text);
+  font-weight: var(--n-w-semi);
+  box-shadow: inset 0 -2px 0 var(--n-emph);
+}
+.n-seg > :focus-visible { z-index: 2; outline: 2px solid var(--n-focus); outline-offset: 2px; }
+/* unavailable: the third ink, no hover; a stored choice that is unavailable keeps a quiet
+   bar under its word so the keyboard and the eye still find it */
+.n-seg > :is(:disabled, [aria-disabled="true"]) {
+  background: transparent;
+  color: var(--n-text-3);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.n-seg > :is(:disabled, [aria-disabled="true"]):is([aria-checked="true"], [aria-pressed="true"]) {
+  color: var(--n-text-2);
+  box-shadow: inset 0 -2px 0 var(--n-rule-2);
+}
+/* forced colours drop the wash and the inset bar; the choice keeps a drawn underline */
+@media (forced-colors: active) {
+  .n-seg > :is([aria-checked="true"], [aria-pressed="true"]) {
+    text-decoration: underline 2px;
+    text-underline-offset: 4px;
+  }
+}
+
+
+/* ---- link: an in-app text link ---------------------------------------------------------
+   In the emphasis ink; visited is the same. The emphasis ink can equal the body ink (Ledger
+   draws both in ink) and nowhere reaches 3:1 against it, so a link always carries a quiet
+   underline in the field edge (Ledger's own .link), and hover and keyboard focus ink the
+   underline; focus adds the ring. It works on an <a> or a <button>. */
+.n-link {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--n-r-1);
+  background: none;
+  color: var(--n-emph);
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: var(--n-rule-field);
+  text-decoration-thickness: var(--n-hair);
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: text-decoration-color var(--n-dur-1) var(--n-ease);
+}
+.n-link:visited { color: var(--n-emph); }
+.n-link:is(:hover, :focus-visible) { text-decoration-color: currentColor; }
+.n-link:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 2px; }
+
+
+/* ---- kbd: a key cap --------------------------------------------------------------------
+   The label face at the meta step, on the quiet fill, in a hairline frame. Like a tag it
+   keeps the case it was written in (Esc, Ctrl K, g i): key names are not re-cased. */
+.n-kbd {
+  display: inline-block;
+  box-sizing: border-box;
+  min-width: calc(var(--n-lh-meta) + 2px);
+  padding: 0 var(--n-s-1);
+  border: var(--n-hair) solid var(--n-rule-2);
+  border-radius: var(--n-r-1);
+  background: var(--n-bg-2);
+  color: var(--n-text-2);
+  font-family: var(--n-font-label);
+  font-style: normal;
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-meta);
+  line-height: var(--n-lh-meta);
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+
+/* ---- card: a panel (Card in the panel kit) ---------------------------------------------
+   Drawn by the theme's panel treatment: Ledger opens it with a heavy rule and no box;
+   a card theme gives it a fill, a frame, a radius. The head names it, says where its data
+   comes from and how much there is; the body scrolls. Frame and head match the .panel
+   treatment bridge.css gives hand-written panels, so both kinds read as one. */
+.n-card:not(.panel),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-card:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--n-panel-bg);
+  border: var(--n-panel-border);
+  border-top: var(--n-panel-top);
+  border-radius: var(--n-panel-radius);
+  box-shadow: var(--n-panel-shadow);
+  color: var(--n-text);
+}
+/* (the corner brackets stay in the DOM for Classic; bridge.css hides .bk in a Nerva theme) */
+
+.n-card:not(.panel) > .n-card__head,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-card__head:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--n-s-1) var(--n-s-3);
+  padding: var(--n-s-3) var(--n-panel-pad);
+  border-bottom: var(--n-hair) solid var(--n-rule);
+}
+/* A card's title is a section head (contract §5, §8b): the theme's label voice, at the label
+   step, in ink, set like Ledger's section heads (LABEL_STRONG in type.ts is the same voice
+   for inline styles). It is the voice of the hand-written panels' .ttl heads, and Cards also
+   sit inside those panels (Comms holds RoomsPanel), so a larger face here would put the
+   inner title above the outer one. */
+.n-card:not(.panel) > .n-card__head > .n-card__title,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-card__title:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  min-width: 0;
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  font-weight: var(--n-w-semi);
+  color: var(--n-text);
+  overflow-wrap: break-word;
+}
+.n-card:not(.panel) > .n-card__head > .n-card__sub,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-card__sub:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  margin-left: auto;
+  font-family: var(--n-font-ui);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--n-text-2);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+/* the reload sits at the far end; after a count it follows the count */
+.n-card__reload { margin-left: auto; }
+.n-card__sub ~ .n-card__reload { margin-left: var(--n-s-2); }
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-card__reload:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  min-width: var(--n-control-h-sm);
+  padding: 0 var(--n-s-1);
+}
+
+.n-card:not(.panel) > .n-card__body,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-card__body:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--n-s-3) var(--n-panel-pad) var(--n-panel-pad);
+  font-size: var(--n-fs-ui);
+  color: var(--n-text);
+}
+.n-card:not(.panel) > .n-card__body:focus-visible,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-card__body:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)):focus-visible {
+  outline: 2px solid var(--n-focus);
+  outline-offset: 2px;
+}
+
+
+/* ---- meter: a reading and its bar (Meter in primitives) --------------------------------
+   A flat ink bar on the pressed ground, the reading in ink beside its label. The track is
+   --n-bg-3, as Ledger's own meter (ledger.css .meter on --paper-3): on --n-bg-2 it all but
+   disappears in Carbon. */
+.n-meter:not(.meter),
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-meter:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  margin: var(--n-s-2) 0;
+}
+.n-meter:not(.meter) > .n-meter__head,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-meter__head:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--n-s-2);
+  margin-bottom: var(--n-s-1);
+  font-family: var(--n-font-label);
+  text-transform: var(--n-label-case);
+  letter-spacing: var(--n-label-track);
+  font-weight: var(--n-label-weight);
+  font-size: var(--n-fs-label);
+  line-height: var(--n-lh-label);
+  color: var(--n-text-2);
+}
+/* the reading lines up with the readings above and below it, in every theme (Classic's
+   HUD v2 meter draws it too, so this one is a plain class rule) */
+.n-meter__value { font-variant-numeric: lining-nums tabular-nums; }
+.n-meter:not(.meter) > .n-meter__head > .n-meter__value,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-meter__value:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  font-family: var(--n-font-ui);
+  font-weight: var(--n-w-semi);
+  font-variant-numeric: lining-nums tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--n-text);
+}
+.n-meter:not(.meter) > .n-meter__track,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-meter__track:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  background: var(--n-bg-3);
+  border: 0;
+  border-radius: 0;
+}
+.n-meter:not(.meter) > .n-meter__track > .n-meter__fill,
+:is(:root, .n-theme-scope):not([data-look="obsidian"], [data-look="graphite"]) .n-meter__fill:where(:not(.n-theme-scope:is([data-look="obsidian"], [data-look="graphite"]) *)) {
+  height: 100%;
+  background: var(--n-text-2);
+  box-shadow: none;
+  transition: width var(--n-dur-2) var(--n-ease);
+}

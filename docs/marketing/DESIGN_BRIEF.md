@@ -9,34 +9,40 @@
 
 ## 0. The brief in one line
 
-Make assets that feel like **a calm, premium, dark cockpit you command** — not a hype-y SaaS landing
-page. The product itself is the hero; real on-screen data is the texture. Restraint signals trust.
+Make assets that feel like **a calm, exact working book that belongs to its owner** — not a hype-y
+SaaS landing page and no longer a sci-fi cockpit. The product itself is the hero; real on-screen
+data is the content. Restraint signals trust.
+
+> **Identity changed 2026-11-23.** The owner retired the HUD v2 cockpit identity (void black,
+> signal cyan, Space Grotesk, mono micro-caps, glows) for the **Ledger** design. The constants
+> below follow [`docs/BRAND_BOOK.md`](../BRAND_BOOK.md) §7, which is the source of truth.
 
 ---
 
 ## 1. Brand constants (use these exactly)
 
-**Palette**
-| Role | Hex | Use |
-|------|-----|-----|
-| Void (background) | `#04070E` | Dominant. Almost-black with a blue undertone. |
-| Ink (text) | `#EEF1F5` | Primary text on void. |
-| Signal cyan (accent) | `#2BB8F0` | The one accent. Headlines highlight, active states, the wordmark. Light variant `#8FE0FF`. |
-| Status green | `#41F59B` | "verified / on-device / success" only. |
-| Status amber | `#FFB23F` | "demo / caution" only. |
-| Alert red | `#FF5A52` | "halt / danger" only — sparingly. |
-| Violet | `#A78BFA` | Secondary accent (the "cloud" sliver, alt data series). |
+**Palette** — Carbon (dark) is the default; Paper (light) for print and daylight.
+| Role | Carbon | Paper | Use |
+|------|-----|-----|-----|
+| The page | `#0e1210` | `#f5f9f6` | Dominant ground. Near-black with a faint green cast / ledger paper. |
+| A sheet | `#151a18` | `#fdfefd` | The one raised surface: where the owner writes or signs. |
+| Ink | `#dde4db` | `#0d1a15` | Text. Never pure white or pure black. |
+| Ink, secondary | `#b0b8b0` | `#37453e` | Secondary text, captions. |
+| Hairline | `#222825` | `#d3d9d4` | Rules between rows. Structure is drawn with rules, not boxes. |
+| **Seal — vermilion** | `#fd6c48` | `#c72500` | The one colour. **Only** where the owner's signature is asked for, given or recorded. Never for emphasis, errors or the brand itself. |
 
 **Type**
-- **Display / UI:** Space Grotesk (600/500 for headlines, 400 body).
-- **Data / labels / code / micro-caps:** JetBrains Mono. Letter-spaced (`.12–.18em`), often UPPERCASE, small.
-- Numbers: tabular figures.
+- **What Nerva writes, headlines, verdicts:** Literata (serif). Titles 600–700; reading 400.
+- **The instrument, captions, labels, buttons:** Barlow (sans). Sentence case. No letter-spaced capitals.
+- **Identifiers only (hashes, ids, model names):** JetBrains Mono, small.
+- Numbers: lining, tabular in columns.
 
-**Logo:** wordmark `NERVA` in Space Grotesk, signal-cyan on void, with an optional mono sub-line
-(e.g. `PERSONAL · AI · OS`). No icon mark exists yet — wordmark is canonical.
+**Logo:** the neural N inside a ring, in ink, beside the wordmark `Nerva` in Literata bold,
+sentence case. The ring is also the seal: vermilion outline = awaits a signature, solid vermilion
+= signed, solid ink = sealed in the record. No void tile, no cyan.
 
-**Texture (optional, subtle):** faint dot-grid or a single thin scanline. Never busy. Glows are
-thin and tight, never neon-soaked.
+**Texture:** none. No dot grids, scanlines, glows or gradients. A 2px ink rule opening a block and
+a double rule under a total are the only ornaments, and both carry meaning.
 
 ---
 
@@ -52,31 +58,33 @@ thin and tight, never neon-soaked.
 ## 3. Assets to produce (priority order)
 
 ### A. Social preview / OG image — `1200 × 630`  ★ make first
-- Background: void `#04070E`, faint dot-grid.
-- Center-left: wordmark `NERVA` (cyan) + tagline in ink: **"The AI that works while you sleep."**
-- Right third: a cropped, slightly-angled screenshot of the real HUD cockpit (the agent network brain).
-- Bottom mono strip (ink-3, small): `LOCAL-FIRST · 17 AGENTS · GOVERNED AUTONOMY · $0/MONTH`.
+- Background: Carbon `#0e1210`, no texture.
+- Center-left: the ring-N mark and wordmark `Nerva` (Literata, ink) + tagline in ink: **"The AI that works while you sleep."**
+- Right third: a straight (not angled) crop of the real Today page: the docket with one entry awaiting signature (the only vermilion on the asset) and the conversation beside it.
+- Bottom line in Barlow, ink secondary, sentence case: `Local-first · 18 agents · Governed autonomy · $0 a month`.
 - This doubles as the GitHub repo social preview and the README hero until a demo GIF exists.
 
 ### B. The "three pillars" card — `1080 × 1080` (square, for social)
-Three stacked rows, each = mono label + one line:
-- `PRIVATE BY ARCHITECTURE` — Local inference. Every cloud hop opt-in. Your data trains no one's model.
-- `PROACTIVE, NOT REACTIVE` — Works 24/7. Escalates only what matters. Learns to stop asking.
-- `GOVERNED, PROVABLY` — Approval queue + tamper-evident audit log. Enforced in code, proven by tests.
-Accent the lead words in cyan. Lots of void space. Wordmark small, bottom.
+Three registers, each opened by a 2px ink rule: a Barlow label + one Literata line:
+- `Private by architecture` — Local inference. Every cloud hop opt-in. Your data trains no one's model.
+- `Proactive, not reactive` — Works 24/7. Escalates only what matters. Learns to stop asking.
+- `Governed, provably` — Every action sealed in the record; nothing risky without your signature.
+Lots of page around them. Wordmark small, bottom. No accent colour unless the card shows a signature.
 
 ### C. One-pager / sell sheet — `A4 portrait` (PDF)
 Single page, top-to-bottom:
 1. Wordmark + tagline (hero band).
 2. One-paragraph "what it is" (lift the TL;DR from `ANNOUNCEMENT.md`).
 3. The three pillars (as B).
-4. A 6-cell "proof" strip (from §5 below) — big mono numbers.
+4. A 6-cell "proof" strip (from §5 below) — large Literata figures, Barlow captions, a double rule under the row.
 5. The agent roster as a quiet 4-tier grid of names (Command / Business / Tech / Foundation).
 6. Footer: `Self-host: INSTALL.bat / install.sh · github.com/andrei649/jarvis-hub · $0/month`.
 
 ### D. Teaser GIF / 60s video — storyboard is in `TEASER_PACK.md` §3
-Screen-record the real HUD. The shot list is in `TEASER_PACK.md` §6. Captions in JetBrains Mono,
-typed-on, cyan highlights. Calm synth bed, no voiceover needed.
+Screen-record the real interface (Ledger, Carbon). The shot list is in `TEASER_PACK.md` §6 (its
+shots of the old cockpit, the network brain and the ticker need re-shooting on Today). Captions in
+Barlow, sentence case, appearing whole rather than typed on; vermilion only on the moment the owner
+signs. Calm synth bed, no voiceover needed.
 
 ### E. Carousel (5 cards, `1080 × 1350` portrait) — for the launch-day thread
 One card per `TEASER_PACK.md` §2 post. Same template as B; one idea per card; final card = the CTA.
@@ -85,12 +93,14 @@ One card per `TEASER_PACK.md` §2 post. Same template as B; one idea per card; f
 
 ## 4. Layout do / don't
 
-**Do:** generous void margins · one idea per asset · real product screenshots · thin cyan rules ·
-mono micro-labels for structure · left-aligned, calm hierarchy.
+**Do:** generous margins · one idea per asset · real product screenshots · ink rules for
+structure (a 2px rule opens a block, a double rule closes a total) · sentence-case Barlow labels ·
+the serif for anything Nerva "says" · left-aligned, calm hierarchy.
 
-**Don't:** gradients-for-the-sake-of-it · neon glow soup · stock photos of people at laptops ·
-emoji-heavy headlines · more than one accent color competing · fabricated/stat UI mockups
-(use the real HUD; demo mode is clearly badged — that honesty is the brand).
+**Don't:** vermilion for emphasis or decoration · cyan, glows, scanlines, dot grids, gradients ·
+uppercase letter-spaced labels · boxes inside boxes · stock photos of people at laptops ·
+emoji-heavy headlines · fabricated/stat UI mockups (use the real interface; demo mode is clearly
+badged — that honesty is the brand).
 
 ---
 

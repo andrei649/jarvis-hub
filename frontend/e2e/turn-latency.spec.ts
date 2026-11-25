@@ -27,13 +27,20 @@ for (const width of [1280, 390]) {
     const strip = page.getByLabel('Turn duration', { exact: true });
     await expect(strip).toHaveCount(0);
     const send = async (text: string) => {
-      await page.locator('.inputbar input').first().fill(text);
-      await page.getByRole('button', { name: 'TRANSMIT', exact: true }).click();
+      await page.locator('[data-composer]').first().fill(text);
+      await page.getByRole('button', { name: 'Send', exact: true }).click();
     };
     await send('Measure this turn');
     await expect(page.getByText('Reply 1.', { exact: true })).toBeVisible();
+    // The Ledger reply (PHASE_B_PLAN.md §5.3): the turn's status lines, the duration among them,
+    // are that reply's "Turn details", behind its More menu, not a strip under the composer.
+    const reply = (text: string) => page.locator('[data-turn="reply"]').filter({ hasText: text });
+    await expect(strip).toHaveCount(0);
+    await reply('Reply 1.').getByRole('button', { name: 'More actions for this reply', exact: true }).click();
+    await reply('Reply 1.').getByRole('button', { name: 'Turn details', exact: true }).click();
     await expect(strip).toBeVisible();
     await expect(strip).toContainText('1.25');
+    await expect(reply('Reply 1.').getByLabel('Turn duration', { exact: true })).toBeVisible();
     const box = await strip.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.x).toBeGreaterThanOrEqual(0);
@@ -42,9 +49,12 @@ for (const width of [1280, 390]) {
     await send('No timing data');
     await expect(page.getByText('Reply 2.', { exact: true })).toBeVisible();
     await expect(strip).toHaveCount(0);
+    // the new turn reported no timing, so its reply offers no Turn details at all
+    await expect(reply('Reply 2.').locator('[data-act="details"]')).toHaveCount(0);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.inputbar')).toBeVisible();
+    await expect(page.locator('[data-composer-bar]')).toBeVisible();
     await expect(strip).toHaveCount(0);
+    await expect(page.locator('[data-act="details"]')).toHaveCount(0);
     expect(calls).toBe(2);
     expect(errors).toEqual([]);
   });

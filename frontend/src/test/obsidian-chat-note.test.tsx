@@ -1,8 +1,10 @@
 import React from 'react';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Conversation } from '../cockpit';
-import { ChatMode } from '../modes3';
+import { TalkRegister } from '../home/talk/TalkRegister';
+import { openComposerMenu } from '../home/talk/test-support';
+import { resetPolling } from '../signals/poll';
 
 beforeAll(() => {
   HTMLDialogElement.prototype.showModal ||= function () { this.setAttribute('open', ''); };
@@ -19,19 +21,36 @@ const reply = { role: 'agent', who: 'jarvis', text: '  Reply text\nsecond line  
 const view = (messages: any[] = [{ role: 'user', text: 'hidden prompt' }, reply]) =>
   render(<Conversation messages={messages} thinking={null} messageActionsAllowed messageScope="jarvis:s1" lang="en" />);
 
-it('uses the existing live gate on both Conversation and focused Chat', () => {
+/* "Save to Obsidian" sits in each reply's More menu since the re-lay (PHASE_B_PLAN.md §5.3, §8.3):
+   `offered()` counts the replies that carry it (the menu's items stay mounted while it is closed),
+   `saveToObsidian(i)` opens the i-th such reply's More and picks it. */
+const offered = () => document.querySelectorAll('[data-turn="reply"] [data-act="obsidian"]').length;
+function saveToObsidian(index = 0, name = 'Save to Obsidian') {
+  const replies = Array.from(document.querySelectorAll<HTMLElement>('[data-turn="reply"]')).filter(r => r.querySelector('[data-act="obsidian"]'));
+  fireEvent.click(within(openComposerMenu('more', replies[index])).getByRole('button', { name }));
+}
+
+it('uses the existing live gate on both the transcript and the conversation page', () => {
   const messages = [reply];
   const mounted = render(<Conversation messages={messages} thinking={null} messageActionsAllowed={false} messageScope="jarvis:s1" />);
-  expect(screen.queryByRole('button', { name: 'Save to Obsidian' })).toBeNull();
+  expect(offered()).toBe(0);
   mounted.rerender(<Conversation messages={messages} thinking={null} messageActionsAllowed messageScope="jarvis:s1" />);
-  expect(screen.getByRole('button', { name: 'Save to Obsidian' })).toBeTruthy();
+  expect(offered()).toBe(1);
   mounted.unmount();
-  const props = { messages, thinking: null, agent: 'jarvis', sessionId: 's1', onSubmit: () => {},
-    t: { directLine: 'Chat', focusHintChat: '', channel: 'Chat', transmit: 'Send', placeholder: 'Message' } };
-  const chat = render(<ChatMode {...props} selectedTurn demo={false} />);
-  expect(screen.getByRole('button', { name: 'Save to Obsidian' })).toBeTruthy();
-  chat.rerender(<ChatMode {...props} selectedTurn={false} demo={false} />);
-  expect(screen.queryByRole('button', { name: 'Save to Obsidian' })).toBeNull();
+  // the conversation page (TalkRegister 'chat') as App draws it: message actions live unless the demo sample is on
+  resetPolling();
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({})));
+  const page = (demo: boolean) => <TalkRegister variant="chat" turns={[]} messages={messages} thinking={null} lang="en" t={{}} onStop={() => {}} onProv={() => {}}
+    agent="jarvis" agents={[]} sessionId="s1" onSubmit={() => true} messageScope="jarvis:s1" recipientStatus="ready"
+    messageActionsAllowed={!demo} exportAllowed={!demo} selectedTurn={!demo} demo={demo} onSelectAgent={() => {}} />;
+  const chat = render(page(false));
+  expect(offered()).toBe(1);
+  saveToObsidian();
+  expect(screen.getByRole('dialog', { name: 'Save to Obsidian' })).toBeTruthy();
+  chat.rerender(page(true));
+  expect(offered()).toBe(0);
+  expect(screen.queryByRole('dialog', { name: 'Save to Obsidian' })).toBeNull();
+  resetPolling();
 });
 
 it('offers a reviewed exact reply only in a live eligible conversation and saves once', async () => {
@@ -43,9 +62,9 @@ it('offers a reviewed exact reply only in a live eligible conversation and saves
   const messages = [{ role: 'user', text: 'hidden prompt' }, reply, { role: 'agent', who: 'system', text: 'System' },
     { role: 'agent', text: 'still streaming', _turnId: 'turn' }, { role: 'agent', text: 'unattributed', _unattributed: true }];
   view(messages);
-  expect(screen.getAllByRole('button', { name: 'Save to Obsidian' })).toHaveLength(1);
+  expect(offered()).toBe(1);
   expect(calls).toHaveLength(0);
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Obsidian' }));
+  saveToObsidian();
   await screen.findByText(target.vault);
   expect((screen.getByRole('textbox', { name: 'Note' }) as HTMLTextAreaElement).value).toBe(reply.text);
   expect((screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('Reply text');
@@ -70,13 +89,13 @@ it('keeps the reviewed request id and body on an uncertain response, then accept
     return posts.length === 1 ? new Response('offline', { status: 503 }) : saved();
   }));
   view();
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Obsidian' }));
+  saveToObsidian();
   await screen.findByText(target.vault);
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
   await screen.findByRole('alert');
   expect((screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Obsidian' }));
+  saveToObsidian();
   await screen.findByText(target.vault);
   expect((screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Retry save' }));
@@ -95,7 +114,7 @@ it('rejects a changed target before POST and malformed success receipts', async 
     return status(checks === 2 ? { ...target, id: 'target-2' } : target);
   }));
   const mounted = view();
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Obsidian' }));
+  saveToObsidian();
   await screen.findByText(target.vault);
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
   await screen.findByRole('alert');
@@ -109,7 +128,7 @@ it('rejects a changed target before POST and malformed success receipts', async 
     return status();
   }));
   view();
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Obsidian' }));
+  saveToObsidian();
   await screen.findByText(target.vault);
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
   await screen.findByRole('alert');
@@ -122,7 +141,7 @@ it('drops the draft on scope change and never posts a late status response', asy
   const fetcher = vi.fn(() => new Promise<Response>(done => { resolve = done; }));
   vi.stubGlobal('fetch', fetcher);
   const mounted = view();
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Obsidian' }));
+  saveToObsidian();
   mounted.rerender(<Conversation messages={[{ role: 'user', text: 'hidden prompt' }, reply]} thinking={null}
     messageActionsAllowed messageScope="jarvis:s2" lang="en" />);
   expect(screen.queryByRole('dialog')).toBeNull();
@@ -134,7 +153,7 @@ it('labels Romanian review, destination, and unavailable state', async () => {
   const fetcher = vi.fn(async () => status(null));
   vi.stubGlobal('fetch', fetcher);
   render(<Conversation messages={[reply]} thinking={null} messageActionsAllowed messageScope="jarvis:s1" lang="ro" />);
-  fireEvent.click(screen.getByRole('button', { name: 'Salvează în Obsidian' }));
+  saveToObsidian(0, 'Salvează în Obsidian');
   expect(screen.getByRole('dialog', { name: 'Salvează în Obsidian' })).toBeTruthy();
   expect(screen.getByRole('textbox', { name: 'Titlu' })).toBeTruthy();
   expect(screen.getByRole('textbox', { name: 'Notă' })).toBeTruthy();
@@ -153,12 +172,12 @@ it('corrects an explicit title collision with an edited title and a new UUID whi
     return new Response(JSON.stringify({ ok: true, relPath: `${target.inbox}/${name}`, source: null }));
   }));
   view();
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Obsidian' }));
+  saveToObsidian();
   await screen.findByText(target.vault);
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
   await screen.findByText(/Saved: 00 Acasa\/Inbox\/Reply text.md/);
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Obsidian' }));
+  saveToObsidian();
   await screen.findByText(target.vault);
   fireEvent.change(screen.getByRole('textbox', { name: 'Note' }), { target: { value: 'Edited body' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
@@ -184,19 +203,19 @@ it('keeps separate receipts for two replies in the same conversation', async () 
     return new Response(JSON.stringify({ ok: true, relPath: `${target.inbox}/${body.title}.md`, source: null }));
   }));
   view(messages);
-  fireEvent.click(screen.getAllByRole('button', { name: 'Save to Obsidian' })[0]);
+  saveToObsidian(0);
   await screen.findByText(target.vault);
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
   await screen.findByText(/Saved: 00 Acasa\/Inbox\/Reply A.md/);
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-  fireEvent.click(screen.getAllByRole('button', { name: 'Save to Obsidian' })[1]);
+  saveToObsidian(1);
   await screen.findByText(target.vault);
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
   await screen.findByText(/Saved: 00 Acasa\/Inbox\/Reply B.md/);
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
   expect(screen.getByText(/Saved to Obsidian: 00 Acasa\/Inbox\/Reply A.md/)).toBeTruthy();
   expect(screen.getByText(/Saved to Obsidian: 00 Acasa\/Inbox\/Reply B.md/)).toBeTruthy();
-  fireEvent.click(screen.getAllByRole('button', { name: 'Save to Obsidian' })[0]);
+  saveToObsidian(0);
   await screen.findByText(target.vault);
   expect(screen.getByText(/Saved to Obsidian: 00 Acasa\/Inbox\/Reply A.md/)).toBeTruthy();
 });
@@ -212,17 +231,17 @@ it('retains reply A uncertain intent while reply B is saved', async () => {
     return new Response(JSON.stringify({ ok: true, relPath: `${target.inbox}/${body.title}.md`, source: null }));
   }));
   view(messages);
-  fireEvent.click(screen.getAllByRole('button', { name: 'Save to Obsidian' })[0]);
+  saveToObsidian(0);
   await screen.findByText(target.vault);
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
   await screen.findByRole('alert');
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-  fireEvent.click(screen.getAllByRole('button', { name: 'Save to Obsidian' })[1]);
+  saveToObsidian(1);
   await screen.findByText(target.vault);
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
   await screen.findByText(/Saved: 00 Acasa\/Inbox\/Reply B.md/);
   fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-  fireEvent.click(screen.getAllByRole('button', { name: 'Save to Obsidian' })[0]);
+  saveToObsidian(0);
   await screen.findByText(target.vault);
   expect((screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Retry save' }));
@@ -241,7 +260,7 @@ it('prefills a Unicode-safe 120-codepoint title and uses secure UUID fallback', 
     return saved();
   }));
   view([{ ...reply, text: `${fullTitle}\nbody` }]);
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Obsidian' }));
+  saveToObsidian();
   await screen.findByText(target.vault);
   expect((screen.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value).toBe('😀'.repeat(120));
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }));

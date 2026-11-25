@@ -9,7 +9,11 @@ from agents.core import settings_db
 OPTIONS = {
     'font': ('theme', 'system-sans', 'system-serif', 'system-mono', 'jetbrains-mono'),
     'accent': ('cyan', 'amber', 'green', 'violet'),
-    'look': ('obsidian', 'graphite'),
+    # Theme contract v1 (frontend/src/theme/CONTRACT.md §7): index 0 is the default and the
+    # coercion target. The seven Nerva themes; obsidian/graphite are the HUD v2 looks (Classic).
+    'look': ('ledger', 'obsidian', 'graphite', 'presence', 'briefing', 'workbench', 'threshold', 'console', 'atlas'),
+    # The colour scheme; 'system' follows the browser's prefers-color-scheme. Native ignores it.
+    'scheme': ('dark', 'light', 'system'),
     'density': ('normal', 'compact', 'comfy'),
     'motion': ('system', 'calm', 'lively'),
     'scanline': ('on', 'off'),

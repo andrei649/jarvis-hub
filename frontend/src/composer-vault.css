@@ -1,12 +1,12 @@
 .vault-review {
-  background: var(--panel, #10171c);
+  background: var(--void-2);
   border: 1px solid var(--panel-line);
   border-radius: var(--radius, 10px);
   padding: 12px 14px;
   margin-bottom: 6px;
   overflow: auto;
   max-height: min(34vh, 20rem);
-  font-size: 13px;
+  font-size: var(--n-fs-ui);
   color: var(--ink);
 }
 .vault-review-head, .vault-review-note label { display: flex; align-items: center; gap: 8px; }
@@ -22,7 +22,7 @@
 .vault-review-note .vault-path-option { margin: 6px 0 0 24px; align-items: flex-start; overflow-wrap: anywhere; }
 .vault-passage-picker, .vault-passage-preview { margin: 8px 0 0 24px; }
 .vault-passage-picker label, .vault-passage-preview strong { display: block; margin-bottom: 4px; }
-.vault-passage-picker textarea { display: block; box-sizing: border-box; width: 100%; margin-bottom: 6px; resize: vertical; color: var(--ink); background: var(--panel, #10171c); }
+.vault-passage-picker textarea { display: block; box-sizing: border-box; width: 100%; margin-bottom: 6px; resize: vertical; color: var(--ink); background: var(--void); }
 .vault-passage-preview p { white-space: pre-wrap; }
 @media (max-width: 500px) { .vault-review { flex-shrink: 0; max-height: min(30vh, 18rem); } }
 .vault-trigger {
@@ -33,7 +33,7 @@
   color: var(--ink-2);
   border: 0;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--n-fs-label);
   padding: 6px;
   cursor: pointer;
 }

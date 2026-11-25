@@ -19,7 +19,9 @@
 */
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiDelete, apiGet, apiPost } from '../api/client';
-import { Card, Tag, inpS, mono, refusalReason, useApi } from '../panel-kit';
+/* The kit's words style is imported as noteS: McpPanel's status line is a `note` state. */
+import { Card, Tag, inpS, mono, note as noteS, refusalReason, useApi } from '../panel-kit';
+import { LABEL } from '../theme/type';
 
 export const MCP_PATH = '/api/admin/mcp';
 export const CATALOG_PATH = '/api/admin/mcp/catalog';
@@ -84,13 +86,13 @@ export function InstallCard({ request, onDone, onCancel }: { request: Request; o
   const titleId = `install-${request.name}`;
   return (
     <div role="dialog" aria-labelledby={titleId} style={{ margin: '8px 0', padding: 8, border: '1px solid var(--amber)', borderRadius: 4, background: 'var(--surface)' }}>
-      <div id={titleId} style={{ ...mono, fontSize: 10.5, color: 'var(--amber)', marginBottom: 4 }}>
+      <div id={titleId} style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 4 }}>
         install MCP server {request.name}{request.link_config ? ' · from a link, not in the reviewed catalog' : ''}
       </div>
-      {!plan && busy && <div role="status" style={{ fontSize: 11 }}>reading the plan…</div>}
+      {!plan && busy && <div role="status" style={{ fontSize: 'var(--n-fs-meta)' }}>reading the plan…</div>}
       {plan && (
         <>
-          <dl style={{ margin: 0, fontSize: 11, display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 8px' }}>
+          <dl style={{ margin: 0, fontSize: 'var(--n-fs-meta)', display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '2px 8px' }}>
             <dt>Will run</dt><dd data-testid="will-run" style={{ margin: 0, ...mono }}>{plan.will_run}</dd>
             <dt>Source</dt><dd style={{ margin: 0 }}>{plan.origin === 'catalog' ? `Hermes catalog @${(plan.commit || '').slice(0, 8)}` : 'a link (unreviewed)'}</dd>
             <dt>Starts</dt><dd style={{ margin: 0 }}>{plan.starts}</dd>
@@ -100,37 +102,37 @@ export function InstallCard({ request, onDone, onCancel }: { request: Request; o
           </dl>
           {plan.inputs.map((s) => (
             <div key={s.name} style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-              <label htmlFor={`in-${s.name}`} style={{ fontSize: 10.5 }}>{s.prompt}</label>
+              <label htmlFor={`in-${s.name}`} style={{ fontSize: 'var(--n-fs-meta)' }}>{s.prompt}</label>
               <input id={`in-${s.name}`} value={inputs[s.name] ?? s.value} onChange={(ev) => setInputs({ ...inputs, [s.name]: ev.target.value })} style={{ ...inpS, minWidth: 220 }} />
             </div>
           ))}
           {plan.inputs.length > 0 && <button className="tool-btn" style={{ marginTop: 4 }} disabled={busy} onClick={preview}>show the plan with these values</button>}
           {plan.secrets.map((s) => (
             <div key={s.name} style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-              <label htmlFor={`sec-${s.name}`} style={{ fontSize: 10.5 }}>{s.prompt} <span style={mono}>({s.name})</span>{s.required ? '' : ' · optional'}</label>
+              <label htmlFor={`sec-${s.name}`} style={{ fontSize: 'var(--n-fs-meta)' }}>{s.prompt} <span style={mono}>({s.name})</span>{s.required ? '' : ' · optional'}</label>
               <input id={`sec-${s.name}`} type="password" autoComplete="off" spellCheck={false} value={secrets[s.name] || ''}
                 onChange={(ev) => setSecrets({ ...secrets, [s.name]: ev.target.value })} style={{ ...inpS, minWidth: 180 }} />
             </div>
           ))}
-          {plan.secrets.length > 0 && <div style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>Secrets are stored encrypted by Nerva and given only to this server; they are never shown again.</div>}
+          {plan.secrets.length > 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>Secrets are stored encrypted by Nerva and given only to this server; they are never shown again.</div>}
           {plan.name_taken && (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, fontSize: 10.5 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, fontSize: 'var(--n-fs-meta)' }}>
               <span>A server named {plan.name} exists and is never overwritten.</span>
               <label htmlFor="mcp-server-name">Install as</label>
               <input id="mcp-server-name" value={serverName} onChange={(ev) => setServerName(ev.target.value)} style={inpS} />
               <button className="tool-btn" disabled={busy || !serverName.trim()} onClick={preview}>check</button>
             </div>
           )}
-          {plan.post_install && <details style={{ fontSize: 10.5, marginTop: 4 }}><summary>vendor notes</summary><pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{plan.post_install}</pre></details>}
+          {plan.post_install && <details style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4 }}><summary>vendor notes</summary><pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{plan.post_install}</pre></details>}
           {plan.http_client_enabled === false && plan.transport === 'streamable-http' && (
-            <div style={{ fontSize: 10.5, color: 'var(--amber)' }}>HTTP servers connect only once JARVIS_MCP_HTTP_CLIENT=1 is set on the hub.</div>
+            <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>HTTP servers connect only once JARVIS_MCP_HTTP_CLIENT=1 is set on the hub.</div>
           )}
-          <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, marginTop: 6 }}>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--n-fs-meta)', marginTop: 6 }}>
             <input type="checkbox" checked={read} onChange={(ev) => setRead(ev.target.checked)} /> I have read what will run
           </label>
         </>
       )}
-      {msg && <div role="status" style={{ fontSize: 10.5, marginTop: 4, color: 'var(--amber)' }}>{msg}</div>}
+      {msg && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4, color: 'var(--amber)' }}>{msg}</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
         <button className="tool-btn" disabled={busy || !plan || !read || plan.needs.length > 0 || (!!plan.name_taken && !serverName.trim())} onClick={install}>Install</button>
         <button className="tool-btn" onClick={onCancel}>Cancel</button>
@@ -176,7 +178,7 @@ function SignIn({ name, oauth, onChanged }: { name: string; oauth: any; onChange
     .then(() => { setMsg('signed out · tokens revoked and deleted'); onChanged(); })
     .catch((err: any) => setMsg(`not signed out · ${fail(err)}`));
   return (
-    <div style={{ fontSize: 10.5, marginTop: 4 }}>
+    <div style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4 }}>
       {oauth?.signed_in
         ? <>signed in at <span style={mono}>{oauth.as_host}</span>{oauth.expires_at ? ` · until ${new Date(oauth.expires_at * 1000).toLocaleString()}` : ''}
             <button className="tool-btn" style={{ marginLeft: 6 }} onClick={() => void signOut()}>sign out</button></>
@@ -243,7 +245,7 @@ function ElicitationForm({ card, onAnswered }: { card: any; onAnswered: (msg: st
 
   return (
     <div style={{ margin: '6px 0', padding: 8, border: '1px solid var(--amber)', borderRadius: 4, background: 'var(--surface)' }}>
-      <div style={{ ...mono, fontSize: 10.5, color: 'var(--amber)', marginBottom: 4 }}>
+      <div style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginBottom: 4 }}>
         MCP elicitation <span style={mono}>{card.id}</span> · server <b>{card.server || 'mcp'}</b> (untrusted request for input)
       </div>
       {fields.length > 0 ? fields.map((f) => {
@@ -251,7 +253,7 @@ function ElicitationForm({ card, onAnswered }: { card: any; onAnswered: (msg: st
         const label = `${f.name}${required.has(f.name) ? ' *' : ''}${f.description ? ` — ${f.description}` : ''}`;
         return (
           <div key={f.name} style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-            <label htmlFor={fid} style={{ fontSize: 10.5 }}>{label}</label>
+            <label htmlFor={fid} style={{ fontSize: 'var(--n-fs-meta)' }}>{label}</label>
             {Array.isArray(f.enum) && f.enum.length > 0 ? (
               <select id={fid} value={vals[f.name] ?? ''} onChange={(ev) => setVals({ ...vals, [f.name]: ev.target.value })} style={inpS}>
                 <option value="">choose…</option>
@@ -267,11 +269,11 @@ function ElicitationForm({ card, onAnswered }: { card: any; onAnswered: (msg: st
         );
       }) : (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-          <label htmlFor={`elic-json-${card.id}`} style={{ fontSize: 10.5 }}>Answer JSON</label>
+          <label htmlFor={`elic-json-${card.id}`} style={{ fontSize: 'var(--n-fs-meta)' }}>Answer JSON</label>
           <input id={`elic-json-${card.id}`} value={rawJson} onChange={(ev) => setRawJson(ev.target.value)} style={{ ...inpS, minWidth: 220, ...mono }} />
         </div>
       )}
-      {errMsg && <div role="status" style={{ fontSize: 10.5, marginTop: 4, color: 'var(--amber)' }}>{errMsg}</div>}
+      {errMsg && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', marginTop: 4, color: 'var(--amber)' }}>{errMsg}</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
         <button className="tool-btn" disabled={busy} onClick={submit}>send elicitation answer</button>
       </div>
@@ -302,8 +304,8 @@ export function McpPanel() {
   return (
     <Card title="MCP SERVERS" live={servers.d ? 'live' : undefined} onReload={reloadAll}
       sub={servers.d ? `${rows.length} configured · catalog ${(catalog.d as any)?.total ?? '…'}${commit ? ` @${commit}` : ''}` : null}>
-      {servers.e && <div role="status" style={{ color: 'var(--amber)', fontSize: 11 }}>not loaded · {String(servers.e)}</div>}
-      {note && <div role="status" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>{note}</div>}
+      {servers.e && <div role="status" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>not loaded · {String(servers.e)}</div>}
+      {note && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{note}</div>}
       {elicitationCards.length > 0 && (
         <section aria-label="Pending MCP elicitations">
           {elicitationCards.map((c) => (
@@ -315,7 +317,7 @@ export function McpPanel() {
         onDone={(m) => { setInstalling(null); setNote(m); reloadAll(); }} />}
       <ul aria-label="your MCP servers" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {rows.map((s) => (
-          <li key={s.name} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)', fontSize: 11 }}>
+          <li key={s.name} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)', fontSize: 'var(--n-fs-meta)' }}>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <b>{s.name}</b><Tag>{s.transport}</Tag>{s.auth && s.auth !== 'none' && <Tag>{s.auth}</Tag>}
               {s.origin?.catalog && <Tag>catalog</Tag>}
@@ -328,22 +330,22 @@ export function McpPanel() {
               </span>
             </div>
             {Array.isArray(s.secrets) && s.secrets.length > 0 && (
-              <div style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>secrets: {s.secrets.map((x: any) => `${x.name} ${x.set ? 'set' : 'not set'}`).join(' · ')}</div>
+              <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>secrets: {s.secrets.map((x: any) => `${x.name} ${x.set ? 'set' : 'not set'}`).join(' · ')}</div>
             )}
             {s.transport === 'streamable-http' && <SignIn name={s.name} oauth={s.oauth} onChanged={reloadAll} />}
           </li>
         ))}
-        {servers.d && rows.length === 0 && <li style={{ fontSize: 11, color: 'var(--ink-2)' }}>No MCP servers yet.</li>}
+        {servers.d && rows.length === 0 && <li style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>No MCP servers yet.</li>}
       </ul>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', margin: '10px 0 4px' }}>
-        <span style={{ ...mono, fontSize: 10.5 }}>CATALOG</span>
-        <label htmlFor="mcp-catalog-search" style={{ fontSize: 10.5 }}>Find</label>
+        <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>CATALOG</span>
+        <label htmlFor="mcp-catalog-search" style={{ fontSize: 'var(--n-fs-meta)' }}>Find</label>
         <input id="mcp-catalog-search" value={q} onChange={(ev) => setQ(ev.target.value)} style={{ ...inpS, minWidth: 140 }} />
       </div>
-      {catalog.e && <div role="status" style={{ color: 'var(--amber)', fontSize: 11 }}>catalog not loaded · {String(catalog.e)}</div>}
+      {catalog.e && <div role="status" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-meta)' }}>catalog not loaded · {String(catalog.e)}</div>}
       <ul aria-label="MCP catalog" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {entries.map((c) => (
-          <li key={c.name} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '4px 0', borderBottom: '1px solid var(--panel-line)', fontSize: 11 }}>
+          <li key={c.name} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '4px 0', borderBottom: '1px solid var(--panel-line)', fontSize: 'var(--n-fs-meta)' }}>
             <b>{c.name}</b><Tag>{c.auth === 'oauth' ? 'sign-in' : c.auth === 'none' ? 'no account' : c.auth}</Tag>
             <span style={{ color: 'var(--ink-2)' }}>{c.description}</span>
             {c.installed ? <Tag c="var(--green)">installed</Tag>

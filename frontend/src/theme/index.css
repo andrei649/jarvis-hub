@@ -1,0 +1,18 @@
+/* =====================================================================================
+   Nerva · theme system entry (contract v1, ./CONTRACT.md §1)
+   Imported once, from main.tsx, after styles.css. Order is the cascade: the latin-ext font
+   slices, canonical tokens, one file per Nerva theme (registry.ts order), the legacy bridge,
+   the owner's axes, and the canonical component classes.
+   ===================================================================================== */
+@import './fonts.css';
+@import './tokens.css';
+@import './themes/ledger.css';
+@import './themes/presence.css';
+@import './themes/briefing.css';
+@import './themes/workbench.css';
+@import './themes/threshold.css';
+@import './themes/console.css';
+@import './themes/atlas.css';
+@import './bridge.css';
+@import './overrides.css';
+@import './kit.css';

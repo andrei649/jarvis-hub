@@ -124,3 +124,20 @@ def test_preview_read_only_tier_is_not_money_grade():
     assert out_of_range["risk_tier"] == 3
     boolean = preview_task({"kind": "analyze", "title": "bad tier", "payload": {}, "risk_tier": True})
     assert boolean["risk_tier"] == 3
+
+
+# ── Phase B (B1): the preview reports the command and service it would act on ──
+
+def test_preview_reports_cmd_and_service_for_a_restart_proposal():
+    # The observer proposes restart_service with payload {service, cmd}; the docket's
+    # "Would run: <cmd>" reads these two effects. Before B1 neither was a listed key.
+    p = preview_task({"kind": "restart_service", "title": "Restart ollama?",
+                      "payload": {"service": "ollama", "cmd": "ollama serve"}, "risk_tier": 3})
+    fields = {e["field"]: e["value"] for e in p["effects"]}
+    assert fields["cmd"] == "ollama serve"
+    assert fields["service"] == "ollama"
+
+
+def test_preview_leaves_out_cmd_and_service_when_the_payload_has_none():
+    p = preview_task({"kind": "summarize", "title": "Summarize", "payload": {"query": "x"}, "risk_tier": 1})
+    assert {e["field"] for e in p["effects"]} == {"query"}

@@ -3,14 +3,19 @@
    - ObserveMode renders the MOONSHOT §6 north-star meter live from
      /api/metrics/north-star, showing "—" (never a fabricated 0) for null sources
      and flagging the ≤4/day interrupt budget breach.
-   - TrustMode verifies the audit chain live via /api/security/audit/verify and
-     reflects a real {valid, entries} / tamper result instead of a static badge.
-   Exercises component → api/actions → client → fetch. */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+   - The Trust overview (pages/TrustOverview.tsx, which replaced TrustMode at the Ledger cutover;
+     PHASE_B_PLAN.md §6, §8.3) verifies the audit chain live via /api/security/audit/verify and
+     reflects a real {valid, entries} / tamper result, and drives the emergency stop through
+     frame/useKillSwitch: one click to stop, a typed DISENGAGE to resume, an unknown state that
+     still offers the stop.
+   Exercises component → hooks/api/actions → client → fetch (useKillSwitch is not mocked here). */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ObserveMode } from '../modes2';
-import { TrustMode } from '../modes';
+import { TrustOverview } from '../pages/TrustOverview';
+import { hubFixture } from '../pages/testkit';
+import { resetPolling } from '../signals/poll';
 import { V2 } from '../data';
 
 const t = V2.I18N.en;
@@ -119,8 +124,14 @@ describe('ObserveMode — north-star meter is live', () => {
   });
 });
 
-describe('TrustMode — audit chain is verified live', () => {
-  it('offers safe global engage after disengage POST succeeds but verification GET fails', async () => {
+describe('Trust overview — the stop and the audit chain, live', () => {
+  beforeEach(() => { resetPolling(); });
+  afterEach(() => { cleanup(); resetPolling(); });
+  const trust = () => render(<TrustOverview hub={hubFixture()} lang="en" demo={false} navigate={vi.fn()} />);
+  const stopState = () => document.querySelector('#stop')?.getAttribute('data-stop-state');
+  const posts = (fn) => fn.mock.calls.filter(([, init]) => init?.method === 'POST');
+
+  it('offers the global stop again when the resume was accepted but the state could not be read back', async () => {
     let reads = 0;
     const fetcher = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (String(url).includes('/api/security/kill-switch')) {
@@ -133,40 +144,45 @@ describe('TrustMode — audit chain is verified live', () => {
       return Promise.resolve({ ok: true, status: 200, json: async () => ({ valid: true, first_invalid_id: null, entries: 1 }) });
     });
     global.fetch = fetcher as any;
-    render(<TrustMode t={t} />);
-    await waitFor(() => expect(screen.getByText(t.engaged)).toBeTruthy());
-    fireEvent.click(document.querySelector('.killbtn'));
-    await waitFor(() => expect(screen.getByText(/kill-switch status unknown/)).toBeTruthy());
-    expect(screen.getByText(/kill-switch status unknown/).className).not.toContain('armed');
-    expect(screen.queryByText(t.armed)).toBeNull();
-    fireEvent.click(document.querySelector('.killbtn'));
-    await waitFor(() => expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST').length).toBe(2));
-    const posts = fetcher.mock.calls.filter(([, init]) => init?.method === 'POST');
-    expect(posts.map(([, init]) => JSON.parse(init.body).engage)).toEqual([false, true]);
+    trust();
+    await waitFor(() => expect(stopState()).toBe('halted'));
+    // resuming is typed (DISENGAGE), never one click
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    fireEvent.change(screen.getByLabelText('Type DISENGAGE to resume the agents'), { target: { value: 'DISENGAGE' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resume all agents' })); });
+    // the hub took the resume, but the stop's state could not be read back: unknown, never "Armed"
+    await waitFor(() => expect(stopState()).toBe('unknown'));
+    expect(screen.queryByText('Armed')).toBeNull();
+    const stop = screen.getByRole('button', { name: 'Stop all agents' });
+    expect(stop.disabled).toBe(false);
+    await act(async () => { fireEvent.click(stop); });
+    await waitFor(() => expect(posts(fetcher)).toHaveLength(2));
+    expect(posts(fetcher).map(([, init]) => JSON.parse(init.body).engage)).toEqual([false, true]);
+    // the stop's own state is read again, and still unknown: said, not taken for success
+    expect(await screen.findByText(/The stop was not confirmed/)).toBeTruthy();
   });
 
-  it('warns on a scoped halt while the global control still engages global', async () => {
+  it('says an agent-scoped halt while the global switch is off, and the stop still engages global', async () => {
     const fn = mockJson({
       '/api/security/audit/verify': { valid: true, first_invalid_id: null, entries: 1 },
       '/api/security/kill-switch': { global: false, any_halted: true, halted_count: 1 },
     });
-    render(<TrustMode t={t} />);
-    await waitFor(() => expect(screen.getByText(/1 scoped halt/)).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: /STOP/ }));
-    await waitFor(() => expect(fn.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true));
-    const post = fn.mock.calls.find(([, init]) => init?.method === 'POST');
-    expect(JSON.parse(post[1].body).engage).toBe(true);
+    trust();
+    await waitFor(() => expect(screen.getByText('1 agent-scoped halt is in force; the global stop is armed and halts everything.')).toBeTruthy());
+    expect(stopState()).toBe('armed');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop all agents' })); });
+    await waitFor(() => expect(posts(fn)).toHaveLength(1));
+    expect(JSON.parse(posts(fn)[0][1].body)).toMatchObject({ engage: true, scope: 'global' });
   });
+
   it('reflects a real {valid, entries} result from /api/security/audit/verify', async () => {
     mockJson({
       '/api/security/audit/verify': { valid: true, first_invalid_id: null, entries: 42 },
       '/api/security/kill-switch': { global: false, any_halted: false, halted_count: 0 },
     });
-
-    render(<TrustMode t={t} localPct={100} />);
-    await waitFor(() => {
-      expect(screen.getByText(/42 sealed entries/)).toBeTruthy();
-    });
+    trust();
+    await waitFor(() => expect(screen.getByText('Chain intact: 42 sealed entries')).toBeTruthy());
+    expect(document.querySelector('[data-chain-state]')?.getAttribute('data-chain-state')).toBe('intact');
   });
 
   it('surfaces a tamper result when the chain is broken', async () => {
@@ -174,10 +190,9 @@ describe('TrustMode — audit chain is verified live', () => {
       '/api/security/audit/verify': { valid: false, first_invalid_id: 17, entries: 30 },
       '/api/security/kill-switch': { global: false, any_halted: false, halted_count: 0 },
     });
-
-    render(<TrustMode t={t} localPct={100} />);
-    await waitFor(() => {
-      expect(screen.getByText(/TAMPER DETECTED · first bad row #17/)).toBeTruthy();
-    });
+    trust();
+    await waitFor(() => expect(screen.getByText('Chain broken at entry 17')).toBeTruthy());
+    expect(document.querySelector('[data-chain-state]')?.getAttribute('data-chain-state')).toBe('broken');
+    expect(screen.queryByText(/Chain intact/)).toBeNull();
   });
 });
