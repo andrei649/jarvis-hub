@@ -9884,6 +9884,12 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 21/30
 
+Finish-line item 1, 2026-11-26. Desktop acceptance for the ChatGPT plan
+connection starts in Ledger Integrations. The owner authorizes Nerva in the
+browser, refreshes the connection, lists visible models in provider order, and
+disconnects locally. The mixed-chat acceptance still requires model routing and
+a receipt from the owner-selected model. Native account setup is deferred.
+
 > Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
 > ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
 > cu HUD-ul + infrastructura de build/release.
