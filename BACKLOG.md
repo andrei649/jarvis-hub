@@ -9884,6 +9884,11 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 21/30
 
+Ledger cloud chat (finish-line item 1, 2026-11-26) sends earlier turns from the
+selected chat only after the owner reviews the destination and confirms that send.
+The native composer uses the current-message default. Its review UI stays in
+the deferred mobile scope recorded in `mobile/PARITY.md`.
+
 > Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
 > ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
 > cu HUD-ul + infrastructura de build/release.

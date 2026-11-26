@@ -1381,6 +1381,9 @@ class HistoryReference(BaseModel):
         return value
 
 
+from agents.core import chat_cloud_history
+
+
 class ChatRequest(BaseModel):
     # Unknown fields still fail; explicit sessions are validated and hydrated.
     model_config = ConfigDict(extra="forbid")
@@ -1402,6 +1405,7 @@ class ChatRequest(BaseModel):
     history_reference: HistoryReference | None = None
     board_references: list[BoardReference] | None = Field(default=None, min_length=1, max_length=8)
     allow_board_cloud: StrictBool = False
+    cloud_history: chat_cloud_history.HistoryChoice | None = None
 
     @field_validator("session_id")
     @classmethod
@@ -1755,7 +1759,8 @@ async def chat(req: ChatRequest, request: Request):
     req = _pin_sourced_destination(req, request)
     from agents.core.turn_usage import turn_usage_scope
     from agents.core.turn_stops import turn_stops_scope
-    with turn_usage_scope() as collector, turn_stops_scope() as stops:
+    disclosure = await chat_cloud_history.prepare(orch, req, owner=_web_principal(request).admin)
+    with chat_cloud_history.web_turn(disclosure), turn_usage_scope() as collector, turn_stops_scope() as stops:
         return await _chat_with_usage(req, request, collector, stops)
 
 
@@ -2063,7 +2068,8 @@ _CHAT_STREAM_PING_SECONDS = 15.0
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
                              attached=None, own_words=None, pending_actor=None, pending_current=None, refused=None,
-                             tool_events=False, turn_id=None, pending_poll=False, pending_owner=None, board_sources=None):
+                             tool_events=False, turn_id=None, pending_poll=False, pending_owner=None, board_sources=None,
+                             disclosure=None):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -2145,7 +2151,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
 
         from agents.core.observability.tool_events import turn_listener
         listening = turn_listener(tool_progress) if tool_events else nullcontext()
-        with turn_usage_scope() as collector, turn_stops_scope() as stops, listening:
+        with chat_cloud_history.web_turn(disclosure), turn_usage_scope() as collector, turn_stops_scope() as stops, listening:
             collector.observe_progress(usage_progress)
             live_usage = collector
             await run_in_scope(collector, stops, usage_progress)
@@ -2332,6 +2338,7 @@ async def chat_stream(req: ChatRequest, request: Request):
         return JSONResponse({"error": "not initialized"}, status_code=503)
     req = _pin_sourced_destination(req, request)
     await _guard_chat_request(req, request)
+    disclosure = await chat_cloud_history.prepare(orch, req, owner=_web_principal(request).admin)
     verified_history = await _history_source(req, request)
     verified_boards = await _verified_board_sources(req)
 
@@ -2376,6 +2383,7 @@ async def chat_stream(req: ChatRequest, request: Request):
     pending_poll = request.headers.get("x-nerva-pending", "").strip().lower() == "poll"
     return StreamingResponse(
         _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
+                           disclosure=disclosure,
                            attached=expansion, own_words=req.message, pending_actor=actor, board_sources=verified_boards,
                            pending_current=lambda: actor is not None and http_actor(request) == actor,
                            refused=refused, tool_events=req.tool_events,

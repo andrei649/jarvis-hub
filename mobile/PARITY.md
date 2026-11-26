@@ -16,6 +16,11 @@ current conversation. Native Chat offers **Use passage in next message** after
 review. Sending rechecks the saved text and attaches a citation to the question.
 A recipient that may use a cloud model requires explicit consent.
 
+Ledger sends the current message to the selected cloud model by default. To include
+earlier turns from this conversation, the owner reviews the provider and model and
+confirms that send. Mobile uses the same current-message default. Its history
+confirmation UI is deferred under the owner's mobile freeze of 2026-11-25.
+
 The browser HUD can download a completed reply as a Word document and individual
 tables as Excel workbooks through `POST /api/canvas/export`. The native apps
 still need a download or share action for these outputs. In web Chat and

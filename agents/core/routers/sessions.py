@@ -36,14 +36,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, StrictInt, field_validator
 
+from agents.core import chat_cloud_history
 from agents.core.app_state import get_orch
-from agents.core.routers._deps import admin_guard, user_guard
+from agents.core.routers._deps import admin_guard, owner_web_principal, user_guard
 from agents.core.validation import is_valid_session_id
 
 router = APIRouter(tags=["sessions"])
 _CURSOR_MAX_CHARS = 512
 _CURSOR_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _log = logging.getLogger(__name__)
+
+
+@router.post("/api/chat/cloud-history/preview", response_model=chat_cloud_history.HistoryChoice,
+             dependencies=[Depends(owner_web_principal)])
+async def preview_cloud_history(body: chat_cloud_history.PreviewRequest):
+    turn = await chat_cloud_history.preview(get_orch(), body)
+    return turn.choice
 
 
 class ResolveSessionRequest(BaseModel):
