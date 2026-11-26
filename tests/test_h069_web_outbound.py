@@ -9,7 +9,10 @@ from fastapi.testclient import TestClient
 
 from agents import web
 from agents.core.channels import outbound_safety
+from agents.core.channels.outbound_stream import OutboundStream
 from agents.core.code_interruptions import MARKER
+from agents.core.secrets import SecretStore
+from agents.core.security.secret_broker import SecretBroker
 from tests.test_chat_http import _mock_orch, _mock_orch_with_stream, _parse_sse
 
 
@@ -83,11 +86,94 @@ def test_cancellation_marker_prefix_never_leaks_in_tokens(monkeypatch):
 def test_opaque_known_redactor_multiword_secret_never_leaks_a_prefix(monkeypatch):
     secret = 'private broker credential with spaces 987654321'
     outbound_safety.install_known_secret_redactor(lambda text: text.replace(secret, '[REDACTED:broker]'))
+    stream = OutboundStream()
+    assert all(not stream.push(part) for part in 'before ' + secret + ' after')
     events = _stream_events(monkeypatch, 'before ' + secret + ' after')
     draft = ''.join(event['text'] for event in events if event['type'] == 'token')
     assert 'private broker' not in draft
     assert secret not in draft
     assert '[REDACTED:broker]' in events[-1]['text']
+
+
+def test_empty_real_broker_streams_normal_text(monkeypatch, tmp_path):
+    broker = SecretBroker(store=SecretStore(tmp_path / 'secrets.enc', key='synthetic passphrase'))
+    broker.put('temporary', 'fixture-only value')
+    assert broker.delete('temporary')
+    outbound_safety.install_known_secret_redactor(
+        broker.redact, empty_inventory=broker.empty_stream_inventory)
+    raw = ('A normal answer unfolds one word at a time across many distinct frames. '
+           'The answer then continues with another long ordinary sentence.')
+    events = _stream_events(monkeypatch, raw)
+    tokens = [event['text'] for event in events if event['type'] == 'token']
+    assert len([part for part in tokens if part]) > 3
+    assert ''.join(tokens) == events[-1]['text']
+
+
+def test_populated_real_broker_masks_split_secret_at_finish(monkeypatch, tmp_path):
+    secret = 'private broker credential with spaces 987654321'
+    broker = SecretBroker(store=SecretStore(tmp_path / 'secrets.enc', key='synthetic passphrase'))
+    broker.put('synthetic', secret)
+    outbound_safety.install_known_secret_redactor(
+        broker.redact, empty_inventory=broker.empty_stream_inventory)
+    raw = 'Before ' + secret + ' after the credential.'
+    stream = OutboundStream()
+    assert all(not stream.push(part) for part in raw)
+    events = _stream_events(monkeypatch, raw)
+    assert secret not in events[-1]['text']
+    assert '[REDACTED:synthetic]' in events[-1]['text']
+
+
+def test_fallback_broker_without_encrypted_store_is_final_only():
+    broker = SecretBroker()
+    outbound_safety.install_known_secret_redactor(
+        broker.redact, empty_inventory=broker.empty_stream_inventory)
+    stream = OutboundStream()
+    assert all(not stream.push(part) for part in 'A normal answer with many separate words.')
+
+
+def test_external_source_history_keeps_real_broker_final_only(monkeypatch, tmp_path):
+    secret = 'external history value with spaces 123456789'
+
+    class Sources:
+        def redaction_values(self):
+            return [('external', secret)]
+
+    broker = SecretBroker(store=SecretStore(tmp_path / 'secrets.enc', key='synthetic passphrase'),
+                          sources=Sources())
+    outbound_safety.install_known_secret_redactor(
+        broker.redact, empty_inventory=broker.empty_stream_inventory)
+    raw = ('An ordinary introduction contains enough words to stream safely. '
+           'Then ' + secret + ' appears before a long closing passage '
+           'that continues across many model token events.')
+    stream = OutboundStream()
+    assert all(not stream.push(part) for part in raw)
+    events = _stream_events(monkeypatch, raw)
+    draft = ''.join(event['text'] for event in events if event['type'] == 'token')
+    assert draft == events[-1]['text']
+    assert secret not in draft and 'external history' not in draft
+    assert '[REDACTED:external]' in draft
+
+
+def test_unavailable_empty_inventory_withholds_draft():
+    def failed_inventory():
+        raise RuntimeError('synthetic inventory failure')
+
+    outbound_safety.install_known_secret_redactor(
+        lambda text: text, empty_inventory=failed_inventory)
+    raw = 'A normal reply with many separate words and events.'
+    stream = OutboundStream()
+    assert all(not stream.push(part) for part in raw)
+    assert stream.finish(raw) == (raw, raw)
+
+
+def test_malformed_encrypted_inventory_withholds_draft(tmp_path):
+    store = SecretStore(tmp_path / 'secrets.enc', key='synthetic passphrase')
+    store.path.write_text('{malformed', encoding='utf-8')
+    broker = SecretBroker(store=store)
+    outbound_safety.install_known_secret_redactor(
+        broker.redact, empty_inventory=broker.empty_stream_inventory)
+    stream = OutboundStream()
+    assert all(not stream.push(part) for part in 'A long ordinary answer with many words.')
 
 
 def test_selected_status_title_is_sanitized_on_http_and_sse(monkeypatch):

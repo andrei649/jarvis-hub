@@ -123,14 +123,18 @@ def _mask_password(match: re.Match) -> str:
     return "[REDACTED:password_assignment]"
 
 _known_redactor: Callable[[str], str] | None = None
+_known_empty_inventory: Callable[[], bool] | None = None
 _patterns: list[tuple[str, re.Pattern]] | None = None
 
 
-def install_known_secret_redactor(redactor: Callable[[str], str] | None) -> None:
+def install_known_secret_redactor(redactor: Callable[[str], str] | None, *,
+                                  empty_inventory: Callable[[], bool] | None = None) -> None:
     """Install the callable that masks every secret value the hub stores (the secret
-    broker's ``redact``). ``None`` uninstalls it. Process-wide: one hub, one store."""
-    global _known_redactor
+    broker's ``redact``). Only a verified empty inventory permits draft output;
+    opaque redactors remain final-only. ``None`` uninstalls it."""
+    global _known_redactor, _known_empty_inventory
     _known_redactor = redactor if callable(redactor) else None
+    _known_empty_inventory = empty_inventory if _known_redactor and callable(empty_inventory) else None
 
 
 def _compiled() -> list[tuple[str, re.Pattern]]:
@@ -364,8 +368,16 @@ def safe_stream_prefix(text: str) -> str:
     hold them until final classification too. Ordinary text still streams at safe
     word boundaries when the credential lookbehind can be bounded.
     """
-    if not text or _known_redactor is not None or text.lstrip().startswith("["):
+    if not text or text.lstrip().startswith("["):
         return ""
+    if _known_redactor is not None:
+        if _known_empty_inventory is None:
+            return ""
+        try:
+            if _known_empty_inventory() is not True:
+                return ""
+        except Exception:
+            return ""
     from ..code_interruptions import MARKER
 
     last_line = text.rsplit("\n", 1)[-1].strip()
