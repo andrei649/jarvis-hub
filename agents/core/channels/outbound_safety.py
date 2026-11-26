@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -123,7 +124,8 @@ def _mask_password(match: re.Match) -> str:
     return "[REDACTED:password_assignment]"
 
 _known_redactor: Callable[[str], str] | None = None
-_known_empty_inventory: Callable[[], bool] | None = None
+_known_stream_attestation: tuple[Callable[[str], str], Callable[[], bool]] | None = None
+_known_redactor_lock = threading.RLock()
 _patterns: list[tuple[str, re.Pattern]] | None = None
 
 
@@ -132,9 +134,11 @@ def install_known_secret_redactor(redactor: Callable[[str], str] | None, *,
     """Install the callable that masks every secret value the hub stores (the secret
     broker's ``redact``). Only a verified empty inventory permits draft output;
     opaque redactors remain final-only. ``None`` uninstalls it."""
-    global _known_redactor, _known_empty_inventory
-    _known_redactor = redactor if callable(redactor) else None
-    _known_empty_inventory = empty_inventory if _known_redactor and callable(empty_inventory) else None
+    global _known_redactor, _known_stream_attestation
+    with _known_redactor_lock:
+        _known_redactor = redactor if callable(redactor) else None
+        _known_stream_attestation = ((_known_redactor, empty_inventory)
+                                     if _known_redactor and callable(empty_inventory) else None)
 
 
 def _compiled() -> list[tuple[str, re.Pattern]]:
@@ -368,22 +372,28 @@ def safe_stream_prefix(text: str) -> str:
     hold them until final classification too. Ordinary text still streams at safe
     word boundaries when the credential lookbehind can be bounded.
     """
-    if not text or text.lstrip().startswith("["):
-        return ""
-    if _known_redactor is not None:
-        if _known_empty_inventory is None:
+    with _known_redactor_lock:
+        if not text or text.lstrip().startswith("["):
             return ""
-        try:
-            if _known_empty_inventory() is not True:
+        redactor = _known_redactor
+        attestation = _known_stream_attestation
+        if redactor is not None:
+            # An empty broker cannot certify a different opaque redactor. Keep
+            # the identity check and sanitation under the install lock so a
+            # concurrent reinstall cannot change the pair mid-prefix.
+            if attestation is None or redactor is not attestation[0]:
                 return ""
-        except Exception:
-            return ""
-    from ..code_interruptions import MARKER
+            try:
+                if attestation[1]() is not True:
+                    return ""
+            except Exception:
+                return ""
+        from ..code_interruptions import MARKER
 
-    last_line = text.rsplit("\n", 1)[-1].strip()
-    if last_line and MARKER.startswith(last_line):
-        text = text.rsplit("\n", 1)[0] + "\n" if "\n" in text else ""
-    return stream_safe_prefix(str(sanitize_outbound(text)))
+        last_line = text.rsplit("\n", 1)[-1].strip()
+        if last_line and MARKER.startswith(last_line):
+            text = text.rsplit("\n", 1)[0] + "\n" if "\n" in text else ""
+        return stream_safe_prefix(str(sanitize_outbound(text)))
 
 
 def _last_space(text: str, end: int) -> int:

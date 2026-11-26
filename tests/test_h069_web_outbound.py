@@ -108,6 +108,12 @@ def test_empty_real_broker_streams_normal_text(monkeypatch, tmp_path):
     assert len([part for part in tokens if part]) > 3
     assert ''.join(tokens) == events[-1]['text']
 
+    # An attestation belongs to that broker redactor, not any later opaque
+    # redactor installed by another caller in the same process.
+    monkeypatch.setattr(outbound_safety, '_known_redactor', lambda text: text)
+    opaque = OutboundStream()
+    assert all(not opaque.push(part) for part in raw)
+
 
 def test_populated_real_broker_masks_split_secret_at_finish(monkeypatch, tmp_path):
     secret = 'private broker credential with spaces 987654321'
