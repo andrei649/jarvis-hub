@@ -7,6 +7,9 @@ question of *which hub surfaces the mobile app has caught up to*.
 This file is the single source of truth for that gap. Backlog tasks for closing it live under
 **`BACKLOG.md` → ORIZONT 18**.
 
+The desktop Work → Projects demo shows a read-only sample board and project activity.
+Mobile: frozen by the 2026-11-25 owner decision.
+
 Browser Chat, Cockpit and native Chat can search retained message text via
 `POST /sessions/search`. On mobile, **History → Search messages** opens an
 owner search. **Review source** reads the exact saved turn. **Continue this

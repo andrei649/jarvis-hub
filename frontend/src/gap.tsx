@@ -102,6 +102,7 @@ import { isCatalogRefreshProposal, isCloudImageProposal, isImageProposal, isKrea
 import { phraseFor } from './docket/phrases';
 import { isMoney } from './docket/kinds';
 import { tierKey } from './frame/kit/marks';
+import type { Lang } from './frame/strings';
 
 function MediaOutcome({ value }) {
   if (!value) return null;
@@ -3587,7 +3588,50 @@ export function ActivityTimelinePanel() {
 // and Missions (governed workspaces) into one surface, plus session history and the
 // activity timeline, so the owner can run multiple subjects in parallel with history.
 // Reuses the existing panels (their data layer already works); this is the layout.
-export function ProjectsMode({ onDiscussResult }: { t?: unknown; onDiscussResult?: (ref: { board: string; taskId: string }) => void }) {
+const PROJECTS_SAMPLE = {
+  en: {
+    note: 'Demo sample · read-only projects',
+    board: 'Exhibition planning', columns: ['To do', 'In progress', 'Done'],
+    cards: ['Write the wall labels', 'Review the floor plan', 'Choose a venue'],
+    rooms: 'Rooms', room: 'Exhibition team', roomDetail: '4 members',
+    missions: 'Missions', mission: 'Prepare the gallery', missionDetail: '2 of 4 steps',
+    sessions: 'Sessions', session: 'Lighting plan', sessionDetail: 'Yesterday',
+    activity: 'Activity', event: 'Venue confirmed', eventDetail: 'Today',
+  },
+  ro: {
+    note: 'Exemplu demo · proiecte doar pentru citire',
+    board: 'Pregătirea expoziției', columns: ['De făcut', 'În lucru', 'Finalizat'],
+    cards: ['Scrie etichetele lucrărilor', 'Verifică planul sălii', 'Alege sala'],
+    rooms: 'Camere', room: 'Echipa expoziției', roomDetail: '4 membri',
+    missions: 'Misiuni', mission: 'Amenajarea galeriei', missionDetail: '2 din 4 pași',
+    sessions: 'Sesiuni', session: 'Planul de iluminat', sessionDetail: 'Ieri',
+    activity: 'Activitate', event: 'Sala a fost confirmată', eventDetail: 'Astăzi',
+  },
+} as const;
+
+function ProjectsSample({ lang }: { lang: Lang }) {
+  const s = PROJECTS_SAMPLE[lang];
+  return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
+    <p role="note" style={{ ...noteS, color: 'var(--ink-2)', margin: '0 0 12px' }}>{s.note}</p>
+    <Card title={s.board} live="seed">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+        {s.columns.map((column, i) => <div key={column}>
+          <div style={{ ...LABEL, color: 'var(--ink-2)', marginBottom: 6 }}>{column}</div>
+          <Row><span style={noteS}>{s.cards[i]}</span></Row>
+        </div>)}
+      </div>
+    </Card>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
+      <Card title={s.rooms} live="seed"><Row><span style={noteS}>{s.room}</span><Tag>{s.roomDetail}</Tag></Row></Card>
+      <Card title={s.missions} live="seed"><Row><span style={noteS}>{s.mission}</span><Tag>{s.missionDetail}</Tag></Row></Card>
+      <Card title={s.sessions} live="seed"><Row><span style={noteS}>{s.session}</span><Tag>{s.sessionDetail}</Tag></Row></Card>
+      <Card title={s.activity} live="seed"><Row><span style={noteS}>{s.event}</span><Tag>{s.eventDetail}</Tag></Row></Card>
+    </div>
+  </div>;
+}
+
+export function ProjectsMode({ onDiscussResult, demo = false, lang = 'en' }: { t?: unknown; demo?: boolean; lang?: Lang; onDiscussResult?: (ref: { board: string; taskId: string }) => void }) {
+  if (demo) return <ProjectsSample lang={lang} />;
   return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
     <div style={{ ...LABEL, textTransform: 'none', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>
     <KanbanView onDiscussResult={onDiscussResult} />

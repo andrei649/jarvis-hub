@@ -28,7 +28,8 @@ vi.mock('../panels/jobs', () => ({ JobsWorkspace: () => <div>Jobs route loaded</
 vi.mock('../gap', () => ({
   ConsolePanel: ({ panelId }: { panelId: string }) => <div>Console route {panelId}</div>,
   FirstRunGate: () => null,
-  ProjectsMode: () => <div>Projects route loaded</div>,
+  ProjectsMode: ({ demo, lang }: { demo: boolean; lang: string }) =>
+    <div data-testid="projects-route" data-demo={String(demo)} data-lang={lang}>Projects route loaded</div>,
 }));
 
 beforeAll(() => {
@@ -171,6 +172,23 @@ it('keeps floating desktop on canonical chat and preserves its query context', a
   expect(location.search).toBe('?desktop=floating&demo=1');
   expect(location.hash).toBe('#anchor');
   expect(frame('masthead')).toBeNull();
+});
+
+it('passes the demo boundary and language to Projects on normal navigation and a live-to-demo URL change', async () => {
+  history.replaceState(null, '', '/v2/chat');
+  render(<App />);
+  await chatPage();
+  fireEvent.click(area('work'));
+  fireEvent.click(within(frame('contents') as HTMLElement).getByRole('link', { name: 'Projects' }));
+  await screen.findByText('Projects route loaded');
+  expect(screen.getByTestId('projects-route').getAttribute('data-demo')).toBe('false');
+  expect(screen.getByTestId('projects-route').getAttribute('data-lang')).toBe('en');
+
+  act(() => {
+    history.pushState(null, '', '/v2/projects?demo=1');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await waitFor(() => expect(screen.getByTestId('projects-route').getAttribute('data-demo')).toBe('true'));
 });
 
 it('remounts World content when the existing demo context changes', async () => {
