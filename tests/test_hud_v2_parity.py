@@ -81,6 +81,7 @@ RULES = [
     ("/api/hermes/", "admin"),  # managed runtime controls and task approvals in Admin → Hermes Runtime
     # cockpit / conversation
     ("/chat", "cockpit"),
+    ("/api/chat/cloud-history/preview", "cockpit"),
     ("/api/status", "cockpit"),
     ("/status", "cockpit"),
     ("/api/agents/opinions", "cockpit"),
