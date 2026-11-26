@@ -1176,10 +1176,18 @@ class Agent:
         out; the legacy backend path has no deadline of its own to align
         (Hermes absorption 5c).
         """
-        from .chat_cloud_history import build_cloud_prompt, cloud_dispatch, cloud_prompt, tool_turn
+        from .chat_cloud_history import (
+            build_cloud_prompt,
+            cloud_dispatch,
+            cloud_prompt,
+            tool_turn,
+            web_turn_active,
+        )
         from .llm.job_selection import selected_window
         from .llm.request_context import current_session
-        projection = cloud_prompt(getattr(self, "llm_router", None), backend, model, self.id, current_session())
+        projection = None
+        if web_turn_active():
+            projection = cloud_prompt(getattr(self, "llm_router", None), backend, model, self.id, current_session())
         dispatch = None
         if projection is not None:
             # Only constructed user-approved input reaches this backend, including on retries.
