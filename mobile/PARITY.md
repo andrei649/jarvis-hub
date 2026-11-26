@@ -22,6 +22,9 @@ still need a download or share action for these outputs. In web Chat and
 Cockpit, owners can compare selected passages from multiple Word and Excel
 files in one message. The native apps still need a document picker and passage review.
 
+**Office editing (2026-11-26, mobile: frozen).** Desktop chat can download a
+copy of an attached Word document or Excel workbook with a targeted edit.
+
 Web Chat and Cockpit can create a Kanban triage task from a message and attach
 reviewed results from up to eight completed tasks to a single question. Each
 passage identifies its source board and task. In the web apps the owner can

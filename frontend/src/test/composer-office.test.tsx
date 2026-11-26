@@ -243,6 +243,95 @@ it('drops a late local source read after replacement and accepts uppercase GDScr
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.removeItem('hud.admin_token'); });
 
+it('edits a copy of reviewed DOCX text and downloads it without changing the selected passage', async () => {
+  const original = new File(['source-bytes'], 'Plan.docx');
+  Object.defineProperty(original, 'arrayBuffer', { value: async () => new TextEncoder().encode('source-bytes').buffer });
+  const requests = vi.fn(async (url: string) => url.includes('office-preview')
+    ? preview('docx', [{ label: 'Document', text: 'Keep this. Change this. Keep that.', truncated: false }])
+    : new Response('revised',
+      { headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' } }));
+  vi.stubGlobal('fetch', requests);
+  const previousCreate = URL.createObjectURL;
+  const previousRevoke = URL.revokeObjectURL;
+  URL.createObjectURL = vi.fn(() => 'blob:revised-office');
+  URL.revokeObjectURL = vi.fn();
+  const downloaded = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+    expect(this.download).toBe('Plan edited.docx');
+  });
+  try {
+    const submit = vi.fn();
+    const { container } = render(<InputBar onSubmit={submit} t={t} selectedTurn sessionId="s1"/>);
+    choose(container, original);
+    const area = await screen.findByRole('textbox', { name: 'Select a passage' }) as HTMLTextAreaElement;
+    area.setSelectionRange(11, 23);
+    fireEvent.click(screen.getByRole('button', { name: 'Attach selected text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit a copy' }));
+    expect((screen.getByRole('textbox', { name: 'Text to replace' }) as HTMLTextAreaElement).value).toBe('Change this.');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Replacement text' }), { target: { value: 'Updated.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Download edited copy' }));
+    await waitFor(() => expect(downloaded).toHaveBeenCalledTimes(1));
+    const edit = requests.mock.calls.find(([url]) => url.includes('office-edit')) as unknown as [string, RequestInit];
+    expect(edit[0]).toBe('/api/canvas/office-edit');
+    expect(edit[1]).toMatchObject({ method: 'POST', credentials: 'same-origin', redirect: 'error', cache: 'no-store' });
+    expect(JSON.parse(String(edit[1].body))).toEqual({ kind: 'docx', source_base64: btoa('source-bytes'), target: 'Change this.', replacement: 'Updated.' });
+    expect(screen.getByText('Change this.', { exact: true, selector: '.office-selected p' })).toBeTruthy();
+    expect(submit).not.toHaveBeenCalled();
+  } finally { URL.createObjectURL = previousCreate; URL.revokeObjectURL = previousRevoke; downloaded.mockRestore(); }
+});
+
+it('edits the selected XLSX sheet cell in a copy using Romanian labels', async () => {
+  const original = new File(['sheet-bytes'], 'Quarterly.xlsx');
+  Object.defineProperty(original, 'arrayBuffer', { value: async () => new TextEncoder().encode('sheet-bytes').buffer });
+  const requests = vi.fn(async (url: string) => url.includes('office-preview')
+    ? preview('xlsx', [{ label: 'Revenue', text: 'A1: old', truncated: false }, { label: 'Costs', text: 'A1: 7', truncated: false }])
+    : new Response('revised',
+      { headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } }));
+  vi.stubGlobal('fetch', requests);
+  const previousCreate = URL.createObjectURL;
+  const previousRevoke = URL.revokeObjectURL;
+  URL.createObjectURL = vi.fn(() => 'blob:revised-office');
+  URL.revokeObjectURL = vi.fn();
+  const downloaded = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  try {
+    const submit = vi.fn();
+    const { container } = render(<InputBar onSubmit={submit} t={t} lang="ro" selectedTurn sessionId="s1"/>);
+    choose(container, original);
+    await screen.findByRole('textbox', { name: 'Selectează un pasaj' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Alege foaia sau documentul' }), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Editează o copie' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Valoare nouă' }), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Descarcă copia editată' }));
+    await waitFor(() => expect(downloaded).toHaveBeenCalledTimes(1));
+    const edit = requests.mock.calls.find(([url]) => url.includes('office-edit')) as unknown as [string, RequestInit];
+    expect(JSON.parse(String(edit[1].body))).toEqual({ kind: 'xlsx', source_base64: btoa('sheet-bytes'), target: 'A1', replacement: '9', sheet: 'Costs' });
+    expect(submit).not.toHaveBeenCalled();
+  } finally { URL.createObjectURL = previousCreate; URL.revokeObjectURL = previousRevoke; downloaded.mockRestore(); }
+});
+
+it('discards a pending edited download when the owner credential changes', async () => {
+  const original = new File(['sheet-bytes'], 'Quarterly.xlsx');
+  Object.defineProperty(original, 'arrayBuffer', { value: async () => new TextEncoder().encode('sheet-bytes').buffer });
+  let finish!: (response: Response) => void;
+  const requests = vi.fn((url: string) => url.includes('office-preview')
+    ? Promise.resolve(preview()) : new Promise<Response>(resolve => { finish = resolve; }));
+  vi.stubGlobal('fetch', requests);
+  const downloaded = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  try {
+    const { container } = render(<InputBar onSubmit={vi.fn()} t={t} selectedTurn sessionId="s1"/>);
+    choose(container, original);
+    await screen.findByRole('textbox', { name: 'Select a passage' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit a copy' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'New value' }), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Download edited copy' }));
+    await waitFor(() => expect(requests.mock.calls.some(([url]) => url.includes('office-edit'))).toBe(true));
+    localStorage.setItem('hud.user_token', 'rotated-owner');
+    await act(async () => finish(new Response('revised',
+      { headers: { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } })));
+    expect(downloaded).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'Attach document' })).toBeNull();
+  } finally { downloaded.mockRestore(); localStorage.removeItem('hud.user_token'); }
+});
+
 it('previews raw bytes, selects a literal sheet passage, and sends only after Transmit', async () => {
   const fetcher = vi.fn(async () => preview());
   vi.stubGlobal('fetch', fetcher);
@@ -439,7 +528,7 @@ it('keeps dialog focus reachable and clears a prepared passage on sign-out', asy
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Select a passage' })).toBeTruthy());
   expect(document.activeElement).toBe(close);
   fireEvent.keyDown(close, { key: 'Tab', shiftKey: true });
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Attach shown text' }));
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit a copy' }));
   fireEvent.click(screen.getByRole('button', { name: 'Attach shown text' }));
   fireEvent.click(screen.getByRole('button', { name: 'Done reviewing' }));
   expect(screen.getByText(/Selected passage to send:/)).toBeTruthy();

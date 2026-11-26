@@ -1676,6 +1676,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/canvas/office-edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Canvas Office Edit
+         * @description Return an edited copy of a supplied Office file.
+         */
+        post: operations["canvas_office_edit_api_canvas_office_edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/canvas/office-preview": {
         parameters: {
             query?: never;
@@ -24160,6 +24180,45 @@ export interface operations {
                     format: "xlsx";
                     /** Rows */
                     rows: string[][];
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+        };
+    };
+    canvas_office_edit_api_canvas_office_edit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Kind
+                     * @enum {string}
+                     */
+                    kind: "docx" | "xlsx";
+                    /** Source Base64 */
+                    source_base64: string;
+                    /** Target */
+                    target: string;
+                    /** Replacement */
+                    replacement: string;
+                    /** Sheet */
+                    sheet?: string | null;
                 };
             };
         };
