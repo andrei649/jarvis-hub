@@ -43,6 +43,7 @@ import type { RecipientHold, RecipientRefusal, RecipientSwitch, RecipientSwitchD
 import { WorkingReply, PendingReply } from './home/talk/WorkingReply';
 import { ReplyFootnote } from './home/talk/ReplyFootnote';
 import { ReplyActions, OwnerActions } from './home/talk/ReplyActions';
+import { RecalledFactSourceDialog, mayFindSavedSource } from './home/talk/RecalledFactSourceDialog';
 import { Mark } from './frame/kit';
 import './home/talk/talk.css';
 
@@ -89,7 +90,8 @@ function TtsButton({ text, lang, words }: { text: string; lang?: string; words: 
 function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exportAllowed = false, messageActionsAllowed = false, messageScope, sessionId, agent, lang, t,
   variant = 'home', turns = [], agents = [], outcome = null, outcomeTurnId, power, awaitingAnswer = false }: any) {
   const endRef = useRef(null);
-  const [action, setAction] = useState<{ kind: 'remember' | 'task' | 'teach' | 'obsidian'; message: any; scope: string; opener: HTMLElement; credential?: string } | null>(null);
+  const [action, setAction] = useState<{ kind: 'remember' | 'task' | 'teach' | 'obsidian' | 'saved-source'; message: any; scope: string; opener: HTMLElement; credential?: string } | null>(null);
+  const [sourceAllowed, setSourceAllowed] = useState(mayFindSavedSource);
   const [meshReview, setMeshReview] = useState<{ source: string; message: any; scope: string; opener: HTMLElement } | null>(null);
   const meshClose = useRef<HTMLButtonElement>(null);
   const visibleMeshReview = meshReview && exportAllowed && meshReview.scope === messageScope && messages.includes(meshReview.message) ? meshReview : null;
@@ -98,7 +100,8 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
   const [noteReceipts, setNoteReceipts] = useState<{ message: any; scope: string; receipt: NoteReceipt; target: Target; credential: string }[]>([]);
   const [pendingNotes, setPendingNotes] = useState<{ message: any; scope: string; submission: NoteSubmission; credential: string }[]>([]);
   const selected = action && messageActionsAllowed && action.scope === messageScope && messages.includes(action.message)
-    && (action.kind !== 'remember' || action.credential === noteCredential()) ? action : null;
+    && (action.kind !== 'remember' || action.credential === noteCredential())
+    && (action.kind !== 'saved-source' || (action.credential === historyOwnerKey() && sourceAllowed && mayFindSavedSource())) ? action : null;
   useEffect(() => {
     if (action && !selected) setAction(null);
   }, [action, selected]);
@@ -109,10 +112,22 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
     setPendingNotes(previous => previous.every(valid) ? previous : previous.filter(valid));
   }, [messageScope, messageActionsAllowed, messages]);
   useEffect(() => onOwnerSession(() => {
+    setSourceAllowed(mayFindSavedSource());
+    setAction(previous => previous?.kind === 'saved-source' ? null : previous);
     setAction(previous => previous?.kind === 'remember' && previous.credential !== noteCredential() ? null : previous);
     setNoteReceipts(previous => previous.filter(entry => entry.credential === noteCredential()));
     setPendingNotes(previous => previous.filter(entry => entry.credential === noteCredential()));
   }), []);
+  useEffect(() => {
+    const changed = (event: StorageEvent) => {
+      if (event.key === 'hud.admin_token' || event.key === 'hud.user_token') {
+        setSourceAllowed(mayFindSavedSource());
+        setAction(previous => previous?.kind === 'saved-source' ? null : previous);
+      }
+    };
+    window.addEventListener('storage', changed);
+    return () => window.removeEventListener('storage', changed);
+  }, []);
   useEffect(()=>{ if(endRef.current) endRef.current.scrollTop = endRef.current.scrollHeight; }, [messages, thinking]);
   // Explicit save-to-artifacts (never auto): only completed, non-system, non-empty
   // assistant replies get the control — while a turn streams, its (last) message is
@@ -224,6 +239,7 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
         const receipt = messageActionsAllowed ? noteReceipts.find(entry => entry.message === m && entry.scope === messageScope && entry.credential === noteCredential())?.receipt : undefined;
         const mesh = canExport(m, i) ? blenderSourceFromReply(m.text) : null;
         const actionable = messageActionsAllowed && completedReply(m, i);
+        const canFindSource = actionable && hasText && sourceAllowed && mayFindSavedSource();
         const own = outcomeOf(m);
         return (
           <div className="n-turn n-turn--reply" data-turn="reply" key={i} data-working={working ? '' : undefined} data-newest={i === newestReply ? '' : undefined}>
@@ -251,6 +267,8 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
                   readAloud={hasText ? <TtsButton text={m.text as string} lang={lang} words={{ idle: s.readAloud, playing: s.reading, failed: s.readFailed }} /> : undefined}
                   onTask={actionable ? opener => setAction({ kind: 'task', message: m, scope: messageScope, opener }) : undefined}
                   more={[
+                    ...(canFindSource ? [{ key: 'saved-source', label: s.findSavedSource,
+                      onPick: (opener: HTMLElement) => setAction({ kind: 'saved-source', message: m, scope: messageScope, opener, credential: historyOwnerKey() }) }] : []),
                     ...(canExport(m, i) ? [{ key: 'word', node: <OfficeExportButton data={{ format: 'docx', text: m.text as string }} lang={lang} /> }] : []),
                     ...(actionable && canExport(m, i) ? [{ key: 'photoshop', node: <PhotoshopLayoutButton key={`${messageScope}/${m._turnId ?? m.text}`}
                       text={m.text as string} lang={lang === 'ro' ? 'ro' : 'en'} /> }] : []),
@@ -276,6 +294,8 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
     {transcript}
     {selected?.kind === 'remember' && <RememberMessageDialog text={selected.message.text}
       source={{ sessionId, text: selected.message.text, role: 'user', agentId: agent }}
+      opener={selected.opener} onClose={() => setAction(null)} />}
+    {selected?.kind === 'saved-source' && <RecalledFactSourceDialog reply={selected.message.text} lang={lang}
       opener={selected.opener} onClose={() => setAction(null)} />}
     {visibleMeshReview && createPortal(<div className="blender-review-overlay"><section className="blender-review-dialog" role="dialog" aria-modal="true"
       aria-label={lang === 'ro' ? 'Revizuiește modelul Blender' : 'Review Blender model'}
