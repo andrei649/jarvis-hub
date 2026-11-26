@@ -50,6 +50,9 @@ export function Frame(props: FrameProps) {
   const [stopRefusal, setStopRefusal] = useState<string | null>(null);
   const findChord = displayChord(chordOf(shortcutOverrides || {}, 'session.palette'));
   const home = page.kind === 'home';
+  let surfaceLoad: 'pending' | 'settled' | undefined;
+  if (home) surfaceLoad = hub.checkedAt === null ? 'pending' : 'settled';
+  if (route.mode === 'admin') surfaceLoad = props.adminSettled ? 'settled' : 'pending';
   const skipTarget = home ? HOME_TALK_ID : FRAME_PAGE_ID;
   return (
     <div className="n-frame" data-page-kind={page.kind}>
@@ -64,7 +67,7 @@ export function Frame(props: FrameProps) {
         onDismissPressure={onDismissPressure} routeNotice={routeNotice} routeNoticePage={routeNoticePage} onDismissRouteNotice={onDismissRouteNotice}
         appearanceNotice={appearanceNotice} firstRun={firstRun} stopRefusal={stopRefusal}
         onDismissStopRefusal={() => setStopRefusal(null)} />
-      <main className="n-frame__page" data-frame="page" id={FRAME_PAGE_ID} tabIndex={-1}>
+      <main className="n-frame__page" data-frame="page" data-surface-load={surfaceLoad} id={FRAME_PAGE_ID} tabIndex={-1}>
         <RouteBoundary routeKey={`${route.path}:${demo}`}>{children}</RouteBoundary>
       </main>
       <RunningFoot hub={hub} lang={lang} demo={demo} turns={turns} shortcutOverrides={shortcutOverrides} spread={home}
