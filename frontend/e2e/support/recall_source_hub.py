@@ -62,10 +62,15 @@ def prepare() -> None:
     (run / "key.pem").write_bytes(key.private_bytes(
         serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
         serialization.NoEncryption()))
-    (run / "fixture.json").write_text(json.dumps({
+    data = {
         "port": port, "url": f"https://127.0.0.2:{port}", "model": model,
         "marker": marker, "token": token,
-    }), encoding="utf-8")
+    }
+    use_fixture_environment(run, data)
+    from agents.core.llm.physical_local import ollama_local_selector
+
+    data["wire_model"] = ollama_local_selector(model)
+    (run / "fixture.json").write_text(json.dumps(data), encoding="utf-8")
     print(run, flush=True)
 
 
@@ -151,15 +156,25 @@ def require_physical_ollama_model(model: str) -> None:
         raise SystemExit("local Ollama model could not be verified") from exc
 
 
-def serve() -> None:
-    run, data = fixture()
+def use_fixture_environment(run: Path, data: dict) -> None:
     clean = scrubbed_environment(run, data)
     os.environ.clear()
     os.environ.update(clean)
-    install_network_guard(data["port"])
-    require_physical_ollama_model(data["model"])
-    os.chdir(REPO)
     sys.path.insert(0, str(REPO))
+
+
+def serve() -> None:
+    run, data = fixture()
+    use_fixture_environment(run, data)
+    install_network_guard(data["port"])
+    os.chdir(REPO)
+    from agents.core.llm.physical_local import ollama_local_selector
+
+    wire_model = ollama_local_selector(data["model"])
+    if data["wire_model"] != wire_model:
+        raise SystemExit("recall-source fixture model selector changed")
+    # Check the installed tag, then use the exact physical-local selector for generation.
+    require_physical_ollama_model(data["model"].removesuffix(":local"))
 
     from contextlib import asynccontextmanager
 
@@ -172,7 +187,7 @@ def serve() -> None:
     if paths.data_root().resolve() != run / "profile" or settings_db.DB_PATH.parent.resolve() != run / "profile":
         raise SystemExit("hub data path escaped fixture")
     settings_db.init_db(force=True)
-    settings_db.put_category("llm", {"backend_type": "ollama", "default_model": data["model"],
+    settings_db.put_category("llm", {"backend_type": "ollama", "default_model": wire_model,
                                     "cloud_fallback": "never", "tool_loop_enabled": False})
     settings_db.put_category("cognition", {"enabled": True, "memory_enabled": True})
     settings_db.put_category("memory", {"core_enabled": True, "recall_enabled": False})
@@ -188,7 +203,7 @@ def serve() -> None:
     async def isolated_lifespan(app):
         async with original_lifespan(app) as state:
             router = web.orch.llm_router
-            router.set_active_model(data["model"])
+            router.set_active_model(wire_model)
             if (not router._local_available or router._cloud_available or router._claude_available
                     or router._backend_name != "ollama" or router.ollama_url != "http://127.0.0.1:11434"):
                 raise RuntimeError("fixture requires the local Ollama route only")
@@ -196,7 +211,7 @@ def serve() -> None:
 
             def local_backend(agent_id, prompt):
                 backend, chosen, route = select(agent_id, prompt)
-                if not isinstance(backend, OllamaBackend) or chosen != data["model"] or not route.startswith("local"):
+                if not isinstance(backend, OllamaBackend) or chosen != wire_model or not route.startswith("local"):
                     raise RuntimeError("nonlocal or unexpected model route")
                 return backend, chosen, route
 

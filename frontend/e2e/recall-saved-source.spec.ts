@@ -56,7 +56,7 @@ test('real local recall opens its saved owner source and forgets for a fresh cha
 
   const base = testInfo.project.use.baseURL;
   const token = process.env.NERVA_MEMORY_ADMIN_TOKEN;
-  const model = process.env.NERVA_MEMORY_MODEL;
+  const model = testInfo.project.metadata.ollamaWireModel;
   const vaultMarker = process.env.NERVA_MEMORY_VAULT_MARKER;
   expect(typeof base).toBe('string');
   const origin = new URL(base!);
@@ -67,7 +67,7 @@ test('real local recall opens its saved owner source and forgets for a fresh cha
   expect(origin.port).not.toBe('8080');
   expect(Number(origin.port)).toBeGreaterThan(1024);
   expect(token).toBeTruthy();
-  expect(model).toBeTruthy();
+  expect(model).toMatch(/:local$/);
   expect(vaultMarker).toMatch(/^[A-Za-z0-9_-]{8,80}$/);
 
   await page.route('**/*', route => {

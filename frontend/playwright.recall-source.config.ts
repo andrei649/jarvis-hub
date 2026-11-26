@@ -24,7 +24,7 @@ if (process.env.TEST_WORKER_INDEX === undefined) {
 const run = process.env.NERVA_RECALL_RUN_DIR;
 if (!run) throw new Error('Recall-source worker did not inherit the prepared fixture');
 const fixture = JSON.parse(readFileSync(path.join(run, 'fixture.json'), 'utf8')) as {
-  port: number; url: string; model: string; token: string; marker: string;
+  port: number; url: string; model: string; wire_model: string; token: string; marker: string;
 };
 if (fixture.url !== `https://127.0.0.2:${fixture.port}` || fixture.port <= 1024 || fixture.port === 8080
   || fixture.model !== process.env.NERVA_MEMORY_MODEL) throw new Error('Invalid recall-source fixture');
@@ -38,6 +38,7 @@ const browser = process.env.NERVA_TEST_BROWSER;
 if (browser && !existsSync(browser)) throw new Error('NERVA_TEST_BROWSER does not exist');
 
 export default defineConfig({
+  metadata: { ollamaWireModel: fixture.wire_model },
   testDir: './e2e',
   testMatch: 'recall-saved-source.spec.ts',
   outputDir: path.join(run, 'test-results'),
