@@ -169,6 +169,7 @@ def test_list_sessions_rejects_json_that_is_not_a_snapshot(tmp_path, monkeypatch
 async def test_restart_restores_history_with_kg_state_present(tmp_path, monkeypatch):
     """End-to-end shape of the bug: a real session survives a restart even when
     the knowledge graph has written newer state beside it."""
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
     monkeypatch.chdir(tmp_path)
     m = ConversationMemory(persist=True)
     sid = await m.new_session("session_live")
