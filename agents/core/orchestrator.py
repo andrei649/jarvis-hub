@@ -4672,7 +4672,7 @@ class Orchestrator:
                         task_description=task_desc,
                         solution_steps=steps,
                         command_name=cmd,
-                        output=resp[:200],
+                        source_excerpt=resp[:200],
                     )
                 except (ValueError, IndexError):
                     continue
