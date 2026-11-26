@@ -66,7 +66,7 @@ export function ChatGptPlan() {
     const ticket = ++sequence.current;
     setBusy(true); setMessage(''); setUrl(null);
     try {
-      const result = await apiPost<{ url: string }>(`${PATH}/connect`, {}, { admin: true });
+      const result = await apiPost<{ url: string }>('/api/admin/chatgpt-plan/connect', {}, { admin: true });
       if (ticket !== sequence.current) return;
       const safe = authorizationUrl(result.url);
       if (safe) setUrl(safe);
@@ -93,7 +93,7 @@ export function ChatGptPlan() {
     const ticket = ++sequence.current;
     setBusy(true); setMessage(''); setModels(null);
     try {
-      const result = await apiGet<{ models: Model[] }>(`${PATH}/models`, { admin: true });
+      const result = await apiGet<{ models: Model[] }>('/api/admin/chatgpt-plan/models', { admin: true });
       if (ticket !== sequence.current) return;
       if (!Array.isArray(result.models)) throw new Error('invalid models');
       setModels(result.models.filter(row => typeof row?.slug === 'string' && typeof row?.display_name === 'string'));
@@ -106,7 +106,7 @@ export function ChatGptPlan() {
     const ticket = ++sequence.current;
     setBusy(true); setMessage(''); setUrl(null); setModels(null);
     try {
-      await apiPost(`${PATH}/disconnect`, {}, { admin: true });
+      await apiPost('/api/admin/chatgpt-plan/disconnect', {}, { admin: true });
       if (ticket === sequence.current) {
         setConnected(false);
         setMessage(ro ? 'Conexiunea ChatGPT a fost eliminată local din acest hub.'

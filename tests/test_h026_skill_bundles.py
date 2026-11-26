@@ -966,6 +966,7 @@ def _hub(tmp_path, monkeypatch, *skills, window=32768):
     from agents.core.checkpoint import CheckpointManager
     from agents.core.config import JarvisConfig
     from agents.core.llm.base import LLMBackend
+    from agents.core.llm.providers import get_profile
     from agents.core.memory import persistence
     from agents.core.orchestrator import Orchestrator
     from agents.core.skills.loader import SkillLoader
@@ -992,6 +993,8 @@ def _hub(tmp_path, monkeypatch, *skills, window=32768):
     sent, origins = [], []
 
     class Backend(LLMBackend):
+        profile = get_profile("lm-studio")
+
         def context_window(self, model):
             return window
 
