@@ -9,6 +9,7 @@ from contextlib import contextmanager
 
 import pytest
 
+from agents.core.autonomy.queue import TaskQueue
 from agents.core.iteration_budget import IterationBudget
 from agents.core.subagents import SubAgentManager
 
@@ -17,6 +18,7 @@ class _Lease:
     def __init__(self, gate):
         self.gate = gate
         self.live = True
+        self.release_calls = 0
 
     @contextmanager
     def bind(self):
@@ -28,6 +30,7 @@ class _Lease:
             self.gate.bound_tasks.discard(asyncio.current_task())
 
     def release(self):
+        self.release_calls += 1
         if self.live:
             self.live = False
             self.gate.active -= 1
@@ -39,13 +42,16 @@ class _Gate:
         self.active = 0
         self.bound_tasks = set()
         self.kinds = []
+        self.leases = []
 
     def acquire(self, kind, *, allow_reentrant=False):
         self.kinds.append((kind, allow_reentrant))
         if self.closed:
             return None
         self.active += 1
-        return _Lease(self)
+        lease = _Lease(self)
+        self.leases.append(lease)
+        return lease
 
 
 def _manager(gate, tmp_path, **kwargs):
@@ -171,6 +177,81 @@ async def test_lease_outlives_settlement_until_tool_thread_finishes(tmp_path):
             break
         await asyncio.sleep(0)
     assert gate.active == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pause_at", ("durable", "worktree", "worktree_error"))
+async def test_stop_before_child_task_closes_only_selected_child(tmp_path, pause_at):
+    gate = _Gate()
+    entering = threading.Event()
+    release = threading.Event()
+    starts = []
+    finishes = []
+    work = []
+    sibling_entered = asyncio.Event()
+    sibling_release = asyncio.Event()
+
+    class Store(TaskQueue):
+        def delegation_start(self, row):
+            if pause_at == "durable" and row["goal"] == "stopped child":
+                entering.set()
+                assert release.wait(2)
+            starts.append(row["delegation_id"])
+            return super().delegation_start(row)
+
+        def delegation_finish(self, delegation_id, *args, **kwargs):
+            finishes.append(delegation_id)
+            return super().delegation_finish(delegation_id, *args, **kwargs)
+
+    async def runner(task, _session_id, _agent):
+        work.append(task)
+        if task == "sibling child":
+            sibling_entered.set()
+            await sibling_release.wait()
+        return {"output": task}
+
+    def worktree_provider(spawn_id):
+        if pause_at != "durable" and manager._spawns[spawn_id]["task"] == "stopped child":
+            entering.set()
+            assert release.wait(2)
+            if pause_at == "worktree_error":
+                raise RuntimeError("allocation failed after stop")
+        return None
+
+    store = Store(db_path=str(tmp_path / "autonomy.db")).initialize()
+    manager = _manager(gate, tmp_path, runner=runner, store=store,
+                       worktree_provider=worktree_provider if pause_at != "durable" else None)
+    selected = asyncio.create_task(manager.spawn("stopped child"))
+    sibling_task = None
+    try:
+        assert await asyncio.to_thread(entering.wait, 2)
+        selected_id = next(r["id"] for r in manager._spawns.values()
+                           if r["task"] == "stopped child")
+        assert selected_id not in manager._tasks
+        sibling_task = asyncio.create_task(manager.spawn("sibling child"))
+        await asyncio.wait_for(sibling_entered.wait(), 2)
+        assert not sibling_task.done()
+        assert manager.stop(selected_id, reason="owner_stop")["status"] == "stopping"
+        assert not sibling_task.done()
+        release.set()
+        sibling_release.set()
+        stopped, sibling = await asyncio.gather(selected, sibling_task)
+        assert sibling["status"] == "done" and sibling["result"]["output"] == "sibling child"
+        assert stopped["status"] == "stopped"
+        assert manager._spawns[selected_id]["stop_reason"] == "owner_stop"
+        assert stopped["result"] == {"error": "stopped", "reason": "owner_stop"}
+        assert work == ["sibling child"]
+        assert store.delegation_get(stopped["delegation_id"])["status"] == "stopped"
+        assert store.delegation_get(sibling["delegation_id"])["result"] == sibling["result"]
+        assert starts.count(stopped["delegation_id"]) == finishes.count(stopped["delegation_id"]) == 1
+        assert gate.active == 0 and manager.stats()["active"] == 0
+        assert len(gate.leases) == 2 and all(lease.release_calls == 1 for lease in gate.leases)
+    finally:
+        release.set()
+        sibling_release.set()
+        await asyncio.gather(selected, *([sibling_task] if sibling_task else []),
+                             return_exceptions=True)
+        store.close()
 
 
 @pytest.mark.asyncio
