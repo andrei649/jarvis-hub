@@ -2561,6 +2561,7 @@ from agents.core.routers.multimodal import router as _multimodal_router  # noqa:
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
 from agents.core.routers.provenance import router as _provenance_router  # noqa: E402
 from agents.core.routers.oauth import router as _oauth_router  # noqa: E402
+from agents.core.routers.chatgpt_plan import router as _chatgpt_plan_router  # noqa: E402
 from agents.core.routers.osint import router as _osint_router  # noqa: E402
 from agents.core.routers.market import router as _market_router  # noqa: E402
 from agents.core.routers.market_watchlist import router as _market_watchlist_router  # noqa: E402
@@ -2662,6 +2663,7 @@ app.include_router(_moa_router)
 app.include_router(_browser_broker_router)
 app.include_router(_pets_router)
 app.include_router(_oauth_router)
+app.include_router(_chatgpt_plan_router)
 app.include_router(_brain_router)
 app.include_router(_swarm_router)
 app.include_router(_system_map_router)
