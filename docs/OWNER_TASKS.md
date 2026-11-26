@@ -11,6 +11,13 @@
 > two owner commands — the A5 licence flip, then `git tag v1.0.0` on `main` — the capability program is a
 > 1.x roadmap, and A8 was cleared by the owner on 2026-08-28 (see the A9 item below).*
 
+## Finish-line owner inputs
+
+2026-11-26. Use a disposable Nerva profile and synthetic content for both tests. The [finish-line status](FINISH_LINE_STATUS.md) tracks the results.
+
+- **Item 1, local and cloud routing.** Pick a direct provider and model you authorize for one no-cost chat turn. In Console → Start → Integrations, configure its credential locally and select the model. Keep automatic cloud fallback off for the local turn. Send a synthetic prompt to the local model, then explicitly choose the cloud model for the next turn in the same chat and accept its consent prompt. Record the two provider/model receipts and verify the cloud provider received only the approved turn. If your account offers no free route, leave the test open.
+- **Item 8, professional tools.** For each Adobe app, Figma and game engine you want covered, identify the installed tool, a compatible local MCP server and a disposable project. In Console → Interop → MCP Servers, preview the server's install plan and connect it through Nerva's MCP client. Ask Nerva to read a uniquely named object in the disposable project. Check its name in the app and the corresponding tool call in Nerva. Record each tool separately. Blender already has a passing native reopen test. [MCP setup](MCP_CATALOG.md)
+
 ## Editable Photoshop export
 
 - [ ] 2026-11-25 · Drafts #1380 and #1386 inherit `ag-psd@34.2.2` from
@@ -530,9 +537,8 @@ built on your Windows box:
       export JARVIS_MCP_HTTP_CLIENT=1
       # then configure {"transport": "streamable-http", "url": "https://…/mcp"}
       ```
-      Waits on the integrator's `routers/mcp.py` admin-API edit; until then configure it through
-      `MCPManager.load_from_config`. Bearer headers are in memory only — re-supply them after a
-      restart.
+      As an administrator, add and connect the server in Console → Interop → MCP Servers.
+      For a manually supplied bearer header, re-supply it after a restart. [MCP setup](MCP_CATALOG.md)
 
 - [ ] **P7 — The hosted install one-liner needs a domain (and a public repo)**
       *(unblocks `install-one-step-native`'s hosted path)*
