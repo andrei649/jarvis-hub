@@ -303,7 +303,8 @@
   .ws-run-meta > .ws-run-meta__wide { grid-column: 1 / -1; }
   .ws-run-meta > dd.ws-run-meta__wide { margin-top: -2px; }
 }
-.ws-run { margin-top: var(--ws-s2); }
+.ws-run { margin-top: var(--ws-s2); grid-template-columns: minmax(0, 1fr); }
+.ws-run > .ws-stack { min-width: 0; }
 .ws-card.ws-run__doc { padding: var(--ws-s6); }
 @media (min-width: 720px) { .ws-card.ws-run__doc { padding: var(--ws-s8) var(--ws-s10); } }
 .ws-report { font-size: 15px; max-width: 76ch; }
