@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from agents.cli.acp_hub import _stdin_reader
 from agents.core.acp import render
 from agents.core.acp.jsonrpc import JsonRpcConnection, RpcError
 from agents.core.acp.paths import AcpPathError, confine, session_root
@@ -41,13 +42,6 @@ class _PipeWriter:
     def close(self) -> None:
         with contextlib.suppress(OSError):
             os.close(self.fd)
-
-
-async def _pipe_reader(fd: int) -> asyncio.StreamReader:
-    loop = asyncio.get_running_loop()
-    reader = asyncio.StreamReader(limit=4 * 1024 * 1024 + 1)
-    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), os.fdopen(fd, "rb", buffering=0))
-    return reader
 
 
 class FakeBackend:
@@ -179,8 +173,12 @@ async def _wire(backend, editor, **opts):
     a_read, a_write = os.pipe()   # editor → agent
     b_read, b_write = os.pipe()   # agent → editor
     server = AcpServer(backend, poll_interval=0.01, result_wait=0.2, **opts)
-    agent_reader = await _pipe_reader(a_read)
-    editor_reader = await _pipe_reader(b_read)
+    # Windows event loops cannot connect_read_pipe to these anonymous pipes.
+    # Match production ACP's threaded stdin reader and retain each OS stream.
+    agent_stream = os.fdopen(a_read, "rb", buffering=0)
+    editor_stream = os.fdopen(b_read, "rb", buffering=0)
+    agent_reader = await _stdin_reader(agent_stream)
+    editor_reader = await _stdin_reader(editor_stream)
     agent_writer, editor_writer = _PipeWriter(b_write), _PipeWriter(a_write)
     serving = asyncio.ensure_future(server.serve(agent_reader, agent_writer))
     editor.conn = JsonRpcConnection(editor_reader, editor_writer, on_request=editor.on_request,
@@ -189,9 +187,15 @@ async def _wire(backend, editor, **opts):
 
     async def close():
         editor_writer.close()
-        await asyncio.wait_for(serving, 5)
-        agent_writer.close()
-        await asyncio.wait_for(client, 5)
+        try:
+            try:
+                await asyncio.wait_for(serving, 5)
+            finally:
+                agent_writer.close()
+                await asyncio.wait_for(client, 5)
+        finally:
+            agent_stream.close()
+            editor_stream.close()
 
     return server, close
 
