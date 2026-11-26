@@ -1,7 +1,8 @@
 import React from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Conversation } from '../cockpit';
+import { SavedFacts } from '../panels/saved-facts';
 import { TalkRegister } from '../home/talk/TalkRegister';
 import { openComposerMenu } from '../home/talk/test-support';
 import { resetPolling } from '../signals/poll';
@@ -29,6 +30,118 @@ function remember(): HTMLElement {
 }
 
 describe('Remember message', () => {
+  it('saves the exact selected source after a fact edit and shows its later receipt', async () => {
+    localStorage.setItem('hud.admin_token', 'synthetic-admin-token');
+    const revision = 'a'.repeat(64);
+    const source = { session_id: 's1', turn: 3, revision, role: 'user' };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/sessions/s1/transcript?references=true')) return Response.json({
+        schema_version: 1, session_id: 's1', scope: 'retained_current_history', redacted: true,
+        turns: [{ turn: 3, role: 'user', agent_id: null, content: user.text, reference_revision: revision }],
+      });
+      if (url.includes('/api/dashboard/today/entries') && init?.method === 'POST') return Response.json({
+        ok: true, changed: true, entry: { entry_id: 'memory:memory:aaaaaaaaaaaaaaaa', store: 'memory',
+          value: 'I prefer local models for drafts.', source },
+      });
+      if (url.includes('/api/dashboard/today/entries?store=memory')) return Response.json({ entries: [{
+        entry_id: 'memory:memory:aaaaaaaaaaaaaaaa', store: 'memory', value: 'I prefer local models for drafts.', source,
+      }] });
+      if (url.includes('/api/dashboard/today/entries?store=user')) return Response.json({ entries: [] });
+      if (url.includes('/api/memory')) return Response.json({ injected: true });
+      return Response.json({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const view = render(<Conversation messages={messages} sessionId="s1" agent="jarvis" messageActionsAllowed messageScope="jarvis:s1" />);
+    remember();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Fact to save' }), { target: { value: 'I prefer local models for drafts.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save fact' }));
+    await waitFor(() => expect(screen.getByText(/Saved fact in Agent notes/)).toBeTruthy());
+    const posted = fetchMock.mock.calls.find(([url, init]) => String(url).includes('/api/dashboard/today/entries') && init?.method === 'POST');
+    expect(posted).toBeTruthy();
+    expect(JSON.parse(String(posted![1]?.body)).source).toEqual({ session_id: 's1', turn: 3, revision, excerpt: user.text });
+    expect((posted![1]?.headers as Record<string, string>)['X-Admin-Token']).toBe('synthetic-admin-token');
+    view.unmount();
+    render(<SavedFacts />);
+    await waitFor(() => expect(screen.getByText('Chat source: s1 · message 4 · user')).toBeTruthy());
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('references=true'), expect.objectContaining({ method: 'GET' }));
+    localStorage.removeItem('hud.admin_token');
+  });
+  it('requires an explicit manual choice when identical saved messages are ambiguous', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/sessions/s1/transcript?references=true')) return Response.json({
+        schema_version: 1, session_id: 's1', scope: 'retained_current_history', redacted: true,
+        turns: [2, 4].map(turn => ({ turn, role: 'user', agent_id: null, content: user.text,
+          reference_revision: 'a'.repeat(64) })),
+      });
+      if (url.includes('/api/dashboard/today/entries') && init?.method === 'POST') return Response.json({
+        ok: true, changed: true, entry: { entry_id: 'memory:memory:aaaaaaaaaaaaaaaa', store: 'memory', value: user.text.trim() },
+      });
+      return Response.json({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<Conversation messages={messages} sessionId="s1" agent="jarvis" messageActionsAllowed messageScope="jarvis:s1" />);
+    remember();
+    fireEvent.click(screen.getByRole('button', { name: 'Save fact' }));
+    await screen.findByRole('button', { name: 'Choose manual save without chat source' });
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/dashboard/today/entries') && init?.method === 'POST')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Choose manual save without chat source' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save fact' }));
+    await waitFor(() => expect(screen.getByText(/Saved fact in Agent notes/)).toBeTruthy());
+    const post = fetchMock.mock.calls.find(([url, init]) => String(url).includes('/api/dashboard/today/entries') && init?.method === 'POST');
+    expect(JSON.parse(String(post![1]?.body))).toEqual({ store: 'memory', value: user.text.trim() });
+  });
+  it('does not post a source after the selected session changes during lookup', async () => {
+    let finish!: (value: Response) => void;
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => String(url).includes('/sessions/s1/transcript?references=true')
+      ? new Promise<Response>(resolve => { finish = resolve; }) : Promise.resolve(Response.json({})));
+    vi.stubGlobal('fetch', fetchMock);
+    const view = render(<Conversation messages={messages} sessionId="s1" agent="jarvis" messageActionsAllowed messageScope="jarvis:s1" />);
+    remember();
+    fireEvent.click(screen.getByRole('button', { name: 'Save fact' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/sessions/s1/transcript?references=true'), expect.anything()));
+    view.rerender(<Conversation messages={messages} sessionId="s2" agent="jarvis" messageActionsAllowed messageScope="jarvis:s2" />);
+    await act(async () => finish(Response.json({ schema_version: 1, session_id: 's1',
+      scope: 'retained_current_history', redacted: true, turns: [{ turn: 0, role: 'user', agent_id: null,
+        content: user.text, reference_revision: 'a'.repeat(64) }] })));
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/dashboard/today/entries') && init?.method === 'POST')).toBe(false);
+  });
+  it('keeps the draft and offers manual save when the source revision is refused', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/sessions/s1/transcript?references=true')) return Response.json({
+        schema_version: 1, session_id: 's1', scope: 'retained_current_history', redacted: true,
+        turns: [{ turn: 0, role: 'user', agent_id: null, content: user.text, reference_revision: 'a'.repeat(64) }],
+      });
+      if (url.includes('/api/dashboard/today/entries') && init?.method === 'POST')
+        return Response.json({ error: 'source_changed' }, { status: 409 });
+      return Response.json({});
+    }));
+    render(<Conversation messages={messages} sessionId="s1" agent="jarvis" messageActionsAllowed messageScope="jarvis:s1" />);
+    remember();
+    fireEvent.click(screen.getByRole('button', { name: 'Save fact' }));
+    await screen.findByRole('button', { name: 'Choose manual save without chat source' });
+    expect((screen.getByRole('textbox', { name: 'Fact to save' }) as HTMLTextAreaElement).value).toBe(user.text);
+  });
+  it('hides an earlier owner source while credentials change and the list refresh is pending', async () => {
+    localStorage.setItem('hud.admin_token', 'first-owner');
+    let pending = false;
+    const source = { session_id: 's1', turn: 2, revision: 'a'.repeat(64), role: 'user' };
+    const fetchMock = vi.fn((url: string) => {
+      if (pending && url.includes('/api/dashboard/today/entries')) return new Promise<Response>(() => {});
+      if (url.includes('/api/dashboard/today/entries?store=memory')) return Promise.resolve(Response.json({ entries: [
+        { entry_id: 'memory:memory:aaaaaaaaaaaaaaaa', store: 'memory', value: 'Synthetic fact', source },
+      ] }));
+      if (url.includes('/api/dashboard/today/entries?store=user')) return Promise.resolve(Response.json({ entries: [] }));
+      return Promise.resolve(Response.json({ injected: true }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<SavedFacts />);
+    await screen.findByText('Chat source: s1 · message 3 · user');
+    pending = true;
+    localStorage.removeItem('hud.admin_token');
+    await act(async () => window.dispatchEvent(new StorageEvent('storage', { key: 'hud.admin_token' })));
+    expect(screen.queryByText('Chat source: s1 · message 3 · user')).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/dashboard/today/entries?store=memory'), expect.anything());
+  });
   it('offers an editable draft for only a live, nonblank user text turn and reads no facts on open', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
