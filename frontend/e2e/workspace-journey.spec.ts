@@ -904,7 +904,13 @@ test('audit names the person behind every action, the chain verifies, and the CS
   const count = await rows.count();
   expect(count).toBeGreaterThan(5);
   for (let i = 1; i < count; i += 1) await expect(rows.nth(i)).toContainText(SALES_MEMBER.name);
-  await page.getByRole('button', { name: 'Resetează' }).click();
+  await page.setViewportSize({ width: 320, height: 640 });
+  const resetFilters = page.getByRole('button', { name: 'Resetează' });
+  const overflow = await resetFilters.evaluate(button =>
+    button.getBoundingClientRect().right - button.closest('form')!.getBoundingClientRect().right);
+  expect(overflow, 'the reset button fits inside the audit filters at 320px').toBeLessThanOrEqual(1);
+  await resetFilters.click();
+  await page.setViewportSize(DESKTOP);
 
   // An entry's drawer reads the codes it recorded as words, never raw (UX-13): the email settings'
   // security and password change, as the admin saved them.

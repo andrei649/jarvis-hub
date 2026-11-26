@@ -564,7 +564,7 @@ img, svg { display: block; }
 .ws-toolbar__filter { flex: 0 1 200px; }
 .ws-toolbar__end { margin-left: auto; display: flex; gap: var(--ws-s2); flex-wrap: wrap; }
 .ws-filters { display: grid; gap: var(--ws-s3); grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); align-items: end; }
-.ws-filters__actions { display: flex; gap: var(--ws-s2); }
+.ws-filters__actions { display: flex; flex-wrap: wrap; gap: var(--ws-s2); }
 
 /* ───────────────────────────── tabs ───────────────────────────── */
 .ws-tabs__list, .ws-navtabs__list {
