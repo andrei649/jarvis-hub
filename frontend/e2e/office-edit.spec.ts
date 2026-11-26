@@ -38,7 +38,12 @@ test('chat creates and edits Word and Excel copies and reopens each download', a
       .map(line => JSON.parse(line.slice(6)) as { type: string; session_id?: string; model_calls?: { provider: string; model: string }[] });
     const end = events.find(event => event.type === 'end');
     expect(end?.session_id).toBeTruthy();
-    expect(end?.model_calls).toEqual([{ provider: 'ollama', model: process.env.NERVA_OFFICE_MODEL }]);
+    const wire = await page.request.get('/__test/office-model');
+    expect(wire.status()).toBe(200);
+    const { requested, selector, models } = await wire.json();
+    expect(requested).toBe(process.env.NERVA_OFFICE_MODEL?.trim());
+    expect([...new Set(models)]).toEqual([selector]);
+    expect(end?.model_calls).toEqual([{ provider: 'ollama', model: selector }]);
   }
   const reply = page.locator('[data-turn="reply"]').filter({ hasText: 'Delivery in May.' }).last();
   const attach = page.getByRole('button', { name: 'Attach', exact: true });
