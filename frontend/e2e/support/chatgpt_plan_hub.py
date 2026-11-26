@@ -48,8 +48,8 @@ for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_prox
 os.environ.clear()
 os.environ.update(safe)
 
-from tests import test_chatgpt_connection as signed_fixture  # noqa: E402
 from agents.core import chatgpt_connection as connection  # noqa: E402
+from tests import test_chatgpt_connection as signed_fixture  # noqa: E402
 
 patch = pytest.MonkeyPatch()
 signed_fixture.CALLBACK = f"http://127.0.0.1:{port}/api/oauth/chatgpt/callback"
