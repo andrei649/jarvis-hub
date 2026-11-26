@@ -1,6 +1,8 @@
 import builtins
 import os
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -217,6 +219,50 @@ class FakeManager:
         if self.error:
             raise self.error
         return self.playwright
+
+
+@pytest.mark.parametrize("shape", ["pinned", "legacy", "absent", "invalid", "raising"])
+async def test_runtime_controller_child_comes_from_owned_playwright_transport(shape):
+    child = SimpleNamespace(wait=AsyncMock(return_value=0), returncode=0, pid=123)
+    manager = FakeManager()
+    if shape == "pinned":
+        manager._client = SimpleNamespace(_transport=SimpleNamespace(_proc=child))
+    elif shape == "legacy":
+        manager.playwright._impl_obj = SimpleNamespace(
+            _connection=SimpleNamespace(_transport=SimpleNamespace(_proc=child)))
+    elif shape == "invalid":
+        manager._client = SimpleNamespace(_transport=SimpleNamespace(
+            _proc=SimpleNamespace(wait=None)))
+    elif shape == "raising":
+        class BrokenClient:
+            @property
+            def _transport(self):
+                raise RuntimeError("private process detail")
+
+        manager._client = BrokenClient()
+
+    driver = PlaywrightBrowserDriver(host_enabled=True)
+    driver.set_url_guard(lambda _url: True)
+    driver.set_execution_guard(lambda: True)
+    driver._runtime_factory = lambda: lambda: manager
+    reached_launch = []
+
+    async def refuse_launch(*_args, **_kwargs):
+        reached_launch.append(driver._owned_child)
+        raise RuntimeError("no Chrome in controller test")
+
+    manager.playwright.chromium.launch_persistent_context = refuse_launch
+    if shape in {"absent", "invalid", "raising"}:
+        with pytest.raises(PlaywrightUnavailable, match="browser child ownership unavailable"):
+            await driver._ensure_started()
+        assert reached_launch == []
+    else:
+        with pytest.raises(PlaywrightUnavailable, match="Playwright could not start"):
+            await driver._ensure_started()
+        assert reached_launch == [child]
+        child.wait.assert_awaited_once()
+    assert manager.playwright.stopped == 1
+    assert driver.profile_dir is None
 
 
 def _driver(tmp_path, **kwargs):
