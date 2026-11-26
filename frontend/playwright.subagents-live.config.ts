@@ -7,8 +7,8 @@ const port = 45178;
 const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
-  testDir: './browser',
-  testMatch: 'subagents-live.spec.ts',
+  testDir: './e2e',
+  testMatch: 'subagents-live.journey.ts',
   workers: 1,
   retries: 0,
   timeout: 45_000,

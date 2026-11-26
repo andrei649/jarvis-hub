@@ -46,7 +46,7 @@
   // whatever a vite `.d.ts` happens to reference.
   // `vite.workspace.config.ts` (the Nerva Workspace bundle) is here for the same reason as
   // `vite.config.ts`: nothing else compiles it.
-  "include": ["cloud-image-browser", "browser/subagents-live.spec.ts", "e2e", "playwright*.config.ts", "vite.config.ts", "vite.workspace.config.ts", "vitest*.config.ts"],
+  "include": ["cloud-image-browser", "e2e", "playwright*.config.ts", "vite.config.ts", "vite.workspace.config.ts", "vitest*.config.ts"],
   // gitignored Playwright output; it lands inside the include glob after a
   // local `npm run e2e` and would red a developer's gate on artifacts.
   "exclude": ["e2e/artifacts", "e2e/.results"]
