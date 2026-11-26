@@ -7,6 +7,11 @@ question of *which hub surfaces the mobile app has caught up to*.
 This file is the single source of truth for that gap. Backlog tasks for closing it live under
 **`BACKLOG.md` → ORIZONT 18**.
 
+On desktop, open Console → Start → Integrations to connect a ChatGPT plan and
+list the models visible to that account. This uses the local hub at
+`127.0.0.1` and a browser sign-in specifically for Nerva. The native apps do
+not expose this account setup. Mobile is frozen under the 2026-11-25 decision.
+
 Browser Chat, Cockpit and native Chat can search retained message text via
 `POST /sessions/search`. On mobile, **History → Search messages** opens an
 owner search. **Review source** reads the exact saved turn. **Continue this

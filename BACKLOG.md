@@ -9889,6 +9889,12 @@ selected chat only after the owner reviews the destination and confirms that sen
 The native composer uses the current-message default. Its review UI stays in
 the deferred mobile scope recorded in `mobile/PARITY.md`.
 
+Finish-line item 1, 2026-11-26. Desktop acceptance for the ChatGPT plan
+connection starts in Ledger Integrations. The owner authorizes Nerva in the
+browser, refreshes the connection, lists visible models in provider order, and
+disconnects locally. The mixed-chat acceptance still requires model routing and
+a receipt from the owner-selected model. Native account setup is deferred.
+
 > Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
 > ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
 > cu HUD-ul + infrastructura de build/release.

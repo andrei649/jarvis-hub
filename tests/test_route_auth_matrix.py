@@ -202,6 +202,7 @@ IN_HANDLER_GUARDED = {
     # G9 / H692: a browser redirect carries no admin token; the start's binding cookie and
     # a waiting flow's state, both compared in constant time and redeemed once.
     "GET /api/oauth/mcp/callback": "a waiting MCP sign-in's state plus its owner-binding cookie",
+    "GET /api/oauth/chatgpt/callback": "an owner-started, unexpired ChatGPT sign-in and its local browser cookie",
     "POST /api/widget/{token}/message": "widget capability token in the path",
     "GET /api/widget/{token}": "widget capability token in the path",
     "GET /api/widget/{token}/config": "widget capability token in the path",
