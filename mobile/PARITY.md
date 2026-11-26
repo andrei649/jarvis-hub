@@ -11,6 +11,7 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 Remember message can link a curated fact to a verified retained turn. The owner
 can see its session, message number and role in Saved Facts. Native mobile has
 no equivalent save-and-inspect action.
+Desktop owners can also match a phrase from a completed reply to a saved fact and open its original message. This lookup is desktop-only under the mobile freeze.
 
 Browser Chat, Cockpit and native Chat can search retained message text via
 `POST /sessions/search`. On mobile, **History → Search messages** opens an
