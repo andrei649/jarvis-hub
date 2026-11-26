@@ -81,6 +81,7 @@ RULES = [
     ("/api/hermes/", "admin"),  # managed runtime controls and task approvals in Admin → Hermes Runtime
     # cockpit / conversation
     ("/chat", "cockpit"),
+    ("/api/chat/cloud-history/preview", "cockpit"),
     ("/api/status", "cockpit"),
     ("/status", "cockpit"),
     ("/api/agents/opinions", "cockpit"),
@@ -613,6 +614,7 @@ MACHINE_FACING: dict[str, str] = {
     "/api/plugins/extensions/install": "owner submission of a local author folder or pack, via `nerva extensions install|pack install`",
     "/api/oauth/auth-url": "OAuth dance, driven by the provider/browser",
     "/api/oauth/callback": "OAuth redirect target",
+    "/api/oauth/chatgpt/callback": "ChatGPT redirects the owner's browser here after account sign-in",
     "/api/oauth/mcp/callback": "MCP sign-in redirect target: the browser returns here from the server's "
                                "authorization page (G9 / H692)",
     "/api/admin/tool-events":
