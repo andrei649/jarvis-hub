@@ -82,7 +82,6 @@ export function ReportsList() {
     },
     {
       key: 'next', header: t('reports.col.nextRun'), secondary: true,
-      nowrap: true,
       render: (r) => (r.next_run_at ? <span>{fmt.dateTimeIn(r.next_run_at, r.timezone)}</span> : <span className="ws-muted">{t('reports.manualOnly')}</span>),
     },
     {

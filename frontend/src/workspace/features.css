@@ -342,6 +342,7 @@
    padding, so the five columns fit the frame instead of scrolling sideways (NWS-23). */
 @media (min-width: 768px) and (max-width: 1180px) {
   .ws-reports-list .ws-table th, .ws-reports-list .ws-table td { padding-inline: var(--ws-s2); }
+  .ws-reports-list .ws-table th:nth-child(4) { white-space: normal; }
   .ws-reports-list .ws-table .is-actions { width: auto; }
   .ws-run-label {
     position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
