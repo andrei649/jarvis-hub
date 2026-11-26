@@ -1617,6 +1617,20 @@ export function SubAgentsPanel() {
   const [resultFor, setResultFor] = useState(null);
   const [fullResult, setFullResult] = useState(null);
   const [claimedOut, setClaimedOut] = useState(null);
+  // Spawn and batch POSTs hold the connection until every child settles. Refresh the
+  // register while one is pending or running, so each child is visible and stoppable
+  // during that wait. A settled, idle panel makes no background requests.
+  const liveWork = pending || Number(stats.active) > 0
+    || spawns.some((s) => s.status === 'running' || s.status === 'stopping');
+  const registerLoading = useRef(loading);
+  useEffect(() => { registerLoading.current = loading; }, [loading]);
+  useEffect(() => {
+    if (!liveWork) return;
+    const timer = window.setInterval(() => {
+      if (!registerLoading.current) reload();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [liveWork, reload]);
   const atCap = stats.cap != null && (stats.active ?? 0) >= stats.cap;
   const statusColor = (s) => (s === 'done' ? 'var(--green)' : s === 'failed' ? 'var(--red)' : 'var(--amber)');
   // H400 — whether a NEW sub-agent would start now: the emergency stop, the kill switch and

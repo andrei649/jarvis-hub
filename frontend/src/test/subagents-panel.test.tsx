@@ -9,7 +9,7 @@
        reads as success. That silent-refusal bug is the one gap.tsx:78-82 warns about. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { SubAgentsPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -448,5 +448,74 @@ describe('SubAgentsPanel — the spawn pause (H400)', () => {
     await waitFor(() => expect(screen.getByText(/claimed 1 completion/)).toBeTruthy());
     expect(screen.getByText(/changelog summarised/)).toBeTruthy();
     expect(calls.some((c) => c.method === 'POST' && c.url === '/api/subagents/completions/claim')).toBe(true);
+  });
+});
+
+describe('SubAgentsPanel — live parallel register', () => {
+  it('shows two running IDs during a held batch, stops one, and shows the survivor result under its ID', async () => {
+    let releaseBatch;
+    let snapshot = { spawns: [], stats: { total: 0, active: 0, cap: 2, max_depth: 2 } };
+    const fetcher = vi.fn().mockImplementation((url, init = {}) => {
+      const path = String(url);
+      if (path === '/api/subagents' && (!init.method || init.method === 'GET')) return ok(snapshot);
+      if (path === '/api/subagents/batch') return new Promise((resolve) => { releaseBatch = resolve; });
+      if (path === '/api/subagents/sub-A/stop') {
+        snapshot = { ...snapshot, spawns: snapshot.spawns.map((row) => row.id === 'sub-A'
+          ? { ...row, status: 'stopped' } : row), stats: { ...snapshot.stats, active: 1 } };
+        return ok({ ok: true, id: 'sub-A', status: 'stopped' });
+      }
+      if (path === '/api/subagents/sub-B/result') {
+        return ok({ spawn_id: 'sub-B', status: 'done', result: { output: 'B genuine bicycle response' } });
+      }
+      throw new Error(`unexpected request: ${path}`);
+    });
+    global.fetch = fetcher;
+    const view = render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('0/2 active')).toBeTruthy());
+    expect(fetcher.mock.calls.filter(([url]) => String(url) === '/api/subagents')).toHaveLength(1);
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(fetcher.mock.calls.filter(([url]) => String(url) === '/api/subagents')).toHaveLength(1);
+      fireEvent.change(screen.getByPlaceholderText(/batch: one task per line/), {
+        target: { value: 'write backup guidance\ncheck a bicycle tire' },
+      });
+      fireEvent.click(screen.getByTitle(/run these tasks as a batch/));
+      expect(screen.getByText(/spawning… the connection is held for the whole turn/)).toBeTruthy();
+      snapshot = { spawns: [
+        { id: 'sub-A', task: 'write backup guidance', agent: 'jarvis', status: 'running' },
+        { id: 'sub-B', task: 'check a bicycle tire', agent: 'jarvis', status: 'running' },
+      ], stats: { total: 2, active: 2, cap: 2, max_depth: 2 } };
+      await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+      expect(screen.getByText('sub-A')).toBeTruthy();
+      expect(screen.getByText('sub-B')).toBeTruthy();
+      expect(screen.getByText('2/2 active')).toBeTruthy();
+      expect(screen.queryByText(/batch · 2 done/)).toBeNull();
+
+      fireEvent.click(within(screen.getByText('sub-A').closest('.n-row')).getByTitle(/cancel this running sub-agent/));
+      await act(async () => {});
+      expect(fetcher.mock.calls.some(([url]) => String(url) === '/api/subagents/sub-A/stop')).toBe(true);
+      expect(screen.getByText(/sub-A is stopped/)).toBeTruthy();
+      expect(within(screen.getByText('sub-B').closest('.n-row')).getByTitle(/cancel this running sub-agent/)).toBeTruthy();
+
+      snapshot = { ...snapshot, spawns: snapshot.spawns.map((row) => row.id === 'sub-B'
+        ? { ...row, status: 'done' } : row), stats: { ...snapshot.stats, active: 0 } };
+      await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+      const bRow = screen.getByText('sub-B').closest('.n-row');
+      fireEvent.click(within(bRow).getByTitle(/read durable result/));
+      await act(async () => {});
+      expect(bRow.nextElementSibling?.textContent).toContain('B genuine bicycle response');
+      expect(screen.getByText('sub-A').closest('.n-row').nextElementSibling?.textContent || '')
+        .not.toContain('B genuine bicycle response');
+
+      const readsBeforeUnmount = fetcher.mock.calls.filter(([url]) => String(url) === '/api/subagents').length;
+      view.unmount();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(fetcher.mock.calls.filter(([url]) => String(url) === '/api/subagents')).toHaveLength(readsBeforeUnmount);
+      releaseBatch({ ok: true, status: 200, json: async () => ({ children: [], summary: { done: 1, failed: 0, refused: 1 } }) });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
