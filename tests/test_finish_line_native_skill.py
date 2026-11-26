@@ -119,13 +119,10 @@ async def test_reviewed_markdown_skill_applies_in_owner_chat(tmp_path, monkeypat
     model = os.getenv("NERVA_SKILL_MODEL", "")
     assert model and not model.endswith(":cloud"), "name an installed, non-cloud NERVA_SKILL_MODEL"
     orch, app, skills = _isolated_hub(tmp_path, monkeypatch)
-    from agents.core import settings_db
     from agents.core.llm.base import OllamaBackend
 
-    settings_db.put_category("llm", {"default_model": model})
     await orch.load_agents()
     assert orch.llm_router._backend_name == "ollama" and orch.llm_router._local_available
-    assert orch.llm_router._local_model == model
     assert not orch.llm_router._cloud_available and not orch.llm_router._claude_available
     assert orch.llm_router.ollama_url == "http://127.0.0.1:11434"
     selected = orch.llm_router.select_backend
@@ -145,6 +142,10 @@ async def test_reviewed_markdown_skill_applies_in_owner_chat(tmp_path, monkeypat
     request_id = uuid.uuid4().hex
     headers = {"X-Admin-Token": "finish-skill-admin"}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+        switched = await client.post("/api/models/local/switch", headers=headers, json={
+            "model": model, "provider": "ollama"})
+        assert switched.status_code == 200, switched.text
+        assert switched.json()["active"] == model and orch.llm_router.active_model == model
         created = await client.post("/api/skills/procedures", headers=headers, json={
             "agent": "jarvis", "description": "Transform and sort the owner's words",
             "steps": ["Replace the word sun with orb in the owner's input.",
