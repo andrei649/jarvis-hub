@@ -4,16 +4,19 @@ test('chat creates and edits Word and Excel copies and reopens each download', a
   const realModel = process.env.NERVA_OFFICE_REAL_MODEL === '1';
   if (realModel) {
     test.setTimeout(180_000);
+    const hub = new URL(testInfo.project.use.baseURL!);
+    expect(hub.hostname).toBe('127.0.0.1');
+    expect(Number(hub.port)).toBeGreaterThan(1024);
+    expect(hub.port).not.toBe('8080');
     await page.route('**/*', route => {
-      const host = new URL(route.request().url()).hostname;
-      return host === '127.0.0.1' ? route.continue() : route.abort();
+      return new URL(route.request().url()).origin === hub.origin ? route.continue() : route.abort();
     });
   }
-  await page.addInitScript(() => {
+  await page.addInitScript(fixtureReply => {
     localStorage.setItem('hud.firstrun.dismissed', '1');
     localStorage.setItem('hud.lang', 'en');
-    sessionStorage.setItem('nerva.chat.session_id', 'office-copy-acceptance');
-  });
+    if (fixtureReply) sessionStorage.setItem('nerva.chat.session_id', 'office-copy-acceptance');
+  }, !realModel);
   // The ordinary lane fixtures only the reply; the opt-in local lane uses the real stream.
   const answer = 'Delivery in May.\n\nKeep this paragraph.\n\n| Item | Month |\n| --- | --- |\n| Apples | May |';
   if (!realModel) await page.route('**/chat/stream', route => route.fulfill({
@@ -32,9 +35,10 @@ test('chat creates and edits Word and Excel copies and reopens each download', a
     const response = await stream;
     expect(response.status()).toBe(200);
     const events = (await response.text()).split('\n').filter(line => line.startsWith('data: '))
-      .map(line => JSON.parse(line.slice(6)) as { type: string; model_calls?: { provider: string; model: string }[] });
+      .map(line => JSON.parse(line.slice(6)) as { type: string; session_id?: string; model_calls?: { provider: string; model: string }[] });
     const end = events.find(event => event.type === 'end');
-    expect(end?.model_calls).toContainEqual({ provider: 'ollama', model: process.env.NERVA_OFFICE_MODEL });
+    expect(end?.session_id).toBeTruthy();
+    expect(end?.model_calls).toEqual([{ provider: 'ollama', model: process.env.NERVA_OFFICE_MODEL }]);
   }
   const reply = page.locator('[data-turn="reply"]').filter({ hasText: 'Delivery in May.' }).last();
   const attach = page.getByRole('button', { name: 'Attach', exact: true });
