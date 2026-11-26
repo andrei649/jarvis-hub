@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { apiFetchOnce, apiGet, apiPatch } from './api/client';
-import { SaveFactForm } from './panels/saved-facts';
+import { SaveFactForm, type RememberSource } from './panels/saved-facts';
 import { inpS, taS } from './panel-kit';
 import { ConfirmAction, RISK_TIER } from './confirm';
 
@@ -177,7 +177,7 @@ function EditSavedFact({ forgetting, draft, setDraft, store, setStore, busy, set
   </div>;
 }
 
-export function RememberMessageDialog({ text, opener, onClose }: { text: string; opener: HTMLElement; onClose: () => void }) {
+export function RememberMessageDialog({ text, source, opener, onClose }: { text: string; source?: RememberSource; opener: HTMLElement; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const title = useId();
   const [mode, setMode] = useState<'save' | 'replace' | 'forget'>('save');
@@ -209,7 +209,7 @@ export function RememberMessageDialog({ text, opener, onClose }: { text: string;
     </div>
     {mode !== 'save' ? <EditSavedFact key={mode} forgetting={mode === 'forget'} draft={draft} setDraft={setDraft} store={store} setStore={setStore} busy={busy} setBusy={setBusy} /> : <>
       <p style={{ fontSize: 'var(--n-fs-label)' }}>Edit the fact before saving it for future chats.</p>
-      <SaveFactForm chatState={{ draft, store, busy, setDraft, setStore, setBusy }} />
+      <SaveFactForm chatState={{ draft, store, busy, setDraft, setStore, setBusy }} chatSource={source} />
     </>}
   </dialog>;
 }

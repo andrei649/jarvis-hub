@@ -5,7 +5,10 @@ import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
 import { inpS, taS } from '../panel-kit';
 import { SaveFactForm, SavedFacts } from './saved-facts';
 
-vi.mock('../api/client', () => ({ apiDelete: vi.fn(), apiGet: vi.fn(), apiPatch: vi.fn(), apiPost: vi.fn() }));
+vi.mock('../api/client', () => ({
+  apiDelete: vi.fn(), apiGet: vi.fn(), apiPatch: vi.fn(), apiPost: vi.fn(),
+  getToken: vi.fn(() => ''), getAdminToken: vi.fn(() => ''),
+}));
 
 const entry = { entry_id: 'user:abc', store: 'user', value: 'Prefers tea' };
 beforeEach(() => {

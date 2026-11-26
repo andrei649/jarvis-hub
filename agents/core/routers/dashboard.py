@@ -29,7 +29,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, field_validator
 
 from agents.core.app_state import get_orch
 from agents.core.memory_tool import MAX_FACT_CHARS
@@ -292,11 +292,37 @@ class TimelineEntryEdit(BaseModel):
     value: StrictStr = Field(..., max_length=100_000)
 
 
+class TimelineEntrySource(BaseModel):
+    """A selected native chat turn, verified again at save time."""
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str
+    turn: StrictInt = Field(ge=0)
+    revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    excerpt: str = Field(min_length=1, max_length=8_000)
+
+    @field_validator("session_id")
+    @classmethod
+    def _valid_session(cls, value):
+        from agents.core.validation import is_valid_session_id
+        if not is_valid_session_id(value):
+            raise ValueError("invalid session_id")
+        return value
+
+    @field_validator("excerpt")
+    @classmethod
+    def _bounded_excerpt(cls, value):
+        if len(value.encode("utf-8")) > 8_000:
+            raise ValueError("excerpt exceeds 8000 UTF-8 bytes")
+        return value
+
+
 class TimelineEntryCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     store: Literal["memory", "user"]
     value: StrictStr = Field(..., max_length=MAX_FACT_CHARS)
+    source: TimelineEntrySource | None = None
 
 
 _ID_HELP = ("not a timeline entry id: memory:<memory|user>:<digest>, skill:<name>, learning:<n>, "
@@ -382,7 +408,7 @@ def _ring_saved_epoch(ring) -> float | None:
         return None
 
 
-def _ring_fact_items(target: str, ring) -> list[dict]:
+def _ring_fact_items(target: str, ring, *, include_source: bool = False) -> list[dict]:
     """The facts of one ring as timeline items, each dated by when it entered the ring
     (``CoreMemory.added_at``), a fact no save dated yet by the ring's last save."""
     from agents.core.memory.timeline import ring_items
@@ -394,10 +420,11 @@ def _ring_fact_items(target: str, ring) -> list[dict]:
         except Exception:
             logger.warning("journey: when the facts of the %s ring were added could not be read", target,
                            exc_info=True)
-    return ring_items(target, ring.list(), _ring_saved_epoch(ring), added)
+    sources = ring.source_map() if include_source and callable(getattr(ring, "source_map", None)) else None
+    return ring_items(target, ring.list(), _ring_saved_epoch(ring), added, sources)
 
 
-def _read_rings_items(orch) -> tuple[list[dict], str | None]:
+def _read_rings_items(orch, *, include_source: bool = False) -> tuple[list[dict], str | None]:
     """Every fact of both rings, reread from their files first (another process, a hand
     edit), as timeline items; and the drift a ring that cannot be read back reports."""
     from agents.core.memory_tool import TARGETS, MemoryToolError, _read_rings
@@ -414,7 +441,7 @@ def _read_rings_items(orch) -> tuple[list[dict], str | None]:
     for target, attr in TARGETS.items():
         ring = getattr(living, attr, None)
         if ring is not None and callable(getattr(ring, "list", None)):
-            items.extend(_ring_fact_items(target, ring))
+            items.extend(_ring_fact_items(target, ring, include_source=include_source))
     return items, drift
 
 
@@ -488,8 +515,8 @@ def _skill_items(orch) -> list[dict]:
     return items
 
 
-def _read_learned(orch) -> tuple[list[dict], str | None]:
-    items, drift = _read_rings_items(orch)
+def _read_learned(orch, *, include_source: bool = False) -> tuple[list[dict], str | None]:
+    items, drift = _read_rings_items(orch, include_source=include_source)
     try:
         items.extend(_skill_items(orch))
     except Exception:
@@ -512,19 +539,22 @@ async def _store_rows() -> list[dict]:
 
 @router.get("/api/dashboard/today/entries", dependencies=[Depends(user_guard)])
 async def dashboard_today_entries(store: Literal["facts", "memory", "user", "skill"] | None = None,
-                                  limit: int = Query(1000, ge=1, le=5000)):
+                                  limit: int = Query(1000, ge=1, le=5000),
+                                  references: bool = False, req: Request = None):
     """Every learned entry, whatever its age, oldest first, each with its id (Hermes's
     ``journey list``: the lookup table ``journey show|edit|delete`` take an id from): the
     facts of both curated rings (``memory``: the agent's notes, ``user``: the user
     profile), the skills it learned (``skill``) and the fact store's rows (``facts``).
     ``store`` keeps one store; past ``limit`` the newest are kept. ``total`` and
     ``counts`` cover every entry; ``drift`` says a ring could not be read back."""
+    if references:
+        await admin_guard(req)
     orch = get_orch()
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
     from agents.core.memory.timeline import LEARNED_STORES, journey_entries
 
-    learned, drift = await asyncio.to_thread(_read_learned, orch)
+    learned, drift = await asyncio.to_thread(_read_learned, orch, include_source=references)
     entries = journey_entries(await _store_rows(), learned)
     counts = {name: sum(1 for it in entries if it.get("store") == name) for name in LEARNED_STORES}
     if store is not None:
@@ -555,9 +585,18 @@ async def dashboard_today_entry_create(body: TimelineEntryCreate, req: Request =
         enabled = False
     if not enabled:
         return _ring_refusal(MemoryToolError("memory_disabled", "memory is switched off on this hub"))
+    receipt = None
+    if body.source is not None:
+        from agents.core.session_continuation import ContinuationRefused
+        from agents.core.session_transcript import resolve_history_reference
+
+        try:
+            _attachment, receipt = await resolve_history_reference(orch, body.source)
+        except ContinuationRefused as exc:
+            return nocache_json({"error": exc.reason, "reason": exc.reason}, status_code=exc.status)
     try:
         result = await asyncio.to_thread(owner_add, _rings_module(orch), body.store, body.value,
-                                         audit=getattr(orch, "intent_log", None))
+                                         audit=getattr(orch, "intent_log", None), source=receipt)
     except MemoryToolError as exc:
         return _ring_refusal(exc)
     if result["changed"]:
@@ -568,9 +607,9 @@ async def dashboard_today_entry_create(body: TimelineEntryCreate, req: Request =
     return nocache_json(reply)
 
 
-def _find_ring_fact(orch, store: str, entry_id: str):
+def _find_ring_fact(orch, store: str, entry_id: str, *, include_source: bool = False):
     """(the ring item, its fact) of the ring fact with this id, else None."""
-    items, _drift = _read_rings_items(orch)
+    items, _drift = _read_rings_items(orch, include_source=include_source)
     for item in items:
         if item["store"] == store and item["entry_id"] == entry_id:
             return item
@@ -629,10 +668,12 @@ def _ring_written(orch) -> None:
 
 
 @router.get("/api/dashboard/today/entries/{entry_id}", dependencies=[Depends(user_guard)])
-async def dashboard_today_entry(entry_id: str):
+async def dashboard_today_entry(entry_id: str, references: bool = False, req: Request = None):
     """One learned entry, whatever its age: a ring fact, a learned skill (with its whole
     SKILL.md as ``content``; for one still awaiting the owner's review, none: only the admin
     review reads a quarantined skill, and ``content_withheld`` says so) or a fact-store row."""
+    if references:
+        await admin_guard(req)
     orch = get_orch()
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
@@ -641,7 +682,7 @@ async def dashboard_today_entry(entry_id: str):
         return refusal
     store, key = ref
     if store in ("memory", "user"):
-        item = await asyncio.to_thread(_find_ring_fact, orch, store, entry_id)
+        item = await asyncio.to_thread(_find_ring_fact, orch, store, entry_id, include_source=references)
         if item is None:
             return JSONResponse({"error": "not found (the ring changed, or the id is from before the hub "
                                           "restarted): list the journey again"}, status_code=404)

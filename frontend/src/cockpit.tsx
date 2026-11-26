@@ -86,7 +86,7 @@ function TtsButton({ text, lang, words }: { text: string; lang?: string; words: 
      outcomeTurnId    the turn `outcome` belongs to, when App says so (null: none drawn)
      awaitingAnswer   a mid-turn question waits for the owner ("Waiting for your answer"): the
                       turn id that asked, or true (drawn only when one turn is in flight) */
-function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exportAllowed = false, messageActionsAllowed = false, messageScope, lang, t,
+function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exportAllowed = false, messageActionsAllowed = false, messageScope, sessionId, agent, lang, t,
   variant = 'home', turns = [], agents = [], outcome = null, outcomeTurnId, power, awaitingAnswer = false }: any) {
   const endRef = useRef(null);
   const [action, setAction] = useState<{ kind: 'remember' | 'task' | 'teach' | 'obsidian'; message: any; scope: string; opener: HTMLElement; credential?: string } | null>(null);
@@ -274,7 +274,9 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
   );
   return <>
     {transcript}
-    {selected?.kind === 'remember' && <RememberMessageDialog text={selected.message.text} opener={selected.opener} onClose={() => setAction(null)} />}
+    {selected?.kind === 'remember' && <RememberMessageDialog text={selected.message.text}
+      source={{ sessionId, text: selected.message.text, role: 'user', agentId: agent }}
+      opener={selected.opener} onClose={() => setAction(null)} />}
     {visibleMeshReview && createPortal(<div className="blender-review-overlay"><section className="blender-review-dialog" role="dialog" aria-modal="true"
       aria-label={lang === 'ro' ? 'Revizuiește modelul Blender' : 'Review Blender model'}
       onKeyDown={event => {

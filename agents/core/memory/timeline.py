@@ -170,7 +170,7 @@ def learning_item(row: dict) -> dict:
     }
 
 
-def ring_items(target: str, facts, saved_epoch=None, added=None) -> list[dict]:
+def ring_items(target: str, facts, saved_epoch=None, added=None, sources=None) -> list[dict]:
     """The facts of curated ring *target* (``memory`` | ``user``), in ring order, as the
     feed shows them. *added* maps a fact to the epoch it entered the ring
     (``CoreMemory.added_at``; None for one no save dated); *saved_epoch* is when the
@@ -180,6 +180,7 @@ def ring_items(target: str, facts, saved_epoch=None, added=None) -> list[dict]:
     facts of one time."""
     label = RING_LABELS[target]
     added = added if isinstance(added, dict) else {}
+    sources = sources if isinstance(sources, dict) else {}
     out = []
     for position, fact in enumerate(facts or ()):
         if not isinstance(fact, str) or not fact:
@@ -189,7 +190,7 @@ def ring_items(target: str, facts, saved_epoch=None, added=None) -> list[dict]:
             epoch, dated = saved_epoch, "ring_saved"
         if _iso(epoch) is None:
             epoch, dated = None, None
-        out.append({
+        item = {
             "entry_id": ring_fact_id(target, fact),
             "ts": _iso(epoch),
             "epoch": float(epoch) if epoch is not None else None,
@@ -201,7 +202,10 @@ def ring_items(target: str, facts, saved_epoch=None, added=None) -> list[dict]:
             "category": target,
             "key": None,
             "value": fact,
-        })
+        }
+        if fact in sources:
+            item["source"] = dict(sources[fact])
+        out.append(item)
     return out
 
 
