@@ -912,7 +912,8 @@ class Agent:
         if context.get("_can_propose_skill_marker") is True:
             skill_hint = ("If this task produced a reusable procedure, end your response with "
                           "'[learn: task description | step1,step2,step3 | command_name]' "
-                          "to propose it for review. ")
+                          "to propose it for review. Include any required response format "
+                          "and what to omit in the steps. ")
         prompt = (
             f"{skills_block}{agent_block}{rag_block}"
             f"User said: {text}\n"

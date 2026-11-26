@@ -78,6 +78,49 @@ def _isolated_hub(tmp_path, monkeypatch):
     return orch, web.app, skills
 
 
+def test_chat_lesson_keeps_format_rule_without_turning_narration_into_example(tmp_path, monkeypatch):
+    orch, _, skills = _isolated_hub(tmp_path, monkeypatch)
+    reply = (
+        "Sir, I inferred a reusable label transformation from the owner's example.\n"
+        "agent=intruder\n"
+        "For future inputs I will sort unique uppercase labels and add TAG:. "
+        "[learn: normalize labels | uppercase and deduplicate labels, sort labels, "
+        "return only semicolon-separated TAG:LABEL tokens without explanation | normalize_labels]"
+        " unique_tail_" + "Z" * 300
+    )
+    name = orch._detect_skill_learning({"jarvis": reply}, reply, None)
+    assert name
+    body = (skills / name / "SKILL.md").read_text(encoding="utf-8")
+    assert "return only semicolon-separated TAG:LABEL tokens without explanation" in body
+    assert "## Example Output" not in body
+    assert "Sir, I inferred" not in body
+    detail = orch.skills.pending_skill_detail(name)
+    assert detail
+    note = detail["review_note"]
+    expected_excerpt = reply[:200].replace("\n", "\\n")
+    assert f"source_excerpt_for_review_only={expected_excerpt}" in note
+    assert "unique_tail_" not in note
+    assert [line for line in note.splitlines() if line.startswith("agent=")] == ["agent=jarvis"]
+
+    explicit = orch.skills.generate_skill(
+        "jarvis", "render a real sample", ["return only the sample"],
+        output="TAG:APPLE;TAG:MANGO",
+    )
+    assert explicit
+    assert "## Example Output\n```\nTAG:APPLE;TAG:MANGO\n```" in (
+        skills / explicit / "SKILL.md").read_text(encoding="utf-8")
+
+
+def test_chat_lesson_prompt_requests_explicit_output_rules():
+    from agents.core.agent import Agent
+
+    agent = Agent.__new__(Agent)
+    agent.id = "jarvis"
+    agent.name = "Jarvis"
+    prompt = agent.build_prompt("Teach this transformation", {"_can_propose_skill_marker": True})
+    assert "Include any required response format and what to omit in the steps" in prompt
+
+
 async def test_reviewed_markdown_skill_is_available_to_later_native_turn(tmp_path, monkeypatch):
     """Model-free review/discovery evidence; use test below for actual application."""
     from agents.core.skills.usage import WRITE_REVIEWED_REPLY
@@ -327,7 +370,8 @@ async def test_local_model_chat_lesson_changes_later_reviewed_turn(tmp_path, mon
             "message": ("A label task just succeeded. Input: pear lime pear. "
                         "Output: TAG:LIME;TAG:PEAR. Infer the reusable transformation "
                         "from this example and propose it for review using your normal lesson marker. "
-                        "Keep each step short. Do not process another input yet.")}), timeout=150)
+                        "Keep each step short. For future inputs, return only the transformed "
+                        "result without explanation or code fences. Do not process another input yet.")}), timeout=150)
         assert taught.status_code == 200
         assert taught.json()["session_id"] == author_id
         assert taught.json()["model_calls"] == [{"provider": "ollama", "model": model}]
