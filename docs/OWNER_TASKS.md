@@ -11,15 +11,18 @@
 > two owner commands — the A5 licence flip, then `git tag v1.0.0` on `main` — the capability program is a
 > 1.x roadmap, and A8 was cleared by the owner on 2026-08-28 (see the A9 item below).*
 
+## Finish-line owner inputs
+
+2026-11-26. Use a disposable Nerva profile and synthetic content for both tests. The [finish-line status](FINISH_LINE_STATUS.md) tracks the results.
+
+- **Item 1, local and cloud routing.** On 2026-11-26 the owner chose ChatGPT and required explicit confirmation per send for earlier turns. In a disposable profile running the routing draft, open Ledger → Console → Integrations, connect ChatGPT, refresh the connection and display the available models. Check in ChatGPT usage settings that the test fits the account's included allowance. Choose the model in Nerva and confirm its exact name. In a new synthetic chat, send one turn locally, send only the second message to ChatGPT, then explicitly confirm sharing earlier turns on the third send. Verify each reply's model receipt. [Plan routing and tests](https://github.com/andrei649/jarvis-hub/pull/1426) · [ChatGPT usage settings](https://chatgpt.com/settings/usage)
+- **Item 6, Windows browser choice (owner decision, 2026-11-26).** Keep standard Chrome as the Windows operator browser. The owner declined a separate Chrome for Testing option. The Windows acceptance remains open. [Pinned controller and native result](https://github.com/andrei649/jarvis-hub/pull/1421)
+- **Item 8, professional tools.** Godot 4.7.2, Unity, Photoshop and Blender were found on Windows. Blender already passed. For Godot, the proposed optional MIT bridge exposes a read-only scene-tree tool through Nerva's existing client. Its installation in a disposable project awaits owner approval. For Photoshop, choose an installed local bridge that can list layers. For Figma Desktop, the official local server needs the desktop app and an eligible existing Dev or Full seat. When a bridge is available, open a synthetic project, give a child object a unique name, check the name in the app, then run that tool's test using the guide. [Test and configuration guide](https://github.com/andrei649/jarvis-hub/blob/3738da3f/docs/professional-tool-smoke.md) · [Proposed Godot bridge](https://github.com/Noa3/GodotMCP/tree/d2e541c0c23dd350c37297ef962a43aaf256c33a) · [Figma Desktop prerequisites](https://developers.figma.com/docs/figma-mcp-server/local-server-installation/)
+- **Item 9, Ledger on green main.** For the Workspace journey, integrate #1398, #1403, its child #1408, and #1417. Regenerate the Workspace bundle from the combined source if hashed assets conflict. For Windows, the startup repair is #1393. Queue, ACP and MCP fixture repairs are #1395, #1396 and #1397. Both ACP follow-ups (#1415 and #1416) build on #1396. Integrate #1409 before #1416. The combined HUD sources passed all 5,006 tests on Linux. The Windows index-permission check also passed with #1393. Check the CI, HUD E2E and Smoke Test workflows on the new main SHA. Keep item 9 open until all three report success. [Latest verification and known Windows failures](FINISH_LINE_STATUS.md#open-ci-findings-for-item-9)
+
 ## Editable Photoshop export
 
-- [ ] 2026-11-25 · Drafts #1380 and #1386 inherit `ag-psd@34.2.2` from
-  `8ee710ec`. The HUD uses it for **Download PSD** with editable text layers.
-  Choose whether to preserve the existing PSD writer on a separate draft
-  and remove it from these candidates, or keep editable PSD in scope and
-  evaluate a Nerva writer. The canvas preview and the Word, Excel and Blender
-  exports use independent paths. An exception for the package requires all
-  four conditions in the finish-line decision and explicit owner approval.
+- [ ] The merged harness and HUD include `ag-psd@34.2.2` for **Download PSD** with editable text layers. The earlier request to remove it from draft candidates predates their merge. If you want to revisit this existing dependency, choose whether to evaluate a native PSD writer or authorize a change in editable export support. Any new dependency exception needs the four finish-line conditions and your approval. The professional-tools acceptance covers reading a real Photoshop document through an optional MCP bridge. [Current package](https://github.com/andrei649/jarvis-hub/blob/02334d9a/frontend/package.json)
 
 ## 🔴 Owner gates that block tagging a release (and ultimately 1.0)
 
@@ -530,9 +533,8 @@ built on your Windows box:
       export JARVIS_MCP_HTTP_CLIENT=1
       # then configure {"transport": "streamable-http", "url": "https://…/mcp"}
       ```
-      Waits on the integrator's `routers/mcp.py` admin-API edit; until then configure it through
-      `MCPManager.load_from_config`. Bearer headers are in memory only — re-supply them after a
-      restart.
+      As an administrator, add and connect the server in Console → Interop → MCP Servers.
+      For a manually supplied bearer header, re-supply it after a restart. [MCP setup](MCP_CATALOG.md)
 
 - [ ] **P7 — The hosted install one-liner needs a domain (and a public repo)**
       *(unblocks `install-one-step-native`'s hosted path)*
