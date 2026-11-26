@@ -199,6 +199,88 @@ describe('CommandSheet', () => {
       expect(document.activeElement).toBe(screen.getByLabelText('Composer'));
     });
 
+    it('keeps focus on the destination when a navigation command moves it', () => {
+      vi.useFakeTimers();
+      try {
+        const opener = document.createElement('button');
+        const destination = document.createElement('h1');
+        destination.tabIndex = -1;
+        document.body.append(opener, destination);
+        opener.focus();
+        const p = props({ navigate: () => destination.focus() });
+        const App = () => { const [open, setOpen] = useState(true); return <CommandSheet {...p} open={open} onClose={() => setOpen(false)} />; };
+        render(<App />);
+        type('trust');
+        key('Enter');
+        act(() => vi.advanceTimersByTime(100));
+        expect(document.activeElement).toBe(destination);
+        opener.remove();
+        destination.remove();
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('does not restore focus after the owning root unmounts', () => {
+      vi.useFakeTimers();
+      try {
+        const opener = document.createElement('button');
+        document.body.append(opener);
+        opener.focus();
+        const refocus = vi.spyOn(opener, 'focus');
+        const p = props();
+        const App = () => { const [open, setOpen] = useState(true); return <CommandSheet {...p} open={open} onClose={() => setOpen(false)} />; };
+        const root = render(<App />);
+        type('refresh');
+        key('Enter');
+        root.unmount();
+        act(() => vi.advanceTimersByTime(100));
+        expect(refocus).not.toHaveBeenCalled();
+        opener.remove();
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('does not schedule a restore when the sheet and owning root unmount together', () => {
+      vi.useFakeTimers();
+      try {
+        const opener = document.createElement('button');
+        document.body.append(opener);
+        opener.focus();
+        const refocus = vi.spyOn(opener, 'focus');
+        const root = render(<CommandSheet {...props()} />);
+        type('refresh');
+        key('Enter');
+        const schedule = vi.spyOn(globalThis, 'setTimeout');
+        root.unmount();
+        expect(schedule).not.toHaveBeenCalledWith(expect.any(Function), 60);
+        act(() => vi.advanceTimersByTime(100));
+        expect(refocus).not.toHaveBeenCalled();
+        opener.remove();
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('does not read or focus a missing or replaced document during delayed restore', () => {
+      vi.useFakeTimers();
+      const originalDocument = document;
+      try {
+        for (const nextDocument of [undefined, originalDocument.implementation.createHTMLDocument()]) {
+          const opener = originalDocument.createElement('button');
+          originalDocument.body.append(opener);
+          opener.focus();
+          const refocus = vi.spyOn(opener, 'focus');
+          const p = props();
+          const App = () => { const [open, setOpen] = useState(true); return <CommandSheet {...p} open={open} onClose={() => setOpen(false)} />; };
+          const root = render(<App />);
+          type('refresh');
+          key('Enter');
+          vi.stubGlobal('document', nextDocument);
+          expect(() => vi.advanceTimersByTime(100)).not.toThrow();
+          expect(refocus).not.toHaveBeenCalled();
+          vi.unstubAllGlobals();
+          root.unmount();
+          opener.remove();
+        }
+      } finally { vi.unstubAllGlobals(); vi.useRealTimers(); }
+    });
+
     it('starts clean each time it opens', () => {
       render(<Host />);
       fireEvent.click(screen.getByRole('button', { name: 'Find' }));
