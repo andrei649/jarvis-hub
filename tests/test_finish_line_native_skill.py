@@ -1,8 +1,9 @@
 """Finish-line items 4 and 5: reviewed Markdown skills change a later owner turn.
 
 The real-model legs are explicit: set NERVA_RUN_SKILL_ACCEPTANCE=1 for the
-owner-authored path or NERVA_RUN_PROPOSED_SKILL_ACCEPTANCE=1 for the native
-model-authored path, with NERVA_SKILL_MODEL set to an installed local Ollama model.
+owner-authored path, NERVA_RUN_PROPOSED_SKILL_ACCEPTANCE=1 for the native
+model-authored tool path, or NERVA_RUN_LEGACY_LESSON_ACCEPTANCE=1 for the
+assistant's chat lesson marker, with NERVA_SKILL_MODEL set to an installed local Ollama model.
 No live hub is contacted.
 """
 
@@ -266,4 +267,111 @@ async def test_local_model_proposes_and_uses_reviewed_procedure(tmp_path, monkey
         assert len({taught.json()["session_id"], before.json()["session_id"], used.json()["session_id"]}) == 3
         assert used.json()["model_calls"] == [{"provider": "ollama", "model": model}]
         assert used.json()["reply"].strip() == "TAG:APPLE | TAG:MANGO", used.json()["reply"]
+        assert orch.skill_usage.get(name)["view_count"] >= 1
+
+
+@pytest.mark.timeout(300)
+async def test_local_model_chat_lesson_changes_later_reviewed_turn(tmp_path, monkeypatch):
+    """Ordinary owner chat learns a legacy marker; review makes its Markdown useful later."""
+    if os.getenv("NERVA_RUN_LEGACY_LESSON_ACCEPTANCE") != "1":
+        pytest.skip("set NERVA_RUN_LEGACY_LESSON_ACCEPTANCE=1 with a local NERVA_SKILL_MODEL")
+    model = os.getenv("NERVA_SKILL_MODEL", "")
+    assert model and not model.endswith(":cloud"), "name an installed, non-cloud NERVA_SKILL_MODEL"
+    orch, app, skills = _isolated_hub(tmp_path, monkeypatch)
+    from agents.core import settings_db
+    from agents.core.llm.base import OllamaBackend
+    from agents.core.skills.usage import WRITE_LEARNING
+    from agents.web import ChatRequest
+
+    assert ChatRequest.model_fields["agent"].default == "jarvis"
+
+    settings_db.put_category("llm", {"default_model": model, "tool_loop_enabled": False})
+    orch.load_runtime_settings()
+    assert orch.get_setting("llm.tool_loop_enabled") is False
+    await orch.load_agents()
+    orch.llm_router.set_active_model(model)
+    assert orch.llm_router._backend_name == "ollama" and orch.llm_router._local_available
+    assert orch.llm_router._local_model == model and not orch.llm_router._cloud_available
+    assert not orch.llm_router._claude_available
+    assert orch.llm_router.ollama_url == "http://127.0.0.1:11434"
+    selected = orch.llm_router.select_backend
+
+    def local_only(agent, prompt):
+        backend, chosen, route = selected(agent, prompt)
+        assert isinstance(backend, OllamaBackend)
+        assert urlsplit(backend.base_url).hostname == "127.0.0.1"
+        assert chosen == model and route.startswith("local")
+        return backend, chosen, route
+
+    monkeypatch.setattr(orch.llm_router, "select_backend", local_only)
+    detect = orch._detect_skill_learning
+    saw_jarvis_marker = False
+
+    def observe_lesson(responses, synthesized, intent):
+        nonlocal saw_jarvis_marker
+        reply = responses.get("jarvis")
+        saw_jarvis_marker |= isinstance(reply, str) and "[learn:" in reply
+        return detect(responses, synthesized, intent)
+
+    monkeypatch.setattr(orch, "_detect_skill_learning", observe_lesson)
+    async with httpx.AsyncClient(timeout=10, trust_env=False) as local:
+        installed = (await local.get("http://127.0.0.1:11434/api/tags")).json()["models"]
+    assert any(row["name"] == model and row["size"] > 0 for row in installed)
+
+    headers = {"X-Admin-Token": "finish-skill-admin"}
+    author_id = await orch.new_session(f"lesson_author_{uuid.uuid4().hex}")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://testserver") as client:
+        taught = await asyncio.wait_for(client.post("/chat", headers=headers, json={
+            "session_id": author_id,
+            "message": ("A label task just succeeded. Input: pear lime pear. "
+                        "Output: TAG:LIME;TAG:PEAR. Infer the reusable transformation "
+                        "from this example and propose it for review using your normal lesson marker. "
+                        "Keep each step short. Do not process another input yet.")}), timeout=150)
+        assert taught.status_code == 200
+        assert taught.json()["session_id"] == author_id
+        assert taught.json()["model_calls"] == [{"provider": "ollama", "model": model}]
+        assert saw_jarvis_marker
+        folders = [path for path in skills.iterdir() if (path / "PENDING_REVIEW").is_file()]
+        assert len(folders) == 1
+        folder = folders[0]
+        assert (folder / "SKILL.md").is_file()
+        name = orch.skills.manifest_name(folder, (folder / "SKILL.md").read_text(encoding="utf-8"))
+        usage = orch.skill_usage.get(name)
+        assert usage["agent_created"] is True and usage["write_origin"] == WRITE_LEARNING
+        assert orch.skills.get_skill(name).sandboxed is True
+        assert orch.skills.catalog_gate(orch.skills.get_skill(name), "jarvis") == "sandboxed"
+
+        challenge = f"/{folder.name} mango apple mango"
+        expected = "TAG:APPLE;TAG:MANGO"
+        before_id = await orch.new_session(f"lesson_before_{uuid.uuid4().hex}")
+        before = await client.post("/chat", headers=headers, json={
+            "session_id": before_id, "message": challenge})
+        assert before.status_code == 200 and before.json()["session_id"] == before_id
+        assert before.json().get("model_calls") is None
+        assert before.json()["reply"].strip() != expected
+        assert orch.skill_usage.get(name)["view_count"] == 0
+
+        reviewed = await client.get(f"/api/skills/pending/{name}", headers=headers)
+        assert reviewed.status_code == 200 and reviewed.json()["quarantined"] is True
+        detail = reviewed.json()
+        assert detail["fingerprint"] and detail["review_note"].startswith("agent=jarvis\n")
+        assert detail["more_files"] == 0
+        assert {row["path"] for row in detail["files"]} == {
+            path.name for path in folder.iterdir() if path.is_file() and path.name != "PENDING_REVIEW"}
+        assert all(isinstance(row.get("text"), str) and not row.get("truncated") for row in detail["files"])
+        approved = await client.post(f"/api/skills/{name}/approve", headers=headers,
+                                     json={"expected_fingerprint": detail["fingerprint"]})
+        assert approved.status_code == 200 and approved.json()["approved"] is True
+        assert not (folder / "PENDING_REVIEW").exists()
+        assert orch.skills.catalog_gate(orch.skills.get_skill(name), "jarvis") == ""
+
+        after_id = await orch.new_session(f"lesson_after_{uuid.uuid4().hex}")
+        used = await asyncio.wait_for(client.post("/chat", headers=headers, json={
+            "session_id": after_id, "message": challenge}), timeout=90)
+        assert used.status_code == 200
+        assert used.json()["session_id"] == after_id
+        assert len({author_id, before_id, after_id}) == 3
+        assert used.json()["model_calls"] == [{"provider": "ollama", "model": model}]
+        assert used.json()["reply"].strip() == expected
         assert orch.skill_usage.get(name)["view_count"] >= 1
