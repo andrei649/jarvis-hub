@@ -16,6 +16,7 @@ import secrets
 import time
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from urllib.parse import urlencode, urlsplit
 
 import httpx
@@ -105,7 +106,12 @@ def _text(value, maximum=16_384):
 
 
 def status():
-    return {"connected": bool(_read().get("tokens"))}
+    record = _read()
+    result = {"connected": bool(record.get("tokens"))}
+    model = record.get("chat", {}).get("model")
+    if model and _selected_chat(record, model):
+        result["selected_model"] = model
+    return result
 
 
 def disconnect():
@@ -326,6 +332,7 @@ async def complete(state, binding, *, code=None, client_id=None, error=None):
         _writable()
         _available()
         record.update(client=client, subject=identity, generation=secrets.token_urlsafe(24), offers={})
+        record.pop("chat", None)
         if tokens:
             record["tokens"] = tokens
         else:
@@ -395,3 +402,73 @@ async def models():
     return {"models": [{"slug": item["slug"], "display_name": item["display_name"]} for item in entries
                        if isinstance(item, dict) and item.get("visibility") == "list" and _text(item.get("slug"), 256)
                        and isinstance(item.get("display_name"), str) and 0 < len(item["display_name"]) <= 256]}
+
+
+@dataclass(frozen=True)
+class _ChatSelection:
+    registration: str
+    model: str
+
+
+async def prepare_chat_selection(model):
+    _writable()
+    if not _text(model, 120):
+        raise ConnectionError("invalid_model", 422)
+    registration = _read().get("generation")
+    visible = await models()
+    _current(registration)
+    if not any(row["slug"] == model for row in visible["models"]):
+        raise ConnectionError("model_unavailable", 409)
+    return _ChatSelection(registration, model)
+
+
+def _pair_revision(model):
+    from agents.core.settings_db import compatible_pair_state
+
+    try:
+        revision, provider, current = compatible_pair_state()
+    except Exception:
+        raise ConnectionError("selection_unavailable", 503) from None
+    return revision if (provider, current) == ("chatgpt-plan", model) else None
+
+
+def select_for_chat(model, selection):
+    _available()
+    _writable()
+    revision = _pair_revision(model)
+    if revision is None or not isinstance(selection, _ChatSelection) or selection.model != model:
+        raise ConnectionError("selection_changed", 409)
+    with _transaction() as record:
+        _current(selection.registration, record)
+        if not record.get("tokens"):
+            raise ConnectionError("not_connected", 409)
+        record["chat"] = {"model": model, "revision": revision, "generation": secrets.token_urlsafe(24)}
+    return {"model": model}
+
+
+def _selected_chat(record, model):
+    chat = record.get("chat")
+    if (record.get("tokens") and chat and model == chat["model"]
+            and _pair_revision(model) == chat["revision"]):
+        return chat["generation"]
+    return None
+
+
+def selected_chat_generation(model):
+    return _selected_chat(_read(), model)
+
+
+def access_for_chat(model, generation):
+    """A text turn may use its reviewed selection and a usable token. Only setup renews it."""
+    from agents.core.security.website_policy import website_refusal
+
+    _available()
+    if website_refusal(RESOURCE + "/responses"):
+        raise ConnectionError("egress_refused", 403)
+    record = _read()
+    if not generation or _selected_chat(record, model) != generation:
+        raise ConnectionError("selection_changed", 409)
+    tokens = record["tokens"]
+    if tokens["expires"] <= _now() + 60:
+        raise ConnectionError("refresh_connection", 409)
+    return tokens["access"]

@@ -9264,6 +9264,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/chatgpt-plan/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select For Chat
+         * @description Choose a visible plan model for ordinary chat, after the usual settings consent.
+         */
+        post: operations["select_for_chat_api_admin_chatgpt_plan_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/chatgpt-plan/disconnect": {
         parameters: {
             query?: never;
@@ -18045,6 +18065,21 @@ export interface components {
             name: string;
             /** Text */
             text: string;
+        };
+        /** ChatChoice */
+        ChatChoice: {
+            /** Model */
+            model: string;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /** ChatNoteBody */
         ChatNoteBody: {
@@ -36743,6 +36778,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    select_for_chat_api_admin_chatgpt_plan_select_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatChoice"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

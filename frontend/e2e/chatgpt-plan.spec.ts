@@ -4,7 +4,7 @@ test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name !== 'chatgpt-plan', 'requires the isolated signed-provider hub');
 });
 
-test('owner connects, sees signed catalog in order, and disconnects through the packaged HUD', async ({ page, context, request, baseURL }) => {
+test('owner connects, chooses a visible ChatGPT model, reloads and disconnects in the packaged HUD', async ({ page, context, request, baseURL }) => {
   const origin = baseURL!;
   const callback = `${origin}/api/oauth/chatgpt/callback`;
   let authorizationRequests = 0;
@@ -44,7 +44,14 @@ test('owner connects, sees signed catalog in order, and disconnects through the 
   await expect(card.getByText('connected', { exact: true })).toBeVisible();
   await card.getByRole('button', { name: 'Show available models' }).click();
   const models = card.getByRole('list', { name: 'available models' });
-  await expect(models.getByRole('listitem')).toHaveText(['Second (second)', 'First (first)']);
+  await expect(models.getByRole('listitem').locator('span')).toHaveText(['Second (second)', 'First (first)']);
+  await models.getByRole('listitem').filter({ hasText: 'First (first)' }).getByRole('button').click();
+  const choice = card.getByRole('dialog', { name: 'Use ChatGPT plan for chat' });
+  await expect(choice.getByText('Model: first', { exact: true })).toBeVisible();
+  await choice.getByRole('button', { name: 'Confirm chat model' }).click();
+  await expect(card.getByText('Selected for chat: first', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(card.getByText('Selected for chat: first', { exact: true })).toBeVisible();
 
   await card.getByRole('button', { name: 'Disconnect' }).click();
   await expect(card.getByText('not connected', { exact: true })).toBeVisible();
@@ -54,6 +61,7 @@ test('owner connects, sees signed catalog in order, and disconnects through the 
   expect(state.provider_calls).toEqual([
     ['POST', 'auth.openai.com', '/api/accounts/oauth/token'],
     ['GET', 'auth.openai.com', '/.well-known/jwks.json'],
+    ['GET', 'api.openai.com', '/v1/models'],
     ['GET', 'api.openai.com', '/v1/models'],
   ]);
   expect(state.generation_requests).toEqual([]);

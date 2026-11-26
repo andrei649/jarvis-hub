@@ -103,6 +103,104 @@ async def connect(s):
     return await connection.complete(s.start(), BINDING, code="owner-code", client_id=CLIENT, error=None)
 
 
+@pytest.mark.asyncio
+async def test_plan_chat_must_match_account_model_and_persisted_selection(provider, monkeypatch):
+    from agents.core import settings_db
+
+    pair = [7, "chatgpt-plan", "first"]
+    monkeypatch.setattr(settings_db, "compatible_pair_state", lambda: tuple(pair))
+    await connect(provider)
+    with pytest.raises(connection.ConnectionError):
+        await connection.prepare_chat_selection("hidden")
+    offer = await connection.prepare_chat_selection("first")
+    assert connection.selected_chat_generation("first") is None
+    with pytest.raises(connection.ConnectionError):
+        connection.select_for_chat("second", offer)
+    assert connection.select_for_chat("first", offer) == {"model": "first"}
+    assert connection.status() == {"connected": True, "selected_model": "first"}
+    generation = connection.selected_chat_generation("first")
+    assert generation
+    calls = list(provider.calls)
+    assert connection.access_for_chat("first", generation) == "plan-access"
+    with monkeypatch.context() as policy:
+        policy.setattr("agents.core.security.website_policy.website_refusal", lambda _: "owner_block")
+        with pytest.raises(connection.ConnectionError, match="egress_refused"):
+            connection.access_for_chat("first", generation)
+    with pytest.raises(connection.ConnectionError):
+        connection.access_for_chat("second", generation)
+    pair[0] += 1
+    assert connection.status() == {"connected": True}
+    assert connection.selected_chat_generation("first") is None
+    with pytest.raises(connection.ConnectionError):
+        connection.access_for_chat("first", generation)
+    assert provider.calls == calls
+    await connect(provider)
+    with pytest.raises(connection.ConnectionError):
+        connection.select_for_chat("first", offer)
+    assert connection.selected_chat_generation("first") is None
+
+
+@pytest.mark.asyncio
+async def test_plan_chat_expiry_and_disconnect_deny_without_refreshing(provider, monkeypatch):
+    from agents.core import settings_db
+
+    monkeypatch.setattr(settings_db, "compatible_pair_state", lambda: (3, "chatgpt-plan", "first"))
+    await connect(provider)
+    offer = await connection.prepare_chat_selection("first")
+    connection.select_for_chat("first", offer)
+    generation = connection.selected_chat_generation("first")
+    calls = list(provider.calls)
+    monkeypatch.setattr(connection, "_now", lambda: time.time() + 3600)
+    with pytest.raises(connection.ConnectionError):
+        connection.access_for_chat("first", generation)
+    connection.disconnect()
+    assert connection.selected_chat_generation("first") is None
+    with pytest.raises(connection.ConnectionError):
+        connection.access_for_chat("first", generation)
+    assert provider.calls == calls
+
+
+@pytest.mark.asyncio
+async def test_native_router_uses_selected_plan_and_keeps_strict_local_agents_local(provider, monkeypatch):
+    from agents.core import settings_db
+    from agents.core.llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
+    from agents.core.llm.router import LLMRouter
+
+    selection = {"compatible_provider": "chatgpt-plan", "compatible_model": "first"}
+    monkeypatch.setattr(settings_db, "compatible_pair_state", lambda: (3, "chatgpt-plan", "first"))
+    monkeypatch.setattr(LLMRouter, "detect", lambda *_: asyncio.sleep(0))
+    monkeypatch.setattr(HybridRouter, "_check", lambda *_: asyncio.sleep(0, result=False))
+    monkeypatch.setattr(HybridRouter, "_admin_setting", staticmethod(lambda key, default: selection.get(key, default)))
+    await connect(provider)
+    offer = await connection.prepare_chat_selection("first")
+    connection.select_for_chat("first", offer)
+    router = HybridRouter()
+    try:
+        await router.detect()
+        assert next(p for p in router.provider_catalog() if p["id"] == "chatgpt-plan")["configured"] is True
+        backend, model, route = router.select_backend("jarvis", "Synthetic question")
+        assert (backend.profile.id, model, route) == ("chatgpt-plan", "first", "cloud-compatible")
+        scope = data_handling.resolve(router, backend, model).scope
+        assert scope
+        for agent in ("howard", "frigga", "ultron"):
+            with pytest.raises(LocalBackendUnavailableError):
+                router.select_backend(agent, "Synthetic question")
+        connection.disconnect()
+        assert next(p for p in router.provider_catalog() if p["id"] == "chatgpt-plan")["configured"] is False
+        with pytest.raises(LocalBackendUnavailableError):
+            router.select_backend("jarvis", "Synthetic question")
+        with pytest.raises(data_handling.DataHandlingRefused):
+            data_handling.resolve(router, backend, model)
+        await connect(provider)
+        offer = await connection.prepare_chat_selection("first")
+        connection.select_for_chat("first", offer)
+        await router.detect()
+        current, model, _ = router.preview_backend("jarvis", "Synthetic question")
+        assert data_handling.resolve(router, current, model).scope != scope
+    finally:
+        await router.aclose()
+
+
 def test_settings_status_leaves_pristine_profile_untouched(tmp_path, monkeypatch):
     profile = tmp_path / "never-connected"
     monkeypatch.setenv("JARVIS_HOME", str(profile))

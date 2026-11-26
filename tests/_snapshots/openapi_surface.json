@@ -516,6 +516,7 @@
   "POST /api/admin/backup/verify": "backup_verify_api_admin_backup_verify_post",
   "POST /api/admin/chatgpt-plan/connect": "connect_api_admin_chatgpt_plan_connect_post",
   "POST /api/admin/chatgpt-plan/disconnect": "disconnect_api_admin_chatgpt_plan_disconnect_post",
+  "POST /api/admin/chatgpt-plan/select": "select_for_chat_api_admin_chatgpt_plan_select_post",
   "POST /api/admin/export": "export_data_api_admin_export_post",
   "POST /api/admin/forget": "forget_data_api_admin_forget_post",
   "POST /api/admin/integrations/{entry_id}/test": "integration_test_api_admin_integrations__entry_id__test_post",

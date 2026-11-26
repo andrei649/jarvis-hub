@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -65,9 +66,12 @@ def capture_start(redirect_uri, binding):
 
 patch.setattr(connection, "start", capture_start)
 from agents import web  # noqa: E402
+from agents.core.llm.hybrid_router import HybridRouter  # noqa: E402
+from agents.core.security.audit import AuditLogger  # noqa: E402
 
 web.ADMIN_TOKEN = os.environ["JARVIS_ADMIN_TOKEN"]
 web.USER_TOKEN = ""
+web.orch = SimpleNamespace(audit=AuditLogger(str(run / "audit.db")), llm_router=HybridRouter())
 generation_requests = []
 
 
@@ -89,5 +93,6 @@ async def fixture_app(scope, receive, send):
 try:
     uvicorn.run(fixture_app, host="127.0.0.1", port=port, lifespan="off", log_level="error")
 finally:
+    web.orch.audit.close()
     patch.undo()
     profile.cleanup()
