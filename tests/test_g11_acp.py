@@ -272,6 +272,8 @@ async def test_session_commands_stay_in_the_editor_and_prompt_bounds(tmp_path):
 
 async def test_resource_links_become_confined_file_references(tmp_path):
     (tmp_path / "src.py").write_text("print(1)\n")
+    encoded = tmp_path / "café 50%20.py"
+    encoded.write_text("print(2)\n")
     backend, editor = FakeBackend(), Editor()
     _server, close = await _wire(backend, editor)
     try:
@@ -279,10 +281,15 @@ async def test_resource_links_become_confined_file_references(tmp_path):
         await editor.conn.request("session/prompt", {"sessionId": sid, "prompt": [
             {"type": "text", "text": "look at"},
             {"type": "resource_link", "uri": (tmp_path / "src.py").as_uri(), "name": "src.py"},
+            {"type": "resource_link", "uri": encoded.as_uri(), "name": encoded.name},
+            {"type": "resource_link", "uri": "file://LOCALHOST" + encoded.as_uri()[7:], "name": "local"},
+            {"type": "resource_link", "uri": "file://foreign" + encoded.as_uri()[7:], "name": "remote"},
             {"type": "resource_link", "uri": "file:///etc/passwd", "name": "passwd"},
         ]})
         sent = backend.messages[0]
         assert f"@file:{(tmp_path / 'src.py').resolve()}" in sent
+        assert sent.count(f'@file:"{encoded.resolve()}"') == 2
+        assert "outside this session's folder was left out: remote" in sent
         assert "/etc/passwd" not in sent and "outside this session's folder" in sent
     finally:
         await close()
