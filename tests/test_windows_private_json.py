@@ -1,10 +1,12 @@
 """Native NTFS ACL checks for the shared JSON writer and CoreMemory drift copy."""
 
+import ctypes
 import hashlib
 import json
 import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from ctypes import wintypes
 from pathlib import Path
 from threading import Barrier
 
@@ -15,6 +17,50 @@ from agents.core.persistence import atomic_write_json
 from tests.private_file_permissions import assert_private_file
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows ACL regression")
+
+
+def test_new_private_file_sets_token_user_as_owner_when_default_owner_is_administrators(
+        tmp_path, monkeypatch):
+    from agents.core.persistence import private_file
+
+    current = "S-1-5-21-111-222-333-1001"  # synthetic token user
+    administrator = "S-1-5-32-544"
+    descriptor = []
+
+    class SecurityAttributes(ctypes.Structure):
+        _fields_ = [("nLength", wintypes.DWORD), ("lpSecurityDescriptor", ctypes.c_void_p),
+                    ("bInheritHandle", wintypes.BOOL)]
+
+    class Api:
+        def _current_sid(self):
+            return current
+
+        def acl_info(self, _handle):
+            explicit_owner = f"O:{current}" in descriptor[0]
+            return (current if explicit_owner else administrator, current, True,
+                    ((current, "allow"), ("S-1-5-18", "allow")))
+
+    class Advapi:
+        def ConvertStringSecurityDescriptorToSecurityDescriptorW(self, sddl, _revision,
+                                                                  pointer, _size):
+            descriptor.append(sddl)
+            pointer._obj.value = 1
+            return True
+
+    class Kernel:
+        def CreateFileW(self, *_args):
+            return 42
+
+        def CloseHandle(self, _handle):
+            return True
+
+        def LocalFree(self, _descriptor):
+            return None
+
+    monkeypatch.setattr(private_file, "_windows_native",
+                        lambda: (Api(), Advapi(), Kernel(), SecurityAttributes))
+    assert private_file._create_windows_private(tmp_path / "synthetic.json") == 42
+    assert f"(A;;FA;;;{current})" in descriptor[0]
 
 
 def test_new_and_replaced_json_are_private_before_and_after_writing(tmp_path, monkeypatch):
