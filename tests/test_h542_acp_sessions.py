@@ -20,6 +20,7 @@ from agents.core.acp import render
 from agents.core.acp.jsonrpc import RpcError
 from agents.core.acp.paths import AcpPathError, confine, session_root, translate
 from agents.core.acp.server import BackendRefused
+from tests.private_file_permissions import assert_private_file
 from tests.test_g11_acp import Editor, FakeBackend, _wire
 
 
@@ -215,7 +216,7 @@ async def test_router_load_list_and_fork_keep_the_folder_binding(tmp_path, monke
         await prepare_session(orch, sid)
         await orch.memory.add_turn(sid, "user", "fix the bug")
         await orch.memory.add_turn(sid, "assistant", "fixed")
-        assert acp_sessions.index_path().stat().st_mode & 0o077 == 0     # owner-only index
+        assert_private_file(acp_sessions.index_path())
 
         held = await router.acp_open_session(body(cwd=str(project), load=sid))
         assert held.status_code == 409 and json.loads(held.body)["error"] == "session_in_use"

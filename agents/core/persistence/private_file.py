@@ -56,7 +56,8 @@ def _create_windows_private(path: Path) -> int:
 
     api, advapi, kernel, SecurityAttributes = _windows_native()
     descriptor = ctypes.c_void_p()
-    sddl = "D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;OW)"
+    sid = api._current_sid()
+    sddl = f"O:{sid}D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;{sid})"
     if not advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
             sddl, 1, ctypes.byref(descriptor), None):
         raise ctypes.WinError(ctypes.get_last_error())

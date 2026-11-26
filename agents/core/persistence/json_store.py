@@ -45,7 +45,7 @@ def atomic_write_json(
     change behaviour for every migrated store and belongs in its own change.
 
     The empty scratch is created 0600 on POSIX. Windows creates it with an
-    explicit protected DACL for owner rights, SYSTEM and Administrators, and
+    explicit protected DACL for the current user, SYSTEM and Administrators, and
     verifies that DACL before writing. The verified Windows handle stays open
     through the write and denies deletion until publication. A parent directory
     writable by other accounts still permits path replacement or deletion after
