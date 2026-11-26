@@ -5,14 +5,38 @@ new resume_session() capability. Pure ConversationMemory (no FastAPI/Qdrant)."""
 import json
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
+from agents.core.memory import conversation
 from agents.core.memory.conversation import ConversationMemory
 from agents.core.memory import persistence
+
+
+async def test_rapid_new_sessions_keep_separate_histories(tmp_path, monkeypatch):
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 26, 12, 0, tzinfo=tz)
+
+    monkeypatch.setattr(conversation, "datetime", FrozenDateTime)
+    monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path)
+    memory = ConversationMemory(persist=True)
+    first = await memory.new_session()
+    await memory.add_turn(first, "user", "Only the first chat knows this.")
+    second = await memory.new_session()
+    assert second != first
+    assert [turn["content"] for turn in await memory.get_history(first)] == ["Only the first chat knows this."]
+    assert await memory.get_history(second) == []
+
+    named = await memory.new_session("session_named")
+    await memory.add_turn(named, "user", "Named history")
+    assert await memory.new_session(named) == named
+    assert [turn["content"] for turn in await memory.get_history(named)] == ["Named history"]
 
 
 async def test_persistence_roundtrip_across_restart(tmp_path, monkeypatch):
