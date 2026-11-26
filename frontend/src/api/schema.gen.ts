@@ -13653,6 +13653,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/cloud-history/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Cloud History */
+        post: operations["preview_cloud_history_api_chat_cloud_history_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/resolve": {
         parameters: {
             query?: never;
@@ -18008,6 +18025,7 @@ export interface components {
              * @default false
              */
             allow_board_cloud: boolean;
+            cloud_history?: components["schemas"]["HistoryChoice"] | null;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -18864,6 +18882,19 @@ export interface components {
              * @default false
              */
             confirm: boolean;
+        };
+        /** HistoryChoice */
+        HistoryChoice: {
+            /** Session Id */
+            session_id: string;
+            /** Agent */
+            agent: string;
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Revision */
+            revision: string;
         };
         /** HistoryReference */
         HistoryReference: {
@@ -19900,6 +19931,15 @@ export interface components {
              */
             operation: "run" | "pause" | "resume" | "pin" | "unpin" | "adopt" | "restore" | "archive" | "prune" | "backup" | "rollback" | "purge";
             args?: components["schemas"]["CuratorArgs"];
+        };
+        /** PreviewRequest */
+        PreviewRequest: {
+            /** Session Id */
+            session_id: string;
+            /** Agent */
+            agent: string;
+            /** Message */
+            message: string;
         };
         /** ProcedureBody */
         ProcedureBody: {
@@ -42632,6 +42672,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_cloud_history_api_chat_cloud_history_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryChoice"];
                 };
             };
             /** @description Validation Error */

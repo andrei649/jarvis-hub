@@ -81,7 +81,7 @@ def test_openapi_schemas_media_and_handler_gaps_are_honest():
     assert set(schemas) == {
         "ChatRequest", "ChatAttachment", "ChatResponse", "TurnNotice", "TurnOutcome", "TurnCompletion",
         "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation", "TurnRecall", "TurnUsageDetail", "ModelCall",
-        "HistoryReference", "BoardReference", "BoardSource",
+        "HistoryReference", "HistoryChoice", "BoardReference", "BoardSource",
     }
     for name, schema in schemas.items():
         assert schema == source["components"]["schemas"][name]

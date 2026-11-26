@@ -979,13 +979,14 @@ class AgentToolRuntime:
                     trajectory.note_system(messages[0]["content"])   # the fold's own notice
             # H513: every round rechecks revocation after tool/profile awaits.
             # Errors propagate before provider I/O; an unreadable gate never widens.
-            if before_model_call is not None:
-                checked = before_model_call()
-                if inspect.isawaitable(checked):
-                    await checked
+            from .chat_cloud_history import tool_model_round
             from .llm.data_handling import physical_request_scope
             # Scope only generation/retries, never ToolRPC or spawned judge work.
-            with physical_request_scope(before_model_call):
+            with tool_model_round(), physical_request_scope(before_model_call):
+                if before_model_call is not None:
+                    checked = before_model_call()
+                    if inspect.isawaitable(checked):
+                        await checked
                 from .approval_outcomes import mark_invocation_outcomes_visible
                 mark_invocation_outcomes_visible(messages)
                 from .turn_usage import model_usage_scope
@@ -1855,6 +1856,12 @@ class AgentToolRuntime:
                 reason="too_many_tool_calls",
                 event_sink=event_sink,
                 spent=spent,
+            )
+        from .chat_cloud_history import reads_unreviewed_history
+        if reads_unreviewed_history(call.name):
+            return await self._local_failure(
+                call, agent_id=agent_id, reason="cloud_history_disclosure_required",
+                event_sink=event_sink, spent=spent,
             )
         if not offered:
             return await self._local_failure(

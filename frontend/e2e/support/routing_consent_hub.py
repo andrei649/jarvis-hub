@@ -19,11 +19,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from fastapi import Request
+
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "support"))
 
-from fake_openai_server import FakeOpenAIServer, compose_reply, split_messages  # noqa: E402
+from fake_openai_server import FakeOpenAIServer  # noqa: E402
 from workspace_hub import scrubbed  # noqa: E402
 
 LOCAL_MODEL = "nerva-routing-local"
@@ -42,6 +44,19 @@ def _text_values(value):
     elif isinstance(value, list):
         for item in value:
             yield from _text_values(item)
+
+
+def _reviewed_rows(text):
+    marker = "Earlier turns from this conversation (quoted data):\n"
+    end = "\n\nCurrent message:\n"
+    if marker not in text:
+        return []
+    fragment = text.split(marker, 1)[1].split(end, 1)[0]
+    try:
+        rows = json.loads(fragment)
+    except (ValueError, TypeError):
+        return []
+    return rows if isinstance(rows, list) else []
 
 
 class GeminiLoopback:
@@ -99,20 +114,26 @@ class GeminiLoopback:
         self.server.server_close()
         self.thread.join(timeout=5)
 
-    def snapshot(self, prior_replies: list[str]) -> dict:
+    def snapshot(self, expected_reply: str) -> dict:
         with self.lock:
             requests = list(self.requests)
-        texts = [text for row in requests for text in _text_values(row["body"])]
+        observed = []
+        for row in requests:
+            texts = list(_text_values(row["body"]))
+            reviewed = [item for text in texts for item in _reviewed_rows(text) if isinstance(item, dict)]
+            observed.append({
+                "prior_user_seen": any(item.get("role") == "user" and item.get("content") == "Synthetic local route proof, first turn."
+                                       for item in reviewed),
+                "prior_reply_seen": bool(expected_reply) and any(item.get("role") == "assistant" and item.get("content") == expected_reply
+                                                              for item in reviewed),
+                "unrelated_session_seen": any("UNRELATED SESSION SENTINEL" in text for text in texts),
+                "current_turn_seen": any("Synthetic consented cloud route proof, second turn." in text for text in texts),
+            })
         return {
             "count": len(requests),
             "model": requests[-1]["model"] if requests else "",
             "paths": [r["path"] for r in requests],
-            "prior_user_seen": any("Synthetic local route proof, first turn." in text for text in texts),
-            "prior_reply_seen": any(
-                len(reply) >= 24 and reply in text
-                for reply in prior_replies for text in texts
-            ),
-            "current_turn_seen": any("Synthetic consented cloud route proof, second turn." in text for text in texts),
+            "requests": observed,
         }
 
 
@@ -185,17 +206,13 @@ def main() -> None:
             # real integration write triggers router re-detection after consent.
             gemini_module.llm_async_client = fixture_client
 
-            async def routing_snapshot() -> dict:
+            async def routing_snapshot(request: Request) -> dict:
                 with local._lock:
                     requests = list(local.requests)
                 completions = [r for r in requests if r["path"] == "/v1/chat/completions"]
-                prior_replies = [
-                    compose_reply(*split_messages(row["body"].get("messages")))
-                    for row in completions
-                ]
                 return {
                     "local": {"count": len(completions), "model": LOCAL_MODEL if completions else ""},
-                    "cloud": cloud.snapshot(prior_replies),
+                    "cloud": cloud.snapshot(request.query_params.get("expected_reply", "")),
                 }
 
             web.app.add_api_route(
