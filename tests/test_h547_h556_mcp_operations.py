@@ -16,6 +16,7 @@ import contextlib
 import datetime
 import json
 import os
+import shlex
 import signal
 import ssl
 import subprocess
@@ -42,7 +43,7 @@ LINUX = sys.platform.startswith("linux")
 
 
 def _cmd(mode: str = "full") -> str:
-    return f"{sys.executable} {FAKE} {mode}"
+    return shlex.join([sys.executable, str(FAKE), mode])
 
 
 @pytest.fixture(autouse=True)

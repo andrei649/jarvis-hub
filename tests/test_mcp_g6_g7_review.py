@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -34,7 +35,7 @@ FAKE = Path(__file__).resolve().parent / "fixtures" / "mcp_fake_server.py"
 
 
 def _cmd(mode: str) -> str:
-    return f"{sys.executable} {FAKE} {mode}"
+    return shlex.join([sys.executable, str(FAKE), mode])
 
 
 @pytest.fixture(autouse=True)
@@ -240,7 +241,7 @@ async def test_a_cancelled_call_withdraws_the_card_and_frees_the_server():
     queue = ActionApprovalQueue()
     host, manager, srv = _elicit_mgr(queue)
     try:
-        await manager.connect_server("docs")
+        assert await manager.connect_server("docs"), srv.last_error
         call = asyncio.create_task(manager.call_tool("ask_input", {}, server="docs"))
         card = await _pending(queue, "mcp.elicitation")
         call.cancel()

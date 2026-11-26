@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import stat
 import sys
 import time
@@ -52,7 +53,7 @@ FAKE = Path(__file__).resolve().parent / "fixtures" / "mcp_fake_server.py"
 
 
 def _cmd(mode: str) -> str:
-    return f"{sys.executable} {FAKE} {mode}"
+    return shlex.join([sys.executable, str(FAKE), mode])
 
 
 @pytest.fixture(autouse=True)
