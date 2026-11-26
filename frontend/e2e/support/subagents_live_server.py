@@ -56,7 +56,16 @@ os.environ.update(
     NO_PROXY="127.0.0.1,localhost,::1",
 )
 
+physical_model = ""
 if model:
+    from agents.core.llm.data_handling import DataHandlingRefused
+    from agents.core.llm.physical_local import ollama_local_selector
+
+    try:
+        physical_model = ollama_local_selector(model)
+    except DataHandlingRefused as exc:
+        raise SystemExit("NERVA_FINISH_PARALLEL_MODEL is not a valid local selector") from exc
+
     def loopback_only(event: str, args: tuple) -> None:
         if event == "socket.getaddrinfo" and args[0] not in {"127.0.0.1", "localhost", "::1", None}:
             raise PermissionError("fixture permits loopback only")
@@ -79,17 +88,18 @@ if model:
                 raise PermissionError("fixture may contact only itself and physical Ollama")
 
     sys.addaudithook(loopback_only)
-    # This is metadata only: reject Ollama aliases forwarding to remote hosts.
-    request = Request("http://127.0.0.1:11434/api/show",
-                      data=json.dumps({"model": model}).encode(),
-                      headers={"Content-Type": "application/json"}, method="POST")
+    # Metadata only: prove both the named install and the final physical selector.
     try:
-        with build_opener(ProxyHandler({})).open(request, timeout=8) as response:
-            raw = response.read(512 * 1024 + 1)
-        shown = json.loads(raw) if len(raw) <= 512 * 1024 else {}
-        if (not isinstance(shown, dict) or shown.get("remote_model") or shown.get("remote_host")
-                or not isinstance(shown.get("model_info"), dict) or not shown["model_info"]):
-            raise ValueError("remote or unverified model")
+        for candidate in dict.fromkeys((model, physical_model)):
+            request = Request("http://127.0.0.1:11434/api/show",
+                              data=json.dumps({"model": candidate}).encode(),
+                              headers={"Content-Type": "application/json"}, method="POST")
+            with build_opener(ProxyHandler({})).open(request, timeout=8) as response:
+                raw = response.read(512 * 1024 + 1)
+            shown = json.loads(raw) if len(raw) <= 512 * 1024 else {}
+            if (not isinstance(shown, dict) or shown.get("remote_model") or shown.get("remote_host")
+                    or not isinstance(shown.get("model_info"), dict) or not shown["model_info"]):
+                raise ValueError("remote or unverified model")
     except (OSError, ValueError) as exc:
         raise SystemExit("physical Ollama model could not be verified") from exc
 
@@ -107,9 +117,9 @@ if model:
     if paths.data_root().resolve() != home or settings_db.DB_PATH.parent.resolve() != home:
         raise SystemExit("hub data path escaped fixture")
     settings_db.init_db(force=True)
-    settings_db.put_category("llm", {"backend_type": "ollama", "default_model": model,
+    settings_db.put_category("llm", {"backend_type": "ollama", "default_model": physical_model,
                                     "cloud_fallback": "never", "tool_loop_enabled": False})
-    settings_db.put_category("autonomy", {"subagent_model": model, "subagent_provider": "ollama"})
+    settings_db.put_category("autonomy", {"subagent_model": physical_model, "subagent_provider": "ollama"})
 
 release_b = asyncio.Event()
 physical_generations: list[dict[str, str]] = []
@@ -139,7 +149,7 @@ async def controlled_lifespan(app):
             if web.orch.subagents.max_concurrent < 2:
                 raise RuntimeError("product profile allows fewer than two sub-agent slots")
             router = web.orch.llm_router
-            router.set_active_model(model)
+            router.set_active_model(physical_model)
             if (not router._local_available or router._cloud_available or router._claude_available
                     or router._backend_name != "ollama" or router.ollama_url != "http://127.0.0.1:11434"):
                 raise RuntimeError("fixture requires the physical local Ollama route only")
@@ -181,7 +191,7 @@ async def release_second_child():
 
 @web.app.get("/__test/physical-generations", dependencies=[Depends(web._admin_guard)])
 async def physical_generation_count():
-    return {"models": physical_generations}
+    return {"expected_model": physical_model, "models": physical_generations}
 
 
 if __name__ == "__main__":

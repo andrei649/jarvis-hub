@@ -59,7 +59,14 @@ test('physical Ollama children run in parallel; stopping one leaves the sibling 
   await expect(capacity).toBeVisible();
   const cap = Number((await capacity.textContent())?.match(/\/(\d+) active/)?.[1]);
   expect(cap).toBeGreaterThanOrEqual(2);
-  await page.getByPlaceholder('model (optional)').fill(model!);
+  const configured = await request.get('/__test/physical-generations', {
+    headers: { 'X-Admin-Token': 'parallel-hud-admin-fixture' },
+  });
+  expect(configured.ok()).toBeTruthy();
+  const expectedModel = (await configured.json()).expected_model;
+  expect(typeof expectedModel).toBe('string');
+  expect(expectedModel).toMatch(/:local$/);
+  await page.getByPlaceholder('model (optional)').fill(expectedModel);
   const packing = 'Create a detailed numbered packing checklist with 100 distinct items for a synthetic bicycle-parts shipment. Continue until all items are written.';
   const wheels = 'Calculate the number of wheels needed for 17 boxes with 14 wheels in each box. State the exact total and its unit, then give 20 numbered arithmetic checks.';
   expect(packing + wheels).not.toContain('238');
@@ -111,6 +118,6 @@ test('physical Ollama children run in parallel; stopping one leaves the sibling 
     headers: { 'X-Admin-Token': 'parallel-hud-admin-fixture' },
   });
   expect(physical.ok()).toBeTruthy();
-  expect((await physical.json()).models).toContainEqual({ spawn_id: secondId, model });
+  expect((await physical.json()).models).toContainEqual({ spawn_id: secondId, model: expectedModel });
   expect(escaped).toEqual([]);
 });
