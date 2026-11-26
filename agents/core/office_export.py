@@ -1,9 +1,14 @@
 """Local, data-only Word and spreadsheet exports."""
 
 import re
+import tempfile
 from html import escape
 from io import BytesIO
+from pathlib import Path
+from urllib.parse import urlsplit
 from zipfile import ZIP_DEFLATED, ZipFile
+
+from agents.core.archive_safe import ArchiveLimits, ArchiveRejected, extract_zip_bytes
 
 WORD_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -225,3 +230,273 @@ def create_xlsx(rows: list[list[str]]) -> bytes:
         for name, content in parts.items():
             archive.writestr(name, content.encode("utf-8"))
     return output.getvalue()
+
+
+_WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_SHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+_PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+_OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
+_CELL_ADDRESS = re.compile(r"([A-Z]{1,3})([1-9][0-9]{0,6})\Z")
+_EDIT_LIMITS = ArchiveLimits(max_members=512, max_bytes=32 * 1024 * 1024)
+_MAX_EDIT_INPUT = 8 * 1024 * 1024
+_MAX_XML_PART = 8 * 1024 * 1024
+_MAX_XML_NODES = 200_000
+_MAX_XML_DEPTH = 128
+
+
+def _edit_xml(data: bytes):
+    if len(data) > _MAX_XML_PART:
+        raise ValueError("Office XML part is too large to edit")
+    from lxml import etree as ET
+
+    try:
+        parser = ET.XMLParser(resolve_entities=False, load_dtd=False, no_network=True,
+                              recover=False, huge_tree=False, remove_comments=False, remove_pis=False)
+        root = ET.fromstring(data, parser=parser)
+    except Exception as exc:
+        raise ValueError("Office XML is malformed or unsafe") from exc
+    if root.getroottree().docinfo.doctype:
+        raise ValueError("Office XML DTD declarations are not allowed")
+    count = 0
+    stack = [(root, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if not isinstance(node.tag, str):
+            continue  # XML comments and processing instructions are not elements.
+        count += 1
+        if count > _MAX_XML_NODES or depth > _MAX_XML_DEPTH:
+            raise ValueError("Office XML is too complex to edit")
+        stack.extend((child, depth + 1) for child in node)
+    return root
+
+
+def _xml_bytes(root) -> bytes:
+    from lxml import etree as ET
+
+    return ET.tostring(root.getroottree(), encoding="utf-8", xml_declaration=True)
+
+
+def _edit_package(data: bytes, kind: str) -> dict[str, bytes]:
+    if type(data) is not bytes or not data.startswith(b"PK\x03\x04") or len(data) > _MAX_EDIT_INPUT:
+        raise ValueError("Supply a bounded DOCX or XLSX file")
+    try:
+        with tempfile.TemporaryDirectory(prefix="nerva-office-edit-") as temporary:
+            root = Path(temporary)
+            names = extract_zip_bytes(data, root, limits=_EDIT_LIMITS)
+            parts = {"/".join(name): (root.joinpath(*name)).read_bytes()
+                     for name in names if (root.joinpath(*name)).is_file()}
+    except (ArchiveRejected, OSError) as exc:
+        raise ValueError("Office package is malformed or unsafe") from exc
+    if ("[Content_Types].xml" not in parts or "_rels/.rels" not in parts
+            or (kind == "docx" and "word/document.xml" not in parts)
+            or (kind == "xlsx" and ("xl/workbook.xml" not in parts
+                                    or "xl/_rels/workbook.xml.rels" not in parts))):
+        raise ValueError("Office package is missing required parts")
+    types = None
+    for name, content in parts.items():
+        lower = name.lower()
+        if ("vbaproject" in lower or "activex" in lower or "embedding" in lower
+                or "externallink" in lower or "_xmlsignatures" in lower or lower.endswith(".bin")):
+            raise ValueError("Office active content cannot be edited safely")
+        xml_root = _edit_xml(content) if lower.endswith((".xml", ".rels")) else None
+        if name == "[Content_Types].xml":
+            types = xml_root
+        if lower.endswith(".rels"):
+            rels = xml_root
+            if rels.tag != f"{{{_PACKAGE_REL_NS}}}Relationships":
+                raise ValueError("Office relationships are malformed")
+            for relation in rels:
+                if not isinstance(relation.tag, str):
+                    continue
+                if relation.tag != f"{{{_PACKAGE_REL_NS}}}Relationship":
+                    raise ValueError("Office relationships are malformed")
+                target = relation.get("Target", "")
+                mode = relation.get("TargetMode", "").lower()
+                if mode not in ("", "internal", "external"):
+                    raise ValueError("Office relationships are malformed")
+                external = mode == "external"
+                if external:
+                    uri = urlsplit(target)
+                    passive = (relation.get("Type") == f"{_OFFICE_REL_NS}/hyperlink"
+                               and uri.scheme in ("http", "https", "mailto")
+                               and bool(uri.netloc if uri.scheme in ("http", "https") else uri.path)
+                               and not any(char in target for char in "\r\n\x00"))
+                    if passive:
+                        continue
+                if external or ":" in target or target.startswith(("//", "\\\\")):
+                    raise ValueError("Office package has an external relationship")
+    if types.tag != "{http://schemas.openxmlformats.org/package/2006/content-types}Types":
+        raise ValueError("Office package has invalid content types")
+    overrides = []
+    for part in types:
+        if not isinstance(part.tag, str):
+            continue
+        if part.tag == "{http://schemas.openxmlformats.org/package/2006/content-types}Override":
+            overrides.append(part)
+        elif part.tag != "{http://schemas.openxmlformats.org/package/2006/content-types}Default":
+            raise ValueError("Office package has invalid content types")
+        content_type = part.get("ContentType")
+        if not content_type:
+            raise ValueError("Office package has invalid content types")
+        if any(marker in content_type.casefold() for marker in
+               ("macroenabled", "activex", "oleobject", "vbaproject")):
+            raise ValueError("Office active content cannot be edited safely")
+    declared = {part.get("PartName"): part.get("ContentType") for part in overrides}
+    main = ("/word/document.xml" if kind == "docx" else "/xl/workbook.xml")
+    expected = ("application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+                if kind == "docx" else
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml")
+    if declared.get(main) != expected or sum(part.get("PartName") == main for part in overrides) != 1:
+        raise ValueError("Office package declares the wrong document type")
+    return parts
+
+
+def _write_edited_package(parts: dict[str, bytes]) -> bytes:
+    output = BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        for name, content in parts.items():
+            archive.writestr(name, content)
+    return output.getvalue()
+
+
+def _replace_docx(parts: dict[str, bytes], target: str, replacement: str) -> None:
+    root = _edit_xml(parts["word/document.xml"])
+    paragraph_tag = f"{{{_WORD_NS}}}p"
+    text_tag = f"{{{_WORD_NS}}}t"
+    hit = None
+    for paragraph in root.iter(paragraph_tag):
+        nodes = list(paragraph.iter(text_tag))
+        joined = "".join(node.text or "" for node in nodes)
+        at = joined.find(target)
+        if at >= 0:
+            if hit is not None or joined.find(target, at + 1) >= 0:
+                raise ValueError("Select a unique text match in one document paragraph")
+            hit = (paragraph, nodes, at)
+    if hit is None:
+        raise ValueError("Select a unique text match in one document paragraph")
+    paragraph, nodes, at = hit
+    for child in paragraph:
+        if child.tag == f"{{{_WORD_NS}}}pPr":
+            continue
+        if child.tag != f"{{{_WORD_NS}}}r" or any(
+                node.tag not in (f"{{{_WORD_NS}}}rPr", text_tag) for node in child):
+            raise ValueError("Selected paragraph contains non-text content")
+    stop = at + len(target)
+    cursor = 0
+    inserted = False
+    for node in nodes:
+        text = node.text or ""
+        end = cursor + len(text)
+        if end > at and cursor < stop:
+            left = text[:max(0, at - cursor)]
+            right = text[max(0, stop - cursor):]
+            node.text = left + (replacement if not inserted else "") + right
+            inserted = True
+            if node.text and (node.text[0].isspace() or node.text[-1].isspace()):
+                node.set(_XML_SPACE, "preserve")
+        cursor = end
+    parts["word/document.xml"] = _xml_bytes(root)
+
+
+def _address(value: str) -> tuple[int, int]:
+    match = _CELL_ADDRESS.fullmatch(value.upper()) if isinstance(value, str) else None
+    if match is None:
+        raise ValueError("Select an A1 cell address")
+    column = 0
+    for char in match.group(1):
+        column = column * 26 + ord(char) - 64
+    row = int(match.group(2))
+    if column > 16_384 or row > 1_048_576:
+        raise ValueError("Cell address is outside the worksheet")
+    return column, row
+
+
+def _sheet_part(parts: dict[str, bytes], sheet: str | None) -> str:
+    workbook = _edit_xml(parts["xl/workbook.xml"])
+    sheets = list(workbook.iter(f"{{{_SHEET_NS}}}sheet"))
+    selected = [row for row in sheets if row.get("name") == sheet] if sheet is not None else sheets
+    if len(selected) != 1:
+        raise ValueError("Select one existing sheet by name")
+    relation_id = selected[0].get(f"{{{_OFFICE_REL_NS}}}id")
+    rels = _edit_xml(parts["xl/_rels/workbook.xml.rels"])
+    matches = [rel for rel in rels.iter(f"{{{_PACKAGE_REL_NS}}}Relationship")
+               if rel.get("Id") == relation_id and rel.get("Type") == f"{_OFFICE_REL_NS}/worksheet"]
+    if len(matches) != 1:
+        raise ValueError("Selected sheet has no safe worksheet part")
+    target = matches[0].get("Target", "")
+    if target.startswith("/xl/"):
+        name = target[1:]
+    elif target and not target.startswith("/") and ".." not in target.split("/"):
+        name = "xl/" + target
+    else:
+        raise ValueError("Selected sheet has no safe worksheet part")
+    if name not in parts or not name.startswith("xl/worksheets/"):
+        raise ValueError("Selected sheet has no safe worksheet part")
+    return name
+
+
+def _replace_xlsx(parts: dict[str, bytes], target: str, replacement: str,
+                  sheet: str | None) -> None:
+    from lxml import etree as ET
+
+    column, row = _address(target)
+    address = target.upper()
+    name = _sheet_part(parts, sheet)
+    root = _edit_xml(parts[name])
+    cell_tag = f"{{{_SHEET_NS}}}c"
+    matches = [cell for cell in root.iter(cell_tag) if cell.get("r") == address]
+    if len(matches) != 1:
+        raise ValueError("Select one existing cell")
+    for merged in root.iter(f"{{{_SHEET_NS}}}mergeCell"):
+        endpoints = (merged.get("ref") or "").split(":")
+        if len(endpoints) != 2:
+            raise ValueError("Worksheet has an unsafe merged range")
+        first, last = _address(endpoints[0]), _address(endpoints[1])
+        if first[0] <= column <= last[0] and first[1] <= row <= last[1]:
+            raise ValueError("Merged cells cannot be edited safely")
+    for formula in root.iter(f"{{{_SHEET_NS}}}f"):
+        if formula.get("t") in ("shared", "array", "dataTable"):
+            raise ValueError("Shared or array formulas cannot be edited safely")
+    cell = matches[0]
+    if set(cell.attrib) - {"r", "s", "t"} or any(
+            child.tag not in (f"{{{_SHEET_NS}}}v", f"{{{_SHEET_NS}}}is") for child in cell):
+        raise ValueError("Formula or structured cell cannot be edited safely")
+    if cell.find(f"{{{_SHEET_NS}}}is/{{{_SHEET_NS}}}r") is not None:
+        raise ValueError("Rich text cell cannot be edited safely")
+    for child in list(cell):
+        cell.remove(child)
+    if _number(replacement):
+        cell.attrib.pop("t", None)
+        ET.SubElement(cell, f"{{{_SHEET_NS}}}v").text = replacement
+    else:
+        cell.set("t", "inlineStr")
+        inline = ET.SubElement(cell, f"{{{_SHEET_NS}}}is")
+        text = ET.SubElement(inline, f"{{{_SHEET_NS}}}t")
+        text.set(_XML_SPACE, "preserve")
+        text.text = _OOXML_ESCAPE.sub("_x005F_", replacement)
+    parts[name] = _xml_bytes(root)
+
+
+def edit_office(data: bytes, kind: str, target: str, replacement: str,
+                sheet: str | None = None) -> bytes:
+    """Edit one exact DOCX paragraph match or one XLSX cell in a bounded OOXML package."""
+    if kind not in ("docx", "xlsx"):
+        raise ValueError("Choose docx or xlsx")
+    if (not isinstance(replacement, str) or not _valid_xml(replacement)
+            or (kind == "docx" and (len(replacement) > 65_536
+                                   or any(char in replacement for char in "\t\n\r")))
+            or (kind == "xlsx" and (len(replacement) > 32_767
+                                   or len(replacement.encode("utf-16-le")) > 65_534))):
+        raise ValueError("Replacement text is invalid or too long")
+    if kind == "docx" and (not isinstance(target, str) or not target or len(target) > 8_192
+                            or sheet is not None):
+        raise ValueError("Select text in one document paragraph")
+    if kind == "xlsx" and sheet is not None and (not isinstance(sheet, str) or not sheet):
+        raise ValueError("Select one existing sheet by name")
+    parts = _edit_package(data, kind)
+    if kind == "docx":
+        _replace_docx(parts, target, replacement)
+    else:
+        _replace_xlsx(parts, target, replacement, sheet)
+    return _write_edited_package(parts)

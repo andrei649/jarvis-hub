@@ -8,6 +8,7 @@
    = /opt/pw-browsers, chromium-1194 matches @playwright/test 1.56.1) — never
    downloads. Opt-in lane: `npm run e2e` (not part of the default `npm test`). */
 import { defineConfig, devices } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const PORT = Number(process.env.E2E_PORT || 8123);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -16,6 +17,14 @@ const DEFAULT_PY = process.platform === 'win32'
   ? '.venv\\Scripts\\python.exe'
   : '.venv/bin/python';
 const PY = process.env.E2E_PYTHON || DEFAULT_PY;
+const OFFICE_REAL = process.env.NERVA_OFFICE_REAL_MODEL === '1';
+if (OFFICE_REAL) {
+  if (!Number.isInteger(PORT) || PORT <= 1024 || PORT > 65535 || [8080, 11434].includes(PORT)) {
+    throw new Error('Choose a separate loopback port for the Office model acceptance');
+  }
+  if (!process.env.NERVA_OFFICE_MODEL?.trim()) throw new Error('Set NERVA_OFFICE_MODEL to an installed local model');
+  process.env.NERVA_OFFICE_FIXTURE_TOKEN ||= randomUUID();
+}
 const ENV_PREFIX = process.platform === 'win32'
   ? `set JARVIS_PORT=${PORT}&& set JARVIS_LOG_LEVEL=warning&& `
   : `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning `;
@@ -52,6 +61,7 @@ const SOAK_ITERATIONS = (() => {
 
 export default defineConfig({
   testDir: './e2e',
+  ...(OFFICE_REAL ? { testMatch: 'office-edit.spec.ts' } : {}),
   outputDir: './e2e/.results',
   timeout: 60_000,
   expect: { timeout: 15_000 },
@@ -63,6 +73,13 @@ export default defineConfig({
   use: {
     baseURL: BASE,
     headless: true,
+    ...(OFFICE_REAL ? {
+      extraHTTPHeaders: { 'X-Admin-Token': process.env.NERVA_OFFICE_FIXTURE_TOKEN!, 'X-User-Token': process.env.NERVA_OFFICE_FIXTURE_TOKEN! },
+      launchOptions: {
+        executablePath: process.env.NERVA_TEST_BROWSER,
+        args: ['--disable-background-networking', '--no-proxy-server', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost'],
+      },
+    } : {}),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     /* index.html registers `/sw-v2.js` at scope '/', so every page in this lane is a
@@ -130,11 +147,11 @@ export default defineConfig({
   webServer: {
     // run from the repo root (cwd) — serve.py + config.py resolve agents/_system/
     // agents.yaml relative to CWD, not to this config's frontend/ dir.
-    command: `${ENV_PREFIX}${PY} serve.py`,
+    command: OFFICE_REAL ? `"${PY}" frontend/e2e/support/office_edit_hub.py ${PORT}` : `${ENV_PREFIX}${PY} serve.py`,
     cwd: '..',
     url: `${BASE}/status`,
     timeout: 120_000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !OFFICE_REAL && !process.env.CI,
     stdout: 'pipe',
     stderr: 'pipe',
   },
