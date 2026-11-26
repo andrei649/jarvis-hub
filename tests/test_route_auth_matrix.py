@@ -270,6 +270,10 @@ IN_HANDLER_STEP_UP = {
 # it is pinned here with a probe.
 _INH = "tests/test_route_inhandler_guards.py::"
 IN_HANDLER_GUARD_SITES = {
+    "agents/core/routers/dashboard.py:dashboard_today_entries": (
+        "tests/test_finish_line_memory_source.py::test_source_references_require_admin_even_when_user_can_read_entries",),
+    "agents/core/routers/dashboard.py:dashboard_today_entry": (
+        "tests/test_finish_line_memory_source.py::test_source_references_require_admin_even_when_user_can_read_entries",),
     "agents/core/routers/kanban.py:events": (
         _INH + "test_websocket_in_handler_guard_refuses_unauthenticated[WS /api/kanban/events]",
         _INH + "test_websocket_closes_when_credential_is_revoked_mid_stream[WS /api/kanban/events]"),

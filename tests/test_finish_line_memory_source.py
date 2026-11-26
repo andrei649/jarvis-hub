@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from agents.core.checkpoint import CheckpointManager
@@ -19,6 +20,26 @@ from agents.core.session_transcript import read_transcript
 class _Audit:
     def record(self, **_kwargs):
         pass
+
+
+def test_source_references_require_admin_even_when_user_can_read_entries(monkeypatch):
+    """Exercise the real route guards before any memory store is read."""
+    from agents import web
+    from agents.core.routers import dashboard
+    from agents.core.routers._deps import user_guard
+
+    monkeypatch.setattr(web, "USER_TOKEN", "synthetic-user")
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "synthetic-owner")
+    monkeypatch.setattr(web, "get_token_store", lambda: SimpleNamespace(
+        verify=lambda _token: None, env_revoked=lambda _scope: False))
+    monkeypatch.setattr(dashboard, "get_orch", lambda: None)
+    monkeypatch.delitem(web.app.dependency_overrides, user_guard, raising=False)
+    client = TestClient(web.app, base_url="http://127.0.0.1")
+    for path in ("/api/dashboard/today/entries", "/api/dashboard/today/entries/memory:synthetic"):
+        user = {"x-user-token": "synthetic-user"}
+        assert client.get(path, headers=user).status_code == 503
+        assert client.get(path + "?references=true", headers=user).status_code == 401
+        assert client.get(path + "?references=true", headers={"x-admin-token": "synthetic-owner"}).status_code == 503
 
 
 @pytest.mark.asyncio
