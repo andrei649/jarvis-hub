@@ -910,7 +910,10 @@ class HybridRouter(LLMRouter):
             model = HOWARD_OLLAMA_MODEL if self._ollama_available else self._local_model
             return backend, model, route
 
-        policy = self.get_agent_policy(agent_id)
+        strict_local = env_flag("JARVIS_STRICT_LOCAL", False)
+        if strict_local and agent_id in CLOUD_ONLY_AGENTS:
+            raise CloudBackendUnavailableError()
+        policy = POLICY_LOCAL if strict_local else self.get_agent_policy(agent_id)
 
         if agent_id in CLOUD_ONLY_AGENTS and not self._cloud_permitted():
             raise CloudBackendUnavailableError()
@@ -924,7 +927,7 @@ class HybridRouter(LLMRouter):
         if active_moa and agent_id not in DEEP_THINK_AGENTS:
             preset = get_preset(active_moa)
             if preset is not None:
-                if policy == POLICY_LOCAL and not env_flag("JARVIS_STRICT_LOCAL", False) and not preset.is_pure_local:
+                if policy == POLICY_LOCAL and not strict_local and not preset.is_pure_local:
                     pass
                 else:
                     return self.resolve_moa_preset(agent_id, active_moa)

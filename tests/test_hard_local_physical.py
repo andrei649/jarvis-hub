@@ -10,6 +10,7 @@ from agents.core.agent import Agent
 from agents.core.llm.base import OllamaBackend
 from agents.core.llm.data_handling import DataHandlingRefused
 from agents.core.llm.egress import llm_async_client
+from agents.core.llm.hybrid_router import HybridRouter
 from agents.core.llm.moa import MoACommitteeBackend, MoAPreset
 from agents.core.llm.physical_local import physical_local_scope
 from agents.core.turn_usage import model_calls_from_snapshot, model_usage_scope, turn_usage_scope
@@ -170,35 +171,71 @@ async def test_hard_local_refuses_proxy_selected_for_loopback():
 
 
 @pytest.mark.asyncio
-async def test_frigga_synthetic_excerpt_uses_local_wire_and_receipt():
+@pytest.mark.parametrize("agent_id,strict", [("frigga", False), ("jarvis", True)])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_agent_synthetic_excerpt_uses_local_wire_and_receipt(monkeypatch, agent_id, strict, stream):
+    monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1" if strict else "0")
     seen = []
 
     def answer(request):
         seen.append(request)
-        return httpx.Response(200, json={"response": "safe", "done": True,
-                                         "prompt_eval_count": 2, "eval_count": 1})
+        payload = {"response": "safe", "done": True, "prompt_eval_count": 2, "eval_count": 1}
+        return (httpx.Response(200, text=json.dumps(payload) + "\n") if stream
+                else httpx.Response(200, json=payload))
 
     backend = OllamaBackend(base_url="http://127.0.0.1:11434", trust_env=False)
     await backend.client.aclose()
     backend.client = llm_async_client("ollama", base_url=backend.base_url,
                                       transport=httpx.MockTransport(answer), trust_env=False)
     agent = object.__new__(Agent)
-    agent.id = "frigga"
+    agent.id = agent_id
     agent.tool_runtime = None
     agent.llm_router = None
     agent._checkpoint_manager = None
     try:
         with turn_usage_scope() as usage, model_usage_scope(model="test:latest", route="local",
-                                                             agent_id="frigga"):
+                                                             agent_id=agent_id):
             result = await agent.generate_response(
                 backend, "test:latest", "synthetic private excerpt", "synthetic system", 16, 0,
-                clock_snapshot=None)
+                on_token=(lambda _piece: None) if stream else None, clock_snapshot=None)
         assert result == "safe"
         assert len(seen) == 1
         assert json.loads(seen[0].content)["prompt"] == "synthetic private excerpt"
         assert json.loads(seen[0].content)["model"] == "test:latest:local"
         assert model_calls_from_snapshot(usage.snapshot()) == [
             {"provider": "ollama", "model": "test:latest:local"}]
+    finally:
+        await backend.aclose()
+
+
+@pytest.mark.asyncio
+async def test_strict_local_synthesis_routes_ordinary_contributors_to_native_wire(monkeypatch):
+    monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+    seen = []
+
+    def answer(request):
+        seen.append(request)
+        return httpx.Response(200, json={"response": "fused", "done": True})
+
+    backend = OllamaBackend(base_url="http://127.0.0.1:11434", trust_env=False)
+    await backend.client.aclose()
+    backend.client = llm_async_client("ollama", base_url=backend.base_url,
+                                      transport=httpx.MockTransport(answer), trust_env=False)
+    router = HybridRouter(gemini_api_key="inert")
+    router._local_available = router._cloud_available = True
+    router._backend, router._backend_name = backend, "ollama"
+    router._gemini_backend = object()
+    router.set_cloud_fallback_mode("always")
+    router.check_data_handling = lambda *_args, **_kwargs: None
+    agent = object.__new__(Agent)
+    agent.id, agent.config, agent.llm_router = "jarvis", {"model": "test:latest"}, router
+    agent.guardrails = agent.tool_runtime = None
+    agent.system_prompt = lambda: "synthetic system"
+    agent._gen_params = lambda _route: (16, 0)
+    try:
+        assert await agent.synthesize({"stark": "synthetic observation"}, None) == "fused"
+        assert len(seen) == 1
+        assert json.loads(seen[0].content)["model"] == router._local_model + ":local"
     finally:
         await backend.aclose()
 
