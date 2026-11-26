@@ -399,6 +399,15 @@ class HybridRouter(LLMRouter):
         self._compatible_model = self._admin_setting("compatible_model", "")
         provider_id = self._admin_setting("compatible_provider", "")
         self._compatible_provider_id = provider_id
+        if provider_id == "chatgpt-plan" and self._compatible_model:
+            from agents.core import chatgpt_connection
+
+            from .chatgpt_plan import ChatGPTPlanBackend
+
+            generation = chatgpt_connection.selected_chat_generation(self._compatible_model)
+            if generation:
+                self._compatible_backend = ChatGPTPlanBackend(self._compatible_model, generation)
+                self._cloud_available = True
         if provider_id == "xai" and self._compatible_model:
             from .xai import XAIBackend
             key = env_str("XAI_API_KEY", "")
@@ -618,11 +627,11 @@ class HybridRouter(LLMRouter):
         from agents.core import settings_db
 
         from .backend_factory import construct_custom_backend
-        from .custom_endpoints import read_choice
+        from .custom_endpoints import read_router_choice
 
         previous = getattr(self, '_custom_endpoint_runtime', None)
         try:
-            choice = await asyncio.to_thread(read_choice)
+            choice = await asyncio.to_thread(read_router_choice)
         except Exception:
             self._custom_endpoint_required = True
             if previous is not None:
@@ -849,6 +858,13 @@ class HybridRouter(LLMRouter):
         """A changed cross-process selection cannot fall through a stale router."""
         if not route.startswith('cloud'):
             return
+        if getattr(self, "_compatible_provider_id", "") == "chatgpt-plan":
+            from agents.core import chatgpt_connection
+
+            plan = self._compatible_backend
+            if (plan is None or plan is not getattr(backend, "_backend", backend)
+                    or plan.generation != chatgpt_connection.selected_chat_generation(model)):
+                raise CloudBackendUnavailableError()
         custom = getattr(self, '_custom_endpoint_runtime', None)
         if custom is not None:
             effective = getattr(backend, '_backend', backend)
@@ -1155,10 +1171,11 @@ class HybridRouter(LLMRouter):
         from .custom_endpoint_service import profile_for
         from .custom_endpoints import CustomEndpointInvalid, list_endpoints
         from .providers import provider_catalog
+        from .providers.selection_gates import SelectionUnavailable
         builtins = provider_catalog()
         try:
             return builtins + [profile_for(item).status() for item in list_endpoints()]
-        except CustomEndpointInvalid:
+        except (CustomEndpointInvalid, SelectionUnavailable):
             return builtins
 
     async def aclose(self) -> None:

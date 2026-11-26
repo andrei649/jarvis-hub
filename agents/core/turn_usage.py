@@ -385,7 +385,7 @@ class TurnUsage:
                 return
             if attempt.local:
                 return
-            if pair.model is None or cache_write or (
+            if pair.provider == "chatgpt-plan" or pair.model is None or cache_write or (
                     pair.model.startswith("gemini-") and "pro" in pair.model
                     and inputs + cache_read + cache_write > 200_000):
                 pair.unknown_cost = True

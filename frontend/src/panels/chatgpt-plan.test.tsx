@@ -96,7 +96,8 @@ describe('ChatGPT plan in Integrations', () => {
     expect(calls.some(c => c.url.endsWith('/models'))).toBe(false);
     fireEvent.click(within(card).getByRole('button', { name: /Show available models/i }));
     const models = await within(card).findByRole('list', { name: /available models/i });
-    expect(within(models).getAllByRole('listitem').map(node => node.textContent)).toEqual(['First (first)', 'Second (second)']);
+    expect(within(models).getAllByRole('listitem').map(node => node.querySelector('span')?.textContent))
+      .toEqual(['First (first)', 'Second (second)']);
     fireEvent.click(within(card).getByRole('button', { name: /Disconnect/i }));
     await within(card).findByText(/not connected/i);
     expect(within(card).getByRole('status').textContent).toMatch(/removed from this hub/i);
@@ -175,5 +176,61 @@ describe('ChatGPT plan in Integrations', () => {
     const fresh = await screen.findByRole('listitem', { name: /ChatGPT plan/i });
     expect(within(fresh).queryByRole('link')).toBeNull();
     expect(within(fresh).getByText('not connected')).toBeTruthy();
+  });
+
+  it('asks for an exact ChatGPT model choice and handles the normal consent guard', async () => {
+    const calls = hub((url, method, body: any) => {
+      if (url.endsWith('/models')) return reply({ models: [{ slug: 'gpt-synthetic', display_name: 'Synthetic GPT' }] });
+      if (url.endsWith('/select') && method === 'POST') return body.acknowledge_training
+        ? reply({ model: 'gpt-synthetic' })
+        : reply({ error: 'selection_guard', needs: ['acknowledge_training'], guards: [{
+          guard: 'data_policy', needs: 'acknowledge_training', provider: 'chatgpt-plan', model: 'gpt-synthetic',
+          message: 'Your messages go to ChatGPT', detail: {},
+        }] }, 409);
+      return reply({ connected: true });
+    });
+    render(<IntegrationsPanel />);
+    const card = await screen.findByRole('listitem', { name: /ChatGPT plan/i });
+    fireEvent.click(within(card).getByRole('button', { name: 'Show available models' }));
+    fireEvent.click(await within(card).findByRole('button', { name: 'Choose gpt-synthetic for chat' }));
+    const dialog = within(card).getByRole('dialog', { name: /Use ChatGPT plan for chat/i });
+    expect(within(dialog).getByText('Provider: ChatGPT plan')).toBeTruthy();
+    expect(within(dialog).getByText('Model: gpt-synthetic')).toBeTruthy();
+    expect(within(dialog).getByRole('link', { name: /Check ChatGPT usage/i }).getAttribute('href'))
+      .toBe('https://chatgpt.com/settings/usage');
+    expect(calls.some(c => c.url.endsWith('/select'))).toBe(false);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm chat model' }));
+    await within(dialog).findByText('Your messages go to ChatGPT');
+    expect(calls.filter(c => c.url.endsWith('/select')).map(c => c.body)).toEqual([{ model: 'gpt-synthetic' }]);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'I understand, use this model' }));
+    await within(card).findByText(/gpt-synthetic selected for chat/i);
+    expect(calls.filter(c => c.url.endsWith('/select')).map(c => c.body)).toEqual([
+      { model: 'gpt-synthetic' }, { model: 'gpt-synthetic', acknowledge_training: true },
+    ]);
+    expect(within(card).queryByRole('dialog')).toBeNull();
+    expect(within(card).getByText(/prior turns still require separate consent/i)).toBeTruthy();
+  });
+
+  it('keeps the choice open after a failed selection and never claims use', async () => {
+    hub(url => url.endsWith('/models')
+      ? reply({ models: [{ slug: 'gpt-synthetic', display_name: 'Synthetic GPT' }] })
+      : url.endsWith('/select') ? reply({ error: 'connection_changed' }, 409)
+        : reply({ connected: true }));
+    render(<IntegrationsPanel />);
+    const card = await screen.findByRole('listitem', { name: /ChatGPT plan/i });
+    fireEvent.click(within(card).getByRole('button', { name: 'Show available models' }));
+    fireEvent.click(await within(card).findByRole('button', { name: 'Choose gpt-synthetic for chat' }));
+    const dialog = within(card).getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm chat model' }));
+    await within(dialog).findByRole('status');
+    expect(within(card).queryByText(/selected for chat/i)).toBeNull();
+    expect(within(dialog).getByText('Model: gpt-synthetic')).toBeTruthy();
+  });
+
+  it('shows only a backend-confirmed selected model after reload', async () => {
+    hub(() => reply({ connected: true, selected_model: 'gpt-synthetic' }));
+    render(<IntegrationsPanel />);
+    const card = await screen.findByRole('listitem', { name: /ChatGPT plan/i });
+    expect(await within(card).findByText('Selected for chat: gpt-synthetic')).toBeTruthy();
   });
 });

@@ -275,7 +275,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm", key="platform_toolsets", value={}, label="Scheduled model toolset defaults by platform", kind="json"),
     dict(category="llm", key="ollama_num_ctx", value=0, label="Ollama context tokens (0 = probe model parameters)", kind="number"),
     dict(category="llm", key="gemini_effort_declarations", value="", label='Gemini effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
-    dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible", "deepinfra", "openai-responses", "xai", *ADOPTED_MODEL_PROVIDER_IDS]),
+    dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible", "deepinfra", "openai-responses", "chatgpt-plan", "xai", *ADOPTED_MODEL_PROVIDER_IDS]),
     # H583 — which upstream provider may serve an OpenRouter request (sent as its
     # `provider` object, to OpenRouter only). data_collection is a privacy control:
     # seeded "deny" so a cloud turn never lands on a provider that stores or trains

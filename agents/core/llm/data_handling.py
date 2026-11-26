@@ -382,6 +382,13 @@ def resolve(router, backend, model, route="") -> Resolved:
     profiles = getattr(pool, "_profiles", ()) if pool is not None else ()
     keys = sorted({str(p.api_key) for p in profiles}) if profiles else [str(getattr(backend, "api_key", ""))]
     material = [profile.id, str(endpoint), keys, policy, profile.data_policy, profile.data_policy_models, routing]
+    if profile.id == "chatgpt-plan":
+        from agents.core import chatgpt_connection
+
+        generation = getattr(backend, "generation", None)
+        if not generation or chatgpt_connection.selected_chat_generation(model) != generation:
+            raise DataHandlingRefused("ChatGPT plan selection changed")
+        material.extend([model, generation])
     try:
         scope = hmac.new(_scope_key(), json.dumps(material, sort_keys=True).encode(), hashlib.sha256).hexdigest()
     except Exception:

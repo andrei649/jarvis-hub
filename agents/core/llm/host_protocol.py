@@ -51,6 +51,7 @@ BACKEND_PROTOCOLS: dict[str, str] = {
     "openrouter": OPENAI,
     "openai-compatible": OPENAI,
     "openai-responses": OPENAI,
+    "chatgpt-plan": OPENAI,
     "xai": OPENAI,
     "lm-studio": OPENAI,
     "vlm": OPENAI,
