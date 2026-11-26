@@ -8131,10 +8131,8 @@ modal changes. Every one was inside `FirstRunGate`.
   Remaining: owner action — Spotify OAuth credentials.
 - [ ] Install engines: `faster-whisper` (STT), `edge-tts`/`kokoro` (TTS), `playwright` (browser operator), `beautifulsoup4` (DDG search), `discord.py`/`slack_sdk` (Discord/Slack channels — adapters exist, SDKs not in base requirements)
   Remaining: owner action — install the listed engines on the host.
-- [ ] LAN Home Assistant + `JARVIS_HOUSE_BRAIN`/`JARVIS_HOME_ASSISTANT` → house read + control
-  Remaining: owner action — LAN Home Assistant URL/token and the two env flags.
-- [ ] Frigate NVR + household consent → the camera + ambient stack
-  Remaining: owner action — Frigate NVR and household consent.
+- [x] **Retired 2026-11-25 — Home Assistant house control.** The owner removed the house integration in [#1390](https://github.com/andrei649/jarvis-hub/pull/1390). Its LAN setup task is closed.
+- [x] **Retired 2026-11-25 — Frigate camera input.** The same change removed camera intelligence and its Frigate adapter. Its hardware and consent setup task is closed.
 - [ ] Flip cognition master posture + a local LLM → the reflect-and-rewrite learn loop
   Remaining: owner action — flip the cognition master posture and run a local LLM.
 - [ ] Telegram bot token → `channel.reply` (the one real autonomy side-effect)
@@ -8183,10 +8181,7 @@ modal changes. Every one was inside `FirstRunGate`.
   Argus's SOUL was completed 2026-08-18 (Scope/Rules/Dependencies/Memory/Channels — it had 4 of the
   roster's 9 sections); the code gap below it is unchanged.
   Remaining: no code exists under `agents/vision` or `agents/argus` (SOUL/HEARTBEAT only) — a real implementation slice, not yet scoped.
-- [ ] `agents/hestia` — the House Brain agent added 2026-08-18 owns `agents/core/house/**` (graph,
-  presence, actuation, home_assistant) in *persona* only. ORIZONT 30 shipped the modules and the
-  router; wiring Hestia's reads/proposals onto them is the remaining slice.
-  Remaining (recounted 2026-10-26): `agents/hestia` still holds only `SOUL.md`; wiring Hestia's reads/proposals onto `agents/core/house/**` is not done.
+- [x] **Retired 2026-11-25 — Hestia house reads and proposals.** The owner removed Hestia, the house router and its implementation in [#1390](https://github.com/andrei649/jarvis-hub/pull/1390).
 - [x] **HUD seed roster is 3 agents behind the backend.** `frontend/src/data.ts` hardcodes 15 agents
   (`AGENTS`, `GLYPHS`, `COLLAB`, `DOSSIER`, routing keywords) — it never gained **howard** or **argus**,
   and now not **hestia** either, while the registry is at 18. Found 2026-08-18 during the roster pass and
