@@ -315,15 +315,8 @@ bundle" button, or `POST /api/self-improvement/enable`:
   daemon posting `POST /api/presence/owner` — H34.2 install above). Unset, the
   target refuses `presence_unknown`; it only ever fires on a fresh `present`
   signal, so a dead daemon can never trigger media at a guessed location.
-- [ ] **`ambient.enabled`** — H33 Ambient Intelligence monitors over house/camera/
-  digital signals (only meaningful once H30/H31 hardware is connected).
-- [ ] **`house.presence_enabled`** (or env `JARVIS_HOUSE_PRESENCE=1`) — GAP-9: the
-  production presence writer, feeding Home Assistant `person.*`/`device_tracker.*`
-  + room motion sensors into the strict-local presence inference on every
-  `/api/house/state` read. Room presence is only claimed when identity AND
-  same-room motion corroborate (the model's anti-overclaim floor); the route's
-  `presence_status` field reports off/live/degraded separately from the array.
-  Needs `house.enabled` + `house.ha_enabled` first.
+- [ ] **`ambient.enabled`** — optional H33 monitors for digital signals. The house and camera inputs retired on 2026-11-25.
+- [x] **House presence setup retired 2026-11-25.** The owner removed the house integration and its presence settings in [#1390](https://github.com/andrei649/jarvis-hub/pull/1390).
 - [ ] **`autonomy.tech_scout_enabled`** — the new Proactive Technology Scout: a
   weekly, read-only websearch scan (same `SEARXNG_URL`/`TAVILY_API_KEY` backend
   as above) for new AI/tech developments worth knowing about. Findings are
