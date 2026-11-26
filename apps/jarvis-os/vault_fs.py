@@ -135,6 +135,28 @@ class _PosixApi:
         os.fsync(handle)
 
     def publish(self, parent: int, handle: int, temporary: str, final: str) -> None:
+        if sys.platform.startswith("linux"):
+            # Rename inside the already-pinned inbox handle. RENAME_NOREPLACE
+            # publishes a single name atomically and refuses an existing final
+            # name; link+unlink briefly gave the file two names, so a concurrent
+            # normal vault read correctly rejected it as a hard link.
+            import ctypes
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            rename_noreplace = getattr(libc, "renameat2", None)
+            if rename_noreplace is not None:
+                rename_noreplace.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                                             ctypes.c_char_p, ctypes.c_uint]
+                rename_noreplace.restype = ctypes.c_int
+                if rename_noreplace(parent, os.fsencode(temporary), parent, os.fsencode(final), 1) == 0:
+                    os.fsync(parent)
+                    return
+                error = ctypes.get_errno()
+                if error not in (errno.ENOSYS, errno.EOPNOTSUPP, errno.EINVAL):
+                    raise OSError(error, os.strerror(error), final)
+            # Older libc, kernels and filesystems keep the prior exclusive
+            # publication path. It can briefly expose nlink=2 to a normal read,
+            # but never replaces a target or weakens the hard-link read guard.
         os.link(temporary, final, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
         os.unlink(temporary, dir_fd=parent)
         os.fsync(parent)
