@@ -7516,7 +7516,7 @@ three times as much**, which is the more useful fact:
       the **arithmetic** and the presence of the rule instead of comparing two zero-sized rectangles
       and passing whatever the CSS said. The `a11y-modes` DOM-activation workaround can now be
       revisited on its own merits.
-- [ ] 🟡 **The mode walk's settle helper can release before a surface finishes building.** It waits
+- [x] **Wait for the first Home and Admin data before the accessibility scan.** The original walk waited
       for `.workzone`'s descendant count to hold still (now 1600ms, was 450ms), which proves the
       DOM *stopped* changing and not that it *finished*. Reproduced: cockpit at 147 of 306 nodes,
       `admin` at 34 of ~442 on one run in three, and — with 2.5s of added API latency — `admin`
@@ -7528,14 +7528,19 @@ three times as much**, which is the more useful fact:
       rather than a longer sleep, so the gate stops inferring completeness from stillness. Until
       then `nodes` and `pending` are recorded per scan so a short scan is visible in the artifact
       rather than silently counted as coverage.
-  Remaining: a per-surface readiness signal for every Admin/Cockpit mode (only the EstopCard slice exists).
+  **Ledger update, 2026-11-26.** Home publishes its first completed hub snapshot, including an offline
+  fallback. Admin publishes completion after its plugins, models and both environment reads settle.
+  The full-document scan also waits for the visible frame and page feeds, the wide Home register
+  when mounted, and Admin's mounted cards. Browser regressions hold the roster and model replies
+  past the DOM quiet window and exercise empty, refused and aborted initial reads. The other
+  pages retain their DOM quiet check.
 
       **Local EstopCard slice 2026-10-09:** the card exposes explicit pending/ready/unavailable
       state and `aria-busy`; the Admin walk waits for the card to settle before its DOM-quiet/axe
       steps. A legitimate explicit Admin `ModeEmpty` surface remains recorded as empty, while
       a mounted Admin surface with a missing marker or a pending request cannot pass that wait.
       This covers only the EstopCard request. Other Admin feeds and other modes still need their
-      own readiness signals; the row remains open. See
+      own readiness signals at that revision. See
       [scope and verification](docs/plans/2026-10-09-admin-estop-readiness.md).
 
 - [x] ✅ **The blind spot is now measured, not estimated — `frontend/e2e/contrast.spec.ts` (+3).**

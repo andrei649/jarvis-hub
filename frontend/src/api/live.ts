@@ -376,7 +376,7 @@ function kgToKnowledge(entities: any[]) {
 }
 
 
-export interface LiveModes { ver: number; live: Record<string, boolean>; }
+export interface LiveModes { ver: number; live: Record<string, boolean>; adminSettled: boolean; }
 
 /* Returns `live`: which V2 keys received REAL, non-empty backend data this session.
    modeComponent() uses it to decide whether a capability mode shows real content or
@@ -384,6 +384,7 @@ export interface LiveModes { ver: number; live: Record<string, boolean>; }
 export function useLiveModes(): LiveModes {
   const [ver, setVer] = useState(0);
   const [live, setLive] = useState<Record<string, boolean>>({});
+  const [adminSettled, setAdminSettled] = useState(false);
   useEffect(() => {
     let alive = true;
     let loadGeneration = 0;
@@ -409,6 +410,7 @@ export function useLiveModes(): LiveModes {
       // for the rest of the ADMIN corpus: plugins/keys/backups/channels/system
       // have no other honest source, so they start empty and stay empty unless
       // this cycle's backend supplies them.
+      setAdminSettled(false);
       set('ADMIN', honestAdminSeed());
       clearMark('ADMIN_MODELS');
       if (current(loadId)) setVer((v) => v + 1);
@@ -530,15 +532,16 @@ export function useLiveModes(): LiveModes {
       // already masked server-side. Absent or empty → the panel stays "not
       // connected" rather than showing keys that were never configured.
       await Promise.all([
-        apiGet('/api/admin/env', { admin: true }),
+        apiGet('/api/admin/env', { admin: true }).catch(() => null),
         apiGet('/api/admin/env/sources', { admin: true }).catch(() => null),
       ]).then(([env, sources]: any[]) => {
-        if (!alive || loadId !== loadGeneration) return;
+        if (!current(loadId) || env === null) return;
         const keys = hydrateAdminKeys(env, sources);
         set('ADMIN', { ...V2.ADMIN, keys });
         if (keys.length) mark('ADMIN');
       }).catch(() => {});
       if (!current(loadId)) return;
+      setAdminSettled(true);
 
       // P3.1 PREVIEW MODES — real endpoints or honest plugin-gated empty states.
       await Promise.all([
@@ -612,5 +615,5 @@ export function useLiveModes(): LiveModes {
     const iv = setInterval(load, 30000);
     return () => { stop(); window.removeEventListener('beforeunload', invalidate); window.removeEventListener('pagehide', stop); window.removeEventListener('pageshow', resume); clearInterval(iv); };
   }, []);
-  return { ver, live };
+  return { ver, live, adminSettled };
 }

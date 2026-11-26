@@ -35,7 +35,7 @@ function mockInventory() {
 
 function LiveModesHarness() {
   const state = useLiveModes();
-  return <div data-testid="model-evidence">models:{String(state.live.ADMIN_MODELS === true)}</div>;
+  return <div data-testid="model-evidence" data-admin-settled={state.adminSettled}>models:{String(state.live.ADMIN_MODELS === true)}</div>;
 }
 
 function installLiveModesFetch(modelResponses: Array<{ ok: boolean; status: number; payload?: unknown }>) {
@@ -197,6 +197,24 @@ describe('LMStudioPanel truthful controls', () => {
 });
 
 describe('Admin local-model evidence', () => {
+  it('settles the Admin page only after both environment requests finish, including a refusal', async () => {
+    let finishSources!: (response: Response) => void;
+    const sources = new Promise<Response>(resolve => { finishSources = resolve; });
+    const fetchMock = vi.fn((url: string) => url === '/api/admin/env/sources' ? sources : unavailableResponse());
+    vi.stubGlobal('fetch', fetchMock);
+    const view = render(<LiveModesHarness />);
+    try {
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/admin/env/sources')).toBe(true));
+      const evidence = screen.getByTestId('model-evidence');
+      expect(evidence.getAttribute('data-admin-settled')).toBe('false');
+      await act(async () => finishSources(new Response(null, { status: 403 })));
+      await waitFor(() => expect(evidence.getAttribute('data-admin-settled')).toBe('true'));
+    } finally {
+      view.unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('clears seeded models when plugins succeed but the model payload is malformed', async () => {
     const savedModels = V2.ADMIN.models;
     V2.ADMIN.models = [{ name: 'seeded-gemma', type: 'local', backend: 'seed', ctx: '—', status: 'loaded', use: '' }];
