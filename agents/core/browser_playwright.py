@@ -437,9 +437,15 @@ class PlaywrightBrowserDriver:
                 manager = self._runtime_factory()()
                 self._playwright = await manager.start()
                 if self._factory is None:
-                    transport = getattr(getattr(self._playwright, '_impl_obj', None),
-                                        '_connection', None)
-                    child = getattr(getattr(transport, '_transport', None), '_proc', None)
+                    try:
+                        transport = getattr(getattr(manager, '_client', None), '_transport', None)
+                        if transport is None:
+                            connection = getattr(getattr(self._playwright, '_impl_obj', None),
+                                                 '_connection', None)
+                            transport = getattr(connection, '_transport', None)
+                        child = getattr(transport, '_proc', None)
+                    except Exception:
+                        child = None
                     if child is None or not callable(getattr(child, 'wait', None)):
                         raise PlaywrightUnavailable('browser child ownership unavailable')
                     self._owned_child = child

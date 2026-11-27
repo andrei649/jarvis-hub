@@ -247,6 +247,12 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
         "editor's stdio requests) to its connection; it is not an httpx transport, dials "
         "nothing itself, and the prompt reaches the hub only through the Backend's hub routes",
         frozenset({"AcpServer.connect"})),
+    "agents/core/browser_playwright.py": (
+        "Playwright's context-manager _client owns the bundled Node controller, not an HTTP "
+        "or model client; _ensure_started reads its transport's subprocess handle only to "
+        "verify ownership and exit. Browser requests remain behind the pinned resolver and "
+        "per-request URL and route guards; no model prompt is sent here",
+        frozenset({"PlaywrightBrowserDriver._ensure_started"})),
     "agents/core/http_client.py": (
         "the plugin egress choke point itself; every request it sends is recorded in the "
         "same ledger under the plugin's row (cloud image providers dial through it)",
@@ -2412,6 +2418,10 @@ def test_every_bare_client_outside_the_scope_is_classified():
     module already classified for something else: an unclassified (module, function)
     with a bare client fails until someone says why it is not a model provider."""
     _, outside, _ = _scan()
+    controller_reads = [shape.split(",", 1)[0] for qual, _, shape in
+                        outside.get("agents/core/browser_playwright.py", ())
+                        if qual == "PlaywrightBrowserDriver._ensure_started"]
+    assert controller_reads == ["reads ._client"], controller_reads
     unclassified = _unclassified(outside)
     assert unclassified == [], (
         "a module outside the prompt-carrying scope dials a bare httpx client; if it "
