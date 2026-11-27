@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 
+from ..env_config import env_flag
 from .data_handling import DataHandlingRefused
 
 
@@ -104,7 +105,7 @@ def hard_local_agent_call(method):
     async def call(self, *args, **kwargs):
         from .hybrid_router import LOCAL_ONLY_AGENTS
 
-        if getattr(self, "id", None) not in LOCAL_ONLY_AGENTS:
+        if getattr(self, "id", None) not in LOCAL_ONLY_AGENTS and not env_flag("JARVIS_STRICT_LOCAL", False):
             return await method(self, *args, **kwargs)
         with physical_local_scope():
             return await method(self, *args, **kwargs)
@@ -114,7 +115,7 @@ def hard_local_agent_call(method):
 def hard_local_synthesis(method):
     @wraps(method)
     async def call(self, responses, *args, **kwargs):
-        if not self._strict_local_contributors(responses):
+        if not self._strict_local_contributors(responses) and not env_flag("JARVIS_STRICT_LOCAL", False):
             return await method(self, responses, *args, **kwargs)
         with physical_local_scope():
             return await method(self, responses, *args, **kwargs)
@@ -127,7 +128,9 @@ def hard_local_moa_call(method):
     async def call(self, *args, **kwargs):
         from .hybrid_router import LOCAL_ONLY_AGENTS
 
-        if self._agent_id not in LOCAL_ONLY_AGENTS or physical_local_required():
+        if ((self._agent_id not in LOCAL_ONLY_AGENTS
+             and not env_flag("JARVIS_STRICT_LOCAL", False))
+                or physical_local_required()):
             return await method(self, *args, **kwargs)
         with physical_local_scope():
             return await method(self, *args, **kwargs)

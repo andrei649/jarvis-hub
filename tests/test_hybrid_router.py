@@ -27,7 +27,7 @@ from core.llm.hybrid_router import (
     FLASH_MAX_TOKENS,
 )
 from core.llm.base import LLMBackend
-from core.llm.job_selection import selection_scope
+from core.llm.job_selection import SelectionError, selection_scope
 
 
 class FakeBackend(LLMBackend):
@@ -421,6 +421,52 @@ def test_select_backend_strict_local_never_cloud(monkeypatch):
     router._gemini_backend = FakeBackend()
     with pytest.raises(LocalBackendUnavailableError, match="strict-local"):
         router.select_backend("frigga", "hello")
+
+
+@pytest.mark.parametrize("agent_id,prompt", [
+    ("jarvis", "hello"),
+    ("jarvis", "word " * (LOCAL_MAX_TOKENS * 4)),
+    ("vision", "research task"),
+], ids=["short-auto", "long-auto", "claude-policy"])
+@pytest.mark.parametrize("entrypoint", ["preview_backend", "select_backend"])
+def test_strict_local_switch_uses_native_backend_or_refuses(monkeypatch, agent_id, prompt, entrypoint):
+    monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+    router = HybridRouter(gemini_api_key="test", anthropic_api_key="test")
+    router._cloud_available = router._claude_available = True
+    router._gemini_backend = router._claude_backend = FakeBackend()
+    router.set_cloud_fallback_mode("always")
+    with pytest.raises(LocalBackendUnavailableError):
+        getattr(router, entrypoint)(agent_id, prompt)
+    router._local_available = True
+    router._backend = FakeBackend()
+    assert getattr(router, entrypoint)(agent_id, prompt) == (
+        router._backend, router._local_model, "local")
+
+
+@pytest.mark.parametrize("entrypoint", ["preview_backend", "select_backend"])
+def test_strict_local_switch_refuses_cloud_only_agent(monkeypatch, entrypoint):
+    monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+    router = HybridRouter(gemini_api_key="test")
+    router._local_available = router._cloud_available = True
+    router._backend, router._gemini_backend = FakeBackend(), FakeBackend()
+    with pytest.raises(CloudBackendUnavailableError):
+        getattr(router, entrypoint)("athena", "hello")
+
+
+def test_strict_local_switch_keeps_howard_deep_and_job_pins(monkeypatch):
+    monkeypatch.setenv("JARVIS_STRICT_LOCAL", "1")
+    router = HybridRouter(gemini_api_key="test")
+    router._local_available = router._ollama_available = router._cloud_available = True
+    router._backend, router._ollama_backend, router._gemini_backend = (
+        FakeBackend(), FakeBackend(), FakeBackend())
+    router._backend_name = "lm-studio"
+    router._served_models = {DEFAULT_DEEP_MODEL}
+    assert router.select_backend("howard", "hello") == (
+        router._ollama_backend, router.get_howard_model(), "ollama-howard")
+    assert router.select_backend("frigga", "hello") == (
+        router._backend, DEFAULT_DEEP_MODEL, "local-deep")
+    with selection_scope({"provider": "gemini"}), pytest.raises(SelectionError):
+        router.select_backend("jarvis", "hello")
 
 
 def test_registry_llm_policy_is_honored(monkeypatch):
