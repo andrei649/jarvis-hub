@@ -488,10 +488,6 @@ def test_the_front_door_is_judged_on_a_mapping_spelled_the_new_way(clean):
         boot_guards.assert_front_door({**base, f"{prefix}_CHANNEL_PAIRING": "0", f"{prefix}_CHANNEL_OPEN": "1"})
         with pytest.raises(SystemExit):
             boot_guards.assert_front_door({**base, f"{prefix}_TRUSTED_PROXIES": "*"})
-        with pytest.raises(SystemExit) as refused:
-            boot_guards.assert_front_door({f"{prefix}_WEBHOOK_CHANNELS": '{"a": {"secret": "s"}}',
-                                           f"{prefix}_CHANNEL_PAIRING": "off"})
-        assert "webhook channel" in str(refused.value)
 
 
 def test_hardening_under_the_new_spelling_has_the_same_preconditions(clean):

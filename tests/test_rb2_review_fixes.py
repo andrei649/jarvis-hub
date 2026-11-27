@@ -58,7 +58,7 @@ def _child_env(extra: dict[str, str]) -> dict[str, str]:
     # only what an interpreter needs: nothing an earlier test's load left in this worker
     env = {key: value for key, value in os.environ.items()
            if key in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP", "SYSTEMROOT", "WINDIR",
-                      "VIRTUAL_ENV", "USER", "LOGNAME")}
+                      "VIRTUAL_ENV", "USER", "LOGNAME", "PYTHONUTF8", "PYTHONIOENCODING")}
     env.update({"PYTHONDONTWRITEBYTECODE": "1", **extra})
     return env
 

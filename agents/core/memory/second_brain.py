@@ -86,6 +86,14 @@ def tool_backend_local() -> bool:
     return _TOOL_LOCAL_BACKEND.get() and physical_local_required()
 
 
+def sources_configured() -> bool:
+    return bool(
+        env_str("JARVIS_OS_VAULT_PATH").strip()
+        or env_str("NERVA_SECOND_BRAIN_MCP_SCRIPT").strip()
+        or env_str("NERVA_AI_KB_FTS_DB").strip()
+    )
+
+
 def private_context_active() -> bool:
     from agents.core.memory import turn_tools
 

@@ -163,8 +163,8 @@ async def test_gateway_channel_handler_signals_only_after_admission_and_pending_
     orch._runtime_settings = {}
     orch.channel_manager = SimpleNamespace(channels={})
     orch._delivery_router = SimpleNamespace(resolve=lambda source, text: SimpleNamespace(send=False))
-    source = SessionSource(channel="discord", sender="99", thread_id="42")
-    orch._channel_sessions = {build_session_key(source): "actual-discord-session"}
+    source = SessionSource(channel="telegram", sender="99", thread_id="42")
+    orch._channel_sessions = {build_session_key(source): "actual-telegram-session"}
     async def fake_turn(*args, **kwargs):
         return "done"
     orch._run_channel_session_turn = fake_turn
@@ -177,15 +177,15 @@ async def test_gateway_channel_handler_signals_only_after_admission_and_pending_
     gateway = Gateway(handler=orch.channel_handler, pairing=pairing, pending_handler=pending)
     task = asyncio.create_task(asyncio.sleep(30))
     record = code_interruptions.register(
-        "actual-discord-session", task, code_interruptions.PartialOutput())
+        "actual-telegram-session", task, code_interruptions.PartialOutput())
     try:
-        await gateway.route("pending answer", channel="discord", sender="99", channel_id="42")
-        await gateway.route("stranger", channel="discord", sender="100", channel_id="42")
-        await gateway.route("ambient", channel="discord", sender="99", channel_id="42",
+        await gateway.route("pending answer", channel="telegram", sender="99", chat_id="42")
+        await gateway.route("stranger", channel="telegram", sender="100", chat_id="42")
+        await gateway.route("ambient", channel="telegram", sender="99", chat_id="42",
                             observe_only=True)
-        await gateway.route("different room", channel="discord", sender="99", channel_id="43")
+        await gateway.route("different room", channel="telegram", sender="99", chat_id="43")
         assert not task.done()
-        assert await gateway.route("new message", channel="discord", sender="99", channel_id="42") == "done"
+        assert await gateway.route("new message", channel="telegram", sender="99", chat_id="42") == "done"
         with pytest.raises(asyncio.CancelledError):
             await task
         assert record.interrupted

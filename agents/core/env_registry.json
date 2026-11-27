@@ -1975,7 +1975,7 @@
     "JARVIS_OS_MASK_VAULT_PATH"
    ],
    "namespace": "hub",
-   "type": "flag",
+   "type": "path",
    "default": false,
    "default_varies": false,
    "section": "Governance & hardening (all default OFF; ADV-117)",
@@ -2092,7 +2092,7 @@
     "JARVIS_OS_VAULT_MAP_PATH"
    ],
    "namespace": "hub",
-   "type": "text",
+   "type": "path",
    "default": "",
    "default_varies": false,
    "section": "Governance & hardening (all default OFF; ADV-117)",

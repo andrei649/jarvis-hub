@@ -1724,7 +1724,7 @@ class AutonomyCoordinator:
             trust=self._session_trust_check(),
         )
         from .memory.second_brain import register_second_brain_tools
-        from .memory.second_brain import tool_backend_local
+        from .memory.second_brain import sources_configured, tool_backend_local
         from .orchestrator import current_principal
 
         register_second_brain_tools(
@@ -1732,7 +1732,8 @@ class AutonomyCoordinator:
             local_only=lambda: (current_principal().admin is True
                                 and current_principal().channel == "web"
                                 and tool_backend_local()),
-            visible=lambda: (current_principal().admin is True
+            visible=lambda: (sources_configured()
+                             and current_principal().admin is True
                              and current_principal().channel == "web"),
         )
 

@@ -762,11 +762,11 @@ async def lifespan(application: FastAPI):
     # H283: systemd's READY/STOPPING are not sent from here — uvicorn binds the port
     # only after this startup returns; serve.py's NotifyingServer sends them.
     yield
-    vault_stop.set()
-    await vault_worker
     # H161: the clean-shutdown mark first — a later step that hangs must not make this
     # stop look like an out-of-memory kill to the next start.
     resource_pressure.monitor().stop()
+    vault_stop.set()
+    await vault_worker
     # Before the orchestrator closes: in-flight workspace report runs use its model router.
     try:
         await workspace_scheduler.stop_background()
