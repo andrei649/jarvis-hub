@@ -7358,13 +7358,13 @@ three times as much**, which is the more useful fact:
       a flake. It now waits for the DOM to stop changing.
 - [x] ✅ `frontend/src/test/mode-surface-a11y.test.tsx` (+2) pins both attributes at component
       level, red-proofed, so deleting them fails in the PR lane without a browser.
-- [ ] 🟡 **Two viewports, and the stated reason for the first one was wrong.** BUILD's contrast
-      violation is invisible at 1280×720 and reported at 1440×900 — but the cause is **width**, not
-      the fold: `styles.css` `@media (max-width:1300px)` collapses `.build-grid` to one column and
-      pushes the node to y=1122. And in the other direction AGENTS' `scrollable-region-focusable`
-      **disappears at 1920×1080**, because the panel stops overflowing. No single viewport sees
-      everything; two is a floor, not a proof.
-  Remaining: none to build — a recorded measurement limit; a per-surface readiness signal (L6782) is the real close.
+- [x] ✅ **Two viewports revealed different failures in the classic HUD.** At 1280×720, the
+      `max-width:1300px` breakpoint collapsed `.build-grid` to one column and moved the node to y=1122.
+      At 1440×900, axe reported its contrast violation. At 1920×1080, the AGENTS panel stopped
+      overflowing and its `scrollable-region-focusable` violation disappeared.
+      **Recorded 2026-11-26.** Playwright `--list` collected four Chromium Ledger page scans, live and demo
+      at both 1280×720 and 1440×900. Each case applies its viewport. [Scan definition](frontend/e2e/a11y-modes.spec.ts)
+      The open row “The mode walk's settle helper can release before a surface finishes building” tracks per-surface readiness.
 - [x] ✅ **`--ink-3` retired from HUD text — local candidate (2026-10-09).**
       The original measurement found about 2.80:1 and 276 text-bearing elements;
       83 CSS foreground occurrences and 453 TSX literals now use readable `--ink-2`.
