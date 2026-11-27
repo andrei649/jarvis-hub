@@ -263,3 +263,34 @@ def test_export_route_is_honest_when_capture_is_off(monkeypatch, tmp_path):
     # the surface opt-in is still recorded — it was set, capture just never ran
     assert body["surfaces"]["clipboard"] is True
     assert client.get("/api/capture/status").json()["enabled"] is False
+
+
+def test_sync_transcript_redacts_and_records_when_files_surface_enabled(cap, on):
+    assert cap.sync_transcript("TODO: rotate SECRET")["captured"] is False
+    cap.set_surfaces({"files": True})
+    res = cap.sync_transcript("Action: rotate SECRET key by Friday", source="standup")
+    assert res["captured"] is True
+    assert res["kind"] == "transcript"
+    assert res["redacted"] is True
+    rec = cap.list("files")[0]
+    assert rec["kind"] == "transcript"
+    assert rec["source"] == "standup"
+    assert "SECRET" not in rec["preview"] and "[REDACTED]" in rec["preview"]
+    assert cap._kg.seen[-1][1] == "capture:transcript"
+
+
+def test_transcript_ingest_route_syncs_into_capture_inbox_when_opted_in(monkeypatch, tmp_path, on):
+    client = _client(monkeypatch, tmp_path)
+    client.post("/api/capture/surfaces", json={"surfaces": {"files": True}})
+    resp = client.post(
+        "/api/transcripts/ingest",
+        json={"transcript": "TODO: review SECRET spec tomorrow", "source": "weekly-sync"},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["capture"]["captured"] is True
+    assert payload["capture"]["kind"] == "transcript"
+    inbox = client.get("/api/capture").json()["records"]
+    assert len(inbox) == 1
+    assert inbox[0]["kind"] == "transcript"
+    assert "SECRET" not in inbox[0]["preview"]

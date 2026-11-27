@@ -867,3 +867,48 @@ async def test_a_text_pdf_with_ocr_on_and_no_ps_is_still_read(monkeypatch):
     _owned_script(monkeypatch, script)
     result = await extract.extract_document(samples.build_pdf(), "pdf")
     assert result.char_count > 0 and "ocr" not in result.limits
+
+
+def test_mixed_text_and_scanned_pdf_ocrs_only_missing_pages_in_reading_order(monkeypatch):
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    text_reader = PdfReader(__import__("io").BytesIO(samples.build_pdf()))
+    blank_reader = PdfReader(__import__("io").BytesIO(samples.build_blank_pdf(1)))
+    writer.add_page(text_reader.pages[0])
+    writer.add_page(blank_reader.pages[0])
+    buf = __import__("io").BytesIO()
+    writer.write(buf)
+    mixed_pdf = buf.getvalue()
+
+    seen_indices: list[int] = []
+
+    def fake_ocr(_data: bytes, page_index: int, _seconds: float) -> str:
+        seen_indices.append(page_index)
+        return f"ScannedAppendix page {page_index + 1}"
+
+    if sys.platform == "win32":
+        from agents.core.workspace import win_job_process
+        monkeypatch.setattr(win_job_process, "in_owned_child", lambda: True)
+    monkeypatch.setattr(extract, "_ocr_engine", lambda: fake_ocr)
+
+    events: list[tuple[str, int, int]] = []
+    out = extract._extract_bytes_in_child(
+        mixed_pdf,
+        "pdf",
+        timeout=30.0,
+        progress=lambda kind, page, _deadline, total: events.append((kind, page, total)),
+    )
+    assert seen_indices == [1]
+    assert out.page_count == 2
+    assert out.limits == ("ocr",)
+    assert [seg.page for seg in out.segments] == [1, 2]
+    assert "ScannedAppendix page 2" in out.segments[1].text
+    assert events == [("page_start", 2, 2), ("page_done", 2, 2)]
+
+    # With OCR disabled (`extract_bytes`), the digital page still extracts without calling OCR.
+    monkeypatch.setattr(extract, "_ocr_engine", lambda: pytest.fail("OCR must stay off in sync path"))
+    sync_out = extract.extract_bytes(mixed_pdf, "pdf")
+    assert sync_out.page_count == 2
+    assert [seg.page for seg in sync_out.segments] == [1]
+    assert sync_out.limits == ()

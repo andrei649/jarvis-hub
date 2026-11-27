@@ -349,16 +349,28 @@ def _pdf(data: bytes, guard: _Guard, *, allow_ocr: bool = False,
         raise ExtractionError("invalid_file", f"unreadable PDF ({type(exc).__name__})") from exc
     if count > MAX_PDF_PAGES:
         raise ExtractionError("too_many_pages", f"{count} pages", page_count=count)
+    page_texts: list[str] = []
     segments: list[Segment] = []
     for index in range(count):
         guard.tick()
         text = clean_text(_page_text(reader, index))
         guard.spend(len(text))
+        page_texts.append(text)
         if text:
             segments.append(Segment(index + 1, text))
     extracted = Extracted(tuple(segments), page_count=count)
-    if allow_ocr and not any(_HAS_WORD.search(segment.text) for segment in segments):
-        return _ocr_pdf(data, count, guard, progress=progress) or extracted
+    missing = [index for index, text in enumerate(page_texts) if not _HAS_WORD.search(text)]
+    if allow_ocr and missing:
+        if len(missing) == count:
+            return _ocr_pdf(data, count, guard, progress=progress) or extracted
+        return _ocr_pdf(
+            data,
+            count,
+            guard,
+            progress=progress,
+            existing_pages=page_texts,
+            missing_indices=missing,
+        ) or extracted
     return extracted
 
 
@@ -420,8 +432,10 @@ def _ocr_engine() -> Callable[[bytes, int, float], str] | None:
 
 
 def _ocr_pdf(data: bytes, count: int, guard: _Guard, *,
-             progress: Callable[[str, int, float, int], None] | None = None) -> Extracted | None:
-    """OCR all pages or fail; no successful result may silently omit a page."""
+             progress: Callable[[str, int, float, int], None] | None = None,
+             existing_pages: Sequence[str] | None = None,
+             missing_indices: Sequence[int] | None = None) -> Extracted | None:
+    """OCR scanned pages (all pages or missing pages of a mixed PDF); never omit a page."""
     if sys.platform == "win32":
         # Ordinary/synchronous Windows extraction cannot claim ownership from
         # a flag. Only the verified Job child enters this private scope.
@@ -439,11 +453,12 @@ def _ocr_pdf(data: bytes, count: int, guard: _Guard, *,
     if engine is None:
         logger.info("OCR requested but no local engine is installed")
         return None
-    if count > MAX_OCR_PAGES:
-        raise ExtractionError("too_many_pages", f"{count} pages exceed the OCR cap",
+    targets = tuple(range(count)) if missing_indices is None else tuple(missing_indices)
+    if len(targets) > MAX_OCR_PAGES:
+        raise ExtractionError("too_many_pages", f"{len(targets)} pages exceed the OCR cap",
                               page_count=count)
-    segments: list[Segment] = []
-    for index in range(count):
+    ocr_by_index: dict[int, str] = {}
+    for index in targets:
         guard.tick()
         left = guard.remaining()
         seconds = OCR_PAGE_TIMEOUT_SECONDS if left is None else min(OCR_PAGE_TIMEOUT_SECONDS, left)
@@ -467,15 +482,20 @@ def _ocr_pdf(data: bytes, count: int, guard: _Guard, *,
         text = clean_text(raw or "")
         guard.spend(len(text))
         if not _HAS_WORD.search(text):
-            if segments:
+            if ocr_by_index or existing_pages is not None:
                 raise ExtractionError("no_text", "OCR did not cover every page",
                                       page_count=count)
-            # If a later page has text, still fail the whole document below.
-            segments.append(Segment(index + 1, ""))
+            ocr_by_index[index] = ""
         else:
-            segments.append(Segment(index + 1, text))
-    if any(not _HAS_WORD.search(segment.text) for segment in segments):
+            ocr_by_index[index] = text
+    if any(not _HAS_WORD.search(text) for text in ocr_by_index.values()):
         raise ExtractionError("no_text", "OCR did not cover every page", page_count=count)
+    segments: list[Segment] = []
+    for index in range(count):
+        if index in ocr_by_index:
+            segments.append(Segment(index + 1, ocr_by_index[index]))
+        elif existing_pages is not None and existing_pages[index]:
+            segments.append(Segment(index + 1, existing_pages[index]))
     return Extracted(tuple(segments), page_count=count, limits=("ocr",))
 
 

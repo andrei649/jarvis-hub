@@ -405,3 +405,64 @@ def test_dashboard_projects_requires_owner_request_scope(tmp_path):
     app = FastAPI()
     app.include_router(dashboard_api.router, prefix="/api/kanban")
     assert TestClient(app).get("/api/kanban/projects").status_code == 403
+
+
+def test_task_log_run_inspect_and_terminate_routes(tmp_path, monkeypatch):
+    client = _client(tmp_path)
+    task_id = client.post(
+        "/api/kanban/tasks",
+        json={"title": "Inspectable", "assignee": "jarvis", "triage": True},
+    ).json()["task"]["id"]
+    assert client.patch(f"/api/kanban/tasks/{task_id}", json={"status": "ready"}).status_code == 200
+
+    with (
+        kanban_scope(KanbanContext(tmp_path, "owner", can_mutate=True)),
+        kb.connect_closing() as conn,
+        kb.write_txn(conn),
+    ):
+        run_id = kb._claim_and_open_run(
+            conn, task_id, "ready", "legacy-claim", int(time.time()) + 3600, int(time.time())
+        )
+        conn.execute("UPDATE task_runs SET worker_pid=? WHERE id=?", (os.getpid(), run_id))
+
+    log_res = client.get(f"/api/kanban/tasks/{task_id}/log?tail=10")
+    assert log_res.status_code == 200, log_res.text
+    log_body = log_res.json()
+    assert log_body["exists"] is True
+    assert f"[run #{run_id}]" in log_body["content"]
+
+    inspect_res = client.get(f"/api/kanban/runs/{run_id}/inspect")
+    assert inspect_res.status_code == 200, inspect_res.text
+    inspect_body = inspect_res.json()
+    assert inspect_body["run_id"] == run_id
+    assert inspect_body["alive"] is True
+    assert inspect_body["state"] == "running"
+
+    terminated_calls = []
+
+    async def recover_interrupted(tid, *, board, expected_run_id, reason):
+        terminated_calls.append((tid, board, expected_run_id, reason))
+        return {"ok": True, "status": "recovered"}
+
+    adapter = SimpleNamespace(recover_interrupted=recover_interrupted)
+    orch = SimpleNamespace(_autonomy=SimpleNamespace(kanban_dispatcher=lambda: adapter))
+    monkeypatch.setattr(dashboard_api, "get_orch", lambda: orch)
+
+    term_res = client.post(
+        f"/api/kanban/runs/{run_id}/terminate", json={"reason": "owner stop"}
+    )
+    assert term_res.status_code == 200, term_res.text
+    assert term_res.json() == {"ok": True, "run_id": run_id, "status": "recovered"}
+    assert terminated_calls == [(task_id, "default", run_id, "owner stop")]
+
+    with (
+        kanban_scope(KanbanContext(tmp_path, "owner", can_mutate=True)),
+        kb.connect_closing() as conn,
+        kb.write_txn(conn),
+    ):
+        conn.execute(
+            "UPDATE task_runs SET status='done', outcome='completed', ended_at=? WHERE id=?",
+            (int(time.time()), run_id),
+        )
+    ended_term = client.post(f"/api/kanban/runs/{run_id}/terminate", json={})
+    assert ended_term.status_code == 409

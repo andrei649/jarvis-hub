@@ -27,9 +27,18 @@ async def transcript_ingest(body: TranscriptIngestBody):
     owner approves. Without a live queue, returns an extraction-only preview."""
     orch = get_orch()
     from agents.core.autonomy.transcript_watcher import TranscriptWatcher
+    from agents.core.routers.capture import _get_capture
+
     q = getattr(orch, "autonomy_queue", None) if orch else None
     watcher = TranscriptWatcher(enqueue=q.enqueue if q is not None else None)
-    return nocache_json(watcher.ingest(body.transcript, source=body.source, target=body.target))
+    out = dict(watcher.ingest(body.transcript, source=body.source, target=body.target))
+    try:
+        out["capture"] = _get_capture().sync_transcript(
+            body.transcript, source=body.source or "transcript"
+        )
+    except Exception:
+        out["capture"] = {"captured": False, "reason": "unavailable"}
+    return nocache_json(out)
 
 
 class WriteBackBody(BaseModel):

@@ -197,9 +197,9 @@ async def test_all_executable_capability_cases_pass_hermetically_without_flag_le
     )
     assert {case.capability_id for case in ACTION_CAPABILITY_CASES if
             case.capability_id == "action:plugin.load"} == {"action:plugin.load"}
-    # + hook.exec (G17): its kill-switch case is generated from the manifest like every action.
-    assert result["total"] == 41
-    assert result["passed"] == 41
+    # + hook.exec (G17) + 18 DRA-59 ordinary autonomy task kinds.
+    assert result["total"] == 59
+    assert result["passed"] == 59
     assert result["skipped"] == 0
     assert result["promoted"] == []
     assert all(item["passed"] for item in result["results"])
@@ -337,11 +337,11 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     assert ("reality-v1:action-provider-selection-kernel-halt", "action:provider.selection") in verification_pairs
     assert ("reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable",
             "action:provider.custom_endpoint") in verification_pairs
-    assert len(ACTION_CAPABILITY_MANIFESTS) == 42
+    assert len(ACTION_CAPABILITY_MANIFESTS) == 60
     assert len(tool_records) == 2
     # + the three default-off cloud video providers, + channel_sms (G16), + hook.exec (G17),
-    # + plugin:room-peers (H658), browser_broker and pets constructed-component cases
-    assert len(verification_pairs) == 42 + 2 + 74 == 118
+    # + plugin:room-peers (H658), browser_broker, pets, and 18 DRA-59 ordinary task kinds
+    assert len(verification_pairs) == 60 + 2 + 74 == 136
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1

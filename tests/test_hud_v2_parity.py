@@ -672,10 +672,6 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # These process-adapter routes still return 503; the drawer uses durable run details and reclaim.
-    "/api/kanban/runs/{run_id}/inspect",
-    "/api/kanban/runs/{run_id}/terminate",
-    "/api/kanban/tasks/{task_id}/log",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
     # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
     # string and returns `base` (a hardcoded module constant) plus `configured` (an
@@ -770,6 +766,8 @@ KANBAN_HTTP_CONSUMERS: dict[str, tuple[str, str, str]] = {
     "/api/kanban/profiles/{profile_name}/describe-auto": ("`${root}/profiles/${encodeURIComponent(profileName)}/describe-auto`", "describeProfileAuto", "board.tsx"),
     "/api/kanban/projects": ("root + '/projects'", "fetchProjects", "KanbanView.tsx"),
     "/api/kanban/runs/{run_id}": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}`, slug)", "fetchRun", "drawer.tsx"),
+    "/api/kanban/runs/{run_id}/inspect": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/inspect`, slug)", "inspectRun", "drawer.tsx"),
+    "/api/kanban/runs/{run_id}/terminate": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/terminate`, slug)", "terminateRun", "drawer.tsx"),
     "/api/kanban/stats": ("scopedPath('/stats', slug)", "fetchStats", "KanbanView.tsx"),
     "/api/kanban/tasks": ("scopedPath('/tasks', slug)", "createTask", "board.tsx"),
     "/api/kanban/tasks/bulk": ("scopedPath('/tasks/bulk', slug)", "bulkTasks", "KanbanView.tsx"),
@@ -779,6 +777,7 @@ KANBAN_HTTP_CONSUMERS: dict[str, tuple[str, str, str]] = {
     "/api/kanban/tasks/{task_id}/decompose": ("scopedPath(`/tasks/${encodeURIComponent(id)}/decompose`, slug)", "decomposeTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/estimate": ("scopedPath(`/tasks/${encodeURIComponent(id)}/estimate`, slug)", "estimateTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/home-subscribe/{platform}": ("scopedPath(`/tasks/${encodeURIComponent(id)}/home-subscribe/${encodeURIComponent(platform)}`, slug)", "subscribeTaskChannel", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/log": ("scopedPath(`/tasks/${encodeURIComponent(id)}/log`, slug)", "fetchLog", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/reassign": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reassign`, slug)", "reassignTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/reclaim": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reclaim`, slug)", "reclaimTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/specify": ("scopedPath(`/tasks/${encodeURIComponent(id)}/specify`, slug)", "specifyTask", "drawer.tsx"),

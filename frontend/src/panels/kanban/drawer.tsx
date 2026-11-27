@@ -16,6 +16,7 @@ import {
   type KanbanRunDetail,
   type KanbanTask,
   type KanbanTaskDetail,
+  type RunProcessInspection,
   type TaskEstimate,
 } from './types';
 import { errText, isLockedTarget } from './KanbanView';
@@ -99,6 +100,8 @@ function TaskDetails({
   const [linkDir, setLinkDir] = useState<'parent' | 'child'>('parent');
   const [linkTarget, setLinkTarget] = useState('');
   const [selectedRun, setSelectedRun] = useState<KanbanRunDetail | null>(null);
+  const [inspectedRun, setInspectedRun] = useState<RunProcessInspection | null>(null);
+  const [taskLog, setTaskLog] = useState<{ exists: boolean; content: string } | null>(null);
   const [homeChannels, setHomeChannels] = useState<HomeChannelsResponse | null>(null);
   const [channelsNote, setChannelsNote] = useState('');
   const [channelPlatform, setChannelPlatform] = useState('telegram');
@@ -129,7 +132,7 @@ function TaskDetails({
     }
   };
   useEffect(() => {
-    setSelectedRun(null); setTaskEstimate(null); setNotice('');
+    setSelectedRun(null); setInspectedRun(null); setTaskLog(null); setTaskEstimate(null); setNotice('');
     void load();
     let live = true;
     void loadChannels(() => live);
@@ -190,6 +193,28 @@ function TaskDetails({
     try {
       const res = await api.fetchRun(slug, runId);
       setSelectedRun(res.run);
+    } catch (e) { setError(errText(e)); }
+    finally { setBusy(false); }
+  };
+  const loadRunInspection = async (runId: number | string) => {
+    setBusy(true); setError('');
+    try {
+      const res = await api.inspectRun(slug, runId);
+      setInspectedRun(res);
+    } catch (e) { setError(errText(e)); }
+    finally { setBusy(false); }
+  };
+  const stopRun = (runId: number | string) => {
+    void mutate(() => api.terminateRun(slug, runId, workerReason.trim() || undefined), () => {
+      setNotice(`Run #${runId} terminated.`);
+      setInspectedRun(null);
+    });
+  };
+  const loadTaskLog = async () => {
+    setBusy(true); setError('');
+    try {
+      const res = await api.fetchLog(slug, id);
+      setTaskLog(res);
     } catch (e) { setError(errText(e)); }
     finally { setBusy(false); }
   };
@@ -310,12 +335,21 @@ function TaskDetails({
               {r.outcome === 'nerva_worker_interrupted' && typeof r.metadata === 'object' && r.metadata && typeof r.metadata.retry_status === 'string' && <p>Interrupted; next state: {runState(r.metadata.retry_status)}.</p>}
               <div className="kb-inline-actions">
                 <button type="button" disabled={busy} onClick={() => void loadRunDetail(r.id)}>Run details</button>
+                <button type="button" disabled={busy} onClick={() => void loadRunInspection(r.id)}>Inspect run</button>
+                {activeRun && String(activeRun.id) === String(r.id) && (
+                  <button type="button" disabled={busy} onClick={() => stopRun(r.id)}>Terminate run</button>
+                )}
               </div>
               {selectedRun && String(selectedRun.id) === String(r.id) && <div className="kb-run-detail" aria-label={`Run ${r.id} details`}>
                 <span>Run #{selectedRun.id}</span>
                 {selectedRun.worker_pid != null && <span> · pid {selectedRun.worker_pid}</span>}
                 {selectedRun.started_at != null && <span> · started {ago(selectedRun.started_at)}</span>}
                 {selectedRun.last_heartbeat_at != null && <span> · heartbeat {ago(selectedRun.last_heartbeat_at)}</span>}
+              </div>}
+              {inspectedRun && String(inspectedRun.run_id) === String(r.id) && <div className="kb-run-detail" aria-label={`Run ${r.id} inspection`}>
+                <span>{inspectedRun.alive ? 'Alive' : 'Stopped'}</span>
+                {inspectedRun.state && <span> · {inspectedRun.state}</span>}
+                {inspectedRun.detail && <span> · {inspectedRun.detail}</span>}
               </div>}
             </article>) : <span className="kb-muted">No runs recorded</span>}
           </div>}
@@ -386,8 +420,14 @@ function TaskDetails({
             <button type="button" disabled={busy} onClick={() => void runTaskEstimate()}>Estimate</button>
             <button type="button" disabled={busy} onClick={() => void mutate(() => api.specifyTask(slug, id))}>Specify</button>
             <button type="button" disabled={busy} onClick={() => void mutate(() => api.decomposeTask(slug, id))}>Decompose</button>
+            <button type="button" disabled={busy} onClick={() => void loadTaskLog()}>Task log</button>
           </div>
           {taskEstimate && <div role="status" className="kb-muted">{taskEstimate.complexity ? `${taskEstimate.complexity} · ` : ''}{typeof taskEstimate.est_tokens === 'number' ? `${taskEstimate.est_tokens} ${k.tokUnit}` : k.roughEstimate}{taskEstimate.rationale ? ` — ${taskEstimate.rationale}` : ''}</div>}
+          {taskLog && (
+            <pre aria-label="Task log" className="kb-muted" style={{ whiteSpace: 'pre-wrap', maxHeight: 180, overflow: 'auto', marginTop: 6 }}>
+              {taskLog.exists && taskLog.content ? taskLog.content : 'No durable log entries yet.'}
+            </pre>
+          )}
         </Section>
         {Array.isArray(detail.attachments) && <AttachmentList slug={slug} taskId={id} attachments={detail.attachments} onUpload={upload} pending={busy} onError={setError} />}
         <Section title="Actions"><button type="button" onClick={() => setActions(v => !v)}>Task actions</button>{actions && <div><button type="button" onClick={() => void patch({status:'archived'})}>Archive</button><button type="button" onClick={() => { if (window.confirm('Delete this task?')) void mutate(() => api.deleteTask(slug,id), onClose); }}>Delete</button></div>}</Section>

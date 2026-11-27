@@ -398,6 +398,26 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # the approval card is ``hooks.define`` (irreversible tier), so no handler here
     # returns a refusal for it.
     "hook.exec": (),
+    # DRA-59 — ordinary coordinator task kinds: refusals return explicit ``noop``/``refused``
+    # statuses, while uncaught handler exceptions remain genuine ``failed`` outcomes.
+    "search": (),
+    "monitor": (),
+    "scan": (),
+    "lookup": (),
+    "check": (),
+    "summarize": (),
+    "analyze": (),
+    "review": (),
+    "draft": (),
+    "plan": (),
+    "prepare": (),
+    "note": (),
+    "reminder": (),
+    "memory_write": (),
+    "prompt_optimization": (),
+    "agent_promotion": (),
+    "calendar_event": (),
+    "restart_service": (),
 }
 REFUSAL_REASONS_BY_KIND: dict[str, frozenset[str]] = {
     kind: frozenset(reasons) for kind, reasons in _REFUSALS_BY_KIND.items()}
