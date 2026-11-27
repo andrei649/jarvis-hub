@@ -2215,7 +2215,11 @@ class Orchestrator:
             redact = getattr(broker, "redact", None)
             return redact(text) if callable(redact) else text
 
-        install_known_secret_redactor(_broker_redact)
+        def _broker_empty_inventory() -> bool:
+            broker = self.secret_broker
+            return broker.empty_stream_inventory()
+
+        install_known_secret_redactor(_broker_redact, empty_inventory=_broker_empty_inventory)
         await self.channel_manager.start_all()
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())

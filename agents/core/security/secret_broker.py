@@ -14,7 +14,7 @@ import logging
 import re
 import threading
 
-from agents.core.secrets import SecretStoreError
+from agents.core.secrets import SecretStore, SecretStoreError
 
 logger = logging.getLogger("jarvis.security.secret_broker")
 
@@ -104,6 +104,27 @@ class SecretBroker:
         if name.startswith(_INTERNAL_PREFIX):
             return False
         return self._store.delete(name)
+
+    def empty_stream_inventory(self) -> bool:
+        """Allow draft output only with a provably empty broker inventory.
+
+        SecretStore's normal loader tolerates malformed files by returning an
+        empty cache, so read the encrypted file itself before trusting names().
+        Populated and unknown stores require final whole-response redaction.
+        """
+        if not isinstance(self._store, SecretStore):
+            return False
+        try:
+            with self._store.path.open("rb") as inventory:
+                # SecretStore writes an empty mapping as exactly two bytes.
+                if inventory.read(3) != b"{}":
+                    return False
+        except FileNotFoundError:
+            pass
+        with self._lock:
+            if self._store.names():
+                return False
+        return self._sources is None or not self._sources.redaction_values()
 
     @staticmethod
     def reference(name: str) -> str:
