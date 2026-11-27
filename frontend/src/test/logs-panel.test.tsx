@@ -201,4 +201,43 @@ describe('LogsPanel', () => {
     render(<LogsPanel />);
     await waitFor(() => expect(screen.getByText(/needs the admin token/)).toBeTruthy());
   });
+
+  it('lazily loads, filters, and refreshes the tool loop trail via GET /api/admin/tool-events', async () => {
+    global.fetch = vi.fn(async (url, init = {}) => {
+      const u = String(url);
+      calls.push({ url: u, admin: (init.headers || {})['X-Admin-Token'] });
+      if ((init.headers || {})['X-Admin-Token'] !== 'admin-secret') {
+        return reply(401, { detail: 'admin token required' });
+      }
+      if (u.includes('/api/admin/tool-events')) {
+        return reply(200, {
+          counts: { tool_result: 2, tool_result_untrusted: 1, tool_failed: 1 },
+          events: [
+            { seq: 1, event: 'tool_result', tool: 'vault_search', status: 'ok' },
+            { seq: 2, event: 'tool_result_untrusted', tool: 'browser_read', status: 'fenced', reason: 'external_html' },
+            { seq: 3, event: 'tool_failed', tool: 'mcp_call', status: 'failed', reason: 'timeout' },
+          ],
+        });
+      }
+      return reply(200, ON);
+    });
+
+    render(<LogsPanel />);
+    await waitFor(() => expect(screen.getByText(/newer/)).toBeTruthy());
+    expect(calls.some((c) => c.url.includes('/api/admin/tool-events'))).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tool loop trail' }));
+    expect(await screen.findByText('tool_result_untrusted: 1')).toBeTruthy();
+    expect(screen.getByText(/#3 tool_failed · mcp_call/)).toBeTruthy();
+    expect(screen.getByText('external_html')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Filter tool trail'), { target: { value: 'browser_read' } });
+    expect(screen.getByText(/#2 tool_result_untrusted · browser_read/)).toBeTruthy();
+    expect(screen.queryByText(/#1 tool_result · vault_search/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh trail' }));
+    await waitFor(() => {
+      expect(calls.filter((c) => c.url.includes('/api/admin/tool-events'))).toHaveLength(2);
+    });
+  });
 });

@@ -14,7 +14,8 @@
    card's LIVE badge while the hub is writing its file. When file logging is off (the
    default) the panel says how to turn it on instead of showing an empty log. */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, State, arr, inpS, mono, note, useApi } from '../panel-kit';
+import { apiGet } from '../api/client';
+import { Card, Row, State, Tag, arr, inpS, mono, note, refusalReason, useApi } from '../panel-kit';
 import { LABEL } from '../theme/type';
 
 export const LOG_LEVELS = ['ALL', 'INFO', 'WARNING', 'ERROR'];
@@ -48,6 +49,128 @@ function Segmented({ label, options, value, onChange }: { label: string; options
           onClick={() => onChange(opt)}
           style={{ padding: '2px 6px' }}>{String(opt)}</button>
       ))}
+    </div>
+  );
+}
+
+function ToolEventsDisclosure() {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [refused, setRefused] = useState(false);
+  const [query, setQuery] = useState('');
+  const [data, setData] = useState<{ events: any[]; counts: Record<string, number> } | null>(null);
+
+  const load = () => {
+    setBusy(true);
+    setErr(null);
+    setRefused(false);
+    apiGet<{ events?: any[]; counts?: Record<string, number> }>('/api/admin/tool-events?limit=100', { admin: true })
+      .then((res) => {
+        setData({
+          events: Array.isArray(res?.events) ? res.events : [],
+          counts: res?.counts && typeof res.counts === 'object' ? res.counts : {},
+        });
+        setBusy(false);
+      })
+      .catch((x: any) => {
+        setData(null);
+        setBusy(false);
+        if (x?.status === 401 || x?.status === 403) {
+          setRefused(true);
+          return;
+        }
+        setErr(refusalReason(x, String(x?.message || 'load_failed')));
+      });
+  };
+
+  const toggle = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    load();
+  };
+
+  const needle = query.trim().toLowerCase();
+  const rows = (data?.events || []).slice().reverse().filter((ev) => {
+    if (!needle) return true;
+    const hay = `${ev?.event || ''} ${ev?.tool || ''} ${ev?.status || ''} ${ev?.reason || ''}`.toLowerCase();
+    return hay.includes(needle);
+  });
+  const countEntries = Object.entries(data?.counts || {}).sort(([a], [b]) => a.localeCompare(b));
+
+  return (
+    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--panel-line)' }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="tool-btn" type="button" onClick={toggle}>
+          {open ? 'Hide tool trail' : 'Tool loop trail'}
+        </button>
+        {open && (
+          <>
+            <button className="tool-btn" type="button" disabled={busy} onClick={load}>
+              Refresh trail
+            </button>
+            <input
+              aria-label="Filter tool trail"
+              placeholder="filter event or tool…"
+              value={query}
+              onChange={(ev) => setQuery(ev.target.value)}
+              style={{ ...inpS, flex: '1 1 160px', minWidth: 120 }}
+            />
+          </>
+        )}
+      </div>
+      {open && refused && (
+        <div style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-label)', marginTop: 6 }}>
+          The tool trail needs the admin token (Settings → admin token).
+        </div>
+      )}
+      {open && !refused && err && (
+        <div role="status" style={{ color: 'var(--amber)', fontSize: 'var(--n-fs-label)', marginTop: 6 }}>
+          Could not load tool trail: {err}
+        </div>
+      )}
+      {open && !refused && !err && data && (
+        <div style={{ marginTop: 6 }}>
+          {countEntries.length > 0 && (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 6 }}>
+              {countEntries.map(([k, v]) => (
+                <Tag
+                  key={k}
+                  c={k === 'tool_failed' || k === 'tool_cap_reached'
+                    ? 'var(--red)'
+                    : k === 'tool_result_untrusted' || k.startsWith('tool_loop_')
+                      ? 'var(--amber)'
+                      : 'var(--ink-2)'}
+                >
+                  {k}: {v}
+                </Tag>
+              ))}
+            </div>
+          )}
+          {rows.length === 0 ? (
+            <div style={{ fontSize: 'var(--n-fs-label)', color: 'var(--ink-2)' }}>
+              No tool events recorded since boot.
+            </div>
+          ) : (
+            <div data-testid="tool-trail-records" style={{ maxHeight: 240, overflow: 'auto' }}>
+              {rows.slice(0, 50).map((ev: any, idx: number) => (
+                <Row key={`${ev.seq ?? idx}`}>
+                  <span style={{ ...mono, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
+                    #{ev.seq ?? idx} {ev.event || 'unknown'}{ev.tool ? ` · ${ev.tool}` : ''}
+                  </span>
+                  <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                    {ev.status && <Tag c={ev.status === 'error' || ev.status === 'failed' ? 'var(--red)' : 'var(--ink-2)'}>{String(ev.status)}</Tag>}
+                    {ev.reason && <span style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{String(ev.reason)}</span>}
+                  </span>
+                </Row>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -135,6 +258,7 @@ export function LogsPanel() {
           </pre>
         ))}
       </div>
+      <ToolEventsDisclosure />
     </Card>
   );
 }

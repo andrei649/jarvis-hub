@@ -207,6 +207,8 @@ RULES = [
     ("/map", "observe"),  # H34.7 Live System Map standalone page (topology + health)
     ("/api/system-map", "observe"),  # H34.7 subsystem-health feed driving the map
     ("/api/health/components", "observe"),
+    ("/api/admin/tool-events", "observe"),  # Observe → Logs lazy ToolEventsDisclosure
+    ("/api/admin/logs", "observe"),         # Observe → Logs (LogsPanel)
     # interop (a2a / mcp client mgmt / webhooks / external write-back + social)
     ("/api/a2a/", "interop"),
     ("/api/admin/mcp", "interop"),
@@ -576,10 +578,6 @@ MACHINE_FACING: dict[str, str] = {
         "H624: queued by `nerva update trust` (agents/cli/nerva.py) from a key file on the "
         "owner's machine as an irreversible-tier card; the HUD shows the pinned trust from "
         "GET /api/admin/ops/update and accepts the card in the decision inbox",
-    "/api/admin/ops/update/receipts":
-        "H624: the receipt history read by `nerva update status` (agents/cli/nerva.py); the "
-        "HUD's Restart / Update panel shows the in-flight and last receipt from "
-        "GET /api/admin/ops/update",
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",
@@ -623,9 +621,6 @@ MACHINE_FACING: dict[str, str] = {
     "/api/oauth/chatgpt/callback": "ChatGPT redirects the owner's browser here after account sign-in",
     "/api/oauth/mcp/callback": "MCP sign-in redirect target: the browser returns here from the server's "
                                "authorization page (G9 / H692)",
-    "/api/admin/tool-events":
-        "the tool loop's trail, read by `nerva tools` \u2014 the CLI is not in the client "
-        "globs above; the HUD renderer for it is the deferred inline-tool-trail slice",
     "/api/channels/targets":
         "the configured send destinations, read by `nerva send --list` — the CLI is not "
         "in the client globs above; H018/H480 is a shell primitive, and a HUD composer for "

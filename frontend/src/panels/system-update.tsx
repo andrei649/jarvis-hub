@@ -19,8 +19,9 @@ type Check = { version: string; install: string; restart: 'self' | 'manual'; bra
   upstream: string | null; behind: number | null; ahead: number | null; fetched_seconds_ago: number | null;
   dirty: boolean | null; can_apply: boolean; apply_refused: string[]; manual_steps: string };
 type Action = { id: string; kind: string; status: 'running' | 'ok' | 'failed'; lines: string[] };
-type Receipt = { id: string; kind: string; from: string | null; to: string | null; phase?: string; result?: string | null;
-  reason?: string | null; action_id?: string | null; log?: string[] };
+type Receipt = { id: string; kind: string; from: string | null; to: string | null; from_version?: string | null; to_version?: string | null;
+  phase?: string; result?: string | null; reason?: string | null; rollback_reason?: string | null; action_id?: string | null;
+  data_restore_staged?: boolean; data_restored?: boolean; stash_restored?: boolean; action_needed?: string | null; log?: string[] };
 type Trust = { configured: boolean; mode: string | null; fingerprints?: string[]; commit?: string };
 type Plan = { can_apply: boolean; refused: string[]; from: string | null; to: string | null; from_version: string | null;
   to_version: string | null; commit_count: number; file_count: number; migrations: string[]; migrations_uncertain?: boolean;
@@ -53,8 +54,34 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
   const [confirming, setConfirming] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [ref, setRef] = useState('');
+  const [receiptsOpen, setReceiptsOpen] = useState(false);
+  const [receiptRows, setReceiptRows] = useState<Receipt[] | null>(null);
+  const [receiptsErr, setReceiptsErr] = useState<string | null>(null);
   const timer = useRef<any>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const loadReceipts = () => {
+    setBusy(true);
+    setReceiptsErr(null);
+    apiGet<{ receipts?: Receipt[] }>('/api/admin/ops/update/receipts', { admin: true })
+      .then((res) => {
+        setReceiptRows(Array.isArray(res?.receipts) ? res.receipts : []);
+        setBusy(false);
+      })
+      .catch((x: any) => {
+        setReceiptRows(null);
+        setReceiptsErr(`no receipts · ${why(x)}`);
+        setBusy(false);
+      });
+  };
+  const toggleReceipts = () => {
+    if (receiptsOpen) {
+      setReceiptsOpen(false);
+      return;
+    }
+    setReceiptsOpen(true);
+    loadReceipts();
+  };
 
   const follow = (id: string) => {
     apiGet<Action>(`/api/admin/ops/actions/${id}`, { admin: true })
@@ -128,6 +155,14 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
       )}
       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
         <button className="tool-btn" disabled={busy || c?.install !== 'git'} onClick={fetchNow}>check now</button>
+        <button className="tool-btn" type="button" disabled={busy} onClick={toggleReceipts}>
+          {receiptsOpen ? 'hide receipts' : 'receipt history'}
+        </button>
+        {receiptsOpen && (
+          <button className="tool-btn" type="button" disabled={busy} onClick={loadReceipts}>
+            refresh receipts
+          </button>
+        )}
         {!confirming
           ? <button className="tool-btn" disabled={busy || c?.restart !== 'self'} onClick={() => setConfirming(true)}>restart…</button>
           : (
@@ -164,6 +199,27 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
         <pre aria-label="update log" style={{ ...mono, fontSize: 'var(--n-fs-meta)', maxHeight: 220, overflow: 'auto', background: 'var(--surface)', padding: 6, marginTop: 6 }}>{flight.log.join('\n')}</pre>
       )}
       {note && <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 4 }}>{note}</div>}
+      {receiptsOpen && receiptsErr && (
+        <div role="status" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 6 }}>{receiptsErr}</div>
+      )}
+      {receiptsOpen && !receiptsErr && receiptRows && (
+        <div aria-label="update receipt history" style={{ fontSize: 'var(--n-fs-meta)', marginTop: 6 }}>
+          {receiptRows.length === 0 ? (
+            <div style={{ color: 'var(--ink-2)' }}>no recorded update receipts</div>
+          ) : (
+            receiptRows.slice().reverse().slice(0, 20).map((r) => (
+              <div key={r.id} style={{ padding: '2px 0', borderBottom: '1px solid var(--panel-line)' }}>
+                <span style={mono}>{r.kind} {short(r.from)} → {short(r.to)}</span>
+                {' · '}{r.result || r.phase || 'pending'}
+                {r.data_restored ? ' · data restored' : r.data_restore_staged ? ' · data restore staged' : ''}
+                {r.stash_restored ? ' · stash restored' : ''}
+                {r.reason ? ` (${r.reason})` : ''}
+                {r.action_needed ? ` · action needed: ${r.action_needed}` : ''}
+              </div>
+            ))
+          )}
+        </div>
+      )}
       {log.length > 0 && (
         <pre aria-label="action log" style={{ ...mono, fontSize: 'var(--n-fs-meta)', maxHeight: 220, overflow: 'auto', background: 'var(--surface)', padding: 6, marginTop: 6 }}>{log.join('\n')}</pre>
       )}

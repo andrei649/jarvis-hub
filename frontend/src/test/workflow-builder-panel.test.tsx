@@ -135,4 +135,18 @@ describe('WorkflowBuilderPanel (DRA-28)', () => {
     await waitFor(() => expect(screen.getByText(/refused ·.*422/i)).toBeTruthy());
     expect(screen.queryByText(/saved ·/i)).toBeNull();
   });
+
+  it('does not POST step generation when the description is blank or whitespace (PNB-026)', async () => {
+    render(<WorkflowBuilderPanel />);
+    await waitFor(() => expect(screen.getByLabelText('workflow step description')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /generate step/i }));
+    fireEvent.change(screen.getByLabelText('workflow step description'), { target: { value: '   \n\t  ' } });
+    fireEvent.click(screen.getByRole('button', { name: /generate step/i }));
+
+    expect(
+      vi.mocked(global.fetch).mock.calls.filter(([u]) => String(u).includes('/api/workflows/step/generate')),
+    ).toHaveLength(0);
+    expect((screen.getByRole('button', { name: /add step to draft/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
 });

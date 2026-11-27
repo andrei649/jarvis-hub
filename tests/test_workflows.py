@@ -262,3 +262,53 @@ def test_registry_unregister_restores_builtin():
                           steps=[WorkflowStep("s1", "jarvis", "{_input}")]))
     assert reg.unregister("user_pipe") is True
     assert reg.get("user_pipe") is None
+
+
+@pytest.mark.asyncio
+async def test_llm_error_sentinel_marks_workflow_run_and_trace_failed():
+    class _DownOrch:
+        async def handle_input(self, text: str, channel: str = "workflow", agent_override: str = None) -> str:
+            return "[LLM error: local backend unreachable]"
+
+    p = _make_pipeline(WorkflowStep("s1", "jarvis", "{_input}"))
+    result = await WorkflowEngine(_DownOrch()).run(p, "ping")
+    assert result["_ok"] is False
+    assert result["_errors"] == ["s1"]
+    assert result["_trace"][0]["ok"] is False
+
+
+@pytest.mark.asyncio
+async def test_subflow_inner_failure_propagates_to_parent_ok_and_trace():
+    p = _make_pipeline(
+        WorkflowStep(
+            "outer",
+            "_passthrough",
+            "{_input}",
+            kind="subflow",
+            subflow={
+                "id": "inner_sub",
+                "name": "Inner",
+                "steps": [
+                    {
+                        "id": "bad_inner",
+                        "agent_id": "_passthrough",
+                        "prompt_template": "{_input}",
+                        "kind": "transform",
+                        "transform": {"op": "validator", "check": "min_length", "value": 9999},
+                        "depends_on": [],
+                    },
+                    {
+                        "id": "tail_ok",
+                        "agent_id": "_passthrough",
+                        "prompt_template": "recovered summary",
+                        "depends_on": ["bad_inner"],
+                    },
+                ],
+            },
+        )
+    )
+    result = await WorkflowEngine(_MockOrch()).run(p, "short")
+    assert result["_subflows"]["outer"]["ok"] is False
+    assert result["_ok"] is False
+    assert result["_errors"] == ["outer"]
+    assert result["_trace"][0]["ok"] is False

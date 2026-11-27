@@ -140,4 +140,34 @@ describe('Restart / Update panel', () => {
     expect(ago(30)).toBe('30s ago');
     expect(ago(600)).toBe('10 min ago');
   });
+
+  it('lazily loads update receipt history on demand and surfaces restoration markers', async () => {
+    const calls = hub((url) => {
+      if (url.includes('/api/admin/ops/update/receipts')) {
+        return {
+          status: 200,
+          body: {
+            receipts: [
+              { id: 'r1', kind: 'update', from: '1'.repeat(40), to: '2'.repeat(40), result: 'verified', stash_restored: true },
+              { id: 'r2', kind: 'rollback', from: '2'.repeat(40), to: '1'.repeat(40), result: 'rolled_back', data_restored: true, action_needed: 'check plugins' },
+            ],
+          },
+        };
+      }
+      return { status: 200, body: CHECK };
+    });
+
+    render(<SystemUpdatePanel />);
+    await screen.findByText(/as of the last fetch/);
+    expect(calls.some((c) => c.url.includes('/api/admin/ops/update/receipts'))).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'receipt history' }));
+    expect(await screen.findByText(/rolled_back · data restored · action needed: check plugins/)).toBeTruthy();
+    expect(screen.getByText(/verified · stash restored/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'refresh receipts' }));
+    await waitFor(() => {
+      expect(calls.filter((c) => c.url.includes('/api/admin/ops/update/receipts'))).toHaveLength(2);
+    });
+  });
 });

@@ -95,7 +95,7 @@ class WorkflowEngine:
                 step = batch[0]
                 out = await self._traced_execute(step, ctx, step_map)
                 ctx[step.id] = out
-                if out.startswith("[error:"):
+                if _step_failed(step, out, ctx):
                     errors.append(step.id)
             else:
                 # H22.6 — bound the parallel fan-out with a semaphore so a wide
@@ -115,10 +115,10 @@ class WorkflowEngine:
                         errors.append(step.id)
                     else:
                         ctx[step.id] = out
-                        # WFL-032: a RETURNED "[error:…]" (timeout, validator,
-                        # guardrail, subflow) must fail the run exactly like the
-                        # serial branch — not only raised exceptions.
-                        if isinstance(out, str) and out.startswith("[error:"):
+                        # WFL-032 / PNB-022: a RETURNED "[error:…]" or "[LLM error…]"
+                        # (timeout, validator, guardrail, backend-down) or a subflow with
+                        # failed inner steps must fail the run in both serial and parallel.
+                        if _step_failed(step, out, ctx):
                             errors.append(step.id)
 
             # H10.10: validate + expose structured fields for any schema'd step.
@@ -207,7 +207,7 @@ class WorkflowEngine:
             "input_preview": input_preview,
             "output_preview": (out or "")[:160],
             "elapsed_ms": round((time.monotonic() - t) * 1000, 1),
-            "ok": not (out or "").startswith("[error:"),
+            "ok": not _step_failed(step, out, ctx),
         }
         ctx.setdefault("_trace", []).append(entry)
         return out
@@ -440,6 +440,22 @@ class WorkflowEngine:
         except Exception as e:
             logger.warning("Step %r failed: %s", step.id, e)
             return f"[error:{e}]"
+
+
+def _is_step_error_output(out: object) -> bool:
+    """Whether a step output sentinel marks an execution or LLM backend failure."""
+    return isinstance(out, str) and out.startswith(("[error:", "[LLM error"))
+
+
+def _step_failed(step: WorkflowStep, out: object, ctx: dict) -> bool:
+    """True when the step output is an error sentinel or a subflow had inner failures."""
+    if _is_step_error_output(out):
+        return True
+    if step.kind == "subflow":
+        sub = ctx.get("_subflows", {}).get(step.id)
+        if isinstance(sub, dict) and sub.get("ok") is False:
+            return True
+    return False
 
 
 def _match_route(decision: str, routes: dict) -> str:
