@@ -44,14 +44,14 @@ def _child(root: Path, *, profile: str = "second", fork_child: bool = False) -> 
     env["JARVIS_PROFILE"] = profile
     return subprocess.Popen(
         [sys.executable, "-c", script, TOKEN],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        env=env, text=False,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        env=env, text=True, encoding="utf-8",
     )
 
 
 def _ready(process: subprocess.Popen) -> None:
     assert process.stdout is not None
-    assert process.stdout.readline() == b"ready\n", process.stderr.read().decode()
+    assert process.stdout.readline() == "ready\n"
 
 
 def test_cross_process_contention_and_crash_release(tmp_path):
