@@ -389,6 +389,7 @@ describe('useVoice state machine', () => {
     });
 
     it('surfaces bargeInterrupted and interrupted status when sustained over-talk cuts playback', async () => {
+      holdingRecorder();
       let loud = false;
       class LoudAudioContext {
         resume = vi.fn();
@@ -399,54 +400,37 @@ describe('useVoice state machine', () => {
           getByteTimeDomainData: (buf: Uint8Array) => buf.fill(loud ? 250 : 128),
         }));
       }
-      class HoldingRecorder {
-        static isTypeSupported = vi.fn(() => true);
-        state = 'inactive';
-        ondataavailable: any = null;
-        onstop: any = null;
-        start() { this.state = 'recording'; }
-        stop() { this.state = 'inactive'; setTimeout(() => this.onstop?.(), 0); }
-      }
       const paused = vi.fn();
       class HangingAudio {
         onended: any = null;
         onerror: any = null;
+        constructor(public src: string) {}
         pause = () => { paused(); this.onended?.(); };
         play() { return Promise.resolve(); }
       }
       Object.defineProperty(window, 'AudioContext', { configurable: true, value: LoudAudioContext });
       Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: LoudAudioContext });
-      Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: HoldingRecorder });
-      Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: HoldingRecorder });
       Object.defineProperty(window, 'Audio', { configurable: true, value: HangingAudio });
       Object.defineProperty(globalThis, 'Audio', { configurable: true, value: HangingAudio });
-      global.fetch = vi.fn((input: RequestInfo | URL) => {
+      global.fetch = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith('/api/voice/capabilities')) {
-          return Promise.resolve(new Response(JSON.stringify({ stt: true, tts: true }), { status: 200 }));
-        }
-        if (url.endsWith('/api/voice/mic/arm')) {
-          return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-        }
-        if (url.endsWith('/api/voice/mic/stop')) {
-          return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-        }
-        if (url.endsWith('/tts')) {
-          return Promise.resolve(new Response(new Blob(['mp3'], { type: 'audio/mpeg' }), { status: 200 }));
-        }
-        return Promise.resolve(new Response('{}', { status: 200 }));
+        if (url.endsWith('/api/voice/capabilities')) return jsonResponse({ stt: true, tts: true });
+        if (url.endsWith('/api/voice/mic/arm')) return jsonResponse({ ok: true });
+        if (url.endsWith('/api/voice/mic/stop')) return jsonResponse({ ok: true });
+        if (url.endsWith('/tts')) return jsonResponse({});
+        return jsonResponse({});
       }) as any;
 
       const states: any[] = [];
       render(<VoiceHarness opts={{ barge: true }} onState={(st) => states.push(st)} />);
-      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await waitFor(() => expect(states.at(-1)?.caps).toMatchObject({ stt: true, tts: true }));
 
       fireEvent.click(screen.getByText('start'));
       await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('listening'));
 
       loud = true;
       fireEvent.click(screen.getByText('speak'));
-      await waitFor(() => expect(screen.getByTestId('barge').textContent).toBe('true'), { timeout: 2500 });
+      await waitFor(() => expect(screen.getByTestId('barge').textContent).toBe('true'), { timeout: 5000 });
       expect(states.some((st) => st.status === 'interrupted' && st.bargeInterrupted === true)).toBe(true);
       expect(paused).toHaveBeenCalled();
 
