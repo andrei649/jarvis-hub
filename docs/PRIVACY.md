@@ -72,9 +72,9 @@ agents make zero outbound calls:
 | What leaves | When | Where |
 | --- | --- | --- |
 | Your prompt + context | Only if you route a turn to a **cloud LLM** | The provider you configured (Anthropic/OpenAI/Google) |
-| Message contents | Only via a **channel** you enable | Telegram / Gmail / Discord / Slack APIs |
+| Message contents | Only via a **channel** you enable | Telegram / Gmail APIs |
 | OSINT queries | Only in **WorldView** flows | The providers you configure |
-| LAN-only data (family/home) | Stays on your **local network** | Pi / homebridge / WhatsApp bridge (`LAN`-scoped, never cloud) |
+| LAN-only data (family/home) | Stays on your **local network** | Pi / homebridge (`LAN`-scoped, never cloud) |
 
 Strict-local agents (`frigga`, `ultron`, `howard`) are **never** forced to make a cloud
 hop. Local-first is enforced, not just promised.

@@ -32,7 +32,7 @@ checklist:
 1. **Friday** — fetch weather (home + the second location, next 12h), top 3 news. Wait max 4s.
 2. **Pepper** — today's calendar, top 3 priorities, overdue items. Wait max 3s.
 3. **Frigga** — the child's overnight log. Wait max 2s.
-4. **Stark** — day-job Slack mentions, flagged emails, GA4 anomalies overnight. Wait max 4s.
+4. **Stark** — day-job flagged emails, GA4 anomalies overnight. Wait max 4s.
 5. **Scan all other specialists** for any signal:true heartbeat alert from the past 12h.
 6. **Synthesize** into one =90-second audio brief.
 

@@ -13,7 +13,7 @@ const STORIES: Record<string, Record<string, unknown>> = {
       external_egress_total: 0,
       local_only_violations: [],
       plugins: {
-        'whatsapp-bridge': { allowed: 12, external: 0, blocked: 0 },
+        'iot-control': { allowed: 12, external: 0, blocked: 0 },
         'apple-health': { allowed: 9, external: 0, blocked: 0 },
         homebridge: { allowed: 5, external: 0, blocked: 0 },
       },
@@ -28,7 +28,7 @@ const STORIES: Record<string, Record<string, unknown>> = {
         'google-calendar': { allowed: 44, external: 8, blocked: 0 },
         gmail: { allowed: 31, external: 4, blocked: 0 },
         'telegram-bot': { allowed: 26, external: 0, blocked: 0 },
-        'whatsapp-bridge': { allowed: 12, external: 0, blocked: 0 },
+        'iot-control': { allowed: 12, external: 0, blocked: 0 },
       },
     },
   },
@@ -36,9 +36,9 @@ const STORIES: Record<string, Record<string, unknown>> = {
     '/api/admin/network/calls': {
       clean: false,
       external_egress_total: 3,
-      local_only_violations: ['whatsapp-bridge'],
+      local_only_violations: ['iot-control'],
       plugins: {
-        'whatsapp-bridge': { allowed: 12, external: 2, blocked: 1 },
+        'iot-control': { allowed: 12, external: 2, blocked: 1 },
         gmail: { allowed: 31, external: 1, blocked: 0 },
         'apple-health': { allowed: 9, external: 0, blocked: 0 },
       },

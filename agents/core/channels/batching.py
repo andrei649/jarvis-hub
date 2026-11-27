@@ -22,8 +22,8 @@ batches them, and so does Nerva:
   a slash command (``/stop``, ``/status``) is a barrier: what the sender said before it goes
   first, then the command on its own, at once.
 
-Telegram's poll loop drives a :class:`Coalescer` directly; Discord and Slack, whose messages
-arrive as events, use :class:`AsyncBatcher`, which flushes each batch from its own timer and
+Telegram's poll loop drives a :class:`Coalescer` directly; an adapter whose messages
+arrive as events uses :class:`AsyncBatcher`, which flushes each batch from its own timer and
 holds its caller once :data:`MAX_PENDING` batches are on their way, so the channel's own bounded
 ingress fills as it did before batching.
 ``JARVIS_INBOUND_BATCH_MS`` / ``JARVIS_INBOUND_BATCH_MAX_MS`` set the window and the cap for

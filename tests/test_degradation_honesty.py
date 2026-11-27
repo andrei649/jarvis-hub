@@ -17,18 +17,8 @@ sys.path.insert(0, str(repo_root / "agents"))
 from agents.core.plugins.balance import BalanceReaderPlugin  # noqa: E402
 from agents.core.plugins.crm_sync import CRMSyncPlugin  # noqa: E402
 from agents.core.plugins.degradation import is_degraded  # noqa: E402
-from agents.core.plugins.sms_alerts import SMSAlertsPlugin  # noqa: E402
 
 # ── the mock results carry the marker ───────────────────────────────
-
-async def test_sms_mock_result_is_stamped_degraded():
-    plugin = SMSAlertsPlugin()  # no Twilio credentials
-    result = await plugin.send_alert("+40700000000", "test")
-    assert result["status"] == "mock_sent"
-    assert is_degraded(result)
-    assert result["_degraded"]["reason"] == "twilio_not_configured"
-    assert "plugins.twilio_account_sid" in result["_degraded"]["needs"]
-    await plugin.close()
 
 
 async def test_crm_mock_result_is_stamped_degraded():
@@ -51,13 +41,11 @@ async def test_mock_balances_are_stamped_degraded():
 # ── degradation_info(): badgeable BEFORE any call ───────────────────
 
 def test_degradation_info_contract_unconfigured():
-    assert SMSAlertsPlugin().degradation_info()["reason"] == "twilio_not_configured"
     assert CRMSyncPlugin().degradation_info()["reason"] == "notion_not_configured"
     assert BalanceReaderPlugin().degradation_info()["reason"] == "no balance source configured"
 
 
 def test_degradation_info_contract_configured_is_live():
-    assert SMSAlertsPlugin(account_sid="AC1", auth_token="tk", from_number="+1").degradation_info() is None
     assert CRMSyncPlugin(integration_token="secret", database_id="db").degradation_info() is None
     assert BalanceReaderPlugin(csv_path="balances.csv").degradation_info() is None
 
@@ -67,13 +55,12 @@ def test_degradation_info_contract_configured_is_live():
 def test_plugins_router_exposes_degraded_fields():
     from agents.core.routers.plugins import _plugin_degradation
 
-    degraded_plugin = SMSAlertsPlugin()
+    degraded_plugin = CRMSyncPlugin()
     info = _plugin_degradation(degraded_plugin)
-    assert info == {"reason": "twilio_not_configured",
-                    "needs": ["plugins.twilio_account_sid", "plugins.twilio_auth_token",
-                              "plugins.twilio_from_number"]}
+    assert info == {"reason": "notion_not_configured",
+                    "needs": ["plugins.notion_integration_token", "plugins.notion_database_id"]}
 
-    live_plugin = SMSAlertsPlugin(account_sid="AC1", auth_token="tk")
+    live_plugin = CRMSyncPlugin(integration_token="secret", database_id="db")
     assert _plugin_degradation(live_plugin) is None
 
     class NoContract:

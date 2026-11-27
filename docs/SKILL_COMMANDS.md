@@ -27,11 +27,9 @@ Plugin commands share the guarded command registry. A dedicated HUD skill-comman
 picker remains open. Use a named bundle for a predefined group of skills.
 
 Native discovery: Telegram appends eligible skills only to the configured private
-owner-chat command menu, within its 100-entry cap. Discord exposes a generic
-`/skill` command with owner-only autocomplete; the global tree does not contain
-private skill names. Catalog gates and namespace collisions are rechecked at
-selection and queued dispatch. Slack retains typed skill commands without listing
-private names globally. Native provider registration has only offline SDK tests.
+owner-chat command menu, within its 100-entry cap. Catalog gates and namespace
+collisions are rechecked at selection and queued dispatch. Native provider
+registration has only offline SDK tests.
 
 As the owner, use `/reload-skills` (also `/reload_skills`) after changing installed
 skills. It reports additions, removals, changes, skipped folders and unverified

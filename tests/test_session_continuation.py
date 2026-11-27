@@ -181,6 +181,7 @@ async def test_owner_route_to_actual_explicit_session_turn(tmp_path, monkeypatch
     from agents.core.agent import Agent
     from agents.core.config import JarvisConfig
     from agents.core.llm.base import LLMBackend
+    from agents.core.llm.providers import ProviderProfile
     from agents.core.memory import persistence
     from agents.core.orchestrator import Orchestrator
 
@@ -200,24 +201,31 @@ async def test_owner_route_to_actual_explicit_session_turn(tmp_path, monkeypatch
     seen = []
     wire = []
     provider = None
+    local_profile = ProviderProfile(
+        "fixture-local", "Local scripted model", "openai-compatible",
+        default_base_url="http://127.0.0.1:1234", capabilities={"local", "reasoning-effort"},
+        data_policy="local",
+    )
     if reasoning is not None:
         from agents.core.llm.openrouter import OpenRouterBackend
-        from agents.core.llm.providers import ProviderProfile
         from agents.core.llm.request_context import current_session
 
         def respond(request):
+            assert request.url.host == "127.0.0.1"
             wire.append((current_session(), json.loads(request.content)))
             return httpx.Response(200, json={"choices": [{
                 "message": {"content": "The blue door"}, "finish_reason": "stop",
             }]})
 
         provider = OpenRouterBackend(
-            client=httpx.AsyncClient(transport=httpx.MockTransport(respond), base_url="https://fixture.invalid"),
-            profile=ProviderProfile("compatible", "fixture", "openai-compatible", capabilities={"reasoning-effort"}),
+            client=httpx.AsyncClient(transport=httpx.MockTransport(respond), base_url=local_profile.default_base_url),
+            profile=local_profile,
             reasoning_effort="high", effort_declarations={"fixture": ["low", "high"]},
         )
 
     class Backend(LLMBackend):
+        profile = local_profile
+
         async def generate(self, model, prompt, system="", max_tokens=1024, temperature=0.7):
             seen.append((orch.session_id, prompt, system))
             if provider is not None:

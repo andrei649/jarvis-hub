@@ -42,7 +42,7 @@
    Threshold and artifact discipline match a11y.spec.ts: gate on `critical` and `serious`, write
    the full result — violations AND `incomplete`, which is where axe parks contrast it could not
    resolve — to e2e/artifacts/ for the human pass. */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Request } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { HUD_MODES } from '../src/hud-modes';
@@ -70,16 +70,85 @@ const GLANCE_BODY = '[data-glance]';
    entire agent roster missing), and `admin` settled at 34 of its ~442 on one run in three, because
    `api/live.ts` zeroes `V2.ADMIN` via `honestAdminSeed()` and refills it on a 30s interval. 1600ms
    clears the observed gaps with margin; it is a mitigation and not a proof, because no
-   DOM-quiescence heuristic can see an outstanding fetch — `nodes` is recorded per scan so a short
-   scan is visible in the artifact after the fact. Closing this across every page needs readiness
-   signals for its async sources; the Admin EstopCard wait below covers only that card's request. */
+   DOM-quiescence heuristic can see an outstanding fetch. Home and Admin now expose their own load
+   commits; the walk also watches the shared visible feeds and Admin's cards. Other pages still
+   rely on DOM quiet, and `nodes` remains in the artifact to show a short scan after the fact. */
 const QUIET_MS = 1600;
+
+async function waitForDomQuiet(page: Page, selector: string) {
+  await page.waitForFunction(({ quietMs, selector }) => {
+    const body = document.querySelector(selector);
+    if (!body) return false;
+    const w = window as unknown as { __a11ySettle?: { n: number; since: number } };
+    const n = body.querySelectorAll('*').length;
+    const now = Date.now();
+    if (!w.__a11ySettle || w.__a11ySettle.n !== n) { w.__a11ySettle = { n, since: now }; return false; }
+    return now - w.__a11ySettle.since > quietMs;
+  }, { quietMs: QUIET_MS, selector }, { timeout: 25_000 });
+}
 
 /* The time budget. Each scan costs the navigation, the quiet window and an axe pass; 22 registered
    ids and 9 panel pages make 31 scans per lane, which took 1.3–1.6 minutes per lane against the
    isolated fixture hub (2026-11-24). A real backend answers more slowly, and the default test
    timeout cannot hold a lane either way. */
 const LANE_TIMEOUT_MS = 420_000;
+
+// Pollers have no page-level completion marker. Their first answer, including an HTTP refusal or
+// network failure, settles the initial read; a later refresh must also finish before axe runs.
+const FRAME_READS = ['/autonomy/mode', '/autonomy/interrupts', '/api/security/audit/verify',
+  '/api/admin/network/calls', '/api/dashboard/today?days=1&limit=50',
+  '/autonomy/tasks?status=blocked&limit=200', '/api/security/kill-switch',
+  '/autonomy/tasks?status=running', '/api/subagents', '/api/payments', '/autonomy/observer'];
+const HOME_READS = ['/api/health/components', '/api/system/pressure', '/api/skills/proposals',
+  '/autonomy/policy'];
+const HOME_WIDE_READS = ['/heartbeat/status', '/api/security/audit/intent?limit=50'];
+const ADMIN_CARDS = ['/api/ops/estop', '/api/hermes/status', '/api/hermes/catalog', '/api/hermes/approvals'];
+
+function watchReads(page: Page) {
+  const finished = new Map<string, number>();
+  const active = new Map<string, number>();
+  const paths = new Map<Request, string>();
+  page.on('request', request => {
+    if (request.method() !== 'GET') return;
+    const url = new URL(request.url());
+    if (url.origin !== new URL(page.url()).origin) return;
+    const path = url.pathname + url.search;
+    paths.set(request, path);
+    active.set(path, (active.get(path) ?? 0) + 1);
+  });
+  const end = (request: Request) => {
+    const path = paths.get(request);
+    if (!path) return;
+    paths.delete(request);
+    finished.set(path, (finished.get(path) ?? 0) + 1);
+    active.set(path, (active.get(path) ?? 1) - 1);
+  };
+  page.on('requestfinished', end);
+  page.on('requestfailed', end);
+  return {
+    missing(paths: readonly string[]) {
+      return paths.filter(path => !finished.has(path) || (active.get(path) ?? 0) > 0);
+    },
+  };
+}
+
+async function waitForSurfaceReads(page: Page, reads: ReturnType<typeof watchReads>,
+  surface: 'cockpit' | 'admin', demo: boolean, timeoutMs = 25_000) {
+  if (surface === 'cockpit') await expect(page.locator('[data-home]')).toBeVisible({ timeout: timeoutMs });
+  const wide = surface === 'cockpit' && await page.locator('[data-home] [data-register="record"]').count() > 0;
+  await expect(page.locator('[data-frame="page"]'), `${surface} data cycle must commit before axe`)
+    .toHaveAttribute('data-surface-load', 'settled', { timeout: timeoutMs });
+  if (!demo) await expect.poll(() => reads.missing([...FRAME_READS,
+    ...(surface === 'cockpit' ? HOME_READS : []), ...(wide ? HOME_WIDE_READS : [])]),
+  { message: `${surface} visible polled reads must finish before axe`, timeout: timeoutMs }).toEqual([]);
+  if (surface !== 'admin') return;
+  const empty = await page.locator('[data-frame="page"] [data-areapage="mode"][data-area="settings"] [data-empty]').count();
+  if (!empty) {
+    await expect.poll(() => reads.missing(ADMIN_CARDS), {
+      message: 'Admin cards must finish their first reads before axe', timeout: timeoutMs,
+    }).toEqual([]);
+  }
+}
 
 type AdminEstopOutcome = 'ready' | 'unavailable' | 'empty';
 
@@ -116,14 +185,8 @@ async function waitForAdminEstopReadiness(page: Page, timeoutMs = 25_000): Promi
   return observed as AdminEstopOutcome;
 }
 
-/* One caveat that belongs next to the list rather than in a commit message. `projects` does not
-   go through the demo path at all: app.tsx's `ledgerModeBody` renders `<ProjectsMode t={t} />`
-   without `demo`, and ModePage has no live keys for it, so it is drawn the same way in both lanes.
-   Its demo lane is not independent coverage of its live one: both run the same component against
-   the same backend, whose four panels are their own "nothing yet" empty states (ROOMS 0, MISSIONS
-   0, ACTIVITY "no activity yet"). That is NOT the area-page empty state, so `empty` is correctly
-   false and the demo pin below cannot flag it. What a green lane proves for `projects` is that its
-   frame and empty states are clean; a populated projects surface is still unscanned. */
+/* Projects has different bodies in the two lanes. Demo scans the read-only exhibition sample.
+   The live walk covers the boards and panels populated by its fixture hub. */
 
 /** The two viewports, and why each is here — see (3) above. */
 const VIEWPORTS = [
@@ -184,6 +247,7 @@ test.describe('HUD pages', () => {
       test(`no critical/serious accessibility violations on any HUD page (${lane})`, async ({ page }) => {
         test.setTimeout(LANE_TIMEOUT_MS);
         await page.setViewportSize({ width: vp.width, height: vp.height });
+        const reads = watchReads(page);
         await page.goto(demo ? '/v2/?demo=1' : '/v2', { waitUntil: 'domcontentloaded' });
         await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
         await expect(page.locator('[data-frame="masthead"]')).toBeVisible({ timeout: 20_000 });
@@ -225,29 +289,25 @@ test.describe('HUD pages', () => {
           await page.evaluate(() => window.scrollTo(0, 0));
           const root = target.name === 'glance' ? GLANCE_BODY : PAGE_BODY;
 
-          // This is a card-level completion proof, not a declaration that every Admin feed has
-          // settled. Failure/unavailability is itself a rendered settled state; a pending request
-          // must fail this wait before axe runs.
+          if (target.name === 'cockpit' || target.name === 'admin') {
+            await waitForSurfaceReads(page, reads, target.name, demo);
+          }
+
+          // The Admin corpus has settled above; EstopCard has its own request lifecycle, so a
+          // pending card still blocks axe even while the surrounding page is complete.
           let adminEstop = target.name === 'admin' ? await waitForAdminEstopReadiness(page) : null;
 
           // Not a bare sleep: wait for the DOM to stop changing. It proves the page stopped
           // changing for QUIET_MS, which is strictly better than a fixed wait and is not the same
           // as proving it finished.
-          await page.waitForFunction(({ quietMs, selector }: { quietMs: number; selector: string }) => {
-            const body = document.querySelector(selector);
-            if (!body) return false;
-            const w = window as unknown as { __a11ySettle?: { n: number; since: number } };
-            const n = body.querySelectorAll('*').length;
-            const now = Date.now();
-            if (!w.__a11ySettle || w.__a11ySettle.n !== n) { w.__a11ySettle = { n, since: now }; return false; }
-            return now - w.__a11ySettle.since > quietMs;
-            // QUIET_MS is a Node-side constant and this predicate runs IN THE PAGE, so it has to
-            // travel as an argument; referencing it directly throws ReferenceError at runtime.
-          }, { quietMs: QUIET_MS, selector: root }, { timeout: 25_000 });
+          await waitForDomQuiet(page, root);
           // A live Admin empty state may acquire its backend mark during that quiet window and
           // mount EstopCard. Check again immediately before axe so a new pending request cannot
           // inherit the earlier empty outcome.
           if (target.name === 'admin') adminEstop = await waitForAdminEstopReadiness(page);
+          if (target.name === 'cockpit' || target.name === 'admin') {
+            await waitForSurfaceReads(page, reads, target.name, demo);
+          }
 
           const meta = await page.evaluate((selector: string) => {
             const body = document.querySelector(selector);
@@ -519,6 +579,144 @@ test('Admin axe scan waits for EstopCard after the old quiet window', async ({ p
   expect(Array.isArray(result.violations)).toBe(true);
   await expect(card).toHaveAttribute('data-estop-readiness', 'ready');
 });
+
+test('Home first roster read must settle before its accessibility scan', async ({ page }) => {
+  test.slow();
+  await page.setViewportSize({ width: 2200, height: 900 });
+  const reads = watchReads(page);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let seen!: () => void;
+  const requested = new Promise<void>(resolve => { seen = resolve; });
+  await page.route(/\/api\/agents(?:\?.*)?$/, async route => {
+    seen();
+    await held;
+    await route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ agents: [{ id: 'sentinel', name: 'Delayed roster sentinel', status: 'idle' }] }) });
+  });
+  let ready = false;
+  try {
+    await page.goto('/v2', { waitUntil: 'domcontentloaded' });
+    await requested;
+    await expect(page.locator('[data-home] [data-register="record"]')).toBeVisible();
+    await expect(page.locator(PAGE_BODY)).toHaveAttribute('data-surface-load', 'pending');
+    const gate = waitForSurfaceReads(page, reads, 'cockpit', false).then(() => { ready = true; });
+    await waitForDomQuiet(page, PAGE_BODY);
+    expect(ready).toBe(false); // the old DOM-quiet gate already returned
+    expect(await page.locator('[data-register="record"]').textContent()).not.toContain('Delayed roster sentinel');
+    release();
+    await gate;
+    await expect(page.locator('[data-register="record"]')).toContainText('Delayed roster sentinel');
+  } finally { release(); }
+});
+
+test('Home aborted roster read settles after the hub publishes its fallback', async ({ page }) => {
+  const reads = watchReads(page);
+  await page.route(/\/api\/agents(?:\?.*)?$/, route => route.abort('failed'));
+  await page.goto('/v2', { waitUntil: 'domcontentloaded' });
+  await waitForSurfaceReads(page, reads, 'cockpit', false);
+  await expect(page.locator(PAGE_BODY)).toHaveAttribute('data-surface-load', 'settled');
+  await expect(page.locator('[data-home]')).toBeVisible();
+});
+
+test('Admin first model read must settle before its accessibility scan', async ({ page }) => {
+  test.slow();
+  await page.addInitScript(() => {
+    try { localStorage.setItem('hud.firstrun.dismissed', '1'); } catch { /* ignore */ }
+  });
+  const reads = watchReads(page);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let seen!: () => void;
+  const requested = new Promise<void>(resolve => { seen = resolve; });
+  await page.route(/\/plugins(?:\?.*)?$/, route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({ plugins: [{ id: 'sentinel', name: 'Fixture plugin', enabled: true }] }),
+  }));
+  await page.route(/\/api\/models\/local(?:\?.*)?$/, async route => {
+    seen();
+    await held;
+    await route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ models: [{ id: 'sentinel', name: 'Delayed model sentinel', provider: 'ollama', available: true }] }) });
+  });
+  let ready = false;
+  try {
+    await page.goto('/v2/?demo=1', { waitUntil: 'domcontentloaded' });
+    await requested;
+    await page.locator(`${MASTHEAD_AREAS}[data-area="settings"]`).evaluate(el => (el as HTMLElement).click());
+    await expect(page.locator('[data-frame="page"] [data-mode="admin"]')).toBeVisible();
+    await expect(page.locator(PAGE_BODY)).toHaveAttribute('data-surface-load', 'pending');
+    await waitForAdminEstopReadiness(page);
+    const gate = waitForSurfaceReads(page, reads, 'admin', true).then(() => { ready = true; });
+    await waitForDomQuiet(page, PAGE_BODY);
+    expect(ready).toBe(false);
+    expect(await page.locator('[data-mode="admin"]').textContent()).not.toContain('Delayed model sentinel');
+    release();
+    await gate;
+    await expect(page.locator('[data-mode="admin"]')).toContainText('Delayed model sentinel');
+  } finally { release(); }
+});
+
+test('Admin transient empty page cannot settle while its final source is held', async ({ page }) => {
+  test.slow();
+  await page.addInitScript(() => {
+    try { localStorage.setItem('hud.firstrun.dismissed', '1'); } catch { /* ignore */ }
+  });
+  const reads = watchReads(page);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let seen!: () => void;
+  const requested = new Promise<void>(resolve => { seen = resolve; });
+  await page.route(/\/plugins(?:\?.*)?$/, route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({ plugins: [] }),
+  }));
+  await page.route(/\/api\/admin\/env(?:\/sources)?(?:\?.*)?$/, route => route.fulfill({ status: 403 }));
+  await page.route(/\/api\/models\/local(?:\?.*)?$/, async route => {
+    seen();
+    await held;
+    await route.fulfill({ status: 503 });
+  });
+  let ready = false;
+  try {
+    await page.goto('/v2', { waitUntil: 'domcontentloaded' });
+    await requested;
+    await page.locator(`${MASTHEAD_AREAS}[data-area="settings"]`).evaluate(el => (el as HTMLElement).click());
+    await expect(page.locator(`${PAGE_BODY} [data-empty]`)).toBeVisible();
+    expect(await waitForAdminEstopReadiness(page)).toBe('empty');
+    await expect(page.locator(PAGE_BODY)).toHaveAttribute('data-surface-load', 'pending');
+    const gate = waitForSurfaceReads(page, reads, 'admin', false).then(() => { ready = true; });
+    await waitForDomQuiet(page, PAGE_BODY);
+    expect(ready).toBe(false);
+    release();
+    await gate;
+    await expect(page.locator(PAGE_BODY)).toHaveAttribute('data-surface-load', 'settled');
+    expect(await waitForAdminEstopReadiness(page)).toBe('empty');
+  } finally { release(); }
+});
+
+for (const outcome of [
+  { name: 'empty', status: 200, body: { models: [] } },
+  { name: 'unavailable', status: 503, body: { detail: 'fixture unavailable' } },
+]) {
+  test(`Admin ${outcome.name} first model read is terminal for the accessibility scan`, async ({ page }) => {
+    await page.addInitScript(() => {
+      try { localStorage.setItem('hud.firstrun.dismissed', '1'); } catch { /* ignore */ }
+    });
+    const reads = watchReads(page);
+    await page.route(/\/plugins(?:\?.*)?$/, route => route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify({ plugins: [{ id: 'sentinel', name: 'Fixture plugin', enabled: true }] }),
+    }));
+    await page.route(/\/api\/models\/local(?:\?.*)?$/, route => route.fulfill({
+      status: outcome.status, contentType: 'application/json', body: JSON.stringify(outcome.body),
+    }));
+    await page.goto('/v2/?demo=1', { waitUntil: 'domcontentloaded' });
+    await page.locator(`${MASTHEAD_AREAS}[data-area="settings"]`).evaluate(el => (el as HTMLElement).click());
+    await waitForSurfaceReads(page, reads, 'admin', true);
+    await expect(page.locator(PAGE_BODY)).toHaveAttribute('data-surface-load', 'settled');
+    await expect(page.locator('[data-frame="page"] [data-mode="admin"]')).toBeVisible();
+    await expect(page.locator('[data-mode="admin"] .mdl-row')).toHaveCount(0);
+    await waitForAdminEstopReadiness(page);
+  });
+}
 
 /** Count violations by impact across every page, for the artifact header. */
 function tally(all: unknown[]) {

@@ -258,6 +258,13 @@ def standalone(vault, monkeypatch):
     server.server_close()
 
 
+def test_standalone_access_log_omits_note_query(standalone, capsys):
+    standalone("GET", "/api/brain/note?relPath=synthetic-private-note")
+    output = capsys.readouterr().out
+    assert "GET /api/brain/note HTTP" in output
+    assert "synthetic-private-note" not in output
+
+
 def test_standalone_serves_its_own_page_and_api(standalone):
     response, body = standalone("GET", "/api/brain/note?relPath=00%20Acasa/Acasa.md",
                                 origin=f"http://localhost:{standalone.port}",

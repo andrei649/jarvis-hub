@@ -1126,23 +1126,22 @@ def build_parser() -> argparse.ArgumentParser:
                     "hub refused, or the transport failed) · 2 usage · 3 no hub · 4 not authorised.",
         epilog="examples:\n"
                "  nerva send --channel telegram \"deploy finished\"\n"
-               "  echo \"RAM 92%\" | nerva send --channel ntfy\n"
-               "  nerva send --channel ntfy -s \"[CI]\" -f build.log\n"
-               "  nerva send --list ntfy",
+               "  echo \"RAM 92%\" | nerva send --channel telegram\n"
+               "  nerva send --channel telegram -s \"[CI]\" -f build.log\n"
+               "  nerva send --list telegram",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     target = send.add_mutually_exclusive_group(required=True)
     target.add_argument("--list", action="store_true",
                         help="list configured channels and inbox targets; MESSAGE, if given, filters by channel")
     target.add_argument("--to", metavar="THREAD_ID", help="exact thread id from --list (a governed reply)")
     target.add_argument("--channel", metavar="CHANNEL",
-                        help="a configured destination from --list (telegram, ntfy, …) — no thread needed")
+                        help="a configured destination from --list (telegram, voice, …) — no thread needed")
     send.add_argument("message", nargs="?",
                       help="the message (up to 4,000 characters); omit it to read --file or stdin")
     send.add_argument("-f", "--file", metavar="PATH",
                       help="read the body from PATH, or from stdin when PATH is -")
     send.add_argument("-s", "--subject", metavar="LINE",
-                      help="one printable subject line (≤200): ntfy's title (printable ASCII, ≤120), "
-                           "elsewhere the first line of the message")
+                      help="one printable subject line (≤200), sent as the first line of the message")
     send.add_argument("-q", "--quiet", action="store_true", help="print nothing on success")
     send.add_argument("--json", action="store_true")
 
@@ -5064,7 +5063,7 @@ def cmd_goal(ns: argparse.Namespace, ctx: Context) -> int:
 _PAIRING_STATUSES = ("allowed", "pending", "blocked")
 #: Where a hook may deliver (agents/core/webhooks.py DELIVER_CHOICES), spelled here so the
 #: parser builds without importing the hub.
-_WEBHOOK_DESTINATIONS = ("log", "telegram", "voice", "ntfy")
+_WEBHOOK_DESTINATIONS = ("log", "telegram", "voice")
 _WEBHOOK_PATH = "/api/webhooks"
 
 
@@ -6800,6 +6799,12 @@ def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
 def read_token_file(path: str) -> str:
     """The admin token from *path* (G11): a regular file of this user's, not a link, not
     readable or writable by group or others (on POSIX), at most 4 KiB, one token."""
+    try:
+        linfo = os.lstat(path)
+    except OSError as exc:
+        raise ValueError(f"cannot open it ({exc.strerror or 'error'}; a link is refused)") from None
+    if stat.S_ISLNK(linfo.st_mode) or getattr(linfo, "st_file_attributes", 0) & 0x400:
+        raise ValueError("cannot open it (a link is refused)")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(path, flags)
@@ -7688,8 +7693,8 @@ def _read_body(stream: Any, label: str, *, verb: str = "nerva send",
 def cmd_send(ns: argparse.Namespace, ctx: Context) -> int:
     """One message, no model call. Queue acceptance is never delivery confirmation.
 
-    H480: the body comes from the argument, a file or stdin; a subject rides as ntfy's
-    title or as the first line elsewhere; exit codes are 0 sent · 1 not delivered ·
+    H480: the body comes from the argument, a file or stdin; a subject rides as the
+    first line; exit codes are 0 sent · 1 not delivered ·
     2 usage, plus Nerva's own 3 (no hub) and 4 (not authorised).
     """
     if ns.list:

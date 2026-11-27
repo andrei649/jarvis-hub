@@ -11,15 +11,27 @@
 > two owner commands — the A5 licence flip, then `git tag v1.0.0` on `main` — the capability program is a
 > 1.x roadmap, and A8 was cleared by the owner on 2026-08-28 (see the A9 item below).*
 
+## Finish-line owner inputs
+
+Updated 2026-11-27 on integrated `main`. Use a disposable Nerva profile (`JARVIS_PROFILE=finish-check`) and synthetic content for live checks. Full verification details live in [FINISH_LINE_STATUS.md](FINISH_LINE_STATUS.md).
+
+- [ ] **Item 1 — live ChatGPT account turn pair (local → cloud → cloud with history consent).**
+  All routing, receipt, history-omission and local-note isolation tests pass synthetically on Windows and Linux. To complete the live account check:
+  1. Start the hub in a disposable profile (`$env:JARVIS_PROFILE="finish-check"; .\START.bat` or `python serve.py`) and open Ledger → **Console → Integrations**.
+  2. Connect **ChatGPT**, click **Refresh**, verify in [ChatGPT usage settings](https://chatgpt.com/settings/usage) that a short test fits your included plan allowance, and select an included ChatGPT model.
+  3. Open a new chat: send turn 1 on an installed **local** Ollama model and confirm the local model receipt on the reply.
+  4. Switch the chat picker to the selected **ChatGPT** model and send turn 2 **without** ticking history sharing — confirm the reply receipt names the ChatGPT model and that turn 1 was not sent.
+  5. Send turn 3 on **ChatGPT** **with** the per-send history confirmation ticked — confirm it recalls turn 1 and displays the ChatGPT model receipt.
+- [x] **Item 6 — Windows governed browser on standard Chrome (done 2026-11-27).** Standard Google Chrome `158.0.8127.37` passed all 18 native governed Chromium runtime tests (`tests/test_browser_chromium_runtime.py`, including `test_session_snapshot_ref_survives_separate_owner_approved_call`) on Windows after the UAC split-token SDDL owner and Crashpad cleanup fix in `agents/core/browser_profile.py`.
+- [ ] **Item 8 — optional live MCP read against an open Godot, Photoshop or Figma session.**
+  Blender's native roundtrip already passed on Windows, as did HUD PSD/Godot exports and local MCP responder tests. Whenever you want to exercise a live editor bridge:
+  1. Follow [`docs/professional-tool-smoke.md`](professional-tool-smoke.md) in a disposable synthetic project (for Godot 4.7.2, an optional read-only scene-tree bridge; for Photoshop, your chosen local layer-listing bridge; for Figma Desktop, the local MCP server with an eligible seat).
+  2. Name one synthetic child node/layer uniquely in the open app and run the corresponding read-only smoke command from [`docs/professional-tool-smoke.md`](professional-tool-smoke.md) to confirm Nerva's MCP client reads that exact marker.
+- [x] **Item 9 — Ledger HUD, removals and finish-line stack integrated onto `main` (2026-11-27).** Worldview/Argus removal, non-Telegram messaging removal, `#1392`–`#1426`, incremental Obsidian vault live memory, regenerated `v2` + `workspace` bundles, and Windows/Ubuntu CI fixes are integrated onto `main`.
+
 ## Editable Photoshop export
 
-- [ ] 2026-11-25 · Drafts #1380 and #1386 inherit `ag-psd@34.2.2` from
-  `8ee710ec`. The HUD uses it for **Download PSD** with editable text layers.
-  Choose whether to preserve the existing PSD writer on a separate draft
-  and remove it from these candidates, or keep editable PSD in scope and
-  evaluate a Nerva writer. The canvas preview and the Word, Excel and Blender
-  exports use independent paths. An exception for the package requires all
-  four conditions in the finish-line decision and explicit owner approval.
+- [ ] The merged harness and HUD include `ag-psd@34.2.2` for **Download PSD** with editable text layers. The earlier request to remove it from draft candidates predates their merge. If you want to revisit this existing dependency, choose whether to evaluate a native PSD writer or authorize a change in editable export support. Any new dependency exception needs the four finish-line conditions and your approval. The professional-tools acceptance covers reading a real Photoshop document through an optional MCP bridge. [Current package](https://github.com/andrei649/jarvis-hub/blob/02334d9a/frontend/package.json)
 
 ## 🔴 Owner gates that block tagging a release (and ultimately 1.0)
 
@@ -111,10 +123,10 @@
   - [ ] **Remaining, needs you (re-measured offline 2026-09-02; the 2026-07-07 re-audit and its
     #634 fixes — frontend `undici`, worldview/mcp `hono` ×5 + `esbuild` — are history):**
     `npm audit --omit=dev` today: **frontend 0** · root `package-lock` (HUD-test tree) **5 (2 high)**
-    · **worldview 3 high** · **worldview/mcp 5 (2 high)** · **mobile 21–22 (10–11 high)**; Python
-    `requirements.lock` clean (`pip-audit`). The worldview, worldview/mcp and root trees are all
-    `fixAvailable` and are being fixed by the 2026-09-02 dependency audit wave (engineering, not
-    you). Still yours: (a) **mobile/** — the Expo SDK chain. The gate was *tested* 2026-07-07: a
+    · *(worldview and worldview/mcp trees removed 2026-11-25)* · **mobile 21–22 (10–11 high, frozen 2026-11-25)**; Python
+    `requirements.lock` clean (`pip-audit`). The root tree is
+    `fixAvailable` (engineering, not
+    you). Still yours: (a) **mobile/** — the Expo SDK chain (frozen until after desktop finish line per `docs/decisions/2026-11-25-nerva-finish-line.md`). The gate was *tested* 2026-07-07: a
     non-forced `npm audit fix` bump broke `tsc` in the audio path (`expo-audio`
     AudioPlayer.addListener), so it truly needs the SDK upgrade + real-device validation;
     (b) **read GitHub's own Dependabot count** — the figures above are offline measurements, the
@@ -176,7 +188,7 @@
         `nerva-movement`, `boundary`, `review (correctness)` / `review (boundary)` /
         `review (tests)`, `Secret scan (gitleaks)`, `SAST (semgrep)`, `SAST (bandit — blocking gate)`,
         `Dependency audit (pip-audit)`, `in-sync`, `parked-modules`, `validate`, `Analyze (python)` /
-        `CodeQL`, `sandbox-isolation`, `signal-layer-smoke (…)`, `frontend`, `hud-v2-build`,
+        `CodeQL`, `sandbox-isolation`, `frontend`, `hud-v2-build`,
         `openapi-types`, `e2e`, `server-boot`, `analyze`, `drift` — *except the four below, which
         came back on 2026-09-02.*
   - [ ] **Mark the four re-gated PR checks required (CTO D1, 2026-09-02 —
@@ -315,15 +327,8 @@ bundle" button, or `POST /api/self-improvement/enable`:
   daemon posting `POST /api/presence/owner` — H34.2 install above). Unset, the
   target refuses `presence_unknown`; it only ever fires on a fresh `present`
   signal, so a dead daemon can never trigger media at a guessed location.
-- [ ] **`ambient.enabled`** — H33 Ambient Intelligence monitors over house/camera/
-  digital signals (only meaningful once H30/H31 hardware is connected).
-- [ ] **`house.presence_enabled`** (or env `JARVIS_HOUSE_PRESENCE=1`) — GAP-9: the
-  production presence writer, feeding Home Assistant `person.*`/`device_tracker.*`
-  + room motion sensors into the strict-local presence inference on every
-  `/api/house/state` read. Room presence is only claimed when identity AND
-  same-room motion corroborate (the model's anti-overclaim floor); the route's
-  `presence_status` field reports off/live/degraded separately from the array.
-  Needs `house.enabled` + `house.ha_enabled` first.
+- [ ] **`ambient.enabled`** — optional H33 monitors for digital signals. The house and camera inputs retired on 2026-11-25.
+- [x] **House presence setup retired 2026-11-25.** The owner removed the house integration and its presence settings in [#1390](https://github.com/andrei649/jarvis-hub/pull/1390).
 - [ ] **`autonomy.tech_scout_enabled`** — the new Proactive Technology Scout: a
   weekly, read-only websearch scan (same `SEARXNG_URL`/`TAVILY_API_KEY` backend
   as above) for new AI/tech developments worth knowing about. Findings are
@@ -530,9 +535,8 @@ built on your Windows box:
       export JARVIS_MCP_HTTP_CLIENT=1
       # then configure {"transport": "streamable-http", "url": "https://…/mcp"}
       ```
-      Waits on the integrator's `routers/mcp.py` admin-API edit; until then configure it through
-      `MCPManager.load_from_config`. Bearer headers are in memory only — re-supply them after a
-      restart.
+      As an administrator, add and connect the server in Console → Interop → MCP Servers.
+      For a manually supplied bearer header, re-supply it after a restart. [MCP setup](MCP_CATALOG.md)
 
 - [ ] **P7 — The hosted install one-liner needs a domain (and a public repo)**
       *(unblocks `install-one-step-native`'s hosted path)*

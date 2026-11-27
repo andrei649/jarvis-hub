@@ -27,9 +27,9 @@ def test_native_projection_honors_platform_switches_and_hard_gates(tmp_path, mon
     orch, _ = _hub(tmp_path, monkeypatch, _md_skill("weather"), _md_skill("news"), pending, unsupported)
     settings_db.put_category("skills", {"channel_disabled": {"telegram": ["weather"]}})
     tg = project_skill_menu(orch.skills, platform="telegram", slots=62, taken=orch._command_name_taken)
-    discord = project_skill_menu(orch.skills, platform="discord", slots=62, taken=orch._command_name_taken)
+    removed = project_skill_menu(orch.skills, platform="discord", slots=62, taken=orch._command_name_taken)
     assert [entry.name for entry in tg.entries] == ["news"]
-    assert [entry.name for entry in discord.entries] == ["news", "weather"]
+    assert removed.unavailable and removed.entries == ()        # a removed platform has no menu
     orch.checkpoints.close()
 
 
@@ -65,11 +65,11 @@ def test_malformed_quick_configuration_still_reserves_its_skill_name(tmp_path, m
 
 def test_native_cap_keeps_stable_first_skill_and_counts_hidden(tmp_path, monkeypatch):
     orch, _ = _hub(tmp_path, monkeypatch, _md_skill("weather"), _md_skill("news"), _md_skill("notes"))
-    projected = project_skill_menu(orch.skills, platform="discord", slots=1,
+    projected = project_skill_menu(orch.skills, platform="telegram", slots=1,
                                    taken=orch._command_name_taken)
     assert [entry.name for entry in projected.entries] == ["news"]
     assert projected.hidden_count == 2
-    assert project_skill_menu(orch.skills, platform="discord", slots=-1,
+    assert project_skill_menu(orch.skills, platform="telegram", slots=-1,
                               taken=orch._command_name_taken).unavailable
     orch.checkpoints.close()
 

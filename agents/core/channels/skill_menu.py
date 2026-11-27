@@ -15,11 +15,8 @@ from typing import Any
 from ..skills import bundles, slash_load, switches
 from .native_metadata import name_allowed, safe_description
 
-_NATIVE_NAME = {
-    "telegram": re.compile(r"[a-z][a-z0-9_]{0,31}\Z"),
-    "discord": re.compile(r"[a-z][a-z0-9_-]{0,31}\Z"),
-}
-_DESCRIPTION_LIMIT = {"telegram": 256, "discord": 100}
+_NATIVE_NAME = {"telegram": re.compile(r"[a-z][a-z0-9_]{0,31}\Z")}
+_DESCRIPTION_LIMIT = {"telegram": 256}
 logger = logging.getLogger("jarvis.channels.skill_menu")
 
 
@@ -62,7 +59,7 @@ def project_skill_menu(loader: Any, *, platform: str, slots: int,
     try:
         for skill in sorted(pool, key=lambda item: str(getattr(item, "name", "")).casefold()):
             name = bundles.slugify(getattr(skill, "name", ""))
-            wire = name.replace("-", "_") if platform == "telegram" else name
+            wire = name.replace("-", "_")
             if (not _NATIVE_NAME[platform].fullmatch(wire) or wire in used
                     or not name_allowed(str(getattr(skill, "name", "")), wire)
                     or bundles.slugify(wire) in bundle_names):
@@ -83,10 +80,8 @@ def project_skill_menu(loader: Any, *, platform: str, slots: int,
             except Exception:
                 hidden += 1
                 continue
-            # Telegram has a provider-wide command cap. Discord uses one generic
-            # command and may autocomplete any installed skill within its 25
-            # choices per response.
-            capacity = min(slots, 100) if platform == "telegram" else slots
+            # Telegram has a provider-wide command cap.
+            capacity = min(slots, 100)
             if len(entries) >= capacity:
                 hidden += 1
                 continue

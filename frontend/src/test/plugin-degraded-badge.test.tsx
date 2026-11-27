@@ -18,17 +18,17 @@ describe('AdminMode — degraded plugins are badged MOCK', () => {
   it('renders the MOCK badge with reason + needs in the tooltip', async () => {
     const original = V2.ADMIN.plugins;
     V2.ADMIN.plugins = [
-      { id: 'sms-alerts', name: 'sms-alerts', scope: 'api.twilio.com', net: 'external', on: true,
-        degraded: true, degradedReason: 'twilio_not_configured',
-        degradedNeeds: ['plugins.twilio_account_sid'] },
+      { id: 'crm-sync', name: 'crm-sync', scope: 'api.notion.com', net: 'external', on: true,
+        degraded: true, degradedReason: 'notion_not_configured',
+        degradedNeeds: ['plugins.notion_integration_token'] },
       { id: 'weather', name: 'weather', scope: 'wttr.in', net: 'external', on: true, degraded: false },
     ];
     try {
       render(<AdminMode t={t} />);
       await waitFor(() => expect(screen.getByText('MOCK')).toBeTruthy());
       const badge = screen.getByText('MOCK');
-      expect(badge.getAttribute('title')).toContain('twilio_not_configured');
-      expect(badge.getAttribute('title')).toContain('plugins.twilio_account_sid');
+      expect(badge.getAttribute('title')).toContain('notion_not_configured');
+      expect(badge.getAttribute('title')).toContain('plugins.notion_integration_token');
       // Only the degraded plugin is badged.
       expect(screen.getAllByText('MOCK')).toHaveLength(1);
     } finally {

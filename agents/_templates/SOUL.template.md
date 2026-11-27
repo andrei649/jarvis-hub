@@ -9,7 +9,7 @@ model:
   primary: deepseek-r1-distill-qwen-32b-q4
   fallback: claude-sonnet-4-6
 channels:
-  primary: [voice | telegram | whatsapp | web-dashboard | slack]
+  primary: [voice | telegram | web-dashboard]
   fallback: [channel]
 voice_id: [if applicable]
 wake_word: [if applicable]

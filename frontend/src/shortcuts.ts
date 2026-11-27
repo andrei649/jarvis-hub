@@ -66,12 +66,11 @@ const SHARED_ACTIONS: ShortcutAction[] = [
   { id: 'session.shortcuts', category: 'Session', label: 'Keyboard shortcuts', chord: 'mod+/', scope: 'global', inInputs: true },
 ];
 
-/** The registry (PHASE_B_PLAN.md §3.6): masthead order on 1–9, 0 the conversation; w goes to
- *  Observe › World signals; the backtick opens the sheet filtered to panels; a goes to Glance.
+/** The registry (PHASE_B_PLAN.md §3.6): masthead order on 1–9, 0 the conversation;
+ *  the backtick opens the sheet filtered to panels; a goes to Glance.
  *  No docket verb is ever registered here. */
 export const ACTIONS: ShortcutAction[] = defineActions([
   ...modeActions(MODE_KEYS),
-  { id: 'view.world', category: 'Navigation', label: 'Open World signals', chord: 'w', scope: 'global' },
   { id: 'view.console', category: 'Navigation', label: 'Find a panel', chord: '`', scope: 'global' },
   { id: 'view.ambient', category: 'View', label: 'Glance', chord: 'a', scope: 'global' },
   ...SHARED_ACTIONS,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+from contextlib import closing
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -203,6 +204,23 @@ def _with_read(callback):
 
 def read_choice() -> CustomChoice:
     return _with_read(_choice)
+
+
+def read_router_choice() -> CustomChoice:
+    if selection_gates.fcntl is not None:
+        return read_choice()
+    # Windows can run a built-in provider if its settings snapshot proves that
+    # neither signed choice is active. Using either signed provider still needs a lease.
+    from .provider_selection import _row as signed_choice
+
+    settings_db._ensure_init()
+    with closing(settings_db.get_conn()) as conn:
+        conn.execute("BEGIN")
+        choice = _choice(conn)
+        _, signed = signed_choice(conn)
+        if choice.active_key is not None or signed is not None:
+            raise selection_gates.SelectionUnavailable("active provider choice requires a signed lease")
+        return choice
 
 
 def read_endpoint(key: str) -> CustomEndpoint | None:

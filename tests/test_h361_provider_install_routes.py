@@ -1,10 +1,14 @@
 """Production HTTP owner boundary, private synthetic packages only."""
 import asyncio
-import fcntl
 import os
 import threading
 import time
 from types import SimpleNamespace
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 import httpx
 import pytest
@@ -12,6 +16,8 @@ from fastapi.testclient import TestClient
 
 from agents.core.llm.providers.packages import _profile_payload
 from tests.test_h361_provider_install_service import owner, service, staged
+
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='POSIX provider package store')
 
 HEADERS = {'X-Admin-Token': 'synthetic-install-owner'}
 PATH = '/api/llm/provider-packages'
@@ -133,6 +139,7 @@ async def test_http_revoke_awaits_inflight_lease_and_committed_revocation(client
             task.cancel()
 
 
+@pytest.mark.skipif(fcntl is None, reason="POSIX flock")
 @pytest.mark.asyncio
 async def test_stage_lock_wait_does_not_block_unrelated_status(client, service):
     svc, _, _, _ = service

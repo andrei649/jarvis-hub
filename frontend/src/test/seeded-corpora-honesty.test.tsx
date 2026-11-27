@@ -10,7 +10,7 @@
  *                        /api/arena/leaderboard returned nothing
  *   OBSERVE.traces     — seed rows (tr-8f3a "what does my day look like?")
  *                        kept when /api/traces returned nothing
- *   mark('OBSERVE')    — fired on Signal Layer health alone, stamping LIVE over
+ *   mark('OBSERVE')    — fired on a neighbour's health alone, stamping LIVE over
  *                        a panel whose every Jarvis source could be pure seed
  *   ADMIN.keys         — "ANTHROPIC_API_KEY sk-ant-••••4f2a valid rotated 14d
  *                        ago" — never fetched, always fiction
@@ -169,15 +169,14 @@ vi.mock('../api/actions', () => ({
   engageEstop: vi.fn(),
   resumeEstop: vi.fn(),
 }));
-vi.mock('../world-intelligence', () => ({ WorldIntelligencePanel: () => null }));
 vi.mock('../gap', () => ({ RoomsPanel: () => null }));
 
 import { ObserveMode } from '../modes2';
 import { AdminMode } from '../modes3';
 
 const SEED_FICTION_OBSERVE = ['tr-8f3a', 'gemma-4-26b', 'athena'];
-const SEED_FICTION_ADMIN = ['sk-ant', 'jarvis-prime', '02:30 today', 'WhatsApp (bridge)',
-  'Gmail API', 'Google Calendar', 'Telegram Bot', 'Spotify', 'WhatsApp Bridge',
+const SEED_FICTION_ADMIN = ['sk-ant', 'jarvis-prime', '02:30 today',
+  'Gmail API', 'Google Calendar', 'Telegram Bot', 'Spotify',
   'Apple Health', 'Homebridge', 'Cloud LLM Fallback'];
 
 describe('ObserveMode over the honest corpus shows no seed fiction', () => {

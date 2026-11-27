@@ -147,6 +147,16 @@ def test_a_cnp_and_an_iban_are_masked_only_when_their_checksum_holds():
     assert "[REDACTED:ro_cnp]" in out and out.count("[REDACTED:ro_iban]") == 2
 
 
+def test_vault_query_removed_from_uvicorn_access_record():
+    from agents.core.log import _omit_vault_query
+
+    logger = logging.getLogger("uvicorn.access")
+    args = ("loopback", "GET", "/prefix/api/os/brain/retrieve?q=synthetic-private-text", "1.1", 200)
+    record = logger.makeRecord(logger.name, logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', args, None)
+    assert _omit_vault_query(record)
+    assert record.args == ("loopback", "GET", "/prefix/api/os/brain/retrieve", "1.1", 200)
+
+
 def test_an_access_log_line_keeps_its_five_arguments():
     """uvicorn's AccessFormatter unpacks five args: the path is masked in place."""
     logger, handler, buf = _logger("jarvis.test.h410.access")

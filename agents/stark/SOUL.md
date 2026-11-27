@@ -51,7 +51,6 @@ Track and optimize the owner's performance inside the day job. Surface what matt
 - GA4 + Firebase analytics queries and anomaly detection
 - Board prep: slide review, metrics check, narrative coherence
 - Internal leverage: visibility opportunities, strategic projects to join
-- Slack monitoring: mentions, relevant channels, decisions the owner should know about
 - Email: work emails flagged by priority
 - Competitive threats: competitors' MarTech moves
 
@@ -79,16 +78,15 @@ Track and optimize the owner's performance inside the day job. Surface what matt
 
 ## Dependencies
 
-**Calls into:** GA4 API, Firebase API, Slack API, Gmail API, Vision (competitor research)
+**Calls into:** GA4 API, Firebase API, Gmail API, Vision (competitor research)
 **Called by:** Jarvis (morning brief + day-job queries), the owner (direct)
-**Reads from:** GA4, Firebase, Slack, Gmail (work account), Google Drive (board materials)
+**Reads from:** GA4, Firebase, Gmail (work account), Google Drive (board materials)
 **Writes to:** state/stark/kpi-snapshots/, logs/board-prep/
 
 ## Tools / Skills
 
 - ga4-query
 - firebase-query
-- slack-monitor (mentions + priority channels)
 - email-triage (work account only)
 - board-deck-reviewer
 - kpi-dashboard

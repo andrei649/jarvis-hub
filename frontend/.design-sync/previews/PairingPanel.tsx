@@ -10,10 +10,10 @@ const STORIES: Record<string, Record<string, unknown>> = {
     '/api/channels/pairing': {
       summary: { pending: 2 },
       senders: [
-        { name: '+40 722 314 559', sender_id: 'wa:40722314559', channel: 'whatsapp', status: 'pending' },
+        { name: '+40 722 314 559', sender_id: '40722314559', channel: 'telegram', status: 'pending' },
         { name: '@relu_dm', sender_id: 'tg:88231907', channel: 'telegram', status: 'pending' },
         { name: 'Cosmina', sender_id: 'tg:1290443', channel: 'telegram', status: 'paired' },
-        { name: 'Max', sender_id: 'wa:40733001122', channel: 'whatsapp', status: 'paired' },
+        { name: 'Max', sender_id: '40733001122', channel: 'telegram', status: 'paired' },
         { name: 'promo-blast-4412', sender_id: 'tg:99120034', channel: 'telegram', status: 'blocked' },
       ],
     },
@@ -23,8 +23,8 @@ const STORIES: Record<string, Record<string, unknown>> = {
       summary: { pending: 0 },
       senders: [
         { name: 'Cosmina', sender_id: 'tg:1290443', channel: 'telegram', status: 'paired' },
-        { name: 'Max', sender_id: 'wa:40733001122', channel: 'whatsapp', status: 'paired' },
-        { name: 'Mama', sender_id: 'wa:40744556677', channel: 'whatsapp', status: 'paired' },
+        { name: 'Max', sender_id: '40733001122', channel: 'telegram', status: 'paired' },
+        { name: 'Mama', sender_id: '40744556677', channel: 'telegram', status: 'paired' },
       ],
     },
   },

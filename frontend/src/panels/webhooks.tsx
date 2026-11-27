@@ -49,7 +49,7 @@ const HOOKS_PATH = '/api/webhooks';
 const RECEIVER_PATH = '/api/admin/settings/webhooks';
 /** Where a delivery can go: the log, or the owner's own channels that something
     receives. The web channel is not one: nothing in the hub receives a push there. */
-export const DESTINATIONS = ['log', 'telegram', 'voice', 'ntfy'];
+export const DESTINATIONS = ['log', 'telegram', 'voice'];
 export const DELIVER_ONLY_NEEDS_A_CHANNEL = 'deliver only needs a channel: with log the sender’s text would go nowhere';
 export const FILTER_NOT_JSON = 'the filter is a JSON list of rules, e.g. [{"path": "ref", "op": "eq", "value": "refs/heads/main"}]';
 /** What a test delivery found (H039), as the hub's schema spells it. */

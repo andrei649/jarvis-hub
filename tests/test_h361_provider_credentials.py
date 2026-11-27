@@ -12,6 +12,8 @@ from agents.core.llm.providers.packages import ProviderPackageError
 from tests.test_h361_provider_install_kernel import _bind_real_kernel
 from tests.test_h361_provider_install_service import owner, service
 
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX provider package store")
+
 
 def _process_write(args):
     from agents.core.llm.providers.credentials import ProviderCredentialStore

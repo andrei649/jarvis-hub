@@ -1,4 +1,5 @@
 """Six signed dialects construct with a marker, never the encrypted key."""
+import os
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -12,6 +13,8 @@ from agents.core.llm.providers.selected_runtime import AUTH_MARKER
 from tests.test_h361_admitted_native_bridge import response
 from tests.test_h361_provider_install_kernel import _bind_real_kernel
 from tests.test_h361_provider_install_service import owner, service
+
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='POSIX provider package store')
 
 
 @pytest.mark.parametrize(('kind', 'mode'), [

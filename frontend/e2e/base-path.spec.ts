@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 /* The Ledger frame, the default since the cutover (PHASE_B_PLAN.md §3.4, §3.6, §8.2 row 36): pages
    are titled `<Page> · <Area> · Nerva`; the backtick opens the search and command sheet filtered to
-   panels, where the Console used to open; `w` goes to Observe › World signals, an ordinary page
+   panels, where the Console used to open; `8` goes to Observe, an ordinary page
    that Back leaves (Escape does not); /v2/console is All pages. Every in-app navigation below keeps
    the deployment prefix and the page's context (?demo=1, the hash). */
 const SHEET = 'Search or run a command';
@@ -30,13 +30,12 @@ for (const prefix of ['', '/one', '/two/nerva']) {
     await page.keyboard.press('Escape');
     await expect(sheet).toHaveCount(0);
     await expect(page).toHaveURL(origin + prefix + '/v2/cockpit?demo=1#anchor');
-    // `w`: World signals is a page of Observe; Escape leaves it on screen, Back leaves it
-    await page.route('http://localhost:8787/**', route => route.abort());
-    await page.keyboard.press('w');
-    await expect(page).toHaveTitle('World signals · Observe · Nerva');
-    await expect(page).toHaveURL(origin + prefix + '/v2/world?demo=1#anchor');
+    // `8`: Observe is an ordinary page; Escape leaves it on screen, Back leaves it
+    await page.keyboard.press('8');
+    await expect(page).toHaveTitle('Observe · Nerva');
+    await expect(page).toHaveURL(origin + prefix + '/v2/observe?demo=1#anchor');
     await page.keyboard.press('Escape');
-    await expect(page).toHaveTitle('World signals · Observe · Nerva');
+    await expect(page).toHaveTitle('Observe · Nerva');
     await page.goBack();
     await expect(page).toHaveTitle('Today · Nerva');
     // a panel found through the sheet opens as a page of its area, its heading focused

@@ -34,7 +34,7 @@ const STATUS = {
   version: '1.1.0',
   model_state: 'ready',
   loaded_model: 'qwen2.5-7b-instruct',
-  gateway: { state: 'running', running: ['telegram', 'discord'], running_count: 2, total: 3 },
+  gateway: { state: 'running', running: ['telegram', 'voice'], running_count: 2, total: 3 },
   sessions: { active: 12, window_s: 900, state: 'known' },
   agents: [],
 };
@@ -138,7 +138,7 @@ for (const [width, height] of CHROME_SCREENS) {
     expect(foot.gateway!.painted && foot.gateway!.inside && foot.gateway!.onTop,
       `the gateway is not visible at ${width}x${height}: ${JSON.stringify(foot.gateway)}`).toBe(true);
     expect(foot.gateway!.text).toContain('2 of 3 running');
-    expect(foot.gateway!.title).toBe('telegram, discord');
+    expect(foot.gateway!.title).toBe('telegram, voice');
     expect(foot.sessions!.painted && foot.sessions!.inside && foot.sessions!.onTop,
       `the session count is not visible at ${width}x${height}: ${JSON.stringify(foot.sessions)}`).toBe(true);
     if (width >= 2200) {

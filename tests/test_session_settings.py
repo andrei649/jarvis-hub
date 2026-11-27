@@ -24,7 +24,7 @@ def test_admin_sessions_settings_roundtrip_into_policy(client):
         "reset_by_type": {"group": {"mode": "daily"}},
         "reset_by_channel": {"telegram": {"types": {"private": {"mode": "both"}}}},
         "reset_triggers": ["/new", "/reset"], "stall_seconds": 90,
-        "stall_channel": "ntfy", "store_max_age_days": 30,
+        "stall_channel": "web", "store_max_age_days": 30,
     }
     headers = {"X-Admin-Token": "sessions-admin-test"}
     saved = client.put("/api/admin/settings/sessions", json={"values": values}, headers=headers)
@@ -35,7 +35,7 @@ def test_admin_sessions_settings_roundtrip_into_policy(client):
         return settings_db.get_value(*key.split(".", 1), default=default)
     assert resolve_policy(setting, "telegram", "private").mode == "both"
     assert resolve_policy(setting, "email", "group").mode == "daily"
-    assert setting("sessions.stall_channel", None) == "ntfy"
+    assert setting("sessions.stall_channel", None) == "web"
 
 
 @pytest.mark.parametrize("key,value", [

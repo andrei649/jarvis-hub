@@ -1365,14 +1365,18 @@ class SubAgentManager:
                 try:
                     tree = await asyncio.to_thread(self._worktree_provider, spawn_id)
                 except Exception as exc:  # noqa: BLE001 — refused isolation never runs unisolated
-                    detail = str(exc)[:DETAIL_MAX] or type(exc).__name__
-                    self._set_status(rec, "failed")
-                    rec["result"] = {"error": "worktree_unavailable", "detail": detail}
-                    transcript.append("end", status="failed", error="worktree_unavailable", detail=detail)
+                    if rec["status"] == "running":
+                        detail = str(exc)[:DETAIL_MAX] or type(exc).__name__
+                        self._set_status(rec, "failed")
+                        rec["result"] = {"error": "worktree_unavailable", "detail": detail}
+                        transcript.append("end", status="failed", error="worktree_unavailable", detail=detail)
                 if tree is not None:
                     rec["worktree"] = tree.to_dict() if hasattr(tree, "to_dict") else dict(tree)
             await self._durable_start(rec, task)
             if rec["status"] != "running":
+                if rec["status"] == "stopping":
+                    self._set_status(rec, "stopped")
+                    rec["result"] = {"error": "stopped", "reason": rec["stop_reason"]}
                 self._finish(rec, before, None)
                 await self._persist(rec)
                 await self._settle_owned(rec, child)

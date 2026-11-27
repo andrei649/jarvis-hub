@@ -1,10 +1,10 @@
 # Jarvis — AI Agent Orchestration System
 
-> WorldView was retired on 2026-10-27 and is no longer installed, started or exposed by Nerva. Any WorldView stack or bridge references below are historical; Signal Layer remains independent.
+> WorldView was retired on 2026-10-27 and is no longer installed, started or exposed by Nerva. Any WorldView stack or bridge references below are historical. Signal Layer and the Argus agent were removed on 2026-11-25.
 
 ## Overview
 
-Jarvis is a local-first multi-agent AI orchestration system. 17 active agents across 4 tiers (incl. Argus, the Signal Layer facade, and Howard, the emerging digital twin), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
+Jarvis is a local-first multi-agent AI orchestration system. 16 active agents across 4 tiers (incl. Howard, the emerging digital twin), coordinated by Jarvis (prime orchestrator). Pure Python, runs on Windows via LM Studio with GPU acceleration (RTX 5090 24GB VRAM, 192GB DDR5).
 
 
 **Stack:** Python 3.12 + FastAPI + LM Studio (OpenAI-compatible API)  
@@ -70,9 +70,6 @@ agents/
 │   │   ├── web.py           # WebChannel (SSE streaming)
 │   │   ├── voice.py         # Voice channel (silero TTS)
 │   │   ├── telegram.py      # Telegram bot channel
-│   │   ├── discord.py       # Discord bot channel
-│   │   ├── email.py         # Email channel (SMTP + IMAP)
-│   │   ├── slack.py         # Slack bot channel
 │   │   └── gateway.py       # Message routing gateway
 │   ├── plugins/
 │   │   ├── weather.py       # Weather plugin (wttr.in)
@@ -80,8 +77,7 @@ agents/
 │   │   ├── cloud_llm.py     # Cloud LLM plugin (Anthropic/OpenAI)
 │   │   ├── spotify_plugin.py
 │   │   ├── gmail_plugin.py
-│   │   ├── telegram_bot.py
-│   │   └── whatsapp_bridge.py
+│   │   └── telegram_bot.py
 │   ├── voice/
 │   │   ├── pipeline.py      # Voice pipeline
 │   │   ├── tts.py           # Text-to-speech (edge-tts)
@@ -110,7 +106,7 @@ memory_logs/                 # Sessions, checkpoints, learning records
 | Tier | Agents | Role |
 |---|---|---|
 | **Command** | Jarvis, Friday, Pepper, Jerome | Orchestration, daily ops, staff |
-| **Business** | Athena, Stark, Veronica, Vision, Argus | Strategy, intel, comms, geoint (WorldView bridge) |
+| **Business** | Athena, Stark, Veronica, Vision | Strategy, intel, comms, research |
 | **Tech** | Steve, Oracle, Ultron | Infra, workflows, security |
 | **Foundation** | Gecko, Hercules, Hephaestus, Frigga, Howard | Finance, fitness, builds, family, digital twin |
 
@@ -205,11 +201,11 @@ curl.exe http://127.0.0.1:8080/status
 ## Quick Stats
 
 <!-- project-status:jarvis-stats:start -->
-- 17 active agents; registry-derived
-- 939 HTTP routes; parity-snapshot-derived
-- Tests: backend **37,899** · frontend **5,002** · mobile **522**
-- Version: **v1.0.0** · source commit `84215ba33693`
-- Backlog ledger: 289 done · 25 open or blocked of 314 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
+- 16 active agents; registry-derived
+- 940 HTTP routes; parity-snapshot-derived
+- Tests: backend **37,289** · frontend **5,028** · mobile **522**
+- Version: **v1.0.0** · source commit `02334d9a3fb4`
+- Backlog ledger: 291 done · 23 open or blocked of 314 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
 - H23 roll-up: 28/30 done, 1 blocked, 1 open; release gates: A1, A3, A4, A6
 <!-- project-status:jarvis-stats:end -->
 

@@ -205,6 +205,32 @@ def _probe_oauth_callback(client, monkeypatch, tmp_path):
     return denied, allowed
 
 
+def _probe_chatgpt_callback(client, monkeypatch, tmp_path):
+    from agents.core import chatgpt_connection as account
+    from agents.core.routers.chatgpt_plan import CALLBACK, _cookie
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "profile"))
+    monkeypatch.setenv("JARVIS_KEY_DIR", str(tmp_path / "keys"))
+    http = TestClient(client.app, base_url="http://127.0.0.1:46783", client=("127.0.0.1", 41024))
+    binding = "local-browser-fixture"
+    state = account.start("http://127.0.0.1:46783" + CALLBACK, binding)["state"]
+    params = {"state": state, "code": "synthetic-authorization-code", "client_id": "oaiapp_fixture"}
+    exchanges = []
+
+    async def token(method, endpoint, generation, **kwargs):
+        assert (method, endpoint, kwargs["data"]["code"]) == ("POST", account.TOKEN, params["code"])
+        exchanges.append(endpoint)
+        raise account.ConnectionError("reauthorization_required", 409)
+
+    monkeypatch.setattr(account, "_json", token)
+    denied = http.get(CALLBACK, params=params)
+    assert not exchanges
+    http.cookies.set(_cookie(state), binding, domain="127.0.0.1", path=CALLBACK)
+    allowed = http.get(CALLBACK, params=params)
+    assert exchanges == [account.TOKEN] and allowed.status_code == 409
+    return denied, allowed
+
+
 def _probe_mcp_oauth_callback(client, monkeypatch, tmp_path):
     """G9 / H692: a waiting MCP sign-in redeemed with its binding cookie vs without it."""
     from agents.core.mcp import oauth_client as oc
@@ -318,40 +344,6 @@ def _api_probe(method, path, body=None):
 _CHAT = {"model": "nerva", "messages": [{"role": "user", "content": "h511"}]}
 
 
-def _probe_sms_webhook(client, monkeypatch, tmp_path):
-    """G16 (H098): the real Twilio signature check (channels/sms.py) on a configured SMS
-    channel whose turn is a recorder: a wrong signature, then none, then a valid one."""
-    import base64
-    from types import SimpleNamespace
-    from urllib.parse import urlencode
-
-    from agents.core import app_state
-    from agents.core.channels import sms
-
-    token, account = "h511-sms-token", "AC" + "c" * 32  # nosec B105 — probe credential
-    url = "http://127.0.0.1/api/channels/sms/webhook"
-    for name, value in ((sms.ENABLED_ENV, "1"), (sms.ACCOUNT_SID_ENV, account),
-                        (sms.AUTH_TOKEN_ENV, token), (sms.FROM_NUMBER_ENV, "+15550001111"),
-                        (sms.WEBHOOK_URL_ENV, url)):
-        monkeypatch.setenv(name, value)
-    accepted = []
-    channel = SimpleNamespace(accept_in_background=accepted.append)
-    monkeypatch.setattr(app_state, "get_orch", lambda: SimpleNamespace(channels={"sms": channel}))
-    params = {"MessageSid": "SM" + "d" * 32, "AccountSid": account, "From": "+15551234567",
-              "Body": "h511"}
-    body = urlencode(params)
-    payload = url + "".join(k + params[k] for k in sorted(params))
-    good = base64.b64encode(hmac.new(token.encode(), payload.encode(), hashlib.sha1).digest()).decode()
-    hdr = {"content-type": "application/x-www-form-urlencoded"}
-    assert client.post("/api/channels/sms/webhook", content=body,
-                       headers={**hdr, "x-twilio-signature": "AAAA" + good[4:]}).status_code == 403
-    denied = client.post("/api/channels/sms/webhook", content=body, headers=hdr)
-    allowed = client.post("/api/channels/sms/webhook", content=body,
-                          headers={**hdr, "x-twilio-signature": good})
-    assert (len(accepted) == 1) == (allowed.status_code == 200)
-    return denied, allowed
-
-
 def _room_peer_target(monkeypatch, tmp_path):
     """H658: the real RoomPeerService as the target hub, with an approved invitation,
     and a second service standing in for the member hub (its key signs the requests)."""
@@ -416,6 +408,7 @@ HTTP_PROBES = {
     "POST /api/mcp/server/rpc": (_probe_mcp_rpc, {401}),
     "POST /api/oauth/callback": (_probe_oauth_callback, {400}),
     "GET /api/oauth/mcp/callback": (_probe_mcp_oauth_callback, {403}),
+    "GET /api/oauth/chatgpt/callback": (_probe_chatgpt_callback, {403}),
     "POST /api/widget/{token}/message": (_probe_widget_message, {404}),
     "GET /api/widget/{token}": (_probe_widget_snippet, {404}),
     "GET /api/widget/{token}/config": (_probe_widget_config, {404}),
@@ -424,7 +417,6 @@ HTTP_PROBES = {
     "GET /v1/responses/{response_id}": (_api_probe("get", "/v1/responses/resp_probe"), {401}),
     "DELETE /v1/responses/{response_id}": (_api_probe("delete", "/v1/responses/resp_probe"), {401}),
     "GET /v1/models": (_api_probe("get", "/v1/models"), {401}),
-    "POST /api/channels/sms/webhook": (_probe_sms_webhook, {403}),
     "POST /api/room-peers/peer/accept": (_probe_room_peer_accept, {401}),
     "POST /api/room-peers/peer/call": (_room_peer_grant_probe(
         "/api/room-peers/peer/call", {"v": 1, "op": "dispatch", "tool": "room_read", "args": {}}), {401}),

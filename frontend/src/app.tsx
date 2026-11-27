@@ -29,6 +29,7 @@ import { toolActivity, turnOutcome, type TurnOutcome } from './turn-outcome';
 import { createLatestRefreshRunner, loadJarvisData } from './api/loaders';
 import { PREVIEW_MODE_LIVE_KEYS, useLiveModes } from './api/live';
 import { postStream, apiGet, apiPost, apiFetchOnce, getToken, getAdminToken } from './api/client';
+import type { CloudHistoryPreview, CloudHistorySend } from './cloud-history';
 import { csrfToken, isNetworkedOrigin, loadOwnerSession, onOwnerSession, ownerSession } from './api/owner-session';
 import { pendingQuestion, PendingQuestion, type Question, type QuestionAnswer } from './pending-question';
 import type { WorkshopRef } from './workshop-projects';
@@ -41,6 +42,7 @@ import { useListeningIndicator } from './listening';
 import { SessionRecovery } from './session-recovery';
 import { modelCalls } from './model-call-provenance';
 import { selectableChatAgents } from './chat-routing-policy';
+import { isLocalOnlyAgent } from './signals/agents-policy';
 
 import { shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './onboarding-state';
 import { useHudRoute, navigateHud, navigatePage, closeHudOverlay, type HudRoute } from './hud-routing';
@@ -86,8 +88,6 @@ const KnowledgeMode = lazy(() => import('./modes4').then(m => ({ default: m.Know
 const FamilyMode = lazy(() => import('./modes4').then(m => ({ default: m.FamilyMode })));
 const FirstRunGate = lazy(() => import('./gap').then(m => ({ default: m.FirstRunGate })));
 const ProjectsMode = lazy(() => import('./gap').then(m => ({ default: m.ProjectsMode })));
-// World is a page of Observe (Observe › World signals), not an overlay.
-const WorldIntelligenceMode = lazy(() => import('./modes_world').then(m => ({ default: m.WorldIntelligenceMode })));
 // The Ledger frame's own pages (PHASE_B_PLAN.md §6), loaded when their route is first visited.
 const WorkOverview = lazy(() => import('./pages/WorkOverview').then(m => ({ default: m.WorkOverview })));
 const Timeline = lazy(() => import('./pages/Timeline').then(m => ({ default: m.Timeline })));
@@ -562,8 +562,7 @@ function App({ floating = false }: {
       }
       e.preventDefault();   // a rebound chord (Ctrl+J, Ctrl+D) runs the HUD action, not the browser's too
       if (action.id.startsWith('mode.')) setMode(action.id.slice(5));
-      // World is a page of Observe, Glance is a route, the backtick opens the sheet on panels.
-      else if (action.id === 'view.world') navigateHud('/v2/world');
+      // Glance is a route, the backtick opens the sheet on panels.
       else if (action.id === 'view.ambient') navigateHud('/v2/glance');
       else if (action.id === 'view.cinema') setCinema(true);   // HUD-v3 cinema mode (full-bleed mesh)
       else if (action.id === 'view.console') { setSheetFilter('panels'); setPalette((p) => !p); }
@@ -618,7 +617,7 @@ function App({ floating = false }: {
   // the token->TTS forward goes through a ref, assigned right after the hook runs.
   const voiceRef = useRef(null);
   const runTurn = useCallback((text:string, source:'typed'|'voice'='typed', excerpts?:ChatAttachment[], directReply=false, history?:HistorySend, onAdmitted?: () => void,
-    board?: BoardSend & { onFinished: (ok: boolean) => void }) => new Promise<string>((resolve) => {
+    board?: BoardSend & { onFinished: (ok: boolean) => void }, cloudHistory?: CloudHistoryPreview) => new Promise<string>((resolve) => {
     if (recipientSelected.current && recipientPrincipalAtChoice.current !== recipientPrincipal()) { clearRecipient({ reason: 'signin' }); resolve(''); return; }
     if (!demo && (!recipientReady || (activeId !== 'jarvis' && !selectableChatAgents(agents, false).some(agent => agent.id === activeId)))) { resolve(''); return; }
     if (turnBusy.current || (source==='voice' && (thinking || textTurns.current.size>0)) || (thinking && textTurns.current.size===0)) { resolve(''); return; }
@@ -663,6 +662,7 @@ function App({ floating = false }: {
       ...(onAdmitted && excerpts?.length ? { require_full_attachments: true } : {}),
       ...(board ? { board_references: board.boardReferences, ...(board.allowBoardCloud ? { allow_board_cloud: true } : {}) } : {}),
       ...(history ? { history_reference: history.reference } : {}),
+      ...(cloudHistory ? { cloud_history: cloudHistory } : {}),
       ...(sessionId.current ? { session_id: sessionId.current } : {}) }, (evt) => {
       if(closed||epoch!==turnEpoch.current||ctl.signal.aborted)return;
       if (onAdmitted && !admitted && ['start','token','end'].includes(evt.type)) {
@@ -744,7 +744,7 @@ function App({ floating = false }: {
         if (notes.length) setMessages((m) => [...m, ...notes]);
         settle(finalText);
       }
-    }, { signal: ctl.signal, admin: !!history || !!board }).then(() => {
+    }, { signal: ctl.signal, admin: !!history || !!board || !!cloudHistory }).then(() => {
       // EOF without an end frame must still release the composer and voice promise.
       reportReference(false);
       settle(streamed);
@@ -757,6 +757,13 @@ function App({ floating = false }: {
           role_label: '', ts: fmtTimeShort(new Date()), text: lang === 'ro'
             ? '⚠ Sursa conversației a fost refuzată sau s-a schimbat. Ciorna și pasajul sunt păstrate; revizuiește din nou.'
             : '⚠ The chat source was refused or changed. Your draft and passage are preserved; review it again.' }]);
+        settle(''); return;
+      }
+      if (cloudHistory && err?.name !== 'AbortError') {
+        setMessages(messages => [...messages.filter(message => message._turnId !== id && message._draftTurnId !== id), {
+          role: 'agent', who: 'system', role_label: '', ts: fmtTimeShort(new Date()), text: lang === 'ro'
+            ? '⚠ Trimiterea cu mesaje anterioare a fost refuzată sau conversația s-a schimbat. Ciorna este păstrată; revizuiește din nou.'
+            : '⚠ Sending earlier turns was refused or the conversation changed. Your draft is kept; review again.' }]);
         settle(''); return;
       }
       // A user Stop (AbortError) is a clean outcome, not a failure: the partial
@@ -866,18 +873,32 @@ function App({ floating = false }: {
     const name = id === null ? undefined : knownNames.current.get(id);
     setRecipientSwitch(id === null ? null : { id, from: activeId, demo, at: Date.now(), ...(name ? { name } : {}) });
   }, [activeId, demo]);
-  const submit=useCallback((text:string,vision?:VisionDraft,excerpts?:ChatAttachment[],directReply=false,options?:HistorySend | { awaitAdmission: true } | BoardSend)=>{
+  const submit=useCallback((text:string,vision?:VisionDraft,excerpts?:ChatAttachment[],directReply=false,options?:HistorySend | { awaitAdmission: true } | BoardSend | CloudHistorySend)=>{
     const history = options && 'reference' in options ? options : undefined;
     if (recipientSelected.current && recipientPrincipalAtChoice.current !== recipientPrincipal()) { clearRecipient({ reason: 'signin' }); return false; }
     if (!demo && (!recipientReady || (activeId !== 'jarvis' && !selectableChatAgents(agents, false).some(agent => agent.id === activeId)))) return false;
     if(turnBusy.current || (vision && (thinking||textTurns.current.size>0)) || (thinking && textTurns.current.size===0))return false;
     if(!demo&&vision?.review_token && (vision.session_id!==sessionId.current || vision.agent!==activeId))return false;
+    const cloud = options && 'cloudHistory' in options ? options : undefined;
+    if (cloud && (demo || vision || excerpts?.length || isLocalOnlyAgent(activeId) ||
+      cloud.cloudHistory.agent !== activeId || cloud.cloudHistory.session_id !== sessionId.current ||
+      cloud.reviewedMessage !== text)) return false;
     // runVision and runTurn end the line about a dropped change of recipient once they send
     if(vision)void runVision(text,vision);
     else {
       const now=Date.now();
       if(lastTypedSubmit.current.text===text && now-lastTypedSubmit.current.at<500)return false;
       lastTypedSubmit.current={text,at:now};
+      if (cloud) return new Promise<boolean>(resolve => {
+        let admitted = false;
+        void runTurn(text, 'typed', undefined, directReply, undefined, () => { admitted = true; resolve(true); },
+          undefined, cloud.cloudHistory).then(() => {
+            if (!admitted) {
+              if (lastTypedSubmit.current.at === now && lastTypedSubmit.current.text === text) lastTypedSubmit.current = {text:'',at:0};
+              resolve(false);
+            }
+          }, () => resolve(false));
+      });
       if (options && 'boardReferences' in options) return new Promise<boolean>(resolve => {
         const finish = (ok: boolean) => {
           if (!ok && lastTypedSubmit.current.at === now && lastTypedSubmit.current.text === text) lastTypedSubmit.current = {text:'',at:0};
@@ -1188,7 +1209,7 @@ function App({ floating = false }: {
           <Glance hub={hub} lang={frameLang} demo={demo} clock={minuteClock} turns={turns} onExit={closeHudOverlay} navigate={navigateHud} />
         </RouteBoundary>
       ) : (
-        <Frame route={route} page={page} hub={hub} lang={frameLang} setLang={setLang} scheme={scheme} schemePreference={schemePreference}
+        <Frame route={route} page={page} hub={hub} adminSettled={liveModes.adminSettled} lang={frameLang} setLang={setLang} scheme={scheme} schemePreference={schemePreference}
           setScheme={setScheme} theme={themeById(look)} navigation={FRAME_NAVIGATION} onFind={openFind} onGlance={openGlance}
           demo={demo} onExitDemo={exitDemo} turns={turns} shortcutOverrides={shortcutOverrides} voiceStatus={voice.status}
           power={power} pressure={pressure} onDismissPressure={dismissPressure} routeNotice={notice}
@@ -1295,11 +1316,10 @@ type LedgerModeContext = {
    LedgerPage's (they read the hub, the clock and this tab's turns). */
 function ledgerModeBody(mode: string, t: any, ctx: LedgerModeContext): React.ReactNode {
   switch (mode) {
-    case 'projects': return <ProjectsMode t={t} onDiscussResult={ctx.onDiscussResult as any} />;
+    case 'projects': return <ProjectsMode t={t} demo={ctx.demo} lang={ctx.frameLang} onDiscussResult={ctx.onDiscussResult as any} />;
     case 'jobs': return <JobsWorkspace />;
     // The roster opens the Dossier without changing who the owner writes to (§3.2).
     case 'agents': return <AgentsMode agents={ctx.agents} onOpen={ctx.onOpenAgent} t={t} onChanged={ctx.onChanged} />;
-    case 'world': return <WorldIntelligenceMode t={t} />;
     // Saved replies: the Artifacts panel as a page; "Discuss in chat" stages the project and goes Home.
     case 'artifacts': return <ArtifactsPage lang={ctx.frameLang} demo={ctx.demo} refreshKey={ctx.artifactsRefresh}
       onInspectBlend={ctx.onInspectBlend} onDiscussProject={ctx.onDiscussProject} />;

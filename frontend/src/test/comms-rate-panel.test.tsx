@@ -23,12 +23,12 @@ describe('CommsRatePanel — the send rate-limit status surface is live', () => 
       global_cap: 20,
       window_seconds: 60,
       channels: [
-        { channel: 'whatsapp', cap: 3, used: 2, remaining: 1 },
-        { channel: 'teams', cap: 0, used: 5, remaining: null },
+        { channel: 'telegram', cap: 3, used: 2, remaining: 1 },
+        { channel: 'voice', cap: 0, used: 5, remaining: null },
       ],
     });
     render(<CommsRatePanel />);
-    await waitFor(() => expect(screen.getByText('whatsapp')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('telegram')).toBeTruthy());
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/channels/send-rate-limit'))).toBe(true);
     expect(screen.getByText('2/3')).toBeTruthy();      // capped channel: used/cap
     expect(screen.getByText('5/∞')).toBeTruthy();       // unlimited channel: used/∞

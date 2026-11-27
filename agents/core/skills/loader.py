@@ -1629,6 +1629,7 @@ class SkillLoader:
         *,
         procedure_agents: Sequence[str] | None = None,
         procedure_request: tuple[str, str] | None = None,
+        source_excerpt: str | None = None,
     ) -> Optional[str]:
         """
         Generate a new skill from a successful agent task completion.
@@ -1861,9 +1862,11 @@ def register(skill):
         # review) but never runs its module until `approve_generated_skill()` (owner-gated)
         # signs + activates it. Auto-generation stays on; only promotion-to-reusable is gated.
         if not procedure:
+            review_excerpt = source_excerpt[:200].replace("\r", "\\r").replace("\n", "\\n") if source_excerpt else ""
             pending_marker.write_text(
                 f"agent={agent_id}\ntask={task_description}\n"
-                f"generated={datetime.now(timezone.utc).isoformat()}\n",
+                f"generated={datetime.now(timezone.utc).isoformat()}\n"
+                + (f"source_excerpt_for_review_only={review_excerpt}\n" if review_excerpt else ""),
                 encoding="utf-8",
             )
         self._load_skill(skill_dir)

@@ -33,6 +33,8 @@ import { onOwnerSession } from './api/owner-session';
 import { obsidianOpenUri } from '../../apps/jarvis-os/public/js/obsidian-source.js';
 import { LABEL } from './theme/type';
 import { isLocalOnlyAgent } from './signals/agents-policy';
+import { apiPost } from './api/client';
+import { cloudHistoryPreview, type CloudHistoryPreview } from './cloud-history';
 import type { TabTurn } from './signals/types';
 import { fmt, plural } from './frame/strings';
 import { TalkMenu } from './home/talk/TalkMenu';
@@ -43,6 +45,7 @@ import type { RecipientHold, RecipientRefusal, RecipientSwitch, RecipientSwitchD
 import { WorkingReply, PendingReply } from './home/talk/WorkingReply';
 import { ReplyFootnote } from './home/talk/ReplyFootnote';
 import { ReplyActions, OwnerActions } from './home/talk/ReplyActions';
+import { RecalledFactSourceDialog, mayFindSavedSource } from './home/talk/RecalledFactSourceDialog';
 import { Mark } from './frame/kit';
 import './home/talk/talk.css';
 
@@ -86,10 +89,11 @@ function TtsButton({ text, lang, words }: { text: string; lang?: string; words: 
      outcomeTurnId    the turn `outcome` belongs to, when App says so (null: none drawn)
      awaitingAnswer   a mid-turn question waits for the owner ("Waiting for your answer"): the
                       turn id that asked, or true (drawn only when one turn is in flight) */
-function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exportAllowed = false, messageActionsAllowed = false, messageScope, lang, t,
+function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exportAllowed = false, messageActionsAllowed = false, messageScope, sessionId, agent, lang, t,
   variant = 'home', turns = [], agents = [], outcome = null, outcomeTurnId, power, awaitingAnswer = false }: any) {
   const endRef = useRef(null);
-  const [action, setAction] = useState<{ kind: 'remember' | 'task' | 'teach' | 'obsidian'; message: any; scope: string; opener: HTMLElement; credential?: string } | null>(null);
+  const [action, setAction] = useState<{ kind: 'remember' | 'task' | 'teach' | 'obsidian' | 'saved-source'; message: any; scope: string; opener: HTMLElement; credential?: string } | null>(null);
+  const [sourceAllowed, setSourceAllowed] = useState(mayFindSavedSource);
   const [meshReview, setMeshReview] = useState<{ source: string; message: any; scope: string; opener: HTMLElement } | null>(null);
   const meshClose = useRef<HTMLButtonElement>(null);
   const visibleMeshReview = meshReview && exportAllowed && meshReview.scope === messageScope && messages.includes(meshReview.message) ? meshReview : null;
@@ -98,7 +102,8 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
   const [noteReceipts, setNoteReceipts] = useState<{ message: any; scope: string; receipt: NoteReceipt; target: Target; credential: string }[]>([]);
   const [pendingNotes, setPendingNotes] = useState<{ message: any; scope: string; submission: NoteSubmission; credential: string }[]>([]);
   const selected = action && messageActionsAllowed && action.scope === messageScope && messages.includes(action.message)
-    && (action.kind !== 'remember' || action.credential === noteCredential()) ? action : null;
+    && (action.kind !== 'remember' || action.credential === noteCredential())
+    && (action.kind !== 'saved-source' || (action.credential === historyOwnerKey() && sourceAllowed && mayFindSavedSource())) ? action : null;
   useEffect(() => {
     if (action && !selected) setAction(null);
   }, [action, selected]);
@@ -109,10 +114,22 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
     setPendingNotes(previous => previous.every(valid) ? previous : previous.filter(valid));
   }, [messageScope, messageActionsAllowed, messages]);
   useEffect(() => onOwnerSession(() => {
+    setSourceAllowed(mayFindSavedSource());
+    setAction(previous => previous?.kind === 'saved-source' ? null : previous);
     setAction(previous => previous?.kind === 'remember' && previous.credential !== noteCredential() ? null : previous);
     setNoteReceipts(previous => previous.filter(entry => entry.credential === noteCredential()));
     setPendingNotes(previous => previous.filter(entry => entry.credential === noteCredential()));
   }), []);
+  useEffect(() => {
+    const changed = (event: StorageEvent) => {
+      if (event.key === 'hud.admin_token' || event.key === 'hud.user_token') {
+        setSourceAllowed(mayFindSavedSource());
+        setAction(previous => previous?.kind === 'saved-source' ? null : previous);
+      }
+    };
+    window.addEventListener('storage', changed);
+    return () => window.removeEventListener('storage', changed);
+  }, []);
   useEffect(()=>{ if(endRef.current) endRef.current.scrollTop = endRef.current.scrollHeight; }, [messages, thinking]);
   // Explicit save-to-artifacts (never auto): only completed, non-system, non-empty
   // assistant replies get the control — while a turn streams, its (last) message is
@@ -224,6 +241,7 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
         const receipt = messageActionsAllowed ? noteReceipts.find(entry => entry.message === m && entry.scope === messageScope && entry.credential === noteCredential())?.receipt : undefined;
         const mesh = canExport(m, i) ? blenderSourceFromReply(m.text) : null;
         const actionable = messageActionsAllowed && completedReply(m, i);
+        const canFindSource = actionable && hasText && sourceAllowed && mayFindSavedSource();
         const own = outcomeOf(m);
         return (
           <div className="n-turn n-turn--reply" data-turn="reply" key={i} data-working={working ? '' : undefined} data-newest={i === newestReply ? '' : undefined}>
@@ -251,6 +269,8 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
                   readAloud={hasText ? <TtsButton text={m.text as string} lang={lang} words={{ idle: s.readAloud, playing: s.reading, failed: s.readFailed }} /> : undefined}
                   onTask={actionable ? opener => setAction({ kind: 'task', message: m, scope: messageScope, opener }) : undefined}
                   more={[
+                    ...(canFindSource ? [{ key: 'saved-source', label: s.findSavedSource,
+                      onPick: (opener: HTMLElement) => setAction({ kind: 'saved-source', message: m, scope: messageScope, opener, credential: historyOwnerKey() }) }] : []),
                     ...(canExport(m, i) ? [{ key: 'word', node: <OfficeExportButton data={{ format: 'docx', text: m.text as string }} lang={lang} /> }] : []),
                     ...(actionable && canExport(m, i) ? [{ key: 'photoshop', node: <PhotoshopLayoutButton key={`${messageScope}/${m._turnId ?? m.text}`}
                       text={m.text as string} lang={lang === 'ro' ? 'ro' : 'en'} /> }] : []),
@@ -274,7 +294,11 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, exp
   );
   return <>
     {transcript}
-    {selected?.kind === 'remember' && <RememberMessageDialog text={selected.message.text} opener={selected.opener} onClose={() => setAction(null)} />}
+    {selected?.kind === 'remember' && <RememberMessageDialog text={selected.message.text}
+      source={{ sessionId, text: selected.message.text, role: 'user', agentId: agent }}
+      opener={selected.opener} onClose={() => setAction(null)} />}
+    {selected?.kind === 'saved-source' && <RecalledFactSourceDialog reply={selected.message.text} lang={lang}
+      opener={selected.opener} onClose={() => setAction(null)} />}
     {visibleMeshReview && createPortal(<div className="blender-review-overlay"><section className="blender-review-dialog" role="dialog" aria-modal="true"
       aria-label={lang === 'ro' ? 'Revizuiește modelul Blender' : 'Review Blender model'}
       onKeyDown={event => {
@@ -489,7 +513,68 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
   const typedLength = Array.from(val.trim()).length;
   const limit = draft.enabled ? MAX_IMAGE_PROMPT : MAX_MESSAGE;
   const tooLong = !blenderMode && typedLength > limit;
+  // This review belongs to one draft, recipient and retained session. A changed scope cannot
+  // inherit its preview, even if a response to an older preview arrives later.
+  const cloudScope = JSON.stringify([agent, sessionId, val.trim(), demo, selectedTurn]);
+  const cloudScopeNow = useRef(cloudScope);
+  cloudScopeNow.current = cloudScope;
+  const [cloudReview, setCloudReview] = useState<{ scope: string; message: string; preview: CloudHistoryPreview } | null>(null);
+  const [cloudReviewBusy, setCloudReviewBusy] = useState(false);
+  const [cloudReviewError, setCloudReviewError] = useState('');
+  const [cloudSending, setCloudSending] = useState(false);
+  const cloudReviewButton = useRef<HTMLButtonElement>(null);
+  const cloudCancelButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => onOwnerSession(() => { cloudScopeNow.current = ''; setCloudReview(null); }), []);
+  const cloudEligible = !demo && selectedTurn && !isLocalOnlyAgent(agent) && !!sessionId && !command &&
+    !draft.enabled && !vault.selected.length && !officeActive && !boardInUse && !currentHistory && !blenderMode;
+  const visibleCloudReview = cloudEligible && cloudReview?.scope === cloudScope ? cloudReview : null;
+  useLayoutEffect(() => {
+    if (!visibleCloudReview) return;
+    cloudCancelButton.current?.focus();
+    return () => {
+      const trigger = cloudReviewButton.current;
+      if (trigger?.isConnected) trigger.focus();
+      else composerInput.current?.focus();
+    };
+  }, [visibleCloudReview]);
+  useLayoutEffect(() => {
+    if (cloudReview && !visibleCloudReview) setCloudReview(null);
+    setCloudReviewError('');
+  }, [cloudScope, cloudEligible]);
+  const reviewCloudHistory = async () => {
+    if (!cloudEligible || !val.trim() || cloudReviewBusy || cloudSending || turnActive || tooLong || recipientStatus !== 'ready' || switchPending) return;
+    const scope = cloudScope, message = val.trim();
+    setCloudReviewBusy(true); setCloudReviewError('');
+    try {
+      const result = cloudHistoryPreview(await apiPost('/api/chat/cloud-history/preview',
+        { session_id: sessionId, agent, message }, { admin: true }), sessionId, agent);
+      if (cloudScopeNow.current !== scope) return;
+      if (!result) throw new Error('invalid preview');
+      setCloudReview({ scope, message, preview: result });
+    } catch {
+      if (cloudScopeNow.current === scope) setCloudReviewError(lang === 'ro'
+        ? 'Istoricul nu poate fi revizuit acum. Ciorna este păstrată.'
+        : 'Earlier turns cannot be reviewed now. Your draft is kept.');
+    } finally { setCloudReviewBusy(false); }
+  };
+  const sendCloudHistory = async () => {
+    const review = visibleCloudReview;
+    if (!review || cloudSending || turnActive || review.message !== val.trim() || tooLong || recipientStatus !== 'ready' || switchPending) return;
+    setCloudReview(null); setCloudSending(true);
+    try {
+      const accepted = await onSubmit(review.message, undefined, undefined, directReply,
+        { cloudHistory: review.preview, reviewedMessage: review.message, awaitAdmission: true });
+      if (accepted !== false && cloudScopeNow.current === review.scope) {
+        vault.clear(); setDirectReplyScope(''); setVal(''); setSentCount(n => n + 1);
+      } else if (cloudScopeNow.current === review.scope) {
+        setCloudReviewError(lang === 'ro' ? 'Trimiterea a fost refuzată. Ciorna este păstrată.' : 'Send was refused. Your draft is kept.');
+      }
+    } catch {
+      if (cloudScopeNow.current === review.scope) setCloudReviewError(lang === 'ro' ? 'Trimiterea a fost refuzată. Ciorna este păstrată.' : 'Send was refused. Your draft is kept.');
+    } finally { setCloudSending(false); }
+  };
   const submit=()=>{
+    if (visibleCloudReview || cloudSending) return;
     if (recipientStatus !== 'ready' || switchPending) return;
     if (officeSending || vault.busy || boardResult.busy || boardResult.reviewing || skillWarning) return;
     if (tooLong) return;
@@ -574,9 +659,10 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
       draft.clear();setVal('');setSentCount(n=>n+1);return;}
     if(!val.trim())return;if((directReply ? onSubmit(val.trim(), undefined, undefined, true) : onSubmit(val.trim()))===false)return;vault.clear();setDirectReplyScope('');setVal('');setSentCount(n=>n+1);
   };
-  const showPill = voice && (voice.active || voice.error);
+  const showPill = voice && (voice.active || voice.error || voice.status === 'interrupted');
   const label = voice && voice.error ? voice.error
-    : voice && voice.status==='listening' ? 'listening…'
+    : voice && voice.status==='interrupted' ? 'interrupted — listening…'
+    : voice && voice.status==='listening' ? (voice.bargeInterrupted ? 'barge-in interrupted · listening…' : 'listening…')
     : voice && voice.status==='transcribing' ? 'transcribing…'
     : voice && voice.status==='speaking' ? 'speaking…' : 'voice on';
   const row = (lbl,node) => (
@@ -674,6 +760,25 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
   return (
     <div className={`n-composer-wrap n-composer-wrap--${variant}`} data-composer-root="" data-composer-variant={variant}
       style={{position:'relative',display:'flex',flexDirection:'column',minHeight:0,flexShrink:1}} onPaste={boardInUse || currentHistory || officeActive ? undefined : draft.onPaste} onDrop={boardInUse || currentHistory || officeActive ? event => event.preventDefault() : draft.onDrop} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}>
+      {cloudEligible && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
+        {lang === 'ro' ? 'Se trimite doar mesajul curent. Verifică destinația înainte de a include istoricul.'
+          : 'Current message only. Check the destination before including history.'}{' '}
+        <button ref={cloudReviewButton} type="button" className="tool-btn" disabled={!val.trim() || cloudReviewBusy || cloudSending || turnActive || tooLong}
+          onClick={() => { void reviewCloudHistory(); }}>{lang === 'ro' ? 'Revizuiește mesajele anterioare' : 'Review earlier turns'}</button>
+        {cloudReviewBusy && <span role="status">{lang === 'ro' ? 'Se verifică destinația…' : 'Checking destination…'}</span>}
+        {cloudReviewError && <span role="alert">{cloudReviewError}</span>}
+      </div>}
+      {visibleCloudReview && <div className="pal-scrim" onClick={() => setCloudReview(null)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setCloudReview(null); } }}>
+        <div className="pal" role="dialog" aria-modal="true" aria-label={lang === 'ro' ? 'Trimite mesajele anterioare' : 'Send earlier turns'}
+          onClick={event => event.stopPropagation()} style={{ width: 'min(440px,92vw)' }}>
+          <div style={{ padding: 18 }}>
+            <p>{lang === 'ro' ? 'Mesajele anterioare din această conversație vor fi trimise la' : 'Earlier turns from this chat will be sent to'} <b>{visibleCloudReview.preview.provider} / {visibleCloudReview.preview.model}</b>.</p>
+            <p>{lang === 'ro' ? 'Această alegere se aplică doar mesajului curent.' : 'This choice applies only to this message.'}</p>
+            <button ref={cloudCancelButton} type="button" className="tool-btn" onClick={() => setCloudReview(null)}>{lang === 'ro' ? 'Anulează' : 'Cancel'}</button>{' '}
+            <button type="button" className="tool-btn" onClick={() => { void sendCloudHistory(); }}>{lang === 'ro' ? 'Include și trimite' : 'Include and send'}</button>
+          </div>
+        </div>
+      </div>}
       {showImages && <ComposerImages draft={draft} disabled={!!currentHistory}/>}
       {officeSending
         ? <p role="status" id={officeSendingId}>{lang === 'ro' ? 'Se trimit pasajele selectate…' : 'Sending selected passages…'}</p>

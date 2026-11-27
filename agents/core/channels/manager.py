@@ -21,15 +21,10 @@ from ..log import log_error
 from . import delivery_ledger
 from . import escalation as escalation_policy
 from .base import ChannelAdapter
-from .pending_input_workspace import valid_markup, valid_receipt
 
 logger = logging.getLogger("jarvis.channels.manager")
 
-_NOTICE_LABELS = {
-    "telegram": "Telegram", "discord": "Discord", "slack": "Slack",
-    "ntfy": "ntfy", "web": "web", "voice": "voice", "email": "email",
-    "sms": "SMS",
-}
+_NOTICE_LABELS = {"telegram": "Telegram", "web": "web", "voice": "voice"}
 
 
 @dataclass(slots=True)
@@ -56,12 +51,10 @@ def _safe_mode_active() -> bool:
 CHANNEL_SEND_CONTRACT_KIND = "channel.send"
 CHANNEL_REPLY_TRANSPORT_CONTRACT_KIND = "channel.reply.transport"
 _SAFE_CONTRACT_TOKEN = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
-# Generic orchestrator responses are intentionally limited to channels whose
-# direct-send posture predates Safe Comms. Email is excluded: inbound email is
-# untrusted input and may only reach SMTP through the governed channel-reply
-# executor below.
-_SUPPORTED_SEND_CHANNELS = frozenset({"telegram", "web", "voice", "ntfy"})
-_SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord", "ntfy", "sms"})
+# Generic orchestrator responses are limited to the channels listed here; any other
+# channel name is refused by the contract, whatever adapter is registered under it.
+_SUPPORTED_SEND_CHANNELS = frozenset({"telegram", "web", "voice"})
+_SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web"})
 
 
 #: H081 — which send kwarg names the chat a reply goes to, per channel (for the ledger
@@ -69,11 +62,6 @@ _SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email", "slack", "dis
 _TARGET_KEYS = {
     "telegram": ("chat_id",),
     "web": ("client_id",),
-    "slack": ("slack_channel",),
-    "discord": ("channel_id",),
-    "email": ("to",),
-    "ntfy": ("ntfy_topic",),
-    "sms": ("sms_to",),
 }
 
 
@@ -81,13 +69,7 @@ def _delivery_target(channel: str, adapter, kwargs: dict) -> str:
     for key in _TARGET_KEYS.get(channel, ()):
         value = kwargs.get(key)
         if value not in (None, ""):
-            if channel == "sms":
-                # G16: a phone number is never written to the ledger, only its digest.
-                from .sms import target_ref
-                return target_ref(value)
             return str(value)
-    if channel == "ntfy":
-        return str(getattr(adapter, "publish_topic", "") or "default")
     return "default"
 
 
@@ -665,7 +647,7 @@ class ChannelManager:
         subject = f"Nerva's {label} channel" if label else "A channel"
         text = (f"{subject} is unavailable. Check Channel Status."
                 if fatal else f"{subject} has been unavailable for several minutes. Check Channel Status.")
-        for other in ("ntfy", "telegram"):
+        for other in ("telegram",):
             adapter = self.channels.get(other)
             dest_revision = self._platform_revisions.get(other)
             if (other == cid or adapter is None or dest_revision is None
@@ -717,13 +699,8 @@ class ChannelManager:
         await self.send(other, text, voice=False, plain=True, **kwargs)
 
     async def send(self, channel: str, response, **kwargs) -> bool:
-        """Dispatch a generic response on a direct-send channel.
-
-        Email is deliberately not a generic direct-send channel. An inbound email
-        passes through Orchestrator.channel_handler(), which calls this method; keeping
-        email out of this API prevents untrusted inbound mail from creating an SMTP
-        side effect without the `channel.reply` approval path.
-        """
+        """Dispatch a generic response on a direct-send channel. A channel outside
+        ``_SUPPORTED_SEND_CHANNELS`` is refused, never sent."""
         ch = self.channels.get(channel)
         if not ch:
             return False
@@ -738,8 +715,7 @@ class ChannelManager:
         delivery_key = kwargs.pop("delivery_key", None)
         if self._contract_denial(channel, response, kwargs) is not None:
             return False
-        if channel in ("telegram", "web", "ntfy"):
-            # ntfy: outbound-only push (Hermes absorption 4g); title / priority ride in kwargs.
+        if channel in ("telegram", "web"):
             return await self._ledgered(channel, ch, response, kwargs, delivery_key,
                                         lambda: ch.send(response, **kwargs))
         elif channel == "voice":
@@ -836,7 +812,7 @@ class ChannelManager:
         if (outcome.fatal and health is not None and hasattr(health, "failed_fatally")
                 and getattr(health, "state", None) != "healthy"):
             # H100: the platform refused the credential on a send of a channel with no
-            # healthy poll proving otherwise (ntfy's publish): show it, do not hide it.
+            # healthy poll proving otherwise: show it, do not hide it.
             health.failed_fatally(outcome.fatal)
         return ok
 
@@ -844,8 +820,8 @@ class ChannelManager:
                                 attempt: CardAttempt | None = None, **kwargs) -> int | None:
         """Direct Telegram prompt delivery through the existing send contract.
 
-        A verified Bot API message receipt is required to bind buttons. Workspace
-        channels retain their governed reply path; this API cannot send to them.
+        A verified Bot API message receipt is required to bind buttons; any other
+        channel is refused.
         """
         # The ledger stores no native receipt. A keyed duplicate cannot return a
         # bindable message ID, so these prompt APIs refuse supplied keys outright.
@@ -876,8 +852,8 @@ class ChannelManager:
         """Dispatch an already-governed `channel.reply` task.
 
         This is the transport seam consumed by ChannelReplyBroker.execute after the
-        durable approval/Ultron path. It is intentionally separate from `send()` so
-        merely registering an EmailChannel cannot make inbound email auto-send SMTP.
+        durable approval/Ultron path. A channel outside ``_SUPPORTED_REPLY_CHANNELS``
+        is refused, never sent.
         """
         ch = self.channels.get(channel)
         if not ch:
@@ -885,51 +861,10 @@ class ChannelManager:
         delivery_key = kwargs.pop("delivery_key", None)
         if self._reply_contract_denial(channel, response, kwargs) is not None:
             return False
-        if channel == "ntfy":
-            return await self._ledgered(channel, ch, response, kwargs, delivery_key,
-                                        lambda: ch.send_reply(response, **kwargs))
         if channel in _SUPPORTED_REPLY_CHANNELS:
             return await self._ledgered(channel, ch, response, kwargs, delivery_key,
                                         lambda: ch.send(response, **kwargs))
         return False
-
-    async def send_channel_prompt(self, channel: str, response, markup: dict, **kwargs) -> dict | None:
-        """Native transport used only by the governed channel.reply executor."""
-        if "delivery_key" in kwargs:
-            return None
-        adapter = self.channels.get(channel)
-        send = getattr(adapter, "send_pending_card", None)
-        if (channel not in {"slack", "discord"} or not callable(send) or not valid_markup(markup)
-                or self._reply_contract_denial(channel, response, kwargs) is not None):
-            return None
-        receipt = None
-
-        async def transport():
-            nonlocal receipt
-            receipt = await send(response, reply_markup=markup, **kwargs)
-            return valid_receipt(receipt) and receipt["channel"] == channel
-
-        ok = await self._ledgered(channel, adapter, response, kwargs, None, transport, require_ack=True)
-        return receipt if ok else None
-
-    async def send_channel_text_prompt(self, channel: str, response, *, current, **kwargs) -> bool:
-        """Text-only prompt transport, consumed by the governed reply executor."""
-        if "delivery_key" in kwargs:
-            return False
-        adapter = self.channels.get(channel)
-        send = getattr(adapter, "send_reply", None)
-        if (channel != "ntfy" or not callable(send) or not callable(current)
-                or self._reply_contract_denial(channel, response, kwargs) is not None):
-            return False
-        async def transport():
-            return await send(response, current=current, plain=True, **kwargs) is True
-
-        return await self._ledgered(channel, adapter, response, kwargs, None, transport)
-
-    def discard_pending_card(self, channel: str, receipt: dict):
-        discard = getattr(self.channels.get(channel), "discard_pending_card", None)
-        if callable(discard) and valid_receipt(receipt) and receipt["channel"] == channel:
-            discard(receipt)
 
     @staticmethod
     def _contract_payload_for(kind: str, channel: str, response, kwargs: dict) -> dict:

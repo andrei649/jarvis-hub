@@ -92,7 +92,6 @@ from .autonomy.audit_sink import ActionAuditSink
 from .autonomy.reflection import DailyReflector, ReflectionRunStore
 from .autonomy.log_scanner import LogBugScanner
 from .autonomy.tech_scout import TechScout, TechScoutStore, DEFAULT_QUERIES as _TECH_SCOUT_DEFAULT_QUERIES
-from .signal_governance import SignalGovernanceBridge
 from .workflows import WorkflowEngine, WorkflowRegistry
 from .sandbox import Sandbox
 from .bench import LatencyBenchmark
@@ -172,7 +171,7 @@ _REVIEW_NOTICE_LINES = 4
 #: H403: the channels whose reply is text a person reads, where an ``ℹ`` footer is safe.
 #: Voice (the reply is spoken), email, webhook and gateway replies (machine-consumed)
 #: are not: their turns open no notice collector, so the summary waits for a HUD or chat.
-_NOTICE_FOOTER_CHANNELS = frozenset({"telegram", "slack", "discord", "ntfy"})
+_NOTICE_FOOTER_CHANNELS = frozenset({"telegram"})
 
 HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
@@ -805,7 +804,6 @@ class Orchestrator:
         self.last_memory_maintenance = None
         self.channel_inbox = None
         self.oracle_bridge = None
-        self.argus = None
         self.permission_ledger = None
         self.work_runs = None
         self.company_runtime = None
@@ -1078,15 +1076,6 @@ class Orchestrator:
         # Action-level audit sink, shared by every governed-action recorder (the
         # autonomy worker below, the remediation runner in autonomy_coordinator).
         self.action_audit = ActionAuditSink(getattr(self, "intent_log", None))
-        # Signal Layer → approval inbox (DRA-19). The bridge shipped complete but
-        # with no production constructor, so the Signal Layer's actionable
-        # recommendations never reached the decision inbox. Constructing it here
-        # changes nothing until the owner flips JARVIS_SIGNAL_GOVERNANCE: `from_env`
-        # reads that flag and a disabled bridge queues nothing. Even enabled it is
-        # preview-only — every item lands BLOCKED, awaiting a human.
-        self.signal_governance = SignalGovernanceBridge.from_env(
-            self.autonomy_queue, audit=self.action_audit.log
-        )
         # H484: the policy is built with the stored approval mode and per-agent overrides,
         # so the owner's dial governs the very first decision after a restart — not only
         # once the coordinator's first tick has copied it over.
@@ -1407,7 +1396,7 @@ class Orchestrator:
             logger.warning("per-agent capability issuance failed", exc_info=True)
 
         # CLN-2: live-plugin registry build moved to PluginManager (byte-identical
-        # construction order + env/settings reads; sets self.oracle_bridge + self.argus).
+        # construction order + env/settings reads; sets self.oracle_bridge).
         self._build_plugins()
 
         # Autonomy queue — durable self-tasking store (H6.1)
@@ -1659,7 +1648,7 @@ class Orchestrator:
     def _build_plugins(self) -> None:
         """Build the live plugins, or, in safe mode (H490), none: no integration is
         reached and no plugin data enters a prompt. The .env credentials are still
-        loaded (the hub's one load), and oracle_bridge / argus stay None."""
+        loaded (the hub's one load), and oracle_bridge stays None."""
         from . import safe_mode
 
         if safe_mode.enabled():
@@ -2226,7 +2215,11 @@ class Orchestrator:
             redact = getattr(broker, "redact", None)
             return redact(text) if callable(redact) else text
 
-        install_known_secret_redactor(_broker_redact)
+        def _broker_empty_inventory() -> bool:
+            broker = self.secret_broker
+            return broker.empty_stream_inventory()
+
+        install_known_secret_redactor(_broker_redact, empty_inventory=_broker_empty_inventory)
         await self.channel_manager.start_all()
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
@@ -2322,7 +2315,7 @@ class Orchestrator:
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
         """Admit ingress before pending-input interception or conversation changes."""
         from .command_source import plaintext_restart
-        from .commands import _pause, _resume, rewrite_bang
+        from .commands import _pause, _resume
         from .restart_runtime import runtime_for
 
         runtime = runtime_for(self)
@@ -2336,7 +2329,6 @@ class Orchestrator:
                     and not kwargs.get("message_thread_id") and plaintext_restart(text)):
                 text = "/restart"
                 kwargs["pending_input_eligible"] = False
-            text = rewrite_bang(text, registry if isinstance(registry, CommandRegistry) else None, channel)
             if isinstance(registry, CommandRegistry):
                 parsed = registry.parse(text)
                 command = registry.get(parsed[0]) if parsed else None
@@ -2360,7 +2352,7 @@ class Orchestrator:
         pending_scope = ExitStack()
         action_origin = kwargs.pop("origin", origin_for_channel(channel))
         kwargs.pop("_inbound_meta", None)
-        inbox_message_id = kwargs.pop("_inbox_message_id", "")
+        kwargs.pop("_inbox_message_id", None)
         # Hermes absorption 0.4: an observed group message becomes context, never an answer.
         observe_only = bool(kwargs.pop("observe_only", False))
         # H057 normalization happens once at ingress; observed text stays literal.
@@ -2372,24 +2364,13 @@ class Orchestrator:
         reset_trigger_token = _reset_trigger_turn.set(True)     # H058: see reset_triggers_judged
         # DRA-08: one description of *who is talking to us*, built from the
         # identity metadata the adapters already put on the wire (telegram
-        # chat_id/sender, email sender, slack_channel, matrix room_id, teams
-        # conversation, google-chat space). Drives both halves below: the
-        # session key and the delivery decision.
-        thread_id = (kwargs.get("chat_id") or kwargs.get("slack_channel")
-                     or kwargs.get("room_id") or kwargs.get("conversation") or kwargs.get("space"))
+        # chat_id/sender). Drives both halves below: the session key and the
+        # delivery decision.
+        thread_id = kwargs.get("chat_id")
         chat_type = kwargs.get("chat_type")
         if channel == "telegram" and kwargs.get("message_thread_id"):
             thread_id = f"{thread_id}:topic:{kwargs['message_thread_id']}"
             chat_type = "thread"
-        if channel == "slack":
-            thread_id = kwargs.get("slack_channel")
-            if thread_id and kwargs.get("thread_ts"):
-                thread_id = f"{thread_id}:{kwargs['thread_ts']}"
-                chat_type = "thread"
-            elif not chat_type:
-                chat_type = "private" if str(thread_id or "").startswith("D") else "group"
-        elif channel == "discord":
-            thread_id = kwargs.get("channel_id")
         source = SessionSource(
             channel=channel,
             sender=kwargs.get("sender"),
@@ -2412,16 +2393,12 @@ class Orchestrator:
                 return response
             pending = self._pending_input_service()
             if pending is not None and not observe_only:
-                pending_scope.enter_context(pending.bind(
-                    source, {**kwargs, "_inbox_message_id": inbox_message_id}))
+                pending_scope.enter_context(pending.bind(source, kwargs))
                 intercepted = (pending.intercept(source, text)
                                if kwargs.get("pending_input_eligible", True) is True else None)
                 if intercepted is not None:
                     if intercepted:
-                        if channel in {"slack", "discord", "ntfy", "sms"}:
-                            self._queue_workspace_reply(channel, inbox_message_id, intercepted)
-                        else:
-                            await self.channel_manager.send(channel, intercepted, **kwargs)
+                        await self.channel_manager.send(channel, intercepted, **kwargs)
                     return intercepted
             # H058, the busy path: while a turn holds this route's session, a command this
             # sender may not run here is answered at once — before the conversation-change
@@ -2433,19 +2410,16 @@ class Orchestrator:
             if pending is not None and not observe_only and denied is None:
                 command_reply = await pending.command(source, text, kwargs)
                 if command_reply is not None:
-                    if channel in {"slack", "discord"}:
-                        self._queue_workspace_reply(channel, inbox_message_id, command_reply)
-                    else:
-                        delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
-                                    if key in kwargs}
-                        await self.channel_manager.send(channel, command_reply, **delivery,
-                                                        voice=False, plain=True)
+                    delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
+                                if key in kwargs}
+                    await self.channel_manager.send(channel, command_reply, **delivery,
+                                                    voice=False, plain=True)
                     return command_reply
             # H3.3: cross-channel context is opt-in. When enabled, every channel
             # shares self.session_id (web<->telegram continuity). When off (default),
             # any channel turn that carries a real identity (a thread, a sender or a
             # client) gets its own deterministic session — telegram's per-chat_id
-            # isolation (H1.2) generalised to email and the webhook channels.
+            # isolation (H1.2), generalised.
             # A turn with no identity at all (voice; web through the gateway with no
             # client_id) has nothing to isolate *by*, so it stays on the shared session.
             # Hermes absorption 4c: on a channel that can edit a sent message the reply is
@@ -2510,10 +2484,7 @@ class Orchestrator:
             # ChannelManager.send's contract gate (_SUPPORTED_SEND_CHANNELS).
             decision = self._delivery_router.resolve(source, text=response or "")
             if decision.send and decision.target:
-                if channel in {"slack", "discord", "ntfy", "sms"}:
-                    self._queue_workspace_reply(channel, inbox_message_id, response)
-                else:
-                    await self.channel_manager.send(decision.target.channel, response, **kwargs)
+                await self.channel_manager.send(decision.target.channel, response, **kwargs)
             return response
         finally:
             pending_scope.close()
@@ -2602,7 +2573,7 @@ class Orchestrator:
     async def channel_pending_handler(self, text: str, channel: str = "telegram", **kwargs) -> bool:
         """Pending-only ingress; never enter a conversation lease or model turn."""
         pending = self.__dict__.get("_pending_inputs")
-        if (channel not in {"telegram", "slack", "discord", "ntfy"} or kwargs.get("observe_only") or pending is None
+        if (channel != "telegram" or kwargs.get("observe_only") or pending is None
                 or kwargs.get("pending_input_eligible", True) is not True):
             return False
         thread_id = kwargs.get("chat_id")
@@ -2610,15 +2581,6 @@ class Orchestrator:
         if channel == "telegram" and kwargs.get("message_thread_id"):
             thread_id = f"{thread_id}:topic:{kwargs['message_thread_id']}"
             chat_type = "thread"
-        elif channel == "slack":
-            thread_id = kwargs.get("slack_channel")
-            if thread_id and kwargs.get("thread_ts"):
-                thread_id = f"{thread_id}:{kwargs['thread_ts']}"
-                chat_type = "thread"
-            elif not chat_type:
-                chat_type = "private" if str(thread_id or "").startswith("D") else "group"
-        elif channel == "discord":
-            thread_id = kwargs.get("channel_id")
         source = SessionSource(channel=channel, sender=kwargs.get("sender"),
                                thread_id=thread_id, chat_type=chat_type,
                                client_id=kwargs.get("client_id"))
@@ -2628,20 +2590,10 @@ class Orchestrator:
                                     self._principal_chat_type(channel, kwargs))
         )
         try:
-            from .channels.pending_input_runtime import pending_key
-
-            key = pending_key(source)
-            prompt = pending.inputs.pending(key) if key is not None else None
-            binding = pending._delivered.get(prompt.id) if prompt is not None else None
             intercepted = pending.intercept(source, text, pending_only=True)
             if intercepted is None:
                 return False
             if intercepted:
-                if channel in {"slack", "discord", "ntfy"}:
-                    if binding is not None:
-                        self._queue_workspace_reply(
-                            channel, binding.delivery.get("_inbox_message_id", ""), intercepted)
-                    return True
                 delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
                             if key in kwargs}
                 try:
@@ -2661,26 +2613,6 @@ class Orchestrator:
         pending = self.__dict__.get("_pending_inputs")
         if pending is None or not isinstance(callback, dict):
             return None
-        if channel in {"slack", "discord"}:
-            from .channels.pending_input_workspace import valid_callback
-
-            if not valid_callback(callback, channel):
-                return None
-            origin_token = bind_action_origin(origin_for_channel(channel))
-            principal_token = bind_turn_principal(
-                self._channel_principal(channel, callback["sender"], None))
-            try:
-                result = pending.cards.handle_workspace(callback)
-                if result.applied and result.status == "awaiting_text":
-                    binding = pending._delivered.get(result.prompt_id)
-                    if binding is not None:
-                        self._queue_workspace_reply(
-                            channel, binding.delivery.get("_inbox_message_id", ""),
-                            EphemeralReply("Type your answer."))
-                return result
-            finally:
-                reset_turn_principal(principal_token)
-                reset_action_origin(origin_token)
         if channel != "telegram":
             return None
         sender, message = callback.get("from"), callback.get("message")
@@ -2719,35 +2651,11 @@ class Orchestrator:
             service = self._pending_inputs = ChannelPendingRuntime(self)
         return service
 
-    def _queue_workspace_reply(self, channel: str, message_id: str, response: str) -> None:
-        """Workspace replies share the inbox's Action Kernel/approval boundary."""
-        broker = getattr(self, "channel_replies", None)
-        if not broker or not message_id:
-            logger.debug("Workspace reply unavailable: no broker or persisted inbound turn")
-            return
-        try:
-            result = broker.request_for_message(
-                message_id, response, channel=channel, source="channel.auto_reply",
-            )
-            if not result.get("ok") or not result.get("queued"):
-                logger.info("Workspace reply not queued: %s", result.get("reason", "queue_unavailable"))
-        except Exception:
-            logger.warning("Workspace reply request failed closed", exc_info=True)
-
     @staticmethod
     def _principal_chat_type(channel: str, kwargs: dict):
         """The chat type the adapter reported, before any thread override: what decides
-        a command's DM or group scope (H058). Slack names a DM by its ``D`` channel. A Matrix
-        room event never says whether its room is a DM; the Matrix adapter reports
-        ``private`` only when the homeserver proves it (the room's members are the sender
-        and the bot, both joined), and every other Matrix command is judged in group scope: the
-        less trusted one, never a DM list handed to a room of strangers."""
-        kind = kwargs.get("chat_type")
-        if channel == "slack" and not kind:
-            kind = "private" if str(kwargs.get("slack_channel") or "").startswith("D") else "group"
-        elif channel == "matrix" and not kind:
-            kind = "group"
-        return kind
+        a command's DM or group scope (H058)."""
+        return kwargs.get("chat_type")
 
     def _channel_principal(self, channel: str, sender, chat_id, chat_type=None) -> Principal:
         """Bind admin authority to an explicit current owner identity."""
@@ -2769,23 +2677,6 @@ class Orchestrator:
                     allowed_user_ids=getattr(adapter, "allowed_users", None),
                 ),
             )
-        elif channel in {"slack", "discord", "ntfy"}:
-            configured = self.get_setting("channels.owner_senders", {})
-            owners = configured.get(channel) if type(configured) is dict else None
-            pattern = (r"T[A-Z0-9]{1,63}:[UW][A-Z0-9]{1,63}" if channel == "slack"
-                       else r"[A-Za-z0-9_-]{1,64}" if channel == "ntfy" else r"[1-9][0-9]{0,19}")
-            adapter = (getattr(self, "channels", None) or {}).get(channel)
-            pairing = getattr(adapter, "pairing", None) or getattr(adapter, "_pairing", None)
-            if (type(owners) is list and len(owners) <= 64
-                    and all(type(owner) is str and re.fullmatch(pattern, owner) for owner in owners)
-                    and sender_text in owners and getattr(adapter, "_running", False)
-                    and pairing is not None
-                    and (channel != "ntfy" or (getattr(adapter, "inbound", False)
-                                                and sender_text == getattr(adapter, "topic", None)))):
-                try:
-                    admin = pairing.is_allowed(channel, sender_text) is True
-                except Exception:
-                    admin = False
         return Principal(
             channel=channel, sender=sender_text, admin=admin,
             chat=None if chat_id is None else str(chat_id),
@@ -2848,8 +2739,6 @@ class Orchestrator:
             if target is None:
                 return False
             reported = {"chat_type": chat_type}
-            if channel == "slack":
-                reported["slack_channel"] = chat_id            # a Slack DM is its ``D`` channel
             principal = self._channel_principal(channel, sender, chat_id,
                                                 self._principal_chat_type(channel, reported))
             return not can_run(registry, principal, target[0], quick=target[1])
@@ -3079,6 +2968,19 @@ class Orchestrator:
             self.session_id = base
             return "Conversation change unavailable; the previous conversation remains selected."
 
+    async def _second_brain_project_reply(self, text: str, channel: str, agent_override: str | None):
+        """A bounded project answer from the validated register, before any cloud route."""
+        if channel != "web" or agent_override not in (None, "jarvis") or current_principal().admin is not True:
+            return None
+        from .memory.second_brain import local_project_view_allowed, project_reply
+
+        reply = await asyncio.to_thread(project_reply, text)
+        if reply is not None:
+            if not local_project_view_allowed():
+                await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="second_brain")
+            record_turn_completion("command")
+        return reply
+
     async def _channel_turn(
         self, text: str, channel: str, *, observe_only: bool, draft=None,
     ) -> Optional[str]:
@@ -3235,10 +3137,6 @@ class Orchestrator:
     def _begin_channel_draft(self, channel: str, source, kwargs: dict):
         """A streaming draft for this turn, or None when the channel cannot edit, the
         owner turned streaming off, or the router would not deliver to this source."""
-        # Full workspace replies are approved through channel.reply. An editable
-        # transport alone is not authority to publish tokens before that decision.
-        if channel in {"slack", "discord", "ntfy", "sms"}:
-            return None
         try:
             if self.get_setting("channels.streaming_replies", True) is not True:
                 return None
@@ -3768,10 +3666,13 @@ class Orchestrator:
             _TURN_TITLE.reset(title_token)
             if titles:
                 self._start_title_upgrades(titles)
-            if read_untrusted:
-                await Orchestrator._note_turn_taint(self, session_id, taint_reason)
-            elif read_unproven:
-                await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
+            try:
+                if read_untrusted:
+                    await Orchestrator._note_turn_taint(self, session_id, taint_reason)
+                elif read_unproven:
+                    await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
+            finally:
+                turn_tools.end()
 
     async def _handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                             session_id: str = None) -> str:
@@ -3864,6 +3765,10 @@ class Orchestrator:
                     self.last_cognition = self._control_cognition(llm_ctl[0])
                     record_turn_completion("command")
                     return reply
+
+        project_reply = await self._second_brain_project_reply(text, channel, agent_override)
+        if project_reply is not None:
+            return project_reply
 
         t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
@@ -4090,10 +3995,13 @@ class Orchestrator:
             _TURN_TITLE.reset(title_token)
             if titles:
                 self._start_title_upgrades(titles)
-            if read_untrusted:
-                await Orchestrator._note_turn_taint(self, session_id, taint_reason)
-            elif read_unproven:
-                await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
+            try:
+                if read_untrusted:
+                    await Orchestrator._note_turn_taint(self, session_id, taint_reason)
+                elif read_unproven:
+                    await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
+            finally:
+                turn_tools.end()
 
     async def _handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                    agent_override: str = None, session_id: str = None) -> str:
@@ -4206,6 +4114,14 @@ class Orchestrator:
                     self.last_cognition = self._control_cognition(llm_ctl[0])
                     return reply
 
+        project_reply = await self._second_brain_project_reply(text, channel, agent_override)
+        if project_reply is not None:
+            if on_token:
+                emitted = on_token(project_reply)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            return project_reply
+
         t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
         t_classify = int((time.perf_counter() - t_c0) * 1000)
@@ -4313,6 +4229,10 @@ class Orchestrator:
                         backend, router_model, route_name = prepared.backend, prepared.model, prepared.route
                     else:
                         backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
+                    from .memory.second_brain import private_context_active, strict_loopback_backend
+
+                    if private_context_active() and not strict_loopback_backend(agent_id, backend, route_name):
+                        raise LocalBackendUnavailableError("Private memory requires a loopback local model")
                     if router_model:
                         model = router_model
                     prepare_system = getattr(agent, "model_system_prompt", None)
@@ -4351,6 +4271,7 @@ class Orchestrator:
                     if callable(data_check):
                         data_check(backend, model, route_name, actual_use=False)
                     if isinstance(backend, GeminiBackend):
+                        from .chat_cloud_history import web_turn_active
                         # One immutable lease owns both this generation and any
                         # cache lookup/create decision made for it.
                         lease = backend.acquire_lease()
@@ -4360,6 +4281,7 @@ class Orchestrator:
                         )
                         if (
                             self.context_cache is not None
+                            and not web_turn_active()
                             and history_parts
                             and self.security is not None
                             and not isinstance(getattr(backend, 'profile', None), AdmittedProviderProfile)
@@ -4672,7 +4594,7 @@ class Orchestrator:
                         task_description=task_desc,
                         solution_steps=steps,
                         command_name=cmd,
-                        output=resp[:200],
+                        source_excerpt=resp[:200],
                     )
                 except (ValueError, IndexError):
                     continue
@@ -5460,6 +5382,8 @@ class Orchestrator:
         """
         from .context_refs import attached_block
 
+        from .chat_cloud_history import remember_current_inputs
+        remember_current_inputs(agent_id, text, plugin_block, runtime_block)
         attachments = attached_block()   # H579: this turn's @file: section, never stored with the message
         if attachments:
             text = f"{text}\n\n{attachments}"
@@ -5494,6 +5418,20 @@ class Orchestrator:
             block = (block or "").strip()
             if block:
                 parts.append(block)
+        from .llm.hybrid_router import LOCAL_ONLY_AGENTS
+        if (agent_id in LOCAL_ONLY_AGENTS and current_principal().admin is True
+                and current_principal().channel == "web" and turn_tools.active()):
+            from .memory.second_brain import recall_context
+
+            second_brain_block = await asyncio.to_thread(
+                recall_context, text, local_only=lambda: True)
+            if second_brain_block:
+                from . import trajectory
+
+                turn_tools.mark_private()
+                trajectory.suppress_current()
+                turn_tools.note({"event": "tool_result", "tool": "search_second_brain"})
+                parts.append(second_brain_block)
         outcome_block = self._chat_outcome_block() if freeze_core else ""
         if outcome_block:
             parts.append(outcome_block)
@@ -6281,6 +6219,12 @@ class Orchestrator:
                 k: (strip_egress_memory_fences(v) if isinstance(v, str) else v)
                 for k, v in responses.items()
             }
+        from .memory.second_brain import private_context_active
+
+        if private_context_active():
+            # A raw-derived answer is shown only in this owner turn; it cannot enter
+            # chat history, embeddings, checkpoints, logs, reviews or later cloud prompts.
+            return
         untrusted = _turn_is_untrusted()
         if untrusted:
             # H443: the conversation leaves the clean list before this reply is stored in
@@ -7142,6 +7086,10 @@ class Orchestrator:
             if prepared is not None:
                 enriched_text = plan.prompts[agent_id][2]
                 route_name, model = prepared.route, prepared.model
+                from .memory.second_brain import private_context_active, strict_loopback_backend
+
+                if private_context_active() and not strict_loopback_backend(agent_id, prepared.backend, route_name):
+                    raise LocalBackendUnavailableError("Private memory requires a loopback local model")
             else:
                 enriched_text = await self._build_agent_turn_text(
                     agent_id,
@@ -7225,7 +7173,7 @@ class Orchestrator:
                 # First-run UX: "no model loaded" is the single most common failure,
                 # and a raw "[jarvis error: No LLM backend available]" tells the user
                 # nothing. Return one friendly, actionable line instead — on every
-                # channel (web/telegram/discord/CLI), not just the HUD.
+                # channel (web/telegram/CLI), not just the HUD.
                 if "No LLM backend available" in str(e):
                     return agent_id, NO_MODEL_REPLY, 0.0, current_action_origin()
                 return agent_id, f"[{agent_id} error: {e}]", 0.0, current_action_origin()
@@ -7269,7 +7217,7 @@ class Orchestrator:
         # on the release, and docs/METRICS.md defines it as "% served on-device", so the
         # error was both systematic and in the flattering direction.
         # The streaming path was never affected: it selects the backend inside its own
-        # per-agent loop. This is the non-streaming half (Telegram, Discord, voice,
+        # per-agent loop. This is the non-streaming half (Telegram, voice,
         # /chat, MCP, rooms, webhooks, eval, workflows).
         self._last_routes = {}
         for agent_id, resp, latency, _origin in results_list:
@@ -7483,13 +7431,13 @@ class Orchestrator:
                 cached_tokens = (reported[2] if reported is not None
                                  else 0 if incomplete else cached_prefix)
                 metadata = {
-                    # CDX-2: record the real origin (web/telegram/discord/voice/
+                    # CDX-2: record the real origin (web/telegram/voice/
                     # autonomy/…) instead of always "web", so the %-local/cloud
                     # ratio and per-channel analytics aren't silently skewed.
                     "channel": channel,
                     # DRA-24: the streaming loop measures the request it actually
                     # sent (prompt + soul, or cached prefix + tail); every other
-                    # channel — Telegram, Discord, voice, /chat, MCP, eval — leaves the
+                    # channel — Telegram, voice, /chat, MCP, eval — leaves the
                     # map empty and keeps today's raw-text estimate rather than
                     # reporting zero. `cached_tokens <= input_tokens` holds by
                     # construction, which is what stops the estimator inventing a

@@ -52,6 +52,7 @@ class Entry:
     dataless: bool = False
     #: Number of names this file has. More than one means a hard link exists.
     links: int = 1
+    mtime_ns: int = 0
 
 
 def check_name(name: str) -> str:
@@ -82,7 +83,8 @@ class _PosixApi:
             if stat.S_ISLNK(pre.st_mode):
                 raise UnsafePath("symlink")
             if stat.S_ISREG(pre.st_mode) and getattr(pre, "st_flags", 0) & SF_DATALESS:
-                return None, Entry(is_dir=False, size=pre.st_size, dataless=True, links=pre.st_nlink)
+                return None, Entry(is_dir=False, size=pre.st_size, dataless=True, links=pre.st_nlink,
+                                   mtime_ns=pre.st_mtime_ns)
         try:
             fd = os.open(name, self._flags, dir_fd=parent)
         except OSError as exc:
@@ -95,7 +97,8 @@ class _PosixApi:
                 return fd, Entry(is_dir=True, size=0)
             if not stat.S_ISREG(info.st_mode):
                 raise UnsafePath("not a regular file")
-            return fd, Entry(is_dir=False, size=info.st_size, links=info.st_nlink)
+            return fd, Entry(is_dir=False, size=info.st_size, links=info.st_nlink,
+                             mtime_ns=info.st_mtime_ns)
         except BaseException:
             os.close(fd)
             raise
@@ -135,6 +138,28 @@ class _PosixApi:
         os.fsync(handle)
 
     def publish(self, parent: int, handle: int, temporary: str, final: str) -> None:
+        if sys.platform.startswith("linux"):
+            # Rename inside the already-pinned inbox handle. RENAME_NOREPLACE
+            # publishes a single name atomically and refuses an existing final
+            # name; link+unlink briefly gave the file two names, so a concurrent
+            # normal vault read correctly rejected it as a hard link.
+            import ctypes
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            rename_noreplace = getattr(libc, "renameat2", None)
+            if rename_noreplace is not None:
+                rename_noreplace.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
+                                             ctypes.c_char_p, ctypes.c_uint]
+                rename_noreplace.restype = ctypes.c_int
+                if rename_noreplace(parent, os.fsencode(temporary), parent, os.fsencode(final), 1) == 0:
+                    os.fsync(parent)
+                    return
+                error = ctypes.get_errno()
+                if error not in (errno.ENOSYS, errno.EOPNOTSUPP, errno.EINVAL):
+                    raise OSError(error, os.strerror(error), final)
+            # Older libc, kernels and filesystems keep the prior exclusive
+            # publication path. It can briefly expose nlink=2 to a normal read,
+            # but never replaces a target or weakens the hard-link read guard.
         os.link(temporary, final, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
         os.unlink(temporary, dir_fd=parent)
         os.fsync(parent)
@@ -182,11 +207,16 @@ class _WindowsApi:
                         ("NumberOfLinks", w.DWORD), ("DeletePending", w.BOOLEAN),
                         ("Directory", w.BOOLEAN)]
 
+        class Basic(ctypes.Structure):
+            _fields_ = [(name, ctypes.c_int64) for name in
+                        ("CreationTime", "LastAccessTime", "LastWriteTime", "ChangeTime")]
+            _fields_ += [("FileAttributes", w.DWORD)]
+
         class AttrTag(ctypes.Structure):
             _fields_ = [("FileAttributes", w.DWORD), ("ReparseTag", w.DWORD)]
 
         self.Unicode, self.ObjAttr, self.IoStatus = Unicode, ObjAttr, IoStatus
-        self.Standard, self.AttrTag = Standard, AttrTag
+        self.Standard, self.AttrTag, self.Basic = Standard, AttrTag, Basic
         self.k.CreateFileW.argtypes = (w.LPCWSTR, w.DWORD, w.DWORD, ctypes.c_void_p,
                                        w.DWORD, w.DWORD, w.HANDLE)
         self.k.CreateFileW.restype = w.HANDLE
@@ -270,7 +300,9 @@ class _WindowsApi:
         standard = self._info(handle, 1, self.Standard)    # FileStandardInfo
         if standard.Directory:
             return Entry(is_dir=True, size=0)
-        return Entry(is_dir=False, size=int(standard.EndOfFile), links=int(standard.NumberOfLinks))
+        basic = self._info(handle, 0, self.Basic)          # FileBasicInfo
+        return Entry(is_dir=False, size=int(standard.EndOfFile), links=int(standard.NumberOfLinks),
+                     mtime_ns=int(basic.LastWriteTime) * 100 - 11_644_473_600_000_000_000)
 
     def open_root(self, path: str) -> int:
         # FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE, OPEN_EXISTING,
@@ -302,6 +334,40 @@ class _WindowsApi:
         if not length or length >= len(buffer):
             raise self._last_error("final path")
         return os.listdir(buffer.value)
+
+    def list_entries(self, handle: int) -> list[tuple[str, Entry]]:
+        """Directory metadata from a pinned handle; used only when hard links are allowed."""
+        class DirectoryInfo(self.c.Structure):
+            _fields_ = [("NextEntryOffset", self.w.DWORD), ("FileIndex", self.w.DWORD)]
+            _fields_ += [(name, self.c.c_int64) for name in
+                         ("CreationTime", "LastAccessTime", "LastWriteTime", "ChangeTime",
+                          "EndOfFile", "AllocationSize")]
+            _fields_ += [("FileAttributes", self.w.DWORD), ("FileNameLength", self.w.DWORD),
+                         ("EaSize", self.w.DWORD), ("ShortNameLength", self.c.c_byte),
+                         ("ShortName", self.w.WCHAR * 12), ("FileId", self.c.c_int64),
+                         ("FileName", self.w.WCHAR * 1)]
+
+        found = []
+        buffer = self.c.create_string_buffer(64 * 1024)
+        while True:
+            if not self.k.GetFileInformationByHandleEx(handle, 10, buffer, len(buffer)):
+                if self.c.get_last_error() == 18:  # ERROR_NO_MORE_FILES
+                    break
+                raise self._last_error("directory information")
+            offset = 0
+            while True:
+                info = DirectoryInfo.from_buffer(buffer, offset)
+                name = self.c.wstring_at(self.c.addressof(buffer) + offset + DirectoryInfo.FileName.offset,
+                                         info.FileNameLength // self.c.sizeof(self.w.WCHAR))
+                if not info.FileAttributes & 0x400:  # FILE_ATTRIBUTE_REPARSE_POINT
+                    found.append((name, Entry(bool(info.FileAttributes & 0x10), int(info.EndOfFile),
+                                              mtime_ns=int(info.LastWriteTime) * 100 - 11_644_473_600_000_000_000)))
+                else:
+                    found.append((name, None))
+                if not info.NextEntryOffset:
+                    break
+                offset += info.NextEntryOffset
+        return sorted(found, key=lambda row: row[0])
 
     def read(self, handle: int, cap: int) -> bytes:
         if not self.k.SetFilePointerEx(handle, 0, None, 0):
@@ -509,6 +575,40 @@ class VaultFs:
         bytes of that file to read (0 reads nothing).
         """
         yield from self._walk(self._root, (), want, cap, allow_dir, allow_file)
+
+    def inventory(self, want=lambda name: True, allow_dir=lambda parts: True,
+                  allow_file=lambda parts: True):
+        """Metadata-only walk; Windows avoids opening unchanged files when hard links are allowed."""
+        if not self.allow_hardlinks or not hasattr(self._api, "list_entries"):
+            yield from self.walk(want=want, cap=lambda _name: 0,
+                                 allow_dir=allow_dir, allow_file=allow_file)
+            return
+        yield from self._inventory(self._root, (), want, allow_dir, allow_file)
+
+    def _inventory(self, handle, prefix, want, allow_dir, allow_file):
+        for name, entry in self._api.list_entries(handle):
+            if name.startswith("."):
+                continue
+            parts = prefix + (name,)
+            if not allow_dir(parts) and not allow_file(parts):
+                continue
+            try:
+                check_name(name)
+                if entry is None:
+                    self.skipped.append(("/".join(parts), "reparse point"))
+                    continue
+                if entry.is_dir:
+                    if allow_dir(parts):
+                        child, checked = self._api.open_child(handle, name)
+                        try:
+                            if checked.is_dir:
+                                yield from self._inventory(child, parts, want, allow_dir, allow_file)
+                        finally:
+                            self._api.close(child)
+                elif allow_file(parts) and want(name):
+                    yield parts, entry, b""
+            except (UnsafePath, OSError) as exc:
+                self.skipped.append(("/".join(parts), str(exc)))
 
     def _walk(self, handle: int, prefix: tuple, want, cap, allow_dir, allow_file):
         folders = []

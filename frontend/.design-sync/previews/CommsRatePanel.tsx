@@ -25,9 +25,8 @@ stubFetch({
       enabled: true, global_cap: 30, window_seconds: 60,
       channels: [
         { channel: 'telegram', used: 12, cap: 30 },
-        { channel: 'email', used: 3, cap: 10 },
-        { channel: 'discord', used: 5, cap: 20 },
-        { channel: 'sms', used: 0, cap: 5 },
+        { channel: 'voice', used: 5, cap: 20 },
+        { channel: 'web', used: 0, cap: 5 },
       ],
     },
   },

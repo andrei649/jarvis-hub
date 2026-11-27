@@ -1,11 +1,9 @@
 """The owner media budget reaches settings validation and actual transports."""
 
-from email.message import EmailMessage
 
 import pytest
 
 from agents.core import settings_db
-from agents.core.channels.email import EmailChannel
 from agents.core.channels.inbound_media import classify
 from agents.core.channels.inbound_voice import InboundVoiceReader
 from agents.core.channels.media_reader import InboundImageReader
@@ -23,21 +21,6 @@ def test_media_budget_is_declared_for_existing_settings_surfaces():
                if (row["category"], row["key"]) == ("channels", "max_inbound_media_bytes"))
     assert row["value"] == 8 * 1024 * 1024 and row["kind"] == "number"
     assert settings_db.validate_category("channels", {"max_inbound_media_bytes": 1024}) == []
-
-
-def test_email_extraction_uses_current_owner_budget(monkeypatch):
-    limit = [3]
-    original = settings_db.get_value
-    monkeypatch.setattr(settings_db, "get_value", lambda cat, key, default=None:
-                        limit[0] if (cat, key) == ("channels", "max_inbound_media_bytes")
-                        else original(cat, key, default))
-    message = EmailMessage()
-    message.set_content("attached")
-    message.add_attachment(b"four", maintype="text", subtype="plain", filename="note.txt")
-    channel = EmailChannel()
-    assert channel._parse(message.as_bytes())["attachments"][0].data is None
-    limit[0] = 4
-    assert channel._parse(message.as_bytes())["attachments"][0].data == b"four"
 
 
 @pytest.mark.asyncio

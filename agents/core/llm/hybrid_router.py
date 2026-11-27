@@ -399,6 +399,15 @@ class HybridRouter(LLMRouter):
         self._compatible_model = self._admin_setting("compatible_model", "")
         provider_id = self._admin_setting("compatible_provider", "")
         self._compatible_provider_id = provider_id
+        if provider_id == "chatgpt-plan" and self._compatible_model:
+            from agents.core import chatgpt_connection
+
+            from .chatgpt_plan import ChatGPTPlanBackend
+
+            generation = chatgpt_connection.selected_chat_generation(self._compatible_model)
+            if generation:
+                self._compatible_backend = ChatGPTPlanBackend(self._compatible_model, generation)
+                self._cloud_available = True
         if provider_id == "xai" and self._compatible_model:
             from .xai import XAIBackend
             key = env_str("XAI_API_KEY", "")
@@ -618,11 +627,11 @@ class HybridRouter(LLMRouter):
         from agents.core import settings_db
 
         from .backend_factory import construct_custom_backend
-        from .custom_endpoints import read_choice
+        from .custom_endpoints import read_router_choice
 
         previous = getattr(self, '_custom_endpoint_runtime', None)
         try:
-            choice = await asyncio.to_thread(read_choice)
+            choice = await asyncio.to_thread(read_router_choice)
         except Exception:
             self._custom_endpoint_required = True
             if previous is not None:
@@ -803,6 +812,10 @@ class HybridRouter(LLMRouter):
                 "explicit DeepInfra main route is unavailable")
         if route not in ("local-moa", "hybrid-moa"):
             self._enforce_approved_models(agent_id, model, route)
+        from agents.core.memory.second_brain import private_context_active, strict_loopback_backend
+
+        if private_context_active() and not strict_loopback_backend(agent_id, backend, route):
+            raise LocalBackendUnavailableError("Private memory requires a loopback local model")
         return backend, model, route
 
     def _enforce_cloud_only_route(self, agent_id, backend, route):
@@ -849,6 +862,13 @@ class HybridRouter(LLMRouter):
         """A changed cross-process selection cannot fall through a stale router."""
         if not route.startswith('cloud'):
             return
+        if getattr(self, "_compatible_provider_id", "") == "chatgpt-plan":
+            from agents.core import chatgpt_connection
+
+            plan = self._compatible_backend
+            if (plan is None or plan is not getattr(backend, "_backend", backend)
+                    or plan.generation != chatgpt_connection.selected_chat_generation(model)):
+                raise CloudBackendUnavailableError()
         custom = getattr(self, '_custom_endpoint_runtime', None)
         if custom is not None:
             effective = getattr(backend, '_backend', backend)
@@ -910,7 +930,10 @@ class HybridRouter(LLMRouter):
             model = HOWARD_OLLAMA_MODEL if self._ollama_available else self._local_model
             return backend, model, route
 
-        policy = self.get_agent_policy(agent_id)
+        strict_local = env_flag("JARVIS_STRICT_LOCAL", False)
+        if strict_local and agent_id in CLOUD_ONLY_AGENTS:
+            raise CloudBackendUnavailableError()
+        policy = POLICY_LOCAL if strict_local else self.get_agent_policy(agent_id)
 
         if agent_id in CLOUD_ONLY_AGENTS and not self._cloud_permitted():
             raise CloudBackendUnavailableError()
@@ -924,7 +947,7 @@ class HybridRouter(LLMRouter):
         if active_moa and agent_id not in DEEP_THINK_AGENTS:
             preset = get_preset(active_moa)
             if preset is not None:
-                if policy == POLICY_LOCAL and not env_flag("JARVIS_STRICT_LOCAL", False) and not preset.is_pure_local:
+                if policy == POLICY_LOCAL and not strict_local and not preset.is_pure_local:
                     pass
                 else:
                     return self.resolve_moa_preset(agent_id, active_moa)
@@ -1155,10 +1178,11 @@ class HybridRouter(LLMRouter):
         from .custom_endpoint_service import profile_for
         from .custom_endpoints import CustomEndpointInvalid, list_endpoints
         from .providers import provider_catalog
+        from .providers.selection_gates import SelectionUnavailable
         builtins = provider_catalog()
         try:
             return builtins + [profile_for(item).status() for item in list_endpoints()]
-        except CustomEndpointInvalid:
+        except (CustomEndpointInvalid, SelectionUnavailable):
             return builtins
 
     async def aclose(self) -> None:

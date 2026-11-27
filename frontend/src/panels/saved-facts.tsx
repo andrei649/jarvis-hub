@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { apiDelete, apiGet, apiPatch, apiPost } from '../api/client';
+import React, { useEffect, useRef, useState } from 'react';
+import { apiDelete, apiGet, apiPatch, apiPost, getAdminToken } from '../api/client';
+import { onOwnerSession, ownerSignedIn } from '../api/owner-session';
+import { historyOwnerKey, historySourceLabel } from '../chat-history-search';
 import { ConfirmAction, RISK_TIER } from '../confirm';
 import { inpS, taS } from '../panel-kit';
 import { LABEL } from '../theme/type';
 
 type Store = 'memory' | 'user';
-type Fact = { entry_id: string; store: Store; value: string };
+type Fact = { entry_id: string; store: Store; value: string; source?: { session_id: string; turn: number; revision: string; role: 'user' | 'assistant' } | null };
 type FactResult = { ok: boolean; changed: boolean; entry?: Fact };
 const PATH = '/api/dashboard/today/entries';
 const label = (store: Store) => store === 'memory' ? 'Agent notes' : 'User profile';
@@ -27,14 +29,43 @@ type MemoryView = {
 };
 type ChatState = { draft: string; store: Store; busy: boolean; setDraft: (value: string) => void;
   setStore: (value: Store) => void; setBusy: (value: boolean) => void };
+export type RememberSource = { sessionId?: string; text: string; role: 'user' | 'assistant'; agentId?: string };
+type SourceInput = { session_id: string; turn: number; revision: string; excerpt: string };
+const sourceRevision = /^[0-9a-f]{64}$/;
+const sessionIdentifier = /^[A-Za-z0-9_-]{1,128}$/;
+
+async function resolveRememberSource(source: RememberSource): Promise<SourceInput> {
+  if (!source.sessionId || !sessionIdentifier.test(source.sessionId) || new TextEncoder().encode(source.text).length > 8000)
+    throw new Error('source_unavailable');
+  const raw = await apiGet<unknown>(`/sessions/${encodeURIComponent(source.sessionId)}/transcript?references=true`,
+    { admin: true, cache: 'no-store', redirect: 'error' });
+  const transcript = raw as { schema_version?: unknown; session_id?: unknown; scope?: unknown; redacted?: unknown; turns?: unknown };
+  if (transcript?.schema_version !== 1 || transcript.session_id !== source.sessionId
+    || transcript.scope !== 'retained_current_history' || transcript.redacted !== true || !Array.isArray(transcript.turns))
+    throw new Error('source_unavailable');
+  const matches = transcript.turns.filter((turn: unknown) => {
+    const row = turn as { turn?: unknown; role?: unknown; agent_id?: unknown; content?: unknown; reference_revision?: unknown };
+    return row && row.role === source.role && row.content === source.text
+      && (source.role === 'user' || row.agent_id === source.agentId)
+      && Number.isSafeInteger(row.turn) && (row.turn as number) >= 0
+      && typeof row.reference_revision === 'string' && sourceRevision.test(row.reference_revision);
+  }) as { turn: number; reference_revision: string }[];
+  if (matches.length !== 1) throw new Error('source_unavailable');
+  return { session_id: source.sessionId, turn: matches[0].turn,
+    revision: matches[0].reference_revision, excerpt: source.text };
+}
 
 /** A chat save uses the current chat credentials and never reads the shared rings. */
-export function SaveFactForm({ initialDraft = '', memoryView, chatState }: { initialDraft?: string; memoryView?: MemoryView; chatState?: ChatState }) {
+export function SaveFactForm({ initialDraft = '', memoryView, chatState, chatSource }: { initialDraft?: string; memoryView?: MemoryView; chatState?: ChatState; chatSource?: RememberSource }) {
   const [localStore, setLocalStore] = useState<Store>('memory');
   const [localDraft, setLocalDraft] = useState(initialDraft);
   const [saved, setSaved] = useState<Fact | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState('');
+  const [manual, setManual] = useState(false);
+  const [sourceFailed, setSourceFailed] = useState(false);
+  const live = useRef(true);
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const store = chatState?.store ?? localStore;
   const draft = chatState?.draft ?? localDraft;
   const setStore = chatState?.setStore ?? setLocalStore;
@@ -48,10 +79,26 @@ export function SaveFactForm({ initialDraft = '', memoryView, chatState }: { ini
   const save = async () => {
     if (!canSubmit) return;
     setBusy(true); setMessage('');
+    let attemptingSource = false;
     try {
       const value = draft.trim();
+      let source: SourceInput | undefined;
+      if (!saved && chatSource && !manual) {
+        const owner = historyOwnerKey();
+        try {
+          source = await resolveRememberSource(chatSource);
+          if (!live.current || owner !== historyOwnerKey()) return;
+        } catch {
+          if (!live.current) return;
+          setSourceFailed(true);
+          setMessage('Could not verify the selected chat message. Your draft is unchanged. Choose manual save without chat source if you still want this fact.');
+          return;
+        }
+      }
+      attemptingSource = !!source;
       const result = saved ? await patchFact(saved, value, false) :
-        await apiPost<FactResult>(PATH, { store, value }, { admin: memoryView !== undefined });
+        await apiPost<FactResult>(PATH, { store, value, ...(source ? { source } : {}) }, { admin: memoryView !== undefined || !!source });
+      if (!live.current) return;
       if (result?.ok === true && result.changed === false) {
         setMessage(saved ? 'No change to the saved fact.' : 'Fact already saved; nothing changed.');
         memoryView?.onSaved();
@@ -65,8 +112,14 @@ export function SaveFactForm({ initialDraft = '', memoryView, chatState }: { ini
       memoryView?.onSaved(entry);
       if (!memoryView) setSaved(entry);
       setDraft(memoryView ? '' : entry.value);
-      setMessage(`${saved ? 'Corrected' : 'Saved'} fact in ${label(entry.store)}. New conversations can include it when automatic memory is on.`);
-    } catch (error) { setMessage(`${saved ? 'Correction' : 'Save'} refused${reason(error)}. The draft is still here.`); }
+      const linked = source && entry.source?.session_id === source.session_id && entry.source.turn === source.turn
+        && entry.source.revision === source.revision && entry.source.role === chatSource?.role;
+      setMessage(source && !linked ? 'Fact saved, but its chat source receipt could not be verified. Check Saved Facts.'
+        : `${saved ? 'Corrected' : 'Saved'} fact in ${label(entry.store)}. New conversations can include it when automatic memory is on.`);
+    } catch (error) {
+      if (attemptingSource) setSourceFailed(true);
+      setMessage(`${saved ? 'Correction' : 'Save'} refused${reason(error)}. The draft is still here.${attemptingSource ? ' Choose manual save without chat source if you still want this fact.' : ''}`);
+    }
     finally { setBusy(false); }
   };
 
@@ -84,6 +137,9 @@ export function SaveFactForm({ initialDraft = '', memoryView, chatState }: { ini
       <button className="tool-btn" disabled={!canSubmit} onClick={save}>{saved ? 'Save correction' : 'Save fact'}</button>
     </div>
     {draftLength > 300 && <div role="status">{draftLength}/300 characters · shorten the fact to save.</div>}
+    {chatSource && sourceFailed && !saved && !manual && <button type="button" className="tool-btn" disabled={busy}
+      onClick={() => { setManual(true); setNotice('Manual save selected. This fact will have no chat source.'); }}>Choose manual save without chat source</button>}
+    {chatSource && manual && !saved && <p role="status">Manual save selected. This fact will have no chat source.</p>}
     {notice && <p role="status" style={{ fontSize: 'var(--n-fs-label)', overflowWrap: 'anywhere' }}>{notice}</p>}
   </>;
 }
@@ -92,6 +148,7 @@ export function SaveFactForm({ initialDraft = '', memoryView, chatState }: { ini
 /** Owner-selected, curated facts. This list never reads skills or the broader search index. */
 export function SavedFacts() {
   const [facts, setFacts] = useState<Fact[]>([]);
+  const [sourceOwnerKey, setSourceOwnerKey] = useState<string | null>(null);
   const [injected, setInjected] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState(false);
@@ -102,19 +159,34 @@ export function SavedFacts() {
   const [message, setMessage] = useState('');
   const [undo, setUndo] = useState<string | null>(null);
   const correctionLength = factLength(correction);
+  const mayShowSource = !loading && !readError && sourceOwnerKey !== null
+    && sourceOwnerKey === historyOwnerKey() && (ownerSignedIn() || !!getAdminToken());
+  useEffect(() => {
+    const refreshOwner = () => setRefresh(n => n + 1);
+    const unsubscribe = onOwnerSession(refreshOwner);
+    const credentialChanged = (event: StorageEvent) => {
+      if (event.key === 'hud.admin_token' || event.key === 'hud.user_token') refreshOwner();
+    };
+    window.addEventListener('storage', credentialChanged);
+    return () => { unsubscribe(); window.removeEventListener('storage', credentialChanged); };
+  }, []);
 
   useEffect(() => {
     let live = true;
     setLoading(true);
+    const references = ownerSignedIn() || !!getAdminToken();
+    const ownerKey = historyOwnerKey();
+    const factPath = (store: Store) => `${PATH}?store=${store}${references ? '&references=true' : ''}`;
     Promise.all([
       apiGet<{ injected?: boolean }>('/api/memory'),
-      apiGet<{ entries: Fact[] }>(`${PATH}?store=memory`),
-      apiGet<{ entries: Fact[] }>(`${PATH}?store=user`),
+      apiGet<{ entries: Fact[] }>(factPath('memory'), { admin: references }),
+      apiGet<{ entries: Fact[] }>(factPath('user'), { admin: references }),
     ]).then(([status, notes, profile]) => {
       if (!live) return;
       if (!Array.isArray(notes?.entries) || !Array.isArray(profile?.entries)) throw new Error('invalid fact list');
       setInjected(status?.injected === true);
       setFacts([...notes.entries, ...profile.entries]);
+      setSourceOwnerKey(references && ownerKey === historyOwnerKey() ? ownerKey : null);
       setReadError(false);
     }).catch(() => { if (live) setReadError(true); })
       .finally(() => { if (live) setLoading(false); });
@@ -205,7 +277,9 @@ export function SavedFacts() {
           prompt="Remove this entry from saved facts for future chats? Existing chats and this session are unchanged."
           onConfirm={() => forget(fact)} />
       </div>
-      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>Source: saved fact · {label(fact.store)}</div>
+      <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
+        {(mayShowSource ? historySourceLabel(fact.source) : null) ?? `Source: saved fact · ${label(fact.store)}`}
+      </div>
       {editing?.entry_id === fact.entry_id && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
         <input aria-label="Corrected fact" value={correction} disabled={busy} onChange={e => setCorrection(e.target.value)} style={{ ...inpS, flex: '1 1 220px', minWidth: 0 }} />
         <button className="tool-btn" disabled={busy || correctionLength === 0 || correctionLength > 300 || editing.value !== fact.value} onClick={() => correct(fact)}>Save correction</button>

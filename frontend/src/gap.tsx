@@ -48,7 +48,6 @@ import { OsintPanel } from './panels/osint';
 import { MarketplaceAdminPanel } from './panels/marketplace-admin';
 import { SecuritySkillsMapPanel } from './panels/security-skills-map';
 import { PaymentsPanel } from './panels/payments';
-import { SignalGovernancePanel } from './panels/signals-governance';
 import { AutonomyControlPanel } from './panels/autonomy-legacy';
 import { DesktopAllowlistPanel } from './panels/desktop-allowlist';
 import { LlmRoutingPanel } from './panels/llm-routing';
@@ -102,6 +101,7 @@ import { isCatalogRefreshProposal, isCloudImageProposal, isImageProposal, isKrea
 import { phraseFor } from './docket/phrases';
 import { isMoney } from './docket/kinds';
 import { tierKey } from './frame/kit/marks';
+import type { Lang } from './frame/strings';
 
 function MediaOutcome({ value }) {
   if (!value) return null;
@@ -591,12 +591,86 @@ export function NoteDocsPanel() {
    plaintext, mirroring the router's own no-leak contract. */
 export function VaultPanel() {
   const { d, e, loading, reload } = useApi('/api/vault');
+  const index = useApi('/api/os/status');
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (!document.hidden) index.reload(); }, 4000);
+    return () => window.clearInterval(timer);
+  }, [index.reload]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState('');
+  async function reindex() {
+    setSyncing(true); setSyncError('');
+    try {
+      await apiPost('/api/os/brain/reindex', {});
+      index.reload();
+    } catch {
+      setSyncError('Could not update the index.');
+    } finally { setSyncing(false); }
+  }
   const items = arr(d, 'items');
   const stats = (d && d.stats) || {};
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [note, setNote] = useState('');
+  const [vaultQuery, setVaultQuery] = useState('');
+  const [vaultHits, setVaultHits] = useState<any[]>([]);
+  const [searchingVault, setSearchingVault] = useState(false);
+  const [vaultSearchErr, setVaultSearchErr] = useState('');
+  const [openedNote, setOpenedNote] = useState<any>(null);
+  const [capTitle, setCapTitle] = useState('');
+  const [capBody, setCapBody] = useState('');
+  const [capLinks, setCapLinks] = useState('');
+  const [capSaving, setCapSaving] = useState(false);
+  const [capStatus, setCapStatus] = useState('');
+
+  async function searchObsidian() {
+    const q = vaultQuery.trim();
+    if (!q) return;
+    setSearchingVault(true); setVaultSearchErr(''); setOpenedNote(null);
+    try {
+      const res: any = await apiGet('/api/os/brain/retrieve?q=' + encodeURIComponent(q));
+      setVaultHits(Array.isArray(res?.attachments) ? res.attachments : []);
+    } catch {
+      setVaultHits([]);
+      setVaultSearchErr('Could not search the Obsidian vault.');
+    } finally { setSearchingVault(false); }
+  }
+
+  async function inspectNote(relPath: string) {
+    setVaultSearchErr('');
+    try {
+      const q = vaultQuery.trim();
+      const params = 'relPath=' + encodeURIComponent(relPath) + (q ? '&q=' + encodeURIComponent(q) : '');
+      const res: any = await apiGet('/api/os/brain/note?' + params);
+      if (res && res.ok !== false) setOpenedNote({ relPath, ...res });
+      else setVaultSearchErr(res?.error || 'Could not open note.');
+    } catch {
+      setVaultSearchErr('Could not open note.');
+    }
+  }
+
+  async function captureInbox() {
+    if (!capTitle.trim() && !capBody.trim()) return;
+    setCapSaving(true); setCapStatus('');
+    try {
+      const links = capLinks.split(',').map((s) => s.trim()).filter(Boolean);
+      const res: any = await apiPost('/api/os/brain/capture', {
+        title: capTitle.trim(),
+        content: capBody,
+        links,
+      });
+      if (res && res.ok !== false) {
+        setCapStatus(`Saved ${res.relPath || 'note'}`);
+        setCapTitle(''); setCapBody(''); setCapLinks('');
+        index.reload();
+      } else {
+        setCapStatus(res?.error || 'Could not capture note.');
+      }
+    } catch {
+      setCapStatus('Could not capture note.');
+    } finally { setCapSaving(false); }
+  }
 
   const putB64 = (dataB64, itemName, kind) => act('/api/vault', { name: itemName, kind, data_base64: dataB64 }, () => { setNote('stored'); reload(); });
   const storeText = () => {
@@ -630,7 +704,69 @@ export function VaultPanel() {
   const del = (id) => apiDelete('/api/vault/' + encodeURIComponent(id)).then(reload).catch(() => {});
 
   return (
-    <Card title="VAULT" live={asLive(d)} sub={d ? `${stats.items || 0} items · ${Math.round((stats.bytes || 0) / 1024)} KB` : null} onReload={reload}>
+    <><Card title="OBSIDIAN" live={asLive(index.d, index.d?.vaultAvailable)} onReload={index.reload}>
+      <State e={index.e} loading={index.loading} n={index.d ? 1 : 0}/>
+      {index.d && <div>
+        <p>{index.d.vaultAvailable ? `${index.d.vaultPath} · ${index.d.indexReady === false ? 'index unavailable' : index.d.indexedNotes + ' indexed notes'}` : 'Vault disconnected'}</p>
+        <p>{Array.isArray(index.d.excludedZones) ? index.d.excludedZones.length : index.d.excludedZones || 0} excluded zones · {index.d.skippedHardlinks || 0} hard links skipped</p>
+        <p>{index.d.lastIndexedAt ? `Last indexed ${index.d.lastIndexedAt}` : 'Awaiting first index'} · Memory Copilot {index.d.copilotConnected ? 'connected' : 'offline'}</p>
+        {index.d.secondBrain && <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
+          Local MCP {index.d.secondBrain.mcpConfigured ? 'ready' : 'unset'} · AI KB FTS {index.d.secondBrain.aiKbConfigured ? 'ready' : 'unset'}
+        </p>}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+          {index.d.vaultAvailable && <button className="tool-btn" disabled={syncing} onClick={reindex}>{syncing ? 'Indexing…' : 'Reindex vault'}</button>}
+          <a className="tool-btn" href={internalLink('/os/')}>Open /os/</a>
+        </div>
+        {syncError && <p role="alert">{syncError}</p>}
+      </div>}
+    </Card><Card title="SECOND BRAIN · NOTES & INBOX" live={asLive(index.d, index.d?.vaultAvailable)} onReload={index.reload}>
+      {!index.d?.vaultAvailable ? (
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>Connect an Obsidian vault (`NERVA_OS_VAULT_PATH`) to search notes or capture into your inbox.</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input value={vaultQuery} onChange={(ev) => setVaultQuery(ev.target.value)} placeholder="Search vault notes…" style={{ ...inpS, flex: 1 }} />
+            <button className="tool-btn" disabled={searchingVault || !vaultQuery.trim()} onClick={searchObsidian}>{searchingVault ? 'Searching…' : 'Search vault'}</button>
+          </div>
+          {vaultSearchErr && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 6 }}>{vaultSearchErr}</div>}
+          {vaultHits.map((hit, idx) => (
+            <Row key={`${hit.name || 'hit'}-${idx}`}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: 'var(--accent-light)', fontSize: 'var(--n-fs-meta)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hit.name}</div>
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hit.text}</div>
+              </div>
+              <button className="tool-btn" onClick={() => inspectNote(hit.name)}>Inspect note</button>
+            </Row>
+          ))}
+          {openedNote && (
+            <div style={{ marginTop: 8, padding: 8, border: '1px solid var(--line)', borderRadius: 4 }}>
+              <div style={{ fontWeight: 600 }}>{openedNote.title || openedNote.relPath}</div>
+              {Array.isArray(openedNote.tags) && openedNote.tags.length > 0 && (
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>Tags: {openedNote.tags.join(', ')}</div>
+              )}
+              {Array.isArray(openedNote.wikilinks) && openedNote.wikilinks.length > 0 && (
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>Links: {openedNote.wikilinks.join(', ')}</div>
+              )}
+              <pre style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--n-fs-meta)', marginTop: 6, maxHeight: 180, overflow: 'auto' }}>{openedNote.body}</pre>
+            </div>
+          )}
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>
+              {index.d.captureTarget ? `Inbox target: ${index.d.inboxFolder || 'configured'}` : (index.d.captureUnavailableReason || 'Configure an existing allowed vault inbox, then refresh.')}
+            </div>
+            <input value={capTitle} onChange={(ev) => setCapTitle(ev.target.value)} placeholder="Note title" disabled={!index.d.captureTarget} style={{ ...inpS, width: '100%', marginBottom: 6 }} />
+            <textarea value={capBody} onChange={(ev) => setCapBody(ev.target.value)} placeholder="Markdown note for vault inbox…" disabled={!index.d.captureTarget} style={{ ...taS, minHeight: 50 }} />
+            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+              <input value={capLinks} onChange={(ev) => setCapLinks(ev.target.value)} placeholder="Wikilinks (comma-separated)" disabled={!index.d.captureTarget} style={{ ...inpS, flex: 1 }} />
+              <button className="tool-btn" disabled={!index.d.captureTarget || capSaving || (!capTitle.trim() && !capBody.trim())} onClick={captureInbox}>
+                {capSaving ? 'Capturing…' : 'Capture to inbox'}
+              </button>
+            </div>
+            {capStatus && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>{capStatus}</div>}
+          </div>
+        </>
+      )}
+    </Card><Card title="VAULT" live={asLive(d)} sub={d ? `${stats.items || 0} items · ${Math.round((stats.bytes || 0) / 1024)} KB` : null} onReload={reload}>
       <State e={e} loading={loading} n={items.length} />
       {items.slice(0, 10).map((it) => (
         <Row key={it.id}>
@@ -652,7 +788,7 @@ export function VaultPanel() {
       </div>
       {note && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
       <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>encrypted at rest · included in your own data export, erased on forget</div>
-    </Card>
+    </Card></>
   );
 }
 
@@ -1617,6 +1753,20 @@ export function SubAgentsPanel() {
   const [resultFor, setResultFor] = useState(null);
   const [fullResult, setFullResult] = useState(null);
   const [claimedOut, setClaimedOut] = useState(null);
+  // Spawn and batch POSTs hold the connection until every child settles. Refresh the
+  // register while one is pending or running, so each child is visible and stoppable
+  // during that wait. A settled, idle panel makes no background requests.
+  const liveWork = pending || Number(stats.active) > 0
+    || spawns.some((s) => s.status === 'running' || s.status === 'stopping');
+  const registerLoading = useRef(loading);
+  useEffect(() => { registerLoading.current = loading; }, [loading]);
+  useEffect(() => {
+    if (!liveWork) return;
+    const timer = window.setInterval(() => {
+      if (!registerLoading.current) reload();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [liveWork, reload]);
   const atCap = stats.cap != null && (stats.active ?? 0) >= stats.cap;
   const statusColor = (s) => (s === 'done' ? 'var(--green)' : s === 'failed' ? 'var(--red)' : 'var(--amber)');
   // H400 — whether a NEW sub-agent would start now: the emergency stop, the kill switch and
@@ -3587,7 +3737,50 @@ export function ActivityTimelinePanel() {
 // and Missions (governed workspaces) into one surface, plus session history and the
 // activity timeline, so the owner can run multiple subjects in parallel with history.
 // Reuses the existing panels (their data layer already works); this is the layout.
-export function ProjectsMode({ onDiscussResult }: { t?: unknown; onDiscussResult?: (ref: { board: string; taskId: string }) => void }) {
+const PROJECTS_SAMPLE = {
+  en: {
+    note: 'Demo sample · read-only projects',
+    board: 'Exhibition planning', columns: ['To do', 'In progress', 'Done'],
+    cards: ['Write the wall labels', 'Review the floor plan', 'Choose a venue'],
+    rooms: 'Rooms', room: 'Exhibition team', roomDetail: '4 members',
+    missions: 'Missions', mission: 'Prepare the gallery', missionDetail: '2 of 4 steps',
+    sessions: 'Sessions', session: 'Lighting plan', sessionDetail: 'Yesterday',
+    activity: 'Activity', event: 'Venue confirmed', eventDetail: 'Today',
+  },
+  ro: {
+    note: 'Exemplu demo · proiecte doar pentru citire',
+    board: 'Pregătirea expoziției', columns: ['De făcut', 'În lucru', 'Finalizat'],
+    cards: ['Scrie etichetele lucrărilor', 'Verifică planul sălii', 'Alege sala'],
+    rooms: 'Camere', room: 'Echipa expoziției', roomDetail: '4 membri',
+    missions: 'Misiuni', mission: 'Amenajarea galeriei', missionDetail: '2 din 4 pași',
+    sessions: 'Sesiuni', session: 'Planul de iluminat', sessionDetail: 'Ieri',
+    activity: 'Activitate', event: 'Sala a fost confirmată', eventDetail: 'Astăzi',
+  },
+} as const;
+
+function ProjectsSample({ lang }: { lang: Lang }) {
+  const s = PROJECTS_SAMPLE[lang];
+  return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
+    <p role="note" style={{ ...noteS, color: 'var(--ink-2)', margin: '0 0 12px' }}>{s.note}</p>
+    <Card title={s.board} live="seed">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+        {s.columns.map((column, i) => <div key={column}>
+          <div style={{ ...LABEL, color: 'var(--ink-2)', marginBottom: 6 }}>{column}</div>
+          <Row><span style={noteS}>{s.cards[i]}</span></Row>
+        </div>)}
+      </div>
+    </Card>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
+      <Card title={s.rooms} live="seed"><Row><span style={noteS}>{s.room}</span><Tag>{s.roomDetail}</Tag></Row></Card>
+      <Card title={s.missions} live="seed"><Row><span style={noteS}>{s.mission}</span><Tag>{s.missionDetail}</Tag></Row></Card>
+      <Card title={s.sessions} live="seed"><Row><span style={noteS}>{s.session}</span><Tag>{s.sessionDetail}</Tag></Row></Card>
+      <Card title={s.activity} live="seed"><Row><span style={noteS}>{s.event}</span><Tag>{s.eventDetail}</Tag></Row></Card>
+    </div>
+  </div>;
+}
+
+export function ProjectsMode({ onDiscussResult, demo = false, lang = 'en' }: { t?: unknown; demo?: boolean; lang?: Lang; onDiscussResult?: (ref: { board: string; taskId: string }) => void }) {
+  if (demo) return <ProjectsSample lang={lang} />;
   return <div style={{ padding: '16px 20px', maxWidth: 1440, margin: '0 auto' }}>
     <div style={{ ...LABEL, textTransform: 'none', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 12 }}>PROJECTS · rooms = topic threads with history · missions = governed workspaces · sessions = reopen a past chat</div>
     <KanbanView onDiscussResult={onDiscussResult} />
@@ -5300,84 +5493,6 @@ export function PacksPanel() {
   );
 }
 
-/* T-0.41 — the live World Signal feed routed per domain/agent
-   (GET /api/signals/routed, user-guarded). The routing layer classifies the
-   sidecar's signals into domains and slices them per subscribing agent; an
-   unclassifiable signal stays visible in `unrouted` rather than being
-   force-labeled. Honest when no sidecar is configured — says so, shows nothing. */
-export function SignalRoutingPanel() {
-  const { d, e, loading, reload } = useApi('/api/signals/routed');
-  const available = !!(d && d.available);
-  const counts = (d && d.counts) || {};
-  const byDomain = (available && d.by_domain) || {};
-  const byAgent = (available && d.by_agent) || {};
-  const signals = arr(d, 'signals');
-  // Clicking an agent chip pulls that agent's OWN slice from the dedicated
-  // endpoint (the same one an agent's digest consumes), rather than filtering
-  // client-side — so the per-agent route has a real caller and the slice shown
-  // is exactly what the agent would receive.
-  const [slice, setSlice] = useState(null);
-  const showAgent = (ag) => {
-    setSlice({ agent: ag, loading: true, signals: [] });
-    apiGet('/api/signals/agent/' + encodeURIComponent(ag))
-      .then((r: any) => setSlice({ agent: ag, loading: false, signals: arr(r, 'signals'), domains: (r && r.domains) || [] }))
-      .catch(() => setSlice({ agent: ag, loading: false, signals: [], error: true }));
-  };
-  return (
-    <Card title="WORLD SIGNALS" live={asLive(d, available)} sub={available ? `${counts.routed || 0}/${counts.signals || 0} routed` : (d ? 'no sidecar' : null)} onReload={reload}>
-      <State e={e} loading={loading} n={available ? signals.length : 0} />
-      {d && !available && (
-        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>
-          signal layer unavailable{d.reason ? ` · ${d.reason}` : ''} — configure the sidecar to populate this feed
-        </div>
-      )}
-      {available && Object.keys(byDomain).length > 0 && (
-        <Row>
-          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>domains</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {Object.entries(byDomain).map(([dom, idx]) => <Tag key={dom}>{dom} {(idx as any[]).length}</Tag>)}
-          </span>
-        </Row>
-      )}
-      {available && Object.keys(byAgent).length > 0 && (
-        <Row>
-          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>agents</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {Object.entries(byAgent).map(([ag, idx]) => (
-              <button key={ag} className="tool-btn" style={{ fontSize: 'var(--n-fs-meta)', padding: '1px 5px' }} onClick={() => showAgent(ag)}>
-                {ag} {(idx as any[]).length}
-              </button>
-            ))}
-          </span>
-        </Row>
-      )}
-      {slice && (
-        <Row>
-          <span style={mono}>{slice.agent}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
-            {slice.loading ? 'loading…' : slice.error ? 'slice unavailable'
-              : `${slice.signals.length} signal(s) · ${(slice.domains || []).join(', ') || 'no domains'}`}
-          </span>
-        </Row>
-      )}
-      {available && (d.unrouted || []).length > 0 && (
-        <Row>
-          <span style={{ ...LABEL, fontSize: 'var(--n-fs-meta)' }}>unrouted</span>
-          <span style={{ marginLeft: 'auto', fontSize: 'var(--n-fs-meta)', color: 'var(--amber)' }}>
-            {d.unrouted.length} unclassified — shown, never guessed
-          </span>
-        </Row>
-      )}
-      {available && signals.slice(0, 6).map((s, i) => (
-        <Row key={i}>
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title || '—'}</span>
-          {s.severity != null && <Tag>sev {s.severity}</Tag>}
-        </Row>
-      ))}
-    </Card>
-  );
-}
-
 /* 0.39 — the curated market watchlist (GET/POST/DELETE /api/market/watchlist/saved,
    user-guarded). The owner curates a small {symbol, low, high, note} list once;
    routers/market.py's alert/brief evaluators run against it. Read/write, but pure
@@ -5705,7 +5820,6 @@ const PANEL_COMPONENTS = {
   ProvenancePanel,
   SecuritySkillsMapPanel,
   PaymentsPanel,
-  SignalGovernancePanel,
   TrustOpsPanel,
   KillSwitchPanel,
   KernelMetricsPanel,
@@ -5734,7 +5848,6 @@ const PANEL_COMPONENTS = {
   MarketplacePanel,
   SkillHistoryPanel,
   PacksPanel,
-  SignalRoutingPanel,
   WatchlistPanel,
   OnboardingPanel,
   CodeIntelPanel,

@@ -178,7 +178,7 @@ async def _probe_none_blocks_external() -> bool:
 async def _probe_lan_allows_local() -> bool:
     from agents.core.http_client import PluginEgressError, PluginHTTPClient
 
-    c = PluginHTTPClient("signal-layer")  # LAN manifest
+    c = PluginHTTPClient("apple-health")  # LAN manifest
     try:
         c._enforce_egress("http://127.0.0.1:4000/x")  # local → must be allowed (no raise)
         return True
@@ -1042,7 +1042,7 @@ CASES: list[RealityCase] = [
         _probe_none_blocks_external,
     ),
     RealityCase(
-        "plugin:signal-layer",
+        "plugin:apple-health",
         "egress-lan-allows-local",
         "a LAN plugin's localhost call is allowed by the egress gate",
         _probe_lan_allows_local,

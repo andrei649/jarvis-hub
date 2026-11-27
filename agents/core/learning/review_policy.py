@@ -59,7 +59,7 @@ logger = logging.getLogger("jarvis.learning.review")
 
 NOTIFY_SETTING = "display.memory_notifications"
 #: Hermes's ``display.platforms.<platform>.memory_notifications``: one mode per platform
-#: (``telegram``, ``slack``, ``web`` …) that overrides the global one there.
+#: (``telegram``, ``web`` …) that overrides the global one there.
 PLATFORM_NOTIFY_SETTING = "display.platform_memory_notifications"
 NOTIFY_MODES: tuple[str, ...] = ("off", "on", "verbose")
 NOTIFY_DEFAULT = "on"

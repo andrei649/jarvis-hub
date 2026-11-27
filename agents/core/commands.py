@@ -55,63 +55,13 @@ ALIASES: dict[str, str] = {
 #: dash): an argument word that starts with one is read as the ``--flag`` it was typed as.
 _SMART_FLAG = re.compile(r"(?:(?<=\s)|^)[\u2014\u2013](?=[A-Za-z])")
 
-#: H057 — channels where a typed ``/`` does not reach the bot as a command (Slack threads,
-#: Matrix clients): ``!name`` is read as ``/name``, for a command or alias the registry
-#: knows only — any other ``!`` text stays a message.
-BANG_CHANNELS = frozenset({"slack", "matrix"})
-_BANG = re.compile(r"^!([A-Za-z][A-Za-z0-9_]*)(?=\s|$)")
-
-
 #: Telegram's command menu: a name of 1-32 lowercase letters, digits or ``_``, a
 #: description of 1-256 characters, at most 100 commands per scope.
 _TELEGRAM_NAME = re.compile(r"^[a-z0-9_]{1,32}$")
 _TELEGRAM_USERNAME = re.compile(r"[A-Za-z0-9_]{5,32}\Z")
 TELEGRAM_MENU_MAX = 100
 
-# Slack owns several slash names itself and caps a workspace app at 50 commands.
-# A single /nerva entry reaches every command through the ordinary registry/access
-# path, including canonical names that cannot appear in Slack's native picker.
-SLACK_MENU_MAX = 50
-SLACK_RESERVED = frozenset({
-    "me", "status", "away", "dnd", "shrug", "remind", "msg", "feed", "who",
-    "collapse", "expand", "leave", "join", "open", "search", "topic", "mute",
-    "pro", "shortcuts",
-})
-SLACK_VIA_NERVA_ONLY = frozenset({"pause", "refine", "review", "whoami"})
-_SLACK_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 _NERVA_SPECIAL = frozenset({"new", "reset", "undo", "btw", "checkpoints", "rollback", "bundle"})
-
-
-def slack_native_slashes(registry: CommandRegistry) -> list[dict[str, str]]:
-    """The bounded native Slack picker. The fallback is always first; every other
-    entry sends a name the registry can parse unchanged. This is also the ingress
-    allowlist for Slack's ``slash_commands`` Socket Mode envelopes."""
-    from .channels.native_metadata import name_allowed, safe_description
-
-    entries = [{"command": "/nerva", "description": "Run a Nerva command"}]
-    seen = {"nerva"}
-    for command in registry.commands():
-        name = command.name.lower()
-        if (name in seen or name in SLACK_RESERVED or name in SLACK_VIA_NERVA_ONLY
-                or not _SLACK_NAME.fullmatch(name) or not name_allowed(command.name, name)):
-            continue
-        entries.append({"command": f"/{name}",
-                        "description": safe_description(str(command.description or name), 140)})
-        seen.add(name)
-        if len(entries) == SLACK_MENU_MAX:
-            return entries
-    for alias, target in ALIASES.items():
-        command = registry.get(target)
-        if (command is None or alias in seen or alias in SLACK_RESERVED
-                or alias in SLACK_VIA_NERVA_ONLY or not _SLACK_NAME.fullmatch(alias)
-                or not name_allowed(alias, alias)):
-            continue
-        entries.append({"command": f"/{alias}",
-                        "description": safe_description(f"Alias for /{target} — {command.description}", 140)})
-        seen.add(alias)
-        if len(entries) == SLACK_MENU_MAX:
-            break
-    return entries
 
 
 def telegram_menu(commands) -> list[dict]:
@@ -137,21 +87,6 @@ def telegram_menu(commands) -> list[dict]:
 def normalise_args(args: str) -> str:
     """Arguments with a smart-dash flag (``\u2014global``) read as ``--global``."""
     return _SMART_FLAG.sub("--", args) if args else args
-
-
-def rewrite_bang(text: str, registry: CommandRegistry | None, channel: str) -> str:
-    """``!name args`` as ``/name args`` on a :data:`BANG_CHANNELS` channel when *name* is a
-    registered command or an alias of one; *text* unchanged otherwise."""
-    if channel not in BANG_CHANNELS or not isinstance(text, str) or registry is None:
-        return text
-    stripped = text.strip()
-    match = _BANG.match(stripped)
-    if match is None:
-        return text
-    name = match.group(1).lower()
-    if registry.get(ALIASES.get(name, name)) is None:
-        return text
-    return "/" + stripped[1:]
 
 
 def _raw_command_name(text: str) -> str | None:
@@ -361,7 +296,7 @@ class CommandRegistry:
         name = match.group(1).lower()
         args = normalise_args((match.group(2) or "").strip()[:_MAX_ARGS])
         if name == "nerva":
-            # Parse the Slack fallback into its canonical target before the busy-path
+            # Parse the /nerva fallback into its canonical target before the busy-path
             # access probe, the cold-path gate and command.completed see it. Special
             # commands must keep their original preappend/session lifecycle route.
             if not args:

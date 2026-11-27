@@ -1,13 +1,12 @@
 """send_rate_limit.py — 0.44 per-channel OUTBOUND send rate limits (opt-in).
 
-A small sliding-window limiter for **outbound** sends on the external webhook
-channels (WhatsApp / Signal / Matrix / Teams / Google Chat). It bounds how *much*
+A small sliding-window limiter for **outbound** proactive sends
+(``outbound.send_to_target`` and scheduled media delivery). It bounds how *much*
 a channel can broadcast — the complement of CDX-11 (*who* may use a channel) and
 the H23.16 egress monitor (*observing* the volume).
 
-Deliberately scoped to the **webhook broadcast channels only**, NOT the interactive
-reply path (telegram / web / voice go through ``ChannelManager.send`` and must
-never have a user reply silently dropped). And **off by default**: with no env set
+Deliberately scoped to **proactive sends only**, NOT the interactive reply path
+(a reply goes through ``ChannelManager.send`` and must never be silently dropped). And **off by default**: with no env set
 the limit is 0 = unlimited, so behavior is unchanged until an operator opts in —
 useful for a multi-tenant / hardened deployment where a runaway or compromised
 agent must not be able to flood a channel.
@@ -15,7 +14,7 @@ agent must not be able to flood a channel.
 Config (read at check time, so it's live-tunable and test-friendly):
   * ``JARVIS_CHANNEL_SEND_RATE``  — global per-minute cap for every channel (int).
   * ``JARVIS_CHANNEL_SEND_RATES`` — per-channel overrides, e.g.
-    ``"whatsapp:10,teams:30"`` (a listed channel overrides the global default).
+    ``"telegram:10,voice:30"`` (a listed channel overrides the global default).
   0 / unset / unparseable → unlimited (the default).
 """
 

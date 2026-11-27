@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,8 @@ from agents.core.llm.providers import ProviderProfile
 from agents.core.llm.providers.admitted_profiles import AdmittedProviderProfile
 from agents.core.llm.providers.admitted_registry import AdmittedProviderRegistry
 from agents.core.llm.providers.candidates import Candidate
+
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='POSIX provider package store')
 
 
 def rig(tmp_path):

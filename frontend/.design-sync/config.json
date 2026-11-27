@@ -9,8 +9,7 @@
   "componentSrcMap": {
     "MODE_LIVE_KEYS": null,
     "ICONS": null,
-    "App": null,
-    "WorldIntelligenceMode": null
+    "App": null
   },
   "libOverrides": {
     "source-kit.mjs": "exclude src/main.tsx (Vite bootstrap with createRoot side effect) from the synth entry"
@@ -25,7 +24,6 @@
     "FinanceMode": {"viewport": "1440x810"},
     "HealthMode": {"viewport": "1440x810"},
     "KnowledgeMode": {"viewport": "1440x810"},
-    "CommsMode": {"viewport": "1440x810"},
-    "WorldIntelligencePanel": {"viewport": "1440x810"}
+    "CommsMode": {"viewport": "1440x810"}
   }
 }

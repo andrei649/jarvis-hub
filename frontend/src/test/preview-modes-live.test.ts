@@ -51,7 +51,7 @@ describe('Comms preview honesty', () => {
   it('can render configured channels without seeded inbox threads', () => {
     const original = V2.COMMS;
     try {
-      V2.COMMS = { ...original, threads: [], channels: [{ id: 'discord', label: 'Discord', count: 0 }] };
+      V2.COMMS = { ...original, threads: [], channels: [{ id: 'telegram', label: 'Telegram', count: 0 }] };
       render(React.createElement(CommsMode, { t: V2.I18N.en }));
       expect(screen.getByText(/no live comms threads/i)).toBeTruthy();
     } finally {

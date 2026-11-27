@@ -259,7 +259,7 @@ export function honestObserveSeed() {
 }
 
 /* The OBSERVE live badge means "Jarvis observability data arrived this cycle".
- * Signal Layer health says nothing about whether /api/quality or /api/traces
+ * A neighbour's health says nothing about whether /api/quality or /api/traces
  * ever answered, so it must not stamp the badge over a still-seeded panel. */
 export function observeEvidence(bench: any, quality: any, resil: any, arenaRows: any, traceRows: any) {
   return !!(
@@ -286,7 +286,7 @@ function formatCommsTs(value: any): string {
   return text(value, 'live');
 }
 
-function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = []) {
+function roomsToComms(rooms: any[], inboxThreads: any[] = []) {
   const liveInbox = inboxThreads.slice(0, 12).map((thread: any, i: number) => {
     const channel = text(thread.channel, 'telegram').toLowerCase();
     return {
@@ -301,7 +301,7 @@ function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = 
       unread: thread.unread !== false,
       dir: 'in',
       local: true,
-      replyable: ['telegram', 'web', 'slack', 'discord'].includes(channel),
+      replyable: ['telegram', 'web'].includes(channel),
     };
   });
   const roomThreads = rooms.slice(0, 12).map((room: any, i: number) => ({
@@ -317,12 +317,6 @@ function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = 
     local: true,
   }));
   const threads = [...liveInbox, ...roomThreads].slice(0, 12);
-  const channelRows = channels
-    .filter((channel: any) => ['discord', 'slack'].includes(text(channel?.id).toLowerCase()))
-    .map((channel: any) => {
-      const id = text(channel.id).toLowerCase();
-      return { id, label: id === 'discord' ? 'Discord' : 'Slack', count: 0 };
-    });
   const inboxRows = Array.from(new Set(liveInbox.map((thread: any) => thread.channel))).map((id: any) => ({
     id,
     label: id === 'web' ? 'Web' : id.charAt(0).toUpperCase() + id.slice(1),
@@ -331,7 +325,7 @@ function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = 
   return {
     ...V2.COMMS,
     threads,
-    channels: [...inboxRows, { id: 'room', label: 'Rooms', count: roomThreads.length }, ...channelRows],
+    channels: [...inboxRows, { id: 'room', label: 'Rooms', count: roomThreads.length }],
   };
 }
 
@@ -376,7 +370,7 @@ function kgToKnowledge(entities: any[]) {
 }
 
 
-export interface LiveModes { ver: number; live: Record<string, boolean>; }
+export interface LiveModes { ver: number; live: Record<string, boolean>; adminSettled: boolean; }
 
 /* Returns `live`: which V2 keys received REAL, non-empty backend data this session.
    modeComponent() uses it to decide whether a capability mode shows real content or
@@ -384,6 +378,7 @@ export interface LiveModes { ver: number; live: Record<string, boolean>; }
 export function useLiveModes(): LiveModes {
   const [ver, setVer] = useState(0);
   const [live, setLive] = useState<Record<string, boolean>>({});
+  const [adminSettled, setAdminSettled] = useState(false);
   useEffect(() => {
     let alive = true;
     let loadGeneration = 0;
@@ -409,6 +404,7 @@ export function useLiveModes(): LiveModes {
       // for the rest of the ADMIN corpus: plugins/keys/backups/channels/system
       // have no other honest source, so they start empty and stay empty unless
       // this cycle's backend supplies them.
+      setAdminSettled(false);
       set('ADMIN', honestAdminSeed());
       clearMark('ADMIN_MODELS');
       if (current(loadId)) setVer((v) => v + 1);
@@ -429,8 +425,7 @@ export function useLiveModes(): LiveModes {
       // OBSERVE — compose from several Jarvis endpoints. Seed traces/arena/
       // by_agent are stripped first: an empty leaderboard or a silent
       // /api/traces must read as "no data", not as the demo corpus. The live
-      // badge needs Jarvis evidence (observeEvidence), not neighbour health —
-      // the World Intelligence panel talks to Signal Layer on its own.
+      // badge needs Jarvis evidence (observeEvidence), not neighbour health.
       set('OBSERVE', honestObserveSeed());
       await Promise.all([
         apiGet('/bench/stats').catch(() => null),
@@ -530,15 +525,16 @@ export function useLiveModes(): LiveModes {
       // already masked server-side. Absent or empty → the panel stays "not
       // connected" rather than showing keys that were never configured.
       await Promise.all([
-        apiGet('/api/admin/env', { admin: true }),
+        apiGet('/api/admin/env', { admin: true }).catch(() => null),
         apiGet('/api/admin/env/sources', { admin: true }).catch(() => null),
       ]).then(([env, sources]: any[]) => {
-        if (!alive || loadId !== loadGeneration) return;
+        if (!current(loadId) || env === null) return;
         const keys = hydrateAdminKeys(env, sources);
         set('ADMIN', { ...V2.ADMIN, keys });
         if (keys.length) mark('ADMIN');
       }).catch(() => {});
       if (!current(loadId)) return;
+      setAdminSettled(true);
 
       // P3.1 PREVIEW MODES — real endpoints or honest plugin-gated empty states.
       await Promise.all([
@@ -561,15 +557,12 @@ export function useLiveModes(): LiveModes {
 
       await Promise.all([
         apiGet('/api/rooms').catch(() => null),
-        apiGet('/status').catch(() => null),
         apiGet('/api/channels/inbox').catch(() => null),
-      ]).then(([rooms, status, inbox]: any[]) => {
+      ]).then(([rooms, inbox]: any[]) => {
         const list = firstArr(rooms, 'rooms');
-        const channels = firstArr(status, 'channels')
-          .filter((channel: any) => ['discord', 'slack'].includes(text(channel?.id).toLowerCase()));
         const inboxThreads = firstArr(inbox, 'threads');
-        if (list.length || channels.length || inboxThreads.length) {
-          set('COMMS', roomsToComms(list, channels, inboxThreads));
+        if (list.length || inboxThreads.length) {
+          set('COMMS', roomsToComms(list, inboxThreads));
           mark('COMMS');
         }
       }).catch(() => {});
@@ -600,10 +593,6 @@ export function useLiveModes(): LiveModes {
         set('HEALTH', { ...V2.HEALTH, rings: [], metrics: [], week: [], plan: [], sync: 'Apple Health · configured LAN bridge' });
         mark('HEALTH');
       }
-      if (pluginReady(pluginList, 'whatsapp-bridge')) {
-        set('FAMILY', { ...V2.FAMILY, members: [], events: [], reminders: [] });
-        mark('FAMILY');
-      }
 
       if (current(loadId) && changed) setVer((v) => v + 1);
     }
@@ -612,5 +601,5 @@ export function useLiveModes(): LiveModes {
     const iv = setInterval(load, 30000);
     return () => { stop(); window.removeEventListener('beforeunload', invalidate); window.removeEventListener('pagehide', stop); window.removeEventListener('pageshow', resume); clearInterval(iv); };
   }, []);
-  return { ver, live };
+  return { ver, live, adminSettled };
 }

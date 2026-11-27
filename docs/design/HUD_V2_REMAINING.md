@@ -33,7 +33,7 @@ CONSOLE and WORLD buttons. Every theme now draws one structure, the **Ledger fra
   rejects, defers, stops or changes a mode.
 - **Routes** are unchanged and four are added (`/v2/work`, `/v2/timeline`, `/v2/artifacts`,
   `/v2/glance`). `/v2/console` is **All pages**, a site map; `/v2/console/<id>` is that panel as a
-  page of its area, beside the area's contents column; World is Observe › World signals; Glance
+  page of its area, beside the area's contents column; the World page was removed on 2026-11-25; Glance
   replaces Ambient (`a`); Cinema (`m`) keeps the mesh, the orb and the wall. The number keys follow
   the masthead.
 - **Retired for honesty:** the cockpit's cognition trace and its live scoring subscription (stages,
@@ -730,22 +730,24 @@ canonical note in Obsidian. For an indexed, readable source, the composer uses
 `/api/os/brain/note` with the search question to open the matching part of
 a long note. It checks the text and its position again before sending. During review
 the sender can include the relative note path as text in the saved message.
-`/api/os/status`, `/api/os/brain` and `POST /api/os/brain/capture` still have callers only in
-`apps/jarvis-os/public/js/api.js`, so the gate labels those routes
-`HUD_GAP:jarvis-os`. Native Chat also uses `/api/os/brain/retrieve` to review and
+Console → Memory → Vault (`VaultPanel`) now calls `/api/os/status`, `/api/os/brain/reindex`,
+`/api/os/brain/retrieve`, `/api/os/brain/note` and `POST /api/os/brain/capture` directly from HUD V2
+with Second Brain readiness badges and an `Open /os/` link, while `/api/os/brain` (the 3D galaxy) and
+`POST /api/os/workshop/edit` remain in the standalone `/os` client (`HUD_GAP:jarvis-os`).
+Native Chat also uses `/api/os/brain/retrieve` to review and
 recheck excerpts before sending them with a question. Vault graph navigation,
-passage selection and inbox capture remain open on mobile (BACKLOG H18.38).
+passage selection and inbox capture remain frozen on mobile per 2026-11-25 decision (BACKLOG H18.38).
 
 Standalone AI Connections and its default-off cloud chat consent are confined to
 the standalone server. Hub `/os` hides those settings and uses the hub's separate
 `/chat` policy; no hub bypass is demonstrated by the standalone finding.
 
-Local gateway continuation, 2026-11-12: native Slack slash commands and the
-`/nerva` fallback use the existing command access, inbox and approval surfaces.
-This is host/Slack-specific behavior; it adds no HUD endpoint or screen. Workspace
-configuration and live Slack acceptance remain external prerequisites.
-Native Discord commands likewise use existing inbox/approval surfaces; health
-reports registration/hidden counts. Live Discord acceptance is unrun. The
+Messaging platforms other than Telegram (Slack, Discord, SMS, ntfy, email, Matrix and
+the webhook channels) were removed on 2026-11-25 by owner decision
+(`docs/decisions/2026-11-25-nerva-finish-line.md`): the Channels panel lists Telegram
+only, the Comms mode offers a governed reply for Telegram and web threads only, the
+Integrations panel has no channel kind and webhook deliveries go to the log, Telegram
+or voice. The `/nerva` command fallback stays. The
 `channels.max_inbound_media_bytes` limit uses existing generic admin settings;
 no dedicated media control or frontend/device acceptance is claimed.
 
@@ -774,8 +776,7 @@ Owner `/reload-skills` uses the shared chat registry and existing command catalo
 no dedicated reload screen is added. Telegram static sticker caption/cache is a
 host channel feature. Native/mobile media and reload acceptance remain unrun.
 Owner `/debug` returns a local report path through existing chat; it has no upload
-or new screen and currently refuses on Windows. Discord attachments use existing
-inbox/approval cards; native provider acceptance is unrun.
+or new screen and currently refuses on Windows.
 
 Local candidates, 2026-11-03: H220 adds Usage/Billing estimates, measured
 local/cloud/unknown aggregates, a Command Center link, and current-turn usage
@@ -940,6 +941,10 @@ existing settings and channel ingress. No dedicated lifecycle configuration pane
 was added. HUD/API chat paths retain their current lifecycle; gateway validation
 does not claim new browser or native controls, live adapter acceptance, or mobile
 device verification.
+
+The Vault console displays the connected Obsidian vault, note count, exclusions,
+skipped hard links, last index time and local Memory Copilot availability.
+Reindex refreshes the same incremental index used by chat.
 
 H227 inspector (2026-10-04): the existing Inspector panel now shows the resolved
 model/route and distinguishes unresolved base, legacy and withheld previews.
@@ -1142,17 +1147,16 @@ with plugin-configured checks instead of seeded success. Still open:
   without a reliable stream reader, and rejects an oversized `Content-Length` before reading.
 - **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
-- **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode. The Console now
+- **Comms**: rooms and the live channel inbox feed the mode. The Console now
   has a Safe Comms draft surface over `GET/POST /api/integrations/social`, so X post/reply/DM drafts
   enter the existing approval queue/preview path instead of sending directly. #551 adds
   channel inbox transport v0 for telegram/web: inbound threads persist through
   `GET /api/channels/inbox*`, live rows show a governed reply composer, and replies queue through
   `POST /api/channels/inbox/{thread_id}/reply` before approved sends use the live channel manager.
-  Email/WhatsApp inbox transport remains deferred until their live send seams are proven.
 - **Finance / Health / Knowledge / Family**: base mode switching is plugin-gated. Finance reads saved
   watchlist/payments and keeps `balance` mock payloads as SEED; Health waits for the Apple Health LAN
-  bridge; Knowledge waits for configured websearch backend; Family waits for WhatsApp bridge/frigga
-  live data.
+  bridge; Knowledge waits for configured websearch backend; Family has no live source
+  (the WhatsApp bridge plugin was removed on 2026-11-25).
 - **Dossier**: wire to `/api/agents/{id}/soul` + `/memory/{id}` + run history `/api/agents/{id}/history`
   (currently reads the `DOSSIER` mock).
 

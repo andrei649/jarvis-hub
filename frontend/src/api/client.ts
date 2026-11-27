@@ -225,6 +225,43 @@ export async function apiExportOffice(body: { format: 'docx'; text: string } | {
   return res.blob();
 }
 
+/** Send the reviewed source to this hub once and receive an edited copy. */
+export async function apiEditOffice(body: { kind: 'docx' | 'xlsx'; source_base64: string; target: string;
+  replacement: string; sheet?: string }, signal: AbortSignal): Promise<Blob> {
+  if (body.source_base64.length > Math.ceil(8 * 1024 * 1024 / 3) * 4 || !body.source_base64
+    || body.replacement.length > 8192 || !body.target ||
+    (body.kind === 'docx' ? body.target.length > 2048 || body.sheet !== undefined
+      : !/^[A-Z]+[1-9][0-9]*$/.test(body.target) || body.target.length > 2048 || !body.sheet || body.sheet.length > 31))
+    throw new Error('invalid Office edit request');
+  if (needsOwnerSession('POST')) await loadOwnerSession();
+  if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+  const expected = body.kind === 'docx'
+    ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const res = await apiFetchOnce('/api/canvas/office-edit', { method: 'POST', body, signal, accept: expected });
+  if (!res.ok) throw Object.assign(new Error('Office edit refused'), { status: res.status });
+  if (res.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase() !== expected)
+    throw new Error('unexpected Office edit response');
+  const limit = 16 * 1024 * 1024;
+  if (Number(res.headers.get('Content-Length')) > limit || !res.body) throw new Error('invalid Office edit response');
+  const reader = res.body.getReader();
+  const chunks: ArrayBuffer[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) throw new Error('invalid Office edit response');
+      const copy = new ArrayBuffer(value.byteLength);
+      new Uint8Array(copy).set(value);
+      chunks.push(copy);
+    }
+  } catch (error) { await reader.cancel(); throw error; }
+  if (!size) throw new Error('invalid Office edit response');
+  return new Blob(chunks, { type: expected });
+}
+
 /** Export owner-reviewed OBJ as a native Blender project, without storing the source. */
 export async function apiExportBlender(source: string): Promise<Blob> {
   if (needsOwnerSession('POST')) await loadOwnerSession();

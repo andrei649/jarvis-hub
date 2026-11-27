@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import os
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import replace
@@ -19,6 +20,8 @@ from agents.core.llm.providers.packages import ProviderPackageStore
 from agents.core.turn_usage import turn_usage_scope
 from tests.test_openai_responses import completed as openai_completed
 from tests.test_xai_responses import completed as xai_completed
+
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='POSIX provider package store')
 
 CASES = (
     ('anthropic', 'anthropic', 'anthropic_messages', 'https://api.anthropic.com/v1', 'claude-sonnet-4-5'),

@@ -32,6 +32,6 @@ does not pin can be written either way. The full list is in
 For supported OS / Python / runtime versions and the upgrade/deprecation contract,
 see [`docs/COMPATIBILITY.md`](../docs/COMPATIBILITY.md).
 
-> **Containers / Docker:** `docker-compose.yml` (repo root) covers the WorldView
-> side-stack. A first-class app container image + signed release artifacts are
+> **Containers / Docker:** `docker-compose.yml` (repo root) runs the hub and its
+> runtime coordinator. A first-class app container image + signed release artifacts are
 > tracked under **H23.13** (release engineering) — not yet shipped here.

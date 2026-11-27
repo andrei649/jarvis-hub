@@ -14,15 +14,15 @@ it('writes public hrefs but keeps per-entry overlay origins logical', () => {
   (window as any).__NERVA_BASE_PATH__ = '/nerva';
   history.replaceState({ other: 1 }, '', '/nerva/v2/chat?demo=1#anchor');
   expect(routeHref('/v2/memory')).toBe('/nerva/v2/memory?demo=1#anchor');
-  // World is a page under the Ledger frame (PHASE_B_PLAN.md §3.4): a public href, the entry's own
+  // Observe is a page under the Ledger frame (PHASE_B_PLAN.md §3.4): a public href, the entry's own
   // state kept, and no return record
-  navigateHud('/v2/world');
-  expect(location.pathname).toBe('/nerva/v2/world');
+  navigateHud('/v2/observe');
+  expect(location.pathname).toBe('/nerva/v2/observe');
   expect(history.state).toEqual({ other: 1 });
   // Glance is the one overlay: its return record holds the logical path, never the public one
   navigateHud('/v2/glance');
   expect(location.pathname).toBe('/nerva/v2/glance');
-  expect(history.state).toEqual({ other: 1, __nervaHudRoute: {path: '/v2/world', parent: null} });
+  expect(history.state).toEqual({ other: 1, __nervaHudRoute: {path: '/v2/observe', parent: null} });
 });
 
 import { renderHook, act, cleanup } from '@testing-library/react';

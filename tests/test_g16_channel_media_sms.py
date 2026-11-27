@@ -1,4 +1,4 @@
-"""G16 — channel media out (H070), voice notes (H528) and SMS as a channel (H098).
+"""G16 — channel media out (H070) and voice notes (H528).
 
 Owner-side behaviour, attacker-side refusals:
 
@@ -8,29 +8,22 @@ Owner-side behaviour, attacker-side refusals:
   non-owner or from a notice outside the turn; a file already delivered to the chat is
   not sent twice (G15's delivery ledger);
 * audio goes out as a native voice note: Ogg/Opus, MP3 and M4A as they are, anything
-  else converted to Opus by ffmpeg, and without ffmpeg as an audio file with a note;
-* SMS: Twilio's HMAC-SHA1 signature is required and checked (valid / invalid / missing,
-  another account, an oversized body, a replayed MessageSid); an unknown number is
-  ignored and never answered; a reply is a governed ``channel.reply`` at the money tier
-  that waits for approval, goes only to the number that wrote, and reaches Twilio once.
+  else converted to Opus by ffmpeg, and without ffmpeg as an audio file with a note.
 
-Hermetic: recording fakes for Telegram and Twilio, temporary data roots, no network.
+Hermetic: a recording fake for Telegram, temporary data roots, no network.
 """
 
 from __future__ import annotations
 
-import base64
 import hashlib
-import hmac
 import os
 import shutil
 import subprocess
 from types import SimpleNamespace
-from urllib.parse import urlencode
 
 import pytest
 
-from agents.core.channels import audio_container, delivery_ledger, media_delivery, sms
+from agents.core.channels import audio_container, delivery_ledger, media_delivery
 from agents.core.channels import telegram as telegram_module
 from agents.core.channels.spoken_reply import Audio
 from agents.core.channels.telegram import TelegramChannel
@@ -38,12 +31,6 @@ from agents.core.channels.telegram import TelegramChannel
 PNG = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c4944415478"
     "9c6360f8cf000000030101001898c3ef0000000049454e44ae426082")
-OWNER = "+15551234567"
-STRANGER = "+15559876543"
-OURS = "+15550001111"
-ACCOUNT = "AC" + "a" * 32
-TOKEN = "twilio-test-token"  # nosec B105 — a fake credential for the signature tests
-URL = "https://nerva.example/api/channels/sms/webhook"
 
 
 @pytest.fixture
@@ -374,361 +361,7 @@ async def test_an_audio_file_named_in_a_reply_arrives_as_a_voice_note(outputs):
     assert ch.client.calls[0][1]["files"]["voice"][2] == "audio/ogg"
 
 
-# ── H098: SMS — the signed webhook ───────────────────────────────────────────
-
-
-@pytest.fixture
-def sms_env(monkeypatch, data_root):
-    monkeypatch.setenv(sms.ENABLED_ENV, "1")
-    monkeypatch.setenv(sms.ACCOUNT_SID_ENV, ACCOUNT)
-    monkeypatch.setenv(sms.AUTH_TOKEN_ENV, TOKEN)
-    monkeypatch.setenv(sms.FROM_NUMBER_ENV, OURS)
-    monkeypatch.setenv(sms.ALLOWED_NUMBERS_ENV, OWNER)
-    monkeypatch.setenv(sms.WEBHOOK_URL_ENV, URL)
-    return data_root
-
-
-def _params(frm=OWNER, body="lights off", sid="SM" + "1" * 32, account=ACCOUNT, **extra):
-    return {"MessageSid": sid, "AccountSid": account, "From": frm, "To": OURS, "Body": body,
-            "NumMedia": "0", **extra}
-
-
-def _sign(params: dict, url=URL, token=TOKEN) -> str:
-    payload = url + "".join(k + str(params[k]) for k in sorted(params))
-    return base64.b64encode(hmac.new(token.encode(), payload.encode(), hashlib.sha1).digest()).decode()
-
-
-def test_the_signature_matches_twilios_documented_example():
-    # The example from Twilio's "Webhooks security" documentation.
-    params = {"CallSid": ["CA1234567890ABCDE"], "Caller": ["+12349013030"], "Digits": ["1234"],
-              "From": ["+12349013030"], "To": ["+18005551212"]}
-    url = "https://mycompany.com/myapp.php?foo=1&bar=2"
-    assert sms.compute_signature("12345", url, params) == "0/KCTR6DLpKmkAf8muzZqo1nDgQ="
-    assert sms.valid_signature("12345", url, params, "0/KCTR6DLpKmkAf8muzZqo1nDgQ=")
-
-
-def test_the_port_variant_is_accepted_and_nothing_else():
-    params = {"a": ["1"]}
-    signed_with_port = sms.compute_signature(TOKEN, "https://nerva.example:443/hook", params)
-    assert sms.valid_signature(TOKEN, "https://nerva.example/hook", params, signed_with_port)
-    assert not sms.valid_signature(TOKEN, "https://nerva.example/other", params, signed_with_port)
-    assert not sms.valid_signature("", "https://nerva.example/hook", params, signed_with_port)
-    assert not sms.valid_signature(TOKEN, "https://nerva.example/hook", params, None)
-
-
-class _Accepting:
-    def __init__(self):
-        self.accepted = []
-
-    def accept_in_background(self, params):
-        self.accepted.append(params)
-
-
-@pytest.fixture
-def webhook(sms_env, monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from agents.core import app_state
-    from agents.core.routers.channels_sms import router
-
-    channel = _Accepting()
-    monkeypatch.setattr(app_state, "get_orch", lambda: SimpleNamespace(channels={"sms": channel}))
-    app = FastAPI()
-    app.include_router(router)
-    return TestClient(app), channel
-
-
-def _post(client, params, signature):
-    headers = {"content-type": "application/x-www-form-urlencoded"}
-    if signature is not None:
-        headers["x-twilio-signature"] = signature
-    return client.post("/api/channels/sms/webhook", content=urlencode(params), headers=headers)
-
-
-def test_a_signed_message_is_accepted_with_empty_twiml(webhook):
-    client, channel = webhook
-    params = _params()
-    resp = _post(client, params, _sign(params))
-    assert resp.status_code == 200
-    assert resp.text == sms.EMPTY_TWIML and resp.headers["content-type"].startswith("application/xml")
-    assert channel.accepted[0]["Body"] == ["lights off"]
-
-
-def test_an_invalid_or_missing_signature_is_refused(webhook):
-    client, channel = webhook
-    params = _params()
-    assert _post(client, params, _sign(params, token="wrong")).status_code == 403
-    assert _post(client, params, None).status_code == 403
-    tampered = {**params, "Body": "unlock the door"}
-    assert _post(client, tampered, _sign(params)).status_code == 403
-    assert channel.accepted == []
-
-
-def test_another_account_and_an_oversized_body_are_refused(webhook):
-    client, channel = webhook
-    other = _params(account="AC" + "b" * 32)
-    assert _post(client, other, _sign(other)).status_code == 403
-    big = _params(body="x" * (sms.MAX_BODY_BYTES + 10))
-    assert _post(client, big, _sign(big)).status_code == 413
-    assert channel.accepted == []
-
-
-def test_the_webhook_is_not_found_while_sms_is_off(webhook, monkeypatch):
-    client, channel = webhook
-    monkeypatch.setenv(sms.ENABLED_ENV, "0")
-    params = _params()
-    assert _post(client, params, _sign(params)).status_code == 404
-
-
-# ── H098: who is heard, and replay ────────────────────────────────────────────
-
-
-class _Pairing:
-    def __init__(self, allowed=()):
-        self.allowed, self.requests = set(allowed), []
-
-    def status(self, channel, sender):
-        return "allowed" if (channel, sender) in self.allowed else "unknown"
-
-    def request(self, channel, sender, code=None, name=""):
-        self.requests.append((channel, sender))
-        return {"status": "pending", "allowed": False}
-
-
-def _sms_channel(pairing=None, transport=None):
-    seen = []
-
-    async def handler(text, channel="sms", **kwargs):
-        seen.append((text, kwargs))
-        return "a reply that must never be sent from here"
-
-    return sms.SmsChannel(handler=handler, pairing=pairing, transport=transport), seen
-
-
-async def test_an_allowed_number_reaches_the_turn_with_its_identity(sms_env):
-    transport = _Twilio()
-    ch, seen = _sms_channel(transport=transport)
-    assert await ch.accept({k: [v] for k, v in _params().items()}) == "routed"
-    assert seen == [("lights off", {"sender": "15551234567", "sms_to": OWNER, "chat_type": "private",
-                                    "provider_id": _params()["MessageSid"]})]   # H120
-    assert transport.calls == [], "the turn's answer is never sent by the adapter itself"
-
-
-async def test_an_unknown_number_is_ignored_and_never_answered(sms_env):
-    pairing, transport = _Pairing(), _Twilio()
-    ch, seen = _sms_channel(pairing, transport)
-    assert await ch.accept({k: [v] for k, v in _params(frm=STRANGER).items()}) == "unknown_sender"
-    assert seen == [] and transport.calls == []
-    assert pairing.requests == [("sms", "15559876543")], "the owner can still pair it from the HUD"
-
-
-async def test_a_paired_number_is_heard_and_pairing_off_opens_nothing(sms_env, monkeypatch):
-    ch, seen = _sms_channel(_Pairing(allowed={("sms", "15559876543")}))
-    assert await ch.accept({k: [v] for k, v in _params(frm=STRANGER).items()}) == "routed"
-    monkeypatch.setenv("JARVIS_CHANNEL_PAIRING", "0")
-    ch2, seen2 = _sms_channel(_Pairing())
-    params = _params(frm=STRANGER, sid="SM" + "2" * 32)
-    assert await ch2.accept({k: [v] for k, v in params.items()}) == "unknown_sender"
-    assert seen2 == []
-
-
-async def test_a_replayed_message_sid_and_an_echo_are_dropped(sms_env):
-    ch, seen = _sms_channel()
-    params = {k: [v] for k, v in _params().items()}
-    assert await ch.accept(params) == "routed"
-    assert await ch.accept(params) == "replay"
-    # the replay record survives a new adapter (it lives in the reliability store)
-    ch2, _ = _sms_channel()
-    assert await ch2.accept(params) == "replay"
-    echo = {k: [v] for k, v in _params(frm=OURS, sid="SM" + "3" * 32).items()}
-    assert await ch.accept(echo) == "echo"
-    assert len(seen) == 1
-
-
-# ── H098: the reply — approval, binding, Twilio once ─────────────────────────
-
-
-class _Twilio:
-    def __init__(self, status=201):
-        self.calls, self.status = [], status
-
-    async def request(self, method, url, **kwargs):
-        self.calls.append((method, url, kwargs))
-        return SimpleNamespace(status_code=self.status)
-
-
-def _inbound(tmp_path, number=OWNER):
-    from agents.core.channel_inbox import ChannelInboxStore
-
-    inbox = ChannelInboxStore(tmp_path / "inbox.json")
-    msg = inbox.record_inbound("sms", "lights off", sender=sms.sender_id(number),
-                               metadata={"sms_to": number})
-    return inbox, msg
-
-
-def test_an_sms_reply_waits_for_approval_at_the_money_tier(sms_env, tmp_path, monkeypatch):
-    from agents.core.channel_reply import ChannelReplyBroker
-    from agents.core.kernel import Decision, Verdict
-
-    inbox, msg = _inbound(tmp_path)
-    queued, kernel_calls = [], []
-
-    def enqueue(agent, kind, title, **kw):
-        queued.append((kind, kw))
-        return 7
-
-    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
-
-    def kernel(action):
-        kernel_calls.append(action)
-        return Decision(Verdict.GRANT, reason="spy")   # even a GRANT cannot skip the card
-
-    broker = ChannelReplyBroker(inbox=inbox, enqueue=enqueue, kernel=kernel)
-    result = broker.request_for_message(msg["id"], "Done, lights are off.", channel="sms")
-    assert result["ok"] and result["queued"]
-    kind, kw = queued[0]
-    assert kind == "channel.reply" and kw["risk_tier"] == 3 and kw["autonomy_level"] == "ask"
-    assert kw["payload"]["reply"] == {"sms_to": OWNER}
-    assert kernel_calls[0].payload["risk_tier"] == 3
-
-
-async def test_the_gateway_binds_an_sms_turn_to_its_inbox_message(sms_env, tmp_path):
-    """The real gateway records the inbound SMS (reply target = the number) and hands the
-    orchestrator the stored message id the governed reply is queued against."""
-    from agents.core.channel_inbox import ChannelInboxStore
-    from agents.core.channels.gateway import Gateway
-    from agents.core.channels.pairing import SenderPairing
-
-    inbox = ChannelInboxStore(tmp_path / "inbox.json")
-    seen = []
-
-    async def handler(text, channel="web", **kwargs):
-        seen.append((channel, kwargs))
-        return "ok"
-
-    gateway = Gateway(handler=handler, pairing=SenderPairing(tmp_path / "pair.json"), inbox_store=inbox)
-    ch = sms.SmsChannel(handler=gateway.route, pairing=gateway.pairing)
-    assert await ch.accept({k: [v] for k, v in _params().items()}) == "routed"
-    channel, kwargs = seen[0]
-    assert channel == "sms" and kwargs["origin"] == "inbound"
-    stored = inbox.get_message(kwargs["_inbox_message_id"])
-    assert stored["reply"] == {"sms_to": OWNER} and stored["sender"] == "15551234567"
-
-
-def test_the_policy_asks_for_an_sms_reply_in_every_mode():
-    from agents.core.autonomy.policy import ASK, AutonomyPolicy
-
-    for mode in ("auto", "ask", "off"):
-        decision = AutonomyPolicy(mode=mode).decide({"kind": "channel.reply", "risk_tier": 3})
-        assert decision.outcome == ASK
-
-
-async def test_an_approved_reply_goes_to_twilio_once_and_only_to_the_writer(sms_env, tmp_path):
-    from agents.core.channel_reply import ChannelReplyBroker
-    from agents.core.channels.manager import ChannelManager
-
-    inbox, msg = _inbound(tmp_path)
-    twilio = _Twilio()
-    manager = ChannelManager()
-    manager.register(sms.SmsChannel(transport=twilio))
-    broker = ChannelReplyBroker(inbox=inbox, channel_manager=manager)
-    payload = broker.request_for_message(msg["id"], "Done.", channel="sms")["payload"]
-    task = SimpleNamespace(id=11, payload=payload, kind="channel.reply", status="running")
-    assert (await broker.execute(task))["status"] == "ok"
-    assert len(twilio.calls) == 1
-    method, url, kw = twilio.calls[0]
-    assert url == f"https://api.twilio.com/2010-04-01/Accounts/{ACCOUNT}/Messages.json"
-    assert kw["data"] == {"To": OWNER, "From": OURS, "Body": "Done."} and kw["auth"] == (ACCOUNT, TOKEN)
-    # the same approved task retried never pays twice (G15 delivery_key)
-    assert (await broker.execute(task))["status"] == "ok"
-    assert len(twilio.calls) == 1
-    rows = delivery_ledger.store().recent(10, channel="sms")
-    assert all(OWNER not in str(r) and "5551234567" not in str(r) for r in rows), "no number in the ledger"
-    # a task redirected to another number is blocked before Twilio
-    forged = SimpleNamespace(id=12, payload={**payload, "reply": {"sms_to": STRANGER}},
-                             kind="channel.reply", status="running")
-    assert (await broker.execute(forged))["status"] == "blocked"
-    assert len(twilio.calls) == 1
-
-
-async def test_the_adapter_refuses_to_send_while_sms_is_off(sms_env, monkeypatch):
-    twilio = _Twilio()
-    ch = sms.SmsChannel(transport=twilio)
-    monkeypatch.setenv(sms.ENABLED_ENV, "0")
-    assert await ch.send("hi", sms_to=OWNER) is False
-    assert twilio.calls == []
-
-
-async def test_a_long_reply_is_plain_text_capped_by_billed_segments(sms_env):
-    twilio = _Twilio()
-    ch = sms.SmsChannel(transport=twilio)
-    assert await ch.send("**bold** " + "word " * 1500, sms_to=OWNER)
-    bodies = [kw["data"]["Body"] for _m, _u, kw in twilio.calls]
-    assert all(len(b) <= sms.MAX_MESSAGE_LENGTH for b in bodies) and "**" not in bodies[0]
-    assert sum(sms.segments(b) for b in bodies) <= sms.MAX_SEGMENTS
-    assert bodies[-1].endswith("(cut: the full reply is in the HUD)")
-
-
-def test_segments_are_counted_the_way_the_carrier_bills_them():
-    assert sms.segments("a" * 160) == 1 and sms.segments("a" * 161) == 2
-    assert sms.segments("ă" * 70) == 1 and sms.segments("ă" * 71) == 2   # UCS-2: 70 / 67
-    assert sms.segments("{" * 80) == 1 and sms.segments("{" * 81) == 2   # GSM-7 escapes cost 2
-    cut = sms.fit_segments("ăş " * 1500)
-    assert sms.segments(cut) <= sms.MAX_SEGMENTS and len(cut) < 700
-
-
-def test_the_generic_send_path_cannot_reach_sms():
-    from agents.core.channels.manager import _SUPPORTED_SEND_CHANNELS
-
-    assert "sms" not in _SUPPORTED_SEND_CHANNELS
-
-
-def test_redaction_and_the_integrations_entry():
-    from agents.core import integrations_catalog
-
-    assert sms.redact_phone(OWNER) == "+1…4567"
-    entry = integrations_catalog.find("channel.sms")
-    assert entry is not None and entry.keys == ("JARVIS_SMS_AUTH_TOKEN",) and not entry.selectable
-    assert "JARVIS_SMS_AUTH_TOKEN" in integrations_catalog.managed_keys()
-
-
 # ── G16 security review: regressions (R1–R4 Major, M1–M4 Minor, nits) ────────
-
-
-async def test_review_r1_strangers_cannot_flush_the_owners_replay_record(sms_env):
-    ch, seen = _sms_channel()
-    owner_msg = {k: [v] for k, v in _params(sid="SM" + "f" * 32).items()}
-    assert await ch.accept(owner_msg) == "routed"
-    for i in range(400):
-        stranger = {k: [v] for k, v in _params(frm=STRANGER, sid=f"SM{i:032x}").items()}
-        assert await ch.accept(stranger) == "unknown_sender"
-    assert await ch.accept(owner_msg) == "replay"
-    # strangers are never recorded at all; the owner's id is one row
-    rows = delivery_ledger.store()._conn.execute("SELECT COUNT(*) FROM seen_ids").fetchone()[0]
-    assert rows == 1 and len(seen) == 1
-
-
-async def test_review_r1_many_owner_messages_stay_replay_protected(sms_env):
-    ch, seen = _sms_channel()
-    msgs = [{k: [v] for k, v in _params(sid=f"SM{i:032x}").items()} for i in range(600)]
-    for m in msgs:
-        assert await ch.accept(m) == "routed"
-    assert all([await ch.accept(m) == "replay" for m in msgs[:5] + msgs[-5:]])
-
-
-async def test_review_r1_a_broken_replay_store_fails_closed(sms_env, monkeypatch):
-    ch, seen = _sms_channel()
-    monkeypatch.setattr(delivery_ledger, "store", lambda: None)
-    assert await ch.accept({k: [v] for k, v in _params().items()}) == "replay"
-
-    class Broken:
-        def remember_once(self, *a, **k):
-            raise OSError("disk")
-
-    monkeypatch.setattr(delivery_ledger, "store", lambda: Broken())
-    assert await ch.accept({k: [v] for k, v in _params(sid="SM" + "9" * 32).items()}) == "replay"
-    assert seen == []
 
 
 async def test_review_r2_the_owner_in_a_group_gets_the_refusal_not_the_file(outputs):

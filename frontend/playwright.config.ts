@@ -8,6 +8,7 @@
    = /opt/pw-browsers, chromium-1194 matches @playwright/test 1.56.1) — never
    downloads. Opt-in lane: `npm run e2e` (not part of the default `npm test`). */
 import { defineConfig, devices } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const PORT = Number(process.env.E2E_PORT || 8123);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -16,6 +17,14 @@ const DEFAULT_PY = process.platform === 'win32'
   ? '.venv\\Scripts\\python.exe'
   : '.venv/bin/python';
 const PY = process.env.E2E_PYTHON || DEFAULT_PY;
+const OFFICE_REAL = process.env.NERVA_OFFICE_REAL_MODEL === '1';
+if (OFFICE_REAL) {
+  if (!Number.isInteger(PORT) || PORT <= 1024 || PORT > 65535 || [8080, 11434].includes(PORT)) {
+    throw new Error('Choose a separate loopback port for the Office model acceptance');
+  }
+  if (!process.env.NERVA_OFFICE_MODEL?.trim()) throw new Error('Set NERVA_OFFICE_MODEL to an installed local model');
+  process.env.NERVA_OFFICE_FIXTURE_TOKEN ||= randomUUID();
+}
 const ENV_PREFIX = process.platform === 'win32'
   ? `set JARVIS_PORT=${PORT}&& set JARVIS_LOG_LEVEL=warning&& `
   : `JARVIS_PORT=${PORT} JARVIS_LOG_LEVEL=warning `;
@@ -34,11 +43,10 @@ const FOOTAGE_SPEC = /footage\.spec\.ts$/;
    this HUD lane starts. Every HUD project ignores those specs, so `npm run e2e` never runs
    them against a server that has the workspace switched off. */
 const WORKSPACE_SPECS = '**/workspace*.spec.ts';
-/* The Home registers lane (`playwright.home-registers.config.ts`): written for, and run against, the
-   isolated fixture hub on its own port, with the hub's roster and the chat stream stubbed. This lane
-   boots serve.py, so every HUD project ignores those specs (they also skip themselves outside their
-   own project), and `npm run e2e` never collects them. */
-const HOME_LANE_SPECS = ['**/talk-recipient.spec.ts', '**/home-registers.spec.ts'];
+/* The Home registers and routing consent lanes use separate isolated fixture hubs on their
+   own ports. The latter runs real chat streams through two loopback model responders.
+   The ordinary HUD lane boots serve.py and does not collect either fixture lane. */
+const FIXTURE_LANE_SPECS = ['**/talk-recipient.spec.ts', '**/home-registers.spec.ts', '**/routing-consent.spec.ts'];
 // e2e.yml now exposes this as a dispatch input, so pin what a non-integer means here
 // instead of leaving it to coercion. `Math.max(1, Number(x))` returns NaN for an
 // unparseable x and passes it straight to `repeatEach`; measured on @playwright/test
@@ -52,6 +60,7 @@ const SOAK_ITERATIONS = (() => {
 
 export default defineConfig({
   testDir: './e2e',
+  ...(OFFICE_REAL ? { testMatch: 'office-edit.spec.ts' } : {}),
   outputDir: './e2e/.results',
   timeout: 60_000,
   expect: { timeout: 15_000 },
@@ -63,6 +72,13 @@ export default defineConfig({
   use: {
     baseURL: BASE,
     headless: true,
+    ...(OFFICE_REAL ? {
+      extraHTTPHeaders: { 'X-Admin-Token': process.env.NERVA_OFFICE_FIXTURE_TOKEN!, 'X-User-Token': process.env.NERVA_OFFICE_FIXTURE_TOKEN! },
+      launchOptions: {
+        executablePath: process.env.NERVA_TEST_BROWSER,
+        args: ['--disable-background-networking', '--no-proxy-server', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost'],
+      },
+    } : {}),
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     /* index.html registers `/sw-v2.js` at scope '/', so every page in this lane is a
@@ -99,12 +115,12 @@ export default defineConfig({
   },
   projects: [
     ...(BROWSER_MATRIX ? [
-      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...HOME_LANE_SPECS], use: { ...devices['Desktop Chrome'] } },
-      { name: 'firefox', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...HOME_LANE_SPECS], use: { ...devices['Desktop Firefox'] } },
-      { name: 'webkit', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...HOME_LANE_SPECS], use: { ...devices['Desktop Safari'] } },
-      { name: 'mobile-chrome', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...HOME_LANE_SPECS], use: { ...devices['Pixel 5'] } },
+      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...FIXTURE_LANE_SPECS], use: { ...devices['Desktop Chrome'] } },
+      { name: 'firefox', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...FIXTURE_LANE_SPECS], use: { ...devices['Desktop Firefox'] } },
+      { name: 'webkit', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...FIXTURE_LANE_SPECS], use: { ...devices['Desktop Safari'] } },
+      { name: 'mobile-chrome', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...FIXTURE_LANE_SPECS], use: { ...devices['Pixel 5'] } },
     ] : [
-      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...HOME_LANE_SPECS], use: { ...devices['Desktop Chrome'] } },
+      { name: 'chromium', testIgnore: [FOOTAGE_SPEC, '**/base-path.spec.ts', '**/appearance.spec.ts', '**/appearance-fonts.spec.ts', '**/composer-images.spec.ts', '**/media-gallery.spec.ts', WORKSPACE_SPECS, ...FIXTURE_LANE_SPECS], use: { ...devices['Desktop Chrome'] } },
     ]),
     // 1920x1080 because the output is footage, not a regression screenshot: the shot
     // list feeds a README hero and social previews, and upscaling a 1280-wide capture
@@ -130,11 +146,11 @@ export default defineConfig({
   webServer: {
     // run from the repo root (cwd) — serve.py + config.py resolve agents/_system/
     // agents.yaml relative to CWD, not to this config's frontend/ dir.
-    command: `${ENV_PREFIX}${PY} serve.py`,
+    command: OFFICE_REAL ? `"${PY}" frontend/e2e/support/office_edit_hub.py ${PORT}` : `${ENV_PREFIX}${PY} serve.py`,
     cwd: '..',
     url: `${BASE}/status`,
     timeout: 120_000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !OFFICE_REAL && !process.env.CI,
     stdout: 'pipe',
     stderr: 'pipe',
   },

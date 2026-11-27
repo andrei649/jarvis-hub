@@ -1,7 +1,7 @@
 """reconnect.py — one reconnect ladder and one health record for every channel (H100).
 
 Before this, each channel recovered its own way: Telegram slept a flat 3 s after any
-error, forever, whether the network blinked or the bot token had been revoked; ntfy had a
+error, forever, whether the network blinked or the bot token had been revoked; another adapter had a
 ladder of its own; nothing outside a channel could tell a dead one from a quiet one.
 
 Three pieces, shared by every polling or socket adapter:

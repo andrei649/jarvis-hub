@@ -697,7 +697,7 @@
           </select>
         </div>
 
-        <div class="section-title" style="margin-top:12px;">DISCOVERED SECOND BRAIN REPOSITORIES ON THIS MAC & DRIVE</div>
+        <div class="section-title" style="margin-top:12px;">Indexed sources</div>
         <div id="discovered-sources-list" class="sources-list"></div>
 
         <div class="providers-grid" style="margin-top:12px;">
@@ -706,7 +706,7 @@
               <span>📂 Primary Obsidian Vault Path</span>
             </div>
             <div class="field-stack">
-              <input type="text" id="cfg-vault-path" value="" placeholder="auto-detected: ~/Documents/Andrei OS Obsidian" />
+              <input type="text" id="cfg-vault-path" value="" placeholder="Local Obsidian vault" />
               <span class="field-note">Indexes `.md`, `.canvas`, YAML frontmatter, and `[[wiki-links]]`</span>
             </div>
           </div>
@@ -723,6 +723,8 @@
 
         <div class="api-save-row" style="margin-bottom:16px;">
           <span id="vault-status-msg" role="status">Checking the vault…</span>
+          <p id="vault-live-status" role="status" hidden></p>
+          <button id="vault-sync-now" type="button" class="btn" hidden>Reindex vault</button>
           <button id="btn-save-vault" class="cu-action-btn primary">↻ Apply & Re-index Brain</button>
         </div>
 

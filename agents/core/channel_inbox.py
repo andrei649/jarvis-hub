@@ -12,30 +12,15 @@ from typing import Any
 
 from agents.core.paths import data_path
 
-from .channels.email_inbound import (
-    clean_sender_auth,
-    clean_subject,
-    message_id,
-    valid_references,
-)
 from .persistence import JsonStore
 
 DEFAULT_PATH = data_path("channel_inbox.json")
-SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord", "ntfy", "sms"})
+SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web"})
 _MAX_TEXT = 4_000
 _PREVIEW = 240
 _REPLY_KEYS = {
     "telegram": ("chat_id",),
     "web": ("client_id",),
-    # EmailChannel.send() kwargs; `to` is aliased from the inbound `from_addr`
-    # in _reply_metadata (the reply target IS the inbound sender). H096: the
-    # threading headers come from the inbound Message-ID/References, shape-checked.
-    "email": ("to", "subject", "in_reply_to", "references"),
-    "slack": ("slack_channel", "thread_ts"),
-    "discord": ("channel_id",),
-    "ntfy": ("ntfy_topic", "ntfy_context"),
-    # G16 (H098): the number that wrote; a reply goes back to it and nowhere else.
-    "sms": ("sms_to",),
 }
 
 
@@ -97,33 +82,6 @@ class ChannelInboxStore(JsonStore):
                     return dict(message)
         return None
 
-    def reply_task_for(self, message: dict) -> int | None:
-        """H120 — the reply task already queued for this inbound message or for an earlier
-        delivery of the same provider message (same channel and provider id), if any."""
-        channel = message.get("channel")
-        provider_id = message.get("provider_id")
-        with self._lock:
-            for stored in self._messages:
-                if stored.get("direction") != "in" or stored.get("channel") != channel:
-                    continue
-                if stored.get("id") != message.get("id") and (
-                        not provider_id or stored.get("provider_id") != provider_id):
-                    continue
-                if type(stored.get("reply_task")) is int:
-                    return stored["reply_task"]
-        return None
-
-    def mark_reply_task(self, message_id: str, task_id: int) -> None:
-        """Record that *task_id* is the reply card for inbound message *message_id*."""
-        if type(task_id) is not int or task_id <= 0:
-            return
-        with self._lock:
-            for stored in self._messages:
-                if stored.get("id") == message_id and stored.get("direction") == "in":
-                    stored["reply_task"] = task_id
-                    self._save()
-                    return
-
     def messages(self, thread_id: str, *, limit: int = 50) -> list[dict]:
         n = max(1, int(limit or 50))
         with self._lock:
@@ -159,8 +117,6 @@ class ChannelInboxStore(JsonStore):
                         "reply": dict(message.get("reply") or row.get("reply") or {}),
                         "last_message_id": message.get("id", ""),
                     })
-                    if message.get("sender_auth"):
-                        row["sender_auth"] = dict(message["sender_auth"])
         rows = sorted(grouped.values(), key=lambda r: r["ts"], reverse=True)
         return rows[:n]
 
@@ -174,8 +130,8 @@ class ChannelInboxStore(JsonStore):
 
         Those used to be one field: `channels` returned sorted(SUPPORTED_INBOX_CHANNELS), a
         module constant identical on every install. It looked like an answer to "which
-        channels have traffic" and was not one — a box where email flows and a box where it
-        was never configured rendered the same three words. The vocabulary is still worth
+        channels have traffic" and was not one — a box with traffic and a box with none
+        rendered the same words. The vocabulary is still worth
         publishing, so it keeps its key; the measurement is a separate field, and a
         supported-but-silent channel is ABSENT from it rather than reported as a zero.
         """
@@ -205,8 +161,6 @@ class ChannelInboxStore(JsonStore):
         thread_id = thread_id or _thread_id(channel, sender, reply)
         message_id = _message_id(channel, thread_id, direction, clean_text, ts)
         taint_fields = _taint_metadata(metadata or {})
-        if channel == "email" and direction == "in" and isinstance(metadata, dict):
-            taint_fields["sender_auth"] = metadata.get("sender_auth")
         if direction == "in" and isinstance(metadata, dict):
             # H120: the provider's id for this message (adapter-supplied), so a
             # redelivery of it can be recognised by the reply queue.
@@ -250,34 +204,13 @@ class ChannelInboxStore(JsonStore):
         provider_id = _provider_id(message.get("provider_id"))
         if provider_id and out["direction"] == "in":
             out["provider_id"] = provider_id
-        task = message.get("reply_task")
-        if type(task) is int and task > 0:
-            out["reply_task"] = task
-        # H096: the receiving mail server's SPF/DKIM/DMARC verdict, shown beside the
-        # message (email only; anything malformed is dropped, never repaired).
-        if out["channel"] == "email" and out["direction"] == "in":
-            auth = clean_sender_auth(message.get("sender_auth"))
-            if auth is not None:
-                out["sender_auth"] = auth
         return out
 
 
 def _reply_metadata(channel: str, metadata: dict[str, Any]) -> dict:
     out = {}
-    meta = dict(metadata)
-    if channel == "email":
-        if not meta.get("to") and meta.get("from_addr"):
-            meta["to"] = meta["from_addr"]
-        # H096: reply threading, only in the exact header shape (no line breaks).
-        in_reply_to = message_id(meta.get("in_reply_to") or meta.get("email_message_id"))
-        references = meta.get("references") or meta.get("email_references")
-        meta["in_reply_to"] = in_reply_to
-        meta["references"] = (references if in_reply_to and valid_references(references)
-                              and references.split(" ")[-1] == in_reply_to else "")
-        if meta.get("subject") is not None:
-            meta["subject"] = clean_subject(meta["subject"])
     for key in _REPLY_KEYS.get(channel, ()):
-        value = meta.get(key)
+        value = metadata.get(key)
         if isinstance(value, (str, int)) and str(value):
             out[key] = value
     return out
@@ -286,7 +219,7 @@ def _reply_metadata(channel: str, metadata: dict[str, Any]) -> dict:
 def _sender_from_metadata(channel: str, metadata: dict | str) -> str:
     if not isinstance(metadata, dict):
         return ""
-    for key in ("sender", "sender_id", "user_id", "client_id", "chat_id", "from_addr"):
+    for key in ("sender", "sender_id", "user_id", "client_id", "chat_id"):
         value = metadata.get(key)
         if isinstance(value, (str, int)) and str(value):
             return str(value)
@@ -317,14 +250,6 @@ def _injection_flags(value: Any) -> list[str]:
 
 def _thread_id(channel: str, sender: str, reply: dict) -> str:
     stable = sender or reply.get("chat_id") or reply.get("client_id") or "unknown"
-    # Workspace conversations belong to a room/thread, not to a member who may
-    # speak in several rooms. Preserve all existing Telegram/web/email ids.
-    if channel == "slack" and reply.get("slack_channel"):
-        stable = f"{reply['slack_channel']}:{reply.get('thread_ts', '')}"
-    elif channel == "discord" and reply.get("channel_id"):
-        stable = str(reply["channel_id"])
-    elif channel == "ntfy" and reply.get("ntfy_context"):
-        stable = str(reply["ntfy_context"])
     digest = hashlib.sha256(f"{channel}:{stable}".encode()).hexdigest()[:12]
     return f"{channel}:{digest}"
 

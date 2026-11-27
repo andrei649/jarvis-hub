@@ -62,7 +62,7 @@ MAX_FAILURES = 3
 MAX_FIRES_PER_DAY = 288  # one firing per five minutes, at most
 # H288 (Hermes HERMES_CRON_TIMEOUT): one wall clock for a whole plain cron run (ask / brief /
 # remind, delivery included) and a shorter bound on each channel send, so a hung model call or
-# a hung Telegram/Discord adapter cannot hold the job's gate stripe and its scheduler slot.
+# a hung Telegram adapter cannot hold the job's gate stripe and its scheduler slot.
 # An overrun is an ordinary failed run (``_failed``): the three-strike pause and the incident
 # still apply. The script lane keeps its own bounds (jobs_scripts.py). As in Hermes, 0 means
 # unbounded: the owner's explicit opt-out for long runs (each channel send stays bounded).

@@ -269,12 +269,15 @@ def test_refusals_tell_the_model_not_to_retry():
 
 
 def test_long_result_spills_to_a_private_file(tmp_path):
+    from tests.private_file_permissions import assert_private_file
+
     big = "A" * 60_000 + "\U000E0041" + "Z" * 60_000
     out = resources._bound_tool_result({"content": [{"type": "text", "text": big}]},
                                        server="calc", root=tmp_path)
     row = out["full_text"]
     path = Path(row["path"])
-    assert path.parent == tmp_path and stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert path.parent == tmp_path.resolve()
+    assert_private_file(path)
     text = path.read_text()
     assert len(text) == 120_000 and "\U000E0041" not in text
     shown = out["content"][0]["text"]

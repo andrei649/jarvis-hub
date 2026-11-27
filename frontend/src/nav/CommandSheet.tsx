@@ -104,8 +104,11 @@ export function sheetSections(commands: readonly Command[], query: string, scope
   return sections;
 }
 
-function Sheet(props: CommandSheetProps) {
-  const { lang, onClose, shortcutOverrides } = props;
+function Sheet(props: CommandSheetProps & {
+  pendingRestore: React.RefObject<ReturnType<typeof setTimeout> | null>;
+  ownerMounted: React.RefObject<boolean>;
+}) {
+  const { lang, onClose, shortcutOverrides, pendingRestore, ownerMounted } = props;
   const s = pick(SHEET_STRINGS, lang);
   const uid = useId();
   const listId = `${uid}-list`;
@@ -126,15 +129,21 @@ function Sheet(props: CommandSheetProps) {
   // only if the command did not place the focus itself (Write to does: it focuses the composer;
   // appearance rows, Refresh and the demo toggle do not, and would leave it on <body>).
   useEffect(() => {
+    const doc = dialogRef.current?.ownerDocument;
+    if (pendingRestore.current !== null) clearTimeout(pendingRestore.current);
+    pendingRestore.current = null;
     const back = () => {
       const o = opener.current;
-      if (o && o.isConnected && typeof o.focus === 'function') o.focus();
+      if (o && o.isConnected && o.ownerDocument === doc && typeof o.focus === 'function') o.focus();
     };
     return () => {
+      if (!ownerMounted.current || !doc) return;
       if (!ran.current) { back(); return; }
-      setTimeout(() => {
-        const at = document.activeElement;
-        if (!at || at === document.body || at === document.documentElement) back();
+      pendingRestore.current = setTimeout(() => {
+        pendingRestore.current = null;
+        if (!ownerMounted.current || typeof document === 'undefined' || document !== doc) return;
+        const at = doc.activeElement;
+        if (!at || at === doc.body || at === doc.documentElement) back();
       }, 60);
     };
   }, []);
@@ -269,6 +278,15 @@ function Sheet(props: CommandSheetProps) {
 /** The sheet. Mounted only while open, so every opening starts clean (empty field, the filter it
  *  was opened with, fresh recents). */
 export function CommandSheet(props: CommandSheetProps): React.JSX.Element | null {
+  const pendingRestore = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ownerMounted = useRef(true);
+  useEffect(() => {
+    ownerMounted.current = true;
+    return () => {
+      ownerMounted.current = false;
+      if (pendingRestore.current !== null) clearTimeout(pendingRestore.current);
+    };
+  }, []);
   if (!props.open) return null;
-  return <Sheet {...props} key={props.filter ?? 'all'} />;
+  return <Sheet {...props} pendingRestore={pendingRestore} ownerMounted={ownerMounted} key={props.filter ?? 'all'} />;
 }

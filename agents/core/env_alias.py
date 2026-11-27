@@ -311,6 +311,7 @@ PATH_TYPED = frozenset({
     "CA_BUNDLE", "WASM_PYTHON", "TERMINAL_SSH_KNOWN_HOSTS",
     "MANAGED_DIR",                                                      # where the administrator's pins live (G1)
     "OS_VAULT_PATH",                                                    # the Obsidian vault the /os interface indexes
+    "OS_MASK_VAULT_PATH", "OS_VAULT_MAP_PATH",                          # optional mask vault and public vault map paths
     "OS_PROJECT_INDEX_PATH", "OS_PROJECT_REGISTER_DIR",                   # vault-relative project index and register
     "LSP_TOOLS_DIR",                                                    # where approved language servers install (H055)
     "E2E_SYNC_DIR",                                                     # ciphertext spool directory (H040)
@@ -323,7 +324,6 @@ PATH_TYPED = frozenset({
 CREDENTIALS = frozenset({
     "ADMIN_TOKEN", "USER_TOKEN", "AUDIT_KEY", "SECRET_KEY", "TOKEN_KEY", "BACKUP_KEY", "E2E_SYNC_KEY",
     "SKILL_SIGNING_KEY", "A2A_KEY", "HERMES_BRIDGE_TOKEN",
-    "SMS_AUTH_TOKEN",  # G16: the Twilio auth token signs webhooks and pays for replies
     "ROOM_FENCING_SECRET",  # H657: HMAC key authenticating room authority proofs
 })
 #: Masked by name, and not a credential: an integer, a flag, a ``{{secret:…}}`` handle, a

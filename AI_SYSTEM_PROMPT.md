@@ -1,6 +1,6 @@
 # AI System Prompt — Repo Architecture Analysis (jarvis-hub / Nerva)
 
-> WorldView was retired by the owner on 2026-10-27. It is not a shipped sibling stack, tool or backlog target. Historical references must not restore it; use the retained Signal Layer for supported world-intelligence reads.
+> WorldView was retired by the owner on 2026-10-27. It is not a shipped sibling stack, tool or backlog target. Historical references must not restore it. Signal Layer and the Argus agent were removed on 2026-11-25 and must not be restored either.
 
 > Generated architecture analysis + actionable system prompt for AI-driven development in this
 > repository. Canonical sources it condenses: `AGENTS.md` (workflow policy), `docs/ARCHITECTURE.md`
@@ -21,7 +21,7 @@
 ## 1. Executive Repo Summary
 
 **Core Purpose:** Nerva (repo codename *jarvis-hub*) is a **local-first Personal Intelligence
-Operating System**: a multi-agent AI orchestration engine with 17 active agents (4 tiers) plus 14
+Operating System**: a multi-agent AI orchestration engine with 16 active agents (4 tiers) plus 14
 dormant bench agents, coordinated by a prime orchestrator ("Jarvis"), with long-term memory,
 governed autonomy, voice, and a governed capability-acquisition pipeline.
 
@@ -37,8 +37,8 @@ governed autonomy, voice, and a governed capability-acquisition pipeline.
 | Frontend HUD | React 18 + TypeScript + Vite; Vitest + Playwright; OpenAPI→TS typegen (`schema.gen.ts`) |
 | Mobile | React Native (Expo-style, Jest tests) — read-mostly parity surfaces (`mobile/PARITY.md`) |
 | Voice | Browser loop (mic→`/api/voice/stt` Whisper→`/tts` clone chain) + server pipeline (openWakeWord, faster-whisper, XTTS→ElevenLabs→Fish→edge-tts→Kokoro) |
-| Channels | Web SSE, Voice, Telegram, Discord, Slack, Email (SMTP/IMAP), webhook bridges (WhatsApp/Signal/Matrix/Teams/Google Chat) |
-| Integrations | ~25 plugins (Gmail, Google Calendar, Spotify, Tavily/SearXNG, n8n, Homebridge, Tuya, Twilio, Notion, RevenueCat, Meta Ads, Postiz, …) behind a per-agent permission gate |
+| Channels | Web SSE, Voice, Telegram |
+| Integrations | ~25 plugins (Gmail, Google Calendar, Spotify, Tavily/SearXNG, n8n, Homebridge, Tuya, Notion, RevenueCat, Meta Ads, Postiz, …) behind a per-agent permission gate |
 | Protocols | MCP client (**stdio only** — remote transports refused at the admin API) **and** MCP server (governed route tools); A2A inbound (HMAC + contract) |
 | Tooling | pytest (`asyncio_mode=auto`, offline, socket-blocked), Ruff, Bandit, vulture; `scripts/code_health.py`; `scripts/status_sync.py` (generated counters) |
 

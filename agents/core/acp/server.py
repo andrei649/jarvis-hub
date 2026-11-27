@@ -492,11 +492,15 @@ class AcpServer:
         """A ``file://`` link inside the session folder becomes Nerva's ``@file:`` reference
         (the hub reads it under its own file scope); anything else is named, not fetched."""
         if isinstance(uri, str) and uri.startswith("file://"):
-            from urllib.parse import unquote, urlsplit
+            from urllib.parse import urlsplit
+            from urllib.request import url2pathname
 
             try:
-                path = confine(session.root, unquote(urlsplit(uri).path))
-            except (AcpPathError, ValueError):
+                parsed = urlsplit(uri)
+                if parsed.netloc.lower() not in ("", "localhost"):
+                    raise AcpPathError("outside_session")
+                path = confine(session.root, url2pathname(parsed.path))
+            except (AcpPathError, OSError, ValueError):
                 return "" if quiet else f"(a file outside this session's folder was left out: {render.safe_line(name or uri, 120)})"
             return f'@file:"{path}"' if " " in str(path) else f"@file:{path}"
         if quiet:

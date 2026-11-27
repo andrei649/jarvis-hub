@@ -119,8 +119,9 @@ function VoiceHarness({ opts = {}, onState = () => {} }: any) {
       error: voice.error,
       transcript: voice.transcript,
       active: voice.active,
+      bargeInterrupted: voice.bargeInterrupted,
     });
-  }, [voice.supported, voice.caps, voice.status, voice.error, voice.transcript, voice.active]);
+  }, [voice.supported, voice.caps, voice.status, voice.error, voice.transcript, voice.active, voice.bargeInterrupted]);
 
   return (
     <div>
@@ -128,6 +129,7 @@ function VoiceHarness({ opts = {}, onState = () => {} }: any) {
       <button onClick={() => voice.stop()}>stop</button>
       <button onClick={() => voice.speak('spoken reply')}>speak</button>
       <output data-testid="status">{voice.status}</output>
+      <output data-testid="barge">{String(voice.bargeInterrupted)}</output>
       <output data-testid="error">{voice.error || ''}</output>
       <output data-testid="transcript">{voice.transcript}</output>
     </div>
@@ -384,6 +386,56 @@ describe('useVoice state machine', () => {
 
       expect(media.track.stop).toHaveBeenCalled();
       expect(states.some((st) => st.active)).toBe(false);
+    });
+
+    it('surfaces bargeInterrupted and interrupted status when sustained over-talk cuts playback', async () => {
+      holdingRecorder();
+      let loud = false;
+      class LoudAudioContext {
+        resume = vi.fn();
+        close = vi.fn();
+        createMediaStreamSource = vi.fn(() => ({ connect: vi.fn() }));
+        createAnalyser = vi.fn(() => ({
+          fftSize: 1024,
+          getByteTimeDomainData: (buf: Uint8Array) => buf.fill(loud ? 250 : 128),
+        }));
+      }
+      const paused = vi.fn();
+      class HangingAudio {
+        onended: any = null;
+        onerror: any = null;
+        constructor(public src: string) {}
+        pause = () => { paused(); this.onended?.(); };
+        play() { return Promise.resolve(); }
+      }
+      Object.defineProperty(window, 'AudioContext', { configurable: true, value: LoudAudioContext });
+      Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: LoudAudioContext });
+      Object.defineProperty(window, 'Audio', { configurable: true, value: HangingAudio });
+      Object.defineProperty(globalThis, 'Audio', { configurable: true, value: HangingAudio });
+      global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/voice/capabilities')) return jsonResponse({ stt: true, tts: true });
+        if (url.endsWith('/api/voice/mic/arm')) return jsonResponse({ ok: true });
+        if (url.endsWith('/api/voice/mic/stop')) return jsonResponse({ ok: true });
+        if (url.endsWith('/tts')) return jsonResponse({});
+        return jsonResponse({});
+      }) as any;
+
+      const states: any[] = [];
+      render(<VoiceHarness opts={{ barge: true }} onState={(st) => states.push(st)} />);
+      await waitFor(() => expect(states.at(-1)?.caps).toMatchObject({ stt: true, tts: true }));
+
+      fireEvent.click(screen.getByText('start'));
+      await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('listening'));
+
+      loud = true;
+      fireEvent.click(screen.getByText('speak'));
+      await waitFor(() => expect(screen.getByTestId('barge').textContent).toBe('true'), { timeout: 5000 });
+      expect(states.some((st) => st.status === 'interrupted' && st.bargeInterrupted === true)).toBe(true);
+      expect(paused).toHaveBeenCalled();
+
+      fireEvent.click(screen.getByText('stop'));
+      await waitFor(() => expect(screen.getByTestId('barge').textContent).toBe('false'));
     });
   });
 });

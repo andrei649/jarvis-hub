@@ -626,29 +626,40 @@ def _record_put_back(audit: Any, actor: str, action: str, ref: str, targets: lis
         logger.warning("memory: the put-back of %s could not be recorded", ref, exc_info=True)
 
 
-def _commit(living: Any, before: Mapping[str, list[str]], after: Mapping[str, list[str]]) -> None:
+def _source_maps(living: Any) -> dict[str, dict[str, dict]]:
+    return {target: (ring.source_map() if callable(getattr(ring, "source_map", None)) else {})
+            for target, attr in TARGETS.items() for ring in (getattr(living, attr),)}
+
+
+def _commit(living: Any, before: Mapping[str, list[str]], after: Mapping[str, list[str]],
+            sources: Mapping[str, dict[str, dict]] | None = None) -> None:
     """Write the changed rings by compare-and-set; restore the ones written when a later
     one fails, so the call is all or nothing."""
     from .cognition.memory import CoreMemoryDrift
 
     written: list[str] = []
+    original_sources = _source_maps(living)
     for target in after:
         if after[target] == before[target]:
             continue
         ring = getattr(living, TARGETS[target])
         saved = True
         try:
-            ok = ring.compare_and_set(before[target], after[target])
+            desired = (sources or {}).get(target)
+            ok = (ring.compare_and_set(before[target], after[target], sources=desired)
+                  if desired is not None and (desired or original_sources[target])
+                  and callable(getattr(ring, "source_map", None))
+                  else ring.compare_and_set(before[target], after[target]))
         except CoreMemoryDrift as exc:
             # Hand-edited after the reread (an editor takes no lock): nothing written over it.
-            _revert(living, {done: after[done] for done in reversed(written)}, before)
+            _revert(living, {done: after[done] for done in reversed(written)}, before, original_sources)
             raise MemoryToolError("memory_drift",
                                   f"{exc}; nothing was written over it; read memory again and retry") from None
         except Exception:
             logger.warning("memory: the %s ring could not be written", target, exc_info=True)
             ok = saved = False
         if not ok:
-            _revert(living, {done: after[done] for done in reversed(written)}, before)
+            _revert(living, {done: after[done] for done in reversed(written)}, before, original_sources)
             if not saved:
                 raise MemoryToolError("memory_write_failed", "the memory could not be saved")
             raise MemoryToolError("memory_changed_meanwhile",
@@ -657,7 +668,8 @@ def _commit(living: Any, before: Mapping[str, list[str]], after: Mapping[str, li
         written.append(target)
 
 
-def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str, list[str]]) -> list[str]:
+def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str, list[str]],
+            sources: Mapping[str, dict[str, dict]] | None = None) -> list[str]:
     """Put back rings a write changed, when the call cannot keep it. The rings actually put
     back, sorted; a ring that could not be (another writer moved it in between, or it
     cannot be saved) is logged and its write stays."""
@@ -666,7 +678,12 @@ def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str
         if written[target] == original[target]:
             continue
         try:
-            ok = getattr(living, TARGETS[target]).compare_and_set(written[target], original[target])
+            ring = getattr(living, TARGETS[target])
+            restored_sources = (sources or {}).get(target)
+            ok = (ring.compare_and_set(written[target], original[target], sources=restored_sources)
+                  if restored_sources is not None and callable(getattr(ring, "source_map", None))
+                  and (restored_sources or ring.source_map())
+                  else ring.compare_and_set(written[target], original[target]))
         except Exception:
             ok = False
         if ok:
@@ -677,7 +694,8 @@ def _revert(living: Any, written: Mapping[str, list[str]], original: Mapping[str
 
 
 def _write_recorded(living: Any, before: Mapping[str, list[str]], after: Mapping[str, list[str]],
-                    rows: list[dict], *, sink: Any, actor: str, undo_store: UndoStore, why: str) -> str:
+                    rows: list[dict], *, sink: Any, actor: str, undo_store: UndoStore, why: str,
+                    source_for_new: Mapping[str, dict[str, dict]] | None = None) -> str:
     """Under :data:`_WRITE_LOCK` and the ring locks, after :func:`_settle`: keep the changed
     rings' previous contents under a new undo ref, write the rings by compare-and-set, and
     record the write in the intent log (``memory.write``: the ref, the targets and one row
@@ -686,10 +704,16 @@ def _write_recorded(living: Any, before: Mapping[str, list[str]], after: Mapping
     tool and the owner's change of one fact (:func:`owner_change`)."""
     changed = sorted(t for t in TARGETS if after[t] != before[t])
     ref = uuid.uuid4().hex[:16]
+    before_sources = _source_maps(living)
     undo_store.put({"ref": ref, "ts": time.time(), "before": {t: before[t] for t in changed},
+                    "before_sources": {t: before_sources[t] for t in changed},
                     "after_sha256": {t: _ring_sha(after[t]) for t in changed}})
+    after_sources = {t: {fact: receipt for fact, receipt in before_sources[t].items() if fact in after[t]}
+                     for t in changed}
+    for target, additions in (source_for_new or {}).items():
+        after_sources[target].update(additions)
     try:
-        _commit(living, before, after)
+        _commit(living, before, after, sources=after_sources)
     except BaseException:
         undo_store.drop(ref)
         raise
@@ -697,7 +721,7 @@ def _write_recorded(living: Any, before: Mapping[str, list[str]], after: Mapping
         _record(sink, actor, "memory.write", why, ref, {"ref": ref, "targets": changed, "operations": rows})
     except BaseException:
         # A write is never kept unrecorded: put the rings back.
-        restored = _revert(living, after, before)
+        restored = _revert(living, after, before, before_sources)
         if restored:
             _record_put_back(sink, actor, "memory.write_reverted", ref, restored)
         undo_store.drop(ref)
@@ -752,7 +776,8 @@ def owner_change(living: Any, target: str, fact: str, text: str | None = None, *
 
 
 def owner_add(living: Any, target: str, text: str, *, audit: Any,
-              actor: str = "owner", store: UndoStore | None = None) -> dict:
+              actor: str = "owner", store: UndoStore | None = None,
+              source: dict | None = None) -> dict:
     """Add one curated fact through the memory tool's locked, audited write path."""
     if target not in TARGETS:
         raise MemoryToolError("memory_bad_target", f"target is one of {', '.join(TARGETS)}")
@@ -767,7 +792,8 @@ def owner_add(living: Any, target: str, text: str, *, audit: Any,
         fact = _clean_text(text, 1, "text")
         changed = after[target] != before[target]
         ref = (_write_recorded(living, before, after, rows, sink=audit, actor=actor, undo_store=store,
-                               why="the owner added to its long-term memory") if changed else None)
+                               why="the owner added to its long-term memory",
+                               source_for_new={target: {fact: source}} if source else None) if changed else None)
         ring = getattr(living, TARGETS[target])
         from .memory.timeline import ring_items
         path = getattr(ring, "path", None)
@@ -779,7 +805,8 @@ def owner_add(living: Any, target: str, text: str, *, audit: Any,
             added = ring.added_at() if callable(getattr(ring, "added_at", None)) else None
         except Exception:
             added = None
-        entry = next(item for item in ring_items(target, after[target], saved_epoch, added)
+        sources = ring.source_map() if callable(getattr(ring, "source_map", None)) else None
+        entry = next(item for item in ring_items(target, after[target], saved_epoch, added, sources)
                      if item["value"] == fact)
     result = {"ok": True, "changed": [target] if changed else [], "target": target,
               "fact": fact, "entry": entry}
@@ -804,13 +831,14 @@ def undo(ref: str, *, living: Any, audit: Any, actor: str = "owner", store: Undo
         if moved is not None:
             raise MemoryToolError("memory_changed_meanwhile",
                                   f"{moved} changed after that write; it cannot be undone safely")
-        _commit(living, now, before)
+        now_sources = _source_maps(living)
+        _commit(living, now, before, sources=entry.get("before_sources"))
         targets = sorted(t for t in TARGETS if before[t] != now[t])
         try:
             _record(audit, actor, "memory.undo", "the owner undid a memory write", str(ref),
                     {"ref": str(ref), "targets": targets})
         except BaseException:
-            restored = _revert(living, before, now)
+            restored = _revert(living, before, now, now_sources)
             if restored:
                 _record_put_back(audit, actor, "memory.undo_reverted", str(ref), restored)
             raise

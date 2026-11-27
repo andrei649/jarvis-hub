@@ -26,7 +26,6 @@ What changes, each pinned here:
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import sys
 from pathlib import Path
@@ -39,12 +38,9 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core import boot_guards  # noqa: E402
-from agents.core.channels import discord as discord_mod  # noqa: E402
 from agents.core.channels import pairing as pairing_mod  # noqa: E402
-from agents.core.channels.discord import DiscordChannel  # noqa: E402
 from agents.core.channels.gateway import Gateway  # noqa: E402
 from agents.core.channels.pairing import SenderPairing  # noqa: E402
-from agents.core.channels.slack import SlackChannel  # noqa: E402
 
 TOKEN = "123456:secret-bot-token-value"
 PAIRING_OFF = {"JARVIS_CHANNEL_PAIRING": "0"}
@@ -121,28 +117,6 @@ def test_no_token_no_guard(capsys):
     assert "[SECURITY]" not in capsys.readouterr().out
 
 
-def test_slack_socket_ingress_requires_pairing_or_explicit_open_ack(capsys):
-    env = {"SLACK_BOT_TOKEN": TOKEN, "SLACK_APP_TOKEN": "app-secret"}
-    boot_guards.assert_front_door(env)
-    assert "[SECURITY]" not in capsys.readouterr().out
-    with pytest.raises(SystemExit) as refused:
-        boot_guards.assert_front_door({**env, **PAIRING_OFF})
-    assert "slack bot would answer any sender" in str(refused.value)
-    assert TOKEN not in str(refused.value) and "app-secret" not in str(refused.value)
-    boot_guards.assert_front_door({**env, **PAIRING_OFF, "JARVIS_CHANNEL_OPEN": "1"})
-    assert "[SECURITY] slack bot answers any sender" in capsys.readouterr().out
-
-
-@pytest.mark.parametrize("tokens", [
-    {"SLACK_BOT_TOKEN": TOKEN},
-    {"SLACK_APP_TOKEN": "app-secret"},
-    {"SLACK_BOT_TOKEN": TOKEN, "SLACK_APP_TOKEN": "   "},
-])
-def test_slack_without_both_tokens_does_not_add_a_live_front_door(tokens, capsys):
-    boot_guards.assert_front_door({**tokens, **PAIRING_OFF})
-    assert "[SECURITY]" not in capsys.readouterr().out
-
-
 def test_telegram_token_without_allowlist_and_pairing_off_refuses_boot():
     with pytest.raises(SystemExit) as excinfo:
         boot_guards.assert_guarded_channels({"TELEGRAM_BOT_TOKEN": TOKEN, **PAIRING_OFF})
@@ -174,54 +148,6 @@ def test_an_allowlist_with_no_usable_id_is_not_a_guard():
         )
 
 
-def test_discord_token_with_pairing_off_refuses_boot_unless_channel_open(capsys):
-    with pytest.raises(SystemExit) as excinfo:
-        boot_guards.assert_guarded_channels({"DISCORD_BOT_TOKEN": TOKEN, **PAIRING_OFF})
-    message = str(excinfo.value)
-    assert "the discord bot would answer any sender" in message
-    # no allowlist knob exists for discord, so none is offered as a remedy
-    assert "ALLOWED_USER_IDS" not in message
-    assert "JARVIS_CHANNEL_OPEN=1" in message
-    boot_guards.assert_guarded_channels(
-        {"DISCORD_BOT_TOKEN": TOKEN, "JARVIS_CHANNEL_OPEN": "1", **PAIRING_OFF}
-    )
-    assert "[SECURITY] discord bot answers any sender" in capsys.readouterr().out
-
-
-@pytest.mark.parametrize("config, label", [
-    ({"JARVIS_WEBHOOK_CHANNELS": '{"whatsapp": {"token": "t", "phone_id": "1"}}'},
-     "webhook channel"),
-    ({"IMAP_HOST": "imap.example.test", "SMTP_HOST": "smtp.example.test"}, "email channel"),
-])
-def test_webhook_and_email_inboxes_are_front_doors_too(config, label, capsys):
-    """Every wired inbound path threads a sender into the gateway, so with pairing
-    off each is a door anyone can knock on — the guard covers them all."""
-    with pytest.raises(SystemExit) as excinfo:
-        boot_guards.assert_guarded_channels({**config, **PAIRING_OFF})
-    message = str(excinfo.value)
-    assert f"the {label} would answer any sender" in message
-    assert "ALLOWED_USER_IDS" not in message and "JARVIS_CHANNEL_OPEN=1" in message
-    for value in config.values():
-        assert value not in message
-    boot_guards.assert_guarded_channels({**config})  # pairing on → guarded
-    boot_guards.assert_guarded_channels({**config, "JARVIS_CHANNEL_OPEN": "1", **PAIRING_OFF})
-    assert f"[SECURITY] {label} answers any sender" in capsys.readouterr().out
-
-
-def test_a_webhook_map_that_wires_nothing_is_not_a_front_door():
-    # mirrors env_json_object: empty / invalid / non-object wire no adapter
-    for raw in ("{}", "   ", "not json", "[1, 2]", '"str"'):
-        boot_guards.assert_guarded_channels({"JARVIS_WEBHOOK_CHANNELS": raw, **PAIRING_OFF})
-    # email needs both halves before the app wires the adapter
-    boot_guards.assert_guarded_channels({"IMAP_HOST": "imap.example.test", **PAIRING_OFF})
-
-
-def test_a_slack_token_alone_is_not_a_front_door(capsys):
-    """Automatic Slack ingress requires the additional app-level Socket Mode token."""
-    boot_guards.assert_guarded_channels({"SLACK_BOT_TOKEN": "xoxb-outbound-only", **PAIRING_OFF})
-    assert "[SECURITY]" not in capsys.readouterr().out
-
-
 def test_channel_open_ack_prints_the_security_line_and_boots(capsys):
     boot_guards.assert_guarded_channels(
         {"TELEGRAM_BOT_TOKEN": TOKEN, "JARVIS_CHANNEL_OPEN": "1", **PAIRING_OFF}
@@ -243,7 +169,7 @@ def test_refusal_message_names_remedies_never_the_token():
 
 def test_a_blank_token_is_not_a_configured_bot():
     boot_guards.assert_guarded_channels(
-        {"TELEGRAM_BOT_TOKEN": "   ", "DISCORD_BOT_TOKEN": "", **PAIRING_OFF}
+        {"TELEGRAM_BOT_TOKEN": "   ", **PAIRING_OFF}
     )
 
 
@@ -273,11 +199,12 @@ def test_the_default_mapping_is_the_process_environment(monkeypatch):
 
 
 def test_enforce_boot_posture_runs_the_channel_guard(monkeypatch):
-    monkeypatch.setenv("DISCORD_BOT_TOKEN", TOKEN)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", TOKEN)
+    monkeypatch.delenv("TELEGRAM_ALLOWED_USER_IDS", raising=False)
     monkeypatch.setenv("JARVIS_CHANNEL_PAIRING", "0")
     with pytest.raises(SystemExit) as excinfo:
         boot_guards.enforce_boot_posture()
-    assert "discord bot would answer any sender" in str(excinfo.value)
+    assert "telegram bot would answer any sender" in str(excinfo.value)
     assert "assert_guarded_channels" in inspect.getsource(boot_guards.enforce_boot_posture)
 
 
@@ -335,8 +262,7 @@ def test_the_allowlist_is_per_channel(monkeypatch, tmp_path):
     store = SenderPairing(path=str(tmp_path / "p.json"))
     assert pairing_mod.sender_allowlisted("discord", "42") is False
     assert store.is_allowed("discord", "42") is False
-    assert pairing_mod.CHANNEL_ALLOWLIST_ENVS == {"telegram": "TELEGRAM_ALLOWED_USER_IDS",
-                                                  "sms": "JARVIS_SMS_ALLOWED_NUMBERS"}
+    assert pairing_mod.CHANNEL_ALLOWLIST_ENVS == {"telegram": "TELEGRAM_ALLOWED_USER_IDS"}
 
 
 def test_an_empty_allowlist_names_nobody(tmp_path):
@@ -464,19 +390,6 @@ async def test_status_channel_rows_carry_the_held_count(tmp_path, monkeypatch):
     assert status_router._channel_rows(orch)[0]["held_senders"] == 0
 
 
-def test_email_sender_is_the_bare_address_never_the_display_name():
-    """Pairing on the email door keys on the parsed address: a display name, a comment
-    or a change of case must not mint a new stranger, and a header with no address is
-    no sender at all (held, never routed as the owner)."""
-    from agents.core.channels.email import _sender_address
-
-    assert _sender_address('"Andrei" <A@Example.com>') == "a@example.com"
-    assert _sender_address("a@example.com") == "a@example.com"
-    assert _sender_address("Owner (home) <Owner@Example.COM>") == "owner@example.com"
-    assert _sender_address("not an address") == ""
-    assert _sender_address("") == "" and _sender_address(None) == ""
-
-
 @pytest.mark.asyncio
 async def test_a_fresh_channel_starts_with_no_held_senders():
     gw = Gateway(handler=None)
@@ -486,184 +399,3 @@ async def test_a_fresh_channel_starts_with_no_held_senders():
 
 
 # ── discord / slack thread the sender ───────────────────────────────────────
-
-class _Sink:
-    def __init__(self):
-        self.id = 123
-        self.sent: list[str] = []
-
-    async def send(self, text):
-        self.sent.append(text)
-
-
-def _discord_message(author_id: int, content: str, author=None):
-    return SimpleNamespace(
-        author=author or SimpleNamespace(id=author_id, name="Mallory"),
-        content=content,
-        channel=_Sink(),
-    )
-
-
-class _FakeClient:
-    """Enough of a Discord client to register the event closures and be started."""
-
-    def __init__(self, *, intents):
-        self.intents = intents
-        self.events: dict[str, object] = {}
-        self.user = SimpleNamespace(id=1, name="the-bot")
-        self.started_with = None
-        self.started = asyncio.Event()
-        self.release = asyncio.Event()
-        self.ready = False
-        self.closed = False
-
-    def event(self, fn):
-        self.events[fn.__name__] = fn
-        return fn
-
-    async def start(self, token):
-        self.started_with = token
-        self.started.set()
-        await self.release.wait()
-
-    async def close(self):
-        self.closed = True
-        self.ready = False
-        self.release.set()
-
-    def is_ready(self):
-        return self.ready
-
-    def is_closed(self):
-        return self.closed
-
-
-class _FakeIntents:
-    @staticmethod
-    def default():
-        return SimpleNamespace(message_content=False)
-
-
-@pytest.fixture
-def fake_discord(monkeypatch):
-    monkeypatch.setattr(discord_mod, "DISCORD_AVAILABLE", True)
-    monkeypatch.setattr(
-        discord_mod, "discord", SimpleNamespace(Client=_FakeClient, Intents=_FakeIntents),
-        raising=False,
-    )
-
-
-@pytest.mark.asyncio
-async def test_discord_threads_its_sender_so_pairing_holds_a_stranger(tmp_path):
-    store = SenderPairing(path=str(tmp_path / "pairing.json"))
-    reached = []
-
-    async def inner(text, channel="web", **kw):
-        reached.append((text, kw.get("sender")))
-        return "routed"
-
-    gw = Gateway(handler=inner, pairing=store)
-    ch = DiscordChannel(token="tok", handler=gw.route)
-    msg = _discord_message(424242, "let me in")
-
-    await ch._handle_message(msg)
-    assert reached == []                                  # held at the gate
-    assert msg.channel.sent == []  # the adapter cannot publish the gateway's return value
-    assert store.status("discord", "424242") == pairing_mod.PENDING
-
-    store.approve("discord", "424242")
-    msg2 = _discord_message(424242, "again")
-    await ch._handle_message(msg2)
-    assert reached == [("again", "424242")]              # sender is str(author.id)
-    assert msg2.channel.sent == []  # only the governed reply executor may deliver
-
-
-@pytest.mark.asyncio
-async def test_discord_handler_receives_sender_as_the_author_id_string():
-    seen = {}
-
-    async def handler(text, channel="web", **kw):
-        seen.update(kw, text=text, channel=channel)
-        return None
-
-    ch = DiscordChannel(token="tok", handler=handler)
-    await ch._handle_message(_discord_message(99, "hi"))
-    assert seen == {"text": "hi", "channel": "discord", "sender": "99", "channel_id": "123", "chat_type": "private"}
-
-
-@pytest.mark.asyncio
-async def test_discord_on_message_delegates_to_the_method(fake_discord):
-    """Drive the real ``on_message`` closure the client would call, not its source
-    text: the handler must see the sender through it, and the bot's own messages
-    must be skipped before any handler runs."""
-    seen = []
-
-    async def handler(text, channel="web", **kw):
-        seen.append((text, channel, kw))
-        return "pong"
-
-    ch = DiscordChannel(token="tok", handler=handler)
-    starting = asyncio.create_task(ch.start())
-    try:
-        async with asyncio.timeout(1):
-            while ch._client is None:
-                await asyncio.sleep(0)
-        client = ch._client
-        assert isinstance(client, _FakeClient) and client.intents.message_content is True
-        await asyncio.wait_for(client.started.wait(), 1)
-        assert client.started_with == "tok"
-        assert not starting.done()
-        client.ready = True
-        await client.events["on_ready"]()
-        await asyncio.wait_for(starting, 1)
-        on_message = client.events["on_message"]
-
-        stranger = _discord_message(7, "yo")
-        await on_message(stranger)
-        assert seen == [("yo", "discord", {"sender": "7", "channel_id": "123", "chat_type": "private"})]
-        assert stranger.channel.sent == []
-
-        own = _discord_message(1, "echo?", author=client.user)
-        await on_message(own)
-        assert seen == [("yo", "discord", {"sender": "7", "channel_id": "123", "chat_type": "private"})] and own.channel.sent == []
-    finally:
-        await ch.stop()
-
-
-@pytest.mark.asyncio
-async def test_slack_threads_its_user_as_sender_and_drops_the_anonymous(tmp_path):
-    store = SenderPairing(path=str(tmp_path / "pairing.json"))
-    reached = []
-
-    async def inner(text, channel="web", **kw):
-        reached.append((text, kw.get("sender")))
-        return "routed"
-
-    gw = Gateway(handler=inner, pairing=store)
-    ch = SlackChannel(token="tok", handler=gw.route)
-
-    held = await ch.receive_event("let me in", "C123", user="U777")
-    assert reached == [] and held and "approval" in held.lower()
-    store.approve("slack", "U777")
-    assert await ch.receive_event("again", "C123", user="U777") == "routed"
-    assert reached == [("again", "U777")]
-
-    # no user id → nothing for pairing to hold → dropped, never routed
-    assert await ch.receive_event("anon", "C123") is None
-    assert await ch.receive_event("anon", "C123", user="  ") is None
-    assert reached == [("again", "U777")]
-
-
-@pytest.mark.asyncio
-async def test_slack_member_id_wins_over_a_forwarded_sender_kwarg():
-    """An adapter forwarding raw event kwargs must not make the handler raise, and
-    the payload's member id — the identity pairing holds — is the one that counts."""
-    seen = []
-
-    async def handler(text, channel="web", **kw):
-        seen.append(kw.get("sender"))
-        return "ok"
-
-    ch = SlackChannel(token="tok", handler=Gateway(handler=handler).route)
-    assert await ch.receive_event("hi", "C1", user="U1", sender="U2") == "ok"
-    assert seen == ["U1"]

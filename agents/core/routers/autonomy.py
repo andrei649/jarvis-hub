@@ -129,9 +129,6 @@ async def autonomy_task_preview(task_id: int):
         return JSONResponse({"error": "not found"}, status_code=404)
     from agents.core.autonomy.dry_run import preview_task
     preview = preview_task(task)
-    if task.kind == "channel.reply" and isinstance(task.payload, dict) and "native_prompt" in task.payload:
-        review = getattr(getattr(orch, "channel_replies", None), "review_prompt", None)
-        preview["prompt"] = review(task) if callable(review) else {"available": False}
     return nocache_json(preview)
 
 
@@ -513,18 +510,10 @@ async def autonomy_brief(kind: str = "morning"):
             runtime_health = read_runtime_health(default_log_path())
         except Exception:
             runtime_health = None
-        try:
-            # T-0.41: same sidecar read the scheduled brief performs, so a
-            # manually-triggered brief isn't a different, poorer document.
-            from agents.core.scheduler_service import _signal_briefs_or_none
-            signal_briefs = await _signal_briefs_or_none(orch)
-        except Exception:
-            signal_briefs = None
         text = build_morning_brief(
             orch.autonomy_queue,
             memory_entries=memory_entries,
             runtime_health=runtime_health,
-            signal_briefs=signal_briefs,
         )
     return nocache_json({"kind": kind, "text": text})
 

@@ -106,14 +106,23 @@ def project_records(data: bytes, *, index_path: str = INDEX_PATH, schema: str = 
                 value = _text(value)
             values[field] = value
 
+        compact = schema.endswith("-index-scurt/v1")
+        restricted = compact and item.get("priv") not in (None, "", "public", False)
         details = [f"{name[:-3]} · {project_id}"]
-        details.extend(f"{_LABELS[field]}: {value}" for field, value in values.items() if value != "")
-        records.append({
+        fields = ("st", "pas") if restricted else values
+        details.extend(f"{_LABELS[field]}: {values[field]}" for field in fields
+                       if field in values and values[field] != "")
+        record = {
             "projectId": project_id,
             "title": name[:-3],
             "noteFile": name,
             "relPath": f"{index_path}#{project_id}",
             "body": "\n".join(details),
             "tags": ["proiect", project_id],
-        })
+        }
+        if compact:
+            record["localOnly"] = restricted
+            record["stage"] = values.get("st")
+            record["nextStep"] = values.get("pas", "")
+        records.append(record)
     return records

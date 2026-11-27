@@ -60,11 +60,12 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     && typeof window !== 'undefined' && 'MediaRecorder' in window;
 
   const [caps, setCaps] = useState(null);
-  const [status, setStatus] = useState('off');  // off | idle | listening | transcribing | speaking | error
+  const [status, setStatus] = useState('off');  // off | idle | listening | transcribing | speaking | interrupted | error
   const [error, setError] = useState(null);
   const [transcript, setTranscript] = useState('');
   const [level, setLevel] = useState(0);
   const [active, setActive] = useState(false);
+  const [bargeInterrupted, setBargeInterrupted] = useState(false);
   // H247: who holds the microphone when the hub refused this tab (a take-over is offered).
   const [micHolder, setMicHolder] = useState<string | null>(null);
   const renewRef = useRef<any>(null);
@@ -220,6 +221,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     const text = speechText(reply, langRef.current);
     if (!text || ttsRef.current === 'off') return;
     if (cancelSpeakRef.current) cancelSpeakRef.current();
+    setBargeInterrupted(false);
     let cancelled = false;
     let bargeIv = null;
     cancelSpeakRef.current = () => {
@@ -235,7 +237,14 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
       bargeIv = setInterval(() => {
         if (cancelled) return;
         const lv = rms();
-        if (lv >= BARGE_RMS) { voiceMs += 130; if (voiceMs >= BARGE_MS && cancelSpeakRef.current) cancelSpeakRef.current(); }
+        if (lv >= BARGE_RMS) {
+          voiceMs += 130;
+          if (voiceMs >= BARGE_MS && cancelSpeakRef.current) {
+            setBargeInterrupted(true);
+            setStat('interrupted');
+            cancelSpeakRef.current();
+          }
+        }
         else voiceMs = Math.max(0, voiceMs - 130);
       }, 130);
     }
@@ -293,6 +302,8 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const beginSpeakStream = useCallback(() => {
     if (ttsRef.current === 'off') { speakStreamRef.current = null; return; }
     if (cancelSpeakRef.current) cancelSpeakRef.current();
+    setBargeInterrupted(false);
+    let bargeIv: any = null;
     const session = {
       filter: new SpeechStreamFilter(),   // H526: code/reasoning split across deltas never spoken
       agg: new SentenceAggregator(),
@@ -301,13 +312,32 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
       failed: false,
       cancelled: false,
       spokenSentences: [],   // sentences that PLAYED, so a fallback can skip them
+      stopBarge: () => { if (bargeIv) { clearInterval(bargeIv); bargeIv = null; } },
     };
     speakStreamRef.current = session;
     cancelSpeakRef.current = () => {
       session.cancelled = true;
+      session.stopBarge();
       try { if (audioRef.current) audioRef.current.pause(); } catch { /* */ }
       try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch { /* */ }
     };
+    if (bargeRef.current && anRef.current) {
+      let voiceMs = 0;
+      bargeIv = setInterval(() => {
+        if (session.cancelled) return;
+        const lv = rms();
+        if (lv >= BARGE_RMS) {
+          voiceMs += 130;
+          if (voiceMs >= BARGE_MS && cancelSpeakRef.current) {
+            setBargeInterrupted(true);
+            setStat('interrupted');
+            cancelSpeakRef.current();
+          }
+        } else {
+          voiceMs = Math.max(0, voiceMs - 130);
+        }
+      }, 130);
+    }
   }, []);
 
   const enqueueSentence = (session, sentence) => {
@@ -360,6 +390,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
       for (const sentence of tail) enqueueSentence(session, sentence);
     }
     await session.chain;
+    session.stopBarge();
     return {
       complete: session.spoke && !session.failed && !session.cancelled,
       cancelled: session.cancelled,
@@ -444,7 +475,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
 
   const stop = useCallback(() => {
     startGenRef.current++;               // invalidate any start still awaiting permission
-    activeRef.current = false; setActive(false);
+    activeRef.current = false; setActive(false); setBargeInterrupted(false);
     if (cancelSpeakRef.current) cancelSpeakRef.current();
     releaseStream(); setStat('off'); setLevel(0);
   }, []);
@@ -457,5 +488,5 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
 
   useEffect(() => () => { startGenRef.current++; activeRef.current = false; if (cancelSpeakRef.current) cancelSpeakRef.current(); releaseStream(); }, []);
 
-  return { supported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak, pushSpeakDelta, micHolder, takeOver };
+  return { supported, caps, status, error, transcript, level, active, bargeInterrupted, start, stop, toggle, speak, cancelSpeak, pushSpeakDelta, micHolder, takeOver };
 }

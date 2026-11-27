@@ -15,7 +15,7 @@ boundaries, from most to least trusted:
   owner (localhost) ─► Jarvis hub process ─► [ kernel mediation ] ─► local model server
                                               │                       (LM Studio / Ollama)
                                               ├─► local stores (memory.db, KG, transcripts, analytics)
-                                              ├─► LAN devices (Pi, homebridge, WhatsApp bridge)   [LAN-scoped]
+                                              ├─► LAN devices (Pi, homebridge)                    [LAN-scoped]
                                               └─► cloud (LLM APIs, channels, OSINT)               [opt-in, allowlisted]
 ```
 

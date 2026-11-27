@@ -74,7 +74,7 @@ def test_none_plugin_always_blocks():
 
 
 def test_lan_allows_localhost_blocks_public_under_strict(monkeypatch):
-    c = PluginHTTPClient.for_plugin("signal-layer")  # LAN
+    c = PluginHTTPClient.for_plugin("apple-health")  # LAN
     c._enforce_egress("http://localhost:4000/history/adsb")  # local → ok
     c._enforce_egress("http://192.168.1.50:8080/x")          # private IP → ok
     monkeypatch.setenv("JARVIS_STRICT_EGRESS", "1")
@@ -120,7 +120,6 @@ REAL_HOSTS = {
     "whatsapp-bridge": ["192.168.1.100", "localhost"],
     "apple-health": ["192.168.1.100"],
     "homebridge": ["192.168.1.100"],
-    "signal-layer": ["localhost"],
     # SEC-5b: previously-unmanifested plugins with static hosts.
     "balance": ["api.ing.com", "api.libra.ro"],
     "analytics": ["analyticsdata.googleapis.com", "oauth2.googleapis.com"],
@@ -159,8 +158,8 @@ def test_real_for_plugin_names_match_a_manifest():
     # plugins whose for_plugin id should resolve to a manifest (exclude unmanifested-by-design)
     EXPECTED = {
         "weather", "news", "cloud-llm", "telegram", "gmail", "google-calendar",
-        "spotify", "sms-alerts", "crm-sync", "iot-control", "oracle-bridge",
-        "whatsapp-bridge", "apple-health", "homebridge", "signal-layer",
+        "spotify", "crm-sync", "iot-control", "oracle-bridge",
+        "apple-health", "homebridge",
         # SEC-5b: string-literal for_plugin ids living under agents/core/plugins.
         "balance", "analytics", "websearch", "n8n",
         # Hermes absorption 5a: the page reader dials under its own identity.
@@ -186,13 +185,11 @@ def test_dynamic_family_ids_all_have_manifests():
     from agents.core.social import _CREDENTIAL as social_platforms
     from agents.core.writeback import _CREDENTIAL as writeback_targets
     from agents.core.autonomy.call_broker import _CREDENTIAL as call_providers
-    from agents.core.channels.webhook_channels import SUPPORTED_CHANNELS
 
     expected = set()
     expected |= {f"social_{p}" for p in social_platforms}
     expected |= {f"writeback_{t}" for t in writeback_targets}
     expected |= {f"call_{p}" for p in call_providers}
-    expected |= {f"channel_{c}" for c in SUPPORTED_CHANNELS}
 
     missing = expected - set(BUILTIN_PLUGINS)
     assert not missing, f"family plugins missing an egress manifest: {missing}"
@@ -222,28 +219,6 @@ def test_dynamic_domain_allows_registered_host_blocks_others_under_strict(monkey
     c._enforce_egress("https://n8n.internal.example/api/v1/workflows")  # registered → ok
     with pytest.raises(PluginEgressError):
         c._enforce_egress("https://evil.example/api/v1/workflows")      # unregistered → blocked
-
-
-def test_signal_channel_registers_its_config_host():
-    import agents.core.plugin_gate as pg
-    from agents.core.channels.webhook_channels import SignalChannel
-    pg._DYNAMIC_DOMAINS.pop("channel_signal", None)
-    try:
-        SignalChannel(config={"base_url": "http://signal.local:8080", "number": "+1"})
-        assert "signal.local" in pg.dynamic_domains("channel_signal")
-    finally:
-        pg._DYNAMIC_DOMAINS.pop("channel_signal", None)
-
-
-def test_matrix_channel_registers_its_config_host():
-    import agents.core.plugin_gate as pg
-    from agents.core.channels.webhook_channels import MatrixChannel
-    pg._DYNAMIC_DOMAINS.pop("channel_matrix", None)
-    try:
-        MatrixChannel(config={"homeserver": "https://matrix.example.org", "token": "x"})
-        assert "matrix.example.org" in pg.dynamic_domains("channel_matrix")
-    finally:
-        pg._DYNAMIC_DOMAINS.pop("channel_matrix", None)
 
 
 # ── the owner's TLS trust anchor (JARVIS_CA_BUNDLE) ──────────────────────────

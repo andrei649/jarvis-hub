@@ -72,6 +72,7 @@
    Both routes are GETs; there is nothing to hand-type, so the degenerate-form test does
    not bite and no POST surface exists here. */
 import React, { useState } from 'react';
+import { apiPut } from '../api/client';
 import { useApi, note, asLive, Card, State, Row, Tag, Json } from '../panel-kit';
 import { LABEL, MONO } from '../theme/type';
 
@@ -449,9 +450,101 @@ function WyomingCard() {
   );
 }
 
+function VoicePersonaCard() {
+  const { d, e, loading, reload } = useApi('/api/voice/capabilities');
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
+  const pv = d && typeof d.persona_voice === 'object' && d.persona_voice ? d.persona_voice : null;
+  const last = d && typeof d.last_consent_status === 'object' && d.last_consent_status ? d.last_consent_status : null;
+  const granted = pv ? pv.granted === true : null;
+
+  async function toggleConsent() {
+    if (granted === null) return;
+    setSaving(true);
+    setSaveErr(null);
+    try {
+      await apiPut('/api/admin/settings/voice', { values: { persona_voice_consent: !granted } }, { admin: true });
+      reload();
+    } catch (err: any) {
+      setSaveErr(String((err && err.message) || err || 'save failed'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card
+      title="VOICE PERSONA & CONSENT"
+      live={asLive(d, granted === true)}
+      sub={pv ? (granted ? 'cloned voice allowed' : 'cloned voice blocked') : null}
+      onReload={reload}
+    >
+      <State e={e} loading={loading} n={d ? 1 : 0} />
+      {d && (
+        <>
+          <Row>
+            <span style={note}>persona / cloned voice consent ({pv?.setting || 'voice.persona_voice_consent'})</span>
+            <span style={RIGHT}>
+              {pv === null ? (
+                <Tag c="var(--ink-2)">not reported</Tag>
+              ) : granted ? (
+                <Tag c="var(--green)">granted</Tag>
+              ) : (
+                <Tag c="var(--amber)">withheld · fail-closed</Tag>
+              )}
+              {pv !== null && (
+                <button className="tool-btn" disabled={saving} onClick={toggleConsent}>
+                  {saving ? 'saving…' : (granted ? 'Revoke persona consent' : 'Grant persona consent')}
+                </button>
+              )}
+            </span>
+          </Row>
+          {pv && typeof pv.message === 'string' && pv.message && (
+            <div style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--amber)', marginTop: 4 }}>{pv.message}</div>
+          )}
+          <Row>
+            <span style={note}>local-only speech policy (voice.local_only)</span>
+            <span style={RIGHT}>
+              <Tag c={d.local_only === true ? 'var(--green)' : 'var(--ink-2)'}>
+                {d.local_only === true ? 'local-only enforced' : 'hybrid allowed'}
+              </Tag>
+              <Tag c={d.tts_local === true ? 'var(--green)' : 'var(--amber)'}>
+                {d.tts_local === true ? 'local TTS ready' : 'no local TTS engine'}
+              </Tag>
+            </span>
+          </Row>
+          <Row>
+            <span style={note}>last synthesis consent check</span>
+            <span style={RIGHT}>
+              {!last ? (
+                <Tag c="var(--ink-2)">none recorded this boot</Tag>
+              ) : (
+                <>
+                  <Tag c={last.allowed === true ? 'var(--green)' : 'var(--amber)'}>
+                    {last.allowed === true ? 'allowed' : 'blocked → fallback'}
+                  </Tag>
+                  {typeof last.requested_voice === 'string' && last.requested_voice && <Tag>req {last.requested_voice}</Tag>}
+                  {typeof last.fallback_voice === 'string' && last.fallback_voice && <Tag>fallback {last.fallback_voice}</Tag>}
+                </>
+              )}
+            </span>
+          </Row>
+          {saveErr && <div role="alert" style={{ ...note, fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 6 }}>{saveErr}</div>}
+        </>
+      )}
+      <div style={FOOT}>
+        GET /api/voice/capabilities · cloned/persona TTS providers (XTTS, ElevenLabs, Fish) are blocked fail-closed
+        unless <code style={MONO}>voice.persona_voice_consent</code> is explicitly granted by the owner via admin-guarded
+        PUT /api/admin/settings/voice.
+      </div>
+    </Card>
+  );
+}
+
 export function SupportVoicePanel() {
   return (
     <>
+      <VoicePersonaCard />
       <SupportBundleCard />
       <WyomingCard />
     </>

@@ -174,12 +174,14 @@ async def test_time_spent_answering_does_not_count_against_the_call():
 
 
 def test_sampling_budget_survives_a_restart(tmp_path):
+    from tests.private_file_permissions import assert_private_file
+
     path = tmp_path / "mcp_sampling_budget.json"
     clock = lambda: 1_800_000_000.0  # noqa: E731 - a fixed day
     first = SamplingBudget(daily_tokens=1000, clock=clock, persist_path=path)
     assert first.reserve(300) is None
     first.settle(300, 250)
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert_private_file(path)
     again = SamplingBudget(daily_tokens=1000, clock=clock, persist_path=path)
     assert again.status()["used"] == 250
     assert again.reserve(800) == "budget_exceeded"
@@ -232,10 +234,17 @@ def test_two_processes_sharing_the_budget_file_add_up(tmp_path):
 
 
 def test_the_budget_file_is_never_written_through_a_link(tmp_path):
+    import sys
+
     target = tmp_path / "elsewhere"
     target.write_text("keep")
     path = tmp_path / "mcp_sampling_budget.json"
-    path.symlink_to(target)
+    try:
+        path.symlink_to(target)
+    except OSError as exc:
+        if sys.platform == "win32" and getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege is unavailable")
+        raise
     budget = SamplingBudget(daily_tokens=1000, persist_path=path)
     assert budget.reserve(1) == "budget_exceeded"          # an unreadable file starts spent
     assert target.read_text() == "keep"

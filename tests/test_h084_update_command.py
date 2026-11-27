@@ -24,7 +24,7 @@ def _ctx(channel="web", *, owner=True, args="", orch=None):
                           "update", args)
 
 
-@pytest.mark.parametrize("channel", ["web", "telegram", "discord", "slack", "matrix"])
+@pytest.mark.parametrize("channel", ["web", "telegram"])
 async def test_owner_chat_surfaces_queue_the_default_request(channel, monkeypatch):
     calls = []
 

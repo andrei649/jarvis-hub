@@ -38,10 +38,10 @@
 - **Backup/restore, full data export, delete/forget** — one call purges a fact from live memory
   *and* at rest.
 
-### The cabinet — 17 specialist agents
+### The cabinet — 16 specialist agents
 
-4 tiers — command (Jarvis, Friday, Pepper, Jerome), business (Athena, Stark, Veronica, Vision,
-Argus), tech (Steve, Oracle, Ultron), foundation (Gecko, Hercules, Hephaestus, Frigga, Howard) —
+4 tiers — command (Jarvis, Friday, Pepper, Jerome), business (Athena, Stark, Veronica, Vision),
+tech (Steve, Oracle, Ultron), foundation (Gecko, Hercules, Hephaestus, Frigga, Howard) —
 plus a bench of 17 more, promotable at runtime. Agents ship as templates and **personalize
 themselves in your first session**; your private personality overlays stay gitignored on your
 machine.
@@ -66,9 +66,7 @@ machine.
 
 - **HUD V2 cockpit** (web, SSE) · **voice** — the browser-mic HUD loop ships today; server-side
   STT/TTS engines (faster-whisper, edge-tts/Kokoro) are manual extras that degrade to 503 until
-  installed, and the wake-word pipeline additionally needs extra native deps · **Telegram ·
-  email** built in; **Discord · Slack** work once their SDKs are installed
-  (`pip install discord.py slack_sdk`).
+  installed, and the wake-word pipeline additionally needs extra native deps · **Telegram** built in.
 - **Mobile companion app** — approvals, tasks, comms inbox, memory + knowledge graph, security
   posture (read-only where it should be).
 - CLI REPL and admin panel; **400 HTTP routes** with OpenAPI→TypeScript typegen.
@@ -78,7 +76,7 @@ machine.
 - **Skills system** — discover, execute, generate; import from Hermes / OpenClaw / GitHub formats;
   marketplace with signing + quarantine.
 - **Sandboxed code execution** (Docker + subprocess) with environment scrubbing and output caps.
-- **Plugin layer** — weather, news, Gmail, WhatsApp local bridge, Spotify, Telegram bot, cloud
+- **Plugin layer** — weather, news, Gmail, Spotify, Telegram bot, cloud
   LLM… every third-party service is explicit, scope-limited, audited, and disable-able — and an
   unconfigured integration self-reports **MOCK/degraded** instead of pretending to work.
 - Governed **MCP client** and Tool-RPC over an allowlist.
@@ -86,13 +84,6 @@ machine.
   machine-registered and verified against reality. The `perform()` facade and *earned*
   per-capability autonomy ship **default-off** (`JARVIS_UNIFIED_ACTION_API` +
   `JARVIS_ACTION_KERNEL`; `autonomy.earned_autonomy_enabled`) until hardened.
-
-### WorldView + Signal Layer (opt-in companions)
-
-- **WorldView** — a time-scrubbable 4D OSINT globe (Next.js + Deck.gl), fully separate stack,
-  installed only with `JARVIS_WORLDVIEW=1`, demo data clearly badged.
-- **Signal Layer** (`:8787`) — provider-neutral situational awareness: evidence → signals →
-  briefs → approval-gated recommendations. **Argus** bridges it read-only, governed.
 
 ### Production-grade operations
 
@@ -116,7 +107,7 @@ machine.
 
 ```bash
 ./install.sh    # venv + dependencies + test suite
-./start.sh      # server + HUD (+ WorldView/Signal Layer when enabled)
+./start.sh      # server + HUD
 ```
 
 ### Manual (any OS)
@@ -131,8 +122,7 @@ python -m pytest             # full offline suite
 **Model choice by VRAM** — any LM Studio/Ollama model works: 8–12 GB → `qwen2.5:7b` /
 `llama3.1:8b`; 16 GB → `qwen2.5:14b`; 24 GB+ → `gemma-4-31b-a4b` (the reference experience);
 CPU-only works too (slow). The onboarding model picker tells you honestly what's reachable.
-Optional companions: `JARVIS_WORLDVIEW=1` (4D globe, `:3000`), Signal Layer on `:8787` (on by
-default, `JARVIS_SIGNAL_LAYER=0` to disable). Details: [README → Run](../README.md#run) ·
+Details: [README → Run](../README.md#run) ·
 [USER_GUIDE.md](USER_GUIDE.md) · [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ---

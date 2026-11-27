@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 import stat
 import sys
 import time
@@ -52,7 +53,7 @@ FAKE = Path(__file__).resolve().parent / "fixtures" / "mcp_fake_server.py"
 
 
 def _cmd(mode: str) -> str:
-    return f"{sys.executable} {FAKE} {mode}"
+    return shlex.join([sys.executable, str(FAKE), mode])
 
 
 @pytest.fixture(autouse=True)
@@ -137,13 +138,15 @@ async def test_read_resource_text_is_scanned_and_taints_the_turn(mgr):
 
 
 async def test_binary_resource_is_cached_to_disk_and_handed_over_as_a_path(mgr):
+    from tests.private_file_permissions import assert_private_file
+
     await _server(mgr, "docs")
     await mgr.connect_all()
     out = await mgr.call_tool("mcp__docs__read_resource", {"uri": "file:///logo.png"})
     [block] = out["contents"]
     path = Path(block["path"])
     assert path.is_file() and block["mimeType"] == "image/png" and block["bytes"] == path.stat().st_size
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert_private_file(path)
     assert "blob" not in json.dumps(out)
 
 

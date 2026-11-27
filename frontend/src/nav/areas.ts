@@ -237,7 +237,6 @@ const SPEC: readonly AreaSpec[] = [
       ] },
       { id: 'boundary', en: 'Boundary', ro: 'Granița', pages: [
         panel('posture', 'Posture', 'Postură'),
-        panel('signal-governance', 'Signal governance', 'Guvernanța semnalelor', MORE),
         panel('network-monitor', 'Network monitor', 'Monitor de rețea'),
         panel('comms-rate', 'Outbound rate', 'Rata de trimitere', MORE),
         panel('safe-comms-draft', 'Safe drafts', 'Ciorne sigure', MORE),
@@ -315,7 +314,6 @@ const SPEC: readonly AreaSpec[] = [
         panel('oracle', 'Oracle', 'Oracol', MORE),
         panel('osint', 'OSINT', 'OSINT', MORE),
         panel('watchlist', 'Watchlist', 'Listă de urmărire', MORE),
-        panel('signal-routing', 'Signal routing', 'Rutarea semnalelor', MORE),
         panel('writeback-digest', 'Writeback digest', 'Rezumatul scrierilor externe', MORE),
       ] },
     ],
@@ -323,9 +321,7 @@ const SPEC: readonly AreaSpec[] = [
   {
     id: 'observe', en: 'Observe', ro: 'Observare', attention: ['services'],
     landing: mode('observe', OVERVIEW[0], OVERVIEW[1], { aliases: ['Observe', 'Observă', 'Observability'] }),
-    lead: [
-      mode('world', 'World signals', 'Semnale din lume', { aliases: ['World', 'World Intelligence', 'Lume'] }),
-    ],
+    lead: [],
     groups: [
       { id: 'health', en: 'Health', ro: 'Stare', pages: [
         panel('system-map', 'System map', 'Harta sistemului'),

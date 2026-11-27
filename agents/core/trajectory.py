@@ -159,6 +159,7 @@ class TrajectoryRecorder:
     dropped_steps: int = 0
     #: OpenAI-shape specs (``{"type": "function", "function": {...}}``), one per name.
     tools: list[dict[str, Any]] = field(default_factory=list)
+    suppressed: bool = False
 
     def note_prompt(self, prompt: Any) -> None:
         """The prompt the model was actually sent (the plain path folds steering into it)."""
@@ -267,10 +268,22 @@ def active_recorder() -> TrajectoryRecorder | None:
     return _active.get()
 
 
+def suppress_current() -> None:
+    """Discard an in-flight record before a private memory tool can return data."""
+    recorder = _active.get()
+    if recorder is None:
+        return
+    recorder.suppressed = True
+    recorder.system = recorder.prompt = ""
+    recorder.steps.clear()
+    recorder.tools.clear()
+    recorder.reply = None
+
+
 def note_system(system: Any) -> None:
     """Hooks for the tool loop: never raise into a turn."""
     recorder = _active.get()
-    if recorder is not None:
+    if recorder is not None and not recorder.suppressed:
         try:
             recorder.note_system(system)
         except Exception:
@@ -279,7 +292,7 @@ def note_system(system: Any) -> None:
 
 def note_tools(specs: Any) -> None:
     recorder = _active.get()
-    if recorder is not None:
+    if recorder is not None and not recorder.suppressed:
         try:
             recorder.note_tools(specs)
         except Exception:
@@ -288,7 +301,7 @@ def note_tools(specs: Any) -> None:
 
 def note_prompt(prompt: Any) -> None:
     recorder = _active.get()
-    if recorder is not None:
+    if recorder is not None and not recorder.suppressed:
         try:
             recorder.note_prompt(prompt)
         except Exception:
@@ -297,7 +310,7 @@ def note_prompt(prompt: Any) -> None:
 
 def note_message(message: Mapping[str, Any]) -> None:
     recorder = _active.get()
-    if recorder is not None:
+    if recorder is not None and not recorder.suppressed:
         try:
             recorder.note_message(message)
         except Exception:
@@ -306,7 +319,7 @@ def note_message(message: Mapping[str, Any]) -> None:
 
 def note_exit(reason: Any) -> None:
     recorder = _active.get()
-    if recorder is not None:
+    if recorder is not None and not recorder.suppressed:
         try:
             recorder.note_exit(reason)
         except Exception:
@@ -321,7 +334,9 @@ def capture(*, agent_id: Any, model: Any, system: Any, prompt: Any) -> Iterator[
     :meth:`TrajectoryRecorder.finish` was called; an exception writes nothing and
     propagates unchanged.
     """
-    if not capture_enabled():
+    from .memory.second_brain import private_context_active
+
+    if not capture_enabled() or private_context_active():
         yield None
         return
     recorder = TrajectoryRecorder(agent_id=str(agent_id or ""), model=str(model or ""),
@@ -332,7 +347,7 @@ def capture(*, agent_id: Any, model: Any, system: Any, prompt: Any) -> Iterator[
         yield recorder
     finally:
         _active.reset(token)
-    if recorder.reply is None:
+    if recorder.reply is None or recorder.suppressed or private_context_active():
         return
     from .llm.request_context import current_session
 

@@ -48,7 +48,7 @@ Environment=JARVIS_PORT=8080
 Environment=JARVIS_SHUTDOWN_TIMEOUT=10
 # Keep runtime state out of the checkout (audit F-08). Point at a writable dir.
 Environment=JARVIS_HOME=/var/lib/jarvis-hub
-# Optional per-host overrides (tokens, secrets, JARVIS_WORLDVIEW=0, …). The
+# Optional per-host overrides (tokens, secrets, …). The
 # leading '-' makes the file optional — the unit still starts if it's absent.
 EnvironmentFile=-/etc/jarvis-hub/jarvis.env
 

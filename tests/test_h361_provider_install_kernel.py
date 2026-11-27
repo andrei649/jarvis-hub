@@ -1,5 +1,6 @@
 """Provider installation through the real, locally bound Action Kernel."""
 
+import os
 from copy import deepcopy
 from dataclasses import replace
 from types import SimpleNamespace
@@ -12,6 +13,8 @@ from agents.core.kernel.binding import make_action_kernel
 from agents.core.llm.providers.packages import ProviderPackageError
 from agents.core.security.capability import KillSwitch
 from tests.test_h361_provider_install_service import owner, service, staged
+
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX provider package store")
 
 
 def _bind_real_kernel(service, tmp_path):

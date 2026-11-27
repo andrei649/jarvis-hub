@@ -406,6 +406,11 @@ class AgentToolRuntime:
         """Apply the turn's tool profile; a resolver failure offers nothing."""
         from .job_toolsets import allows
         metadata = [tool for tool in metadata if allows(str(tool.get("name") or ""))]
+        from .llm.hybrid_router import LOCAL_ONLY_AGENTS
+        from .memory.second_brain import SECOND_BRAIN_TOOLS
+
+        metadata = [tool for tool in metadata
+                    if tool.get("name") not in SECOND_BRAIN_TOOLS or agent_id in LOCAL_ONLY_AGENTS]
         if self._tool_profile is None or agent_id is None:
             return metadata, None
         try:
@@ -628,6 +633,9 @@ class AgentToolRuntime:
         # Each run is one model turn: calls it makes carry its token, so a tool can tell
         # what the model sent in this turn from what an earlier turn or a script wrote.
         turn = bind_tool_turn(secrets.token_hex(8))
+        from .memory.second_brain import bind_tool_backend, reset_tool_backend
+
+        local_backend_token = bind_tool_backend(agent_id, backend)
         try:
             with runtime_human_wait_scope():
                 result = await self._run_turn(
@@ -637,6 +645,7 @@ class AgentToolRuntime:
                     before_model_call=before_model_call,
                 )
         finally:
+            reset_tool_backend(local_backend_token)
             reset_tool_turn(turn)
         # Only this outer owner reports a settled exit. A cancellation-resistant child
         # detached at the deadline can never publish a second or late result.
@@ -979,13 +988,14 @@ class AgentToolRuntime:
                     trajectory.note_system(messages[0]["content"])   # the fold's own notice
             # H513: every round rechecks revocation after tool/profile awaits.
             # Errors propagate before provider I/O; an unreadable gate never widens.
-            if before_model_call is not None:
-                checked = before_model_call()
-                if inspect.isawaitable(checked):
-                    await checked
+            from .chat_cloud_history import tool_model_round
             from .llm.data_handling import physical_request_scope
             # Scope only generation/retries, never ToolRPC or spawned judge work.
-            with physical_request_scope(before_model_call):
+            with tool_model_round(), physical_request_scope(before_model_call):
+                if before_model_call is not None:
+                    checked = before_model_call()
+                    if inspect.isawaitable(checked):
+                        await checked
                 from .approval_outcomes import mark_invocation_outcomes_visible
                 mark_invocation_outcomes_visible(messages)
                 from .turn_usage import model_usage_scope
@@ -1653,13 +1663,16 @@ class AgentToolRuntime:
                 "same_as": _bounded_identity(prior),
             },
         )
+        from .memory.second_brain import SECOND_BRAIN_TOOLS
+
         return json.dumps(
             {
                 "ok": True,
                 "tool": call.name,
                 "same_as": prior,
                 "notice": _DUPLICATE_NOTICE.format(call_id=prior),
-                "args_preview": safe_args_preview(call.arguments if isinstance(call.arguments, dict) else {}),
+                "args_preview": ("[private memory query]" if call.name in SECOND_BRAIN_TOOLS
+                                 else safe_args_preview(call.arguments if isinstance(call.arguments, dict) else {})),
             },
             ensure_ascii=False,
         )
@@ -1855,6 +1868,12 @@ class AgentToolRuntime:
                 reason="too_many_tool_calls",
                 event_sink=event_sink,
                 spent=spent,
+            )
+        from .chat_cloud_history import reads_unreviewed_history
+        if reads_unreviewed_history(call.name):
+            return await self._local_failure(
+                call, agent_id=agent_id, reason="cloud_history_disclosure_required",
+                event_sink=event_sink, spent=spent,
             )
         if not offered:
             return await self._local_failure(

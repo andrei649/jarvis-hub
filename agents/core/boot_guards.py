@@ -50,7 +50,6 @@ is not refused: it gets one ``[SECURITY]`` line naming it. (A path a ``.env`` bu
 
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Callable, Mapping
 from typing import NamedTuple
@@ -111,24 +110,6 @@ def _env_set(*names: str) -> Callable[[Mapping[str, str]], bool]:
     return lambda env: all(str(_get(env, n) or "").strip() for n in names)
 
 
-def _json_object_set(name: str) -> Callable[[Mapping[str, str]], bool]:
-    """A channel map is configured when *name* parses to a non-empty JSON object.
-
-    Mirrors ``env_config.env_json_object``: unset, invalid or non-object wires
-    nothing in the app, so there is nothing to guard.
-    """
-    def _configured(env: Mapping[str, str]) -> bool:
-        raw = str(_get(env, name) or "").strip()
-        if not raw:
-            return False
-        try:
-            value = json.loads(raw)
-        except ValueError:
-            return False
-        return isinstance(value, dict) and bool(value)
-    return _configured
-
-
 class _InboundChannel(NamedTuple):
     name: str
     label: str                 # how the refusal names it ("telegram bot")
@@ -139,23 +120,13 @@ class _InboundChannel(NamedTuple):
 # Every inbound path the app wires that threads a ``sender`` into the gateway — that
 # is, every door a stranger can knock on. Each entry mirrors the wiring condition in
 # the app lifespan so the guard neither misses a wired door nor refuses one that is
-# never wired: Slack receives events automatically only when both its bot token
-# and Socket Mode app token are set; bot-token-only hosts retain manual ingress. Only
-# Telegram has an allowlist knob; the others rely on pairing. Two doors are outside
-# this table on purpose: the admin-minted public widget (``routers/secrets.py``) is an
-# intentionally anonymous door governed by its own token and the gateway rate limit,
-# never by pairing; and the email channel's sender is the bare address parsed from the
-# ``From`` header, which pairing can hold but which any sender can forge unless the
-# IMAP provider enforces DMARC — a held stranger, not an authenticated owner.
+# never wired. One door is outside this table on purpose: the admin-minted public
+# widget (``routers/secrets.py``) is an intentionally anonymous door governed by its
+# own token and the gateway rate limit, never by pairing.
 # (Hermes absorption 5b)
 _INBOUND_CHANNELS: tuple[_InboundChannel, ...] = (
     _InboundChannel("telegram", "telegram bot", _env_set("TELEGRAM_BOT_TOKEN"),
                     "TELEGRAM_ALLOWED_USER_IDS"),
-    _InboundChannel("discord", "discord bot", _env_set("DISCORD_BOT_TOKEN"), None),
-    _InboundChannel("slack", "slack bot", _env_set("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"), None),
-    _InboundChannel("webhook", "webhook channel", _json_object_set("JARVIS_WEBHOOK_CHANNELS"),
-                    None),
-    _InboundChannel("email", "email channel", _env_set("IMAP_HOST", "SMTP_HOST"), None),
 )
 #: An allowlist counts as a guard once it names at least this many ids.
 _MIN_ALLOWLIST_IDS = 1
@@ -361,7 +332,7 @@ def front_door_problems(environ: Mapping[str, str] | None = None, *,
 def assert_guarded_channels(environ: Mapping[str, str] | None = None) -> None:
     """Fail-closed on an inbound channel that would answer any sender (Hermes absorption 5b).
 
-    A bot token, a webhook map or an inbox turns a public network into a front door:
+    A bot token turns a public network into a front door:
     whoever finds it can type at the house. The verdict is :func:`front_door_problem`'s,
     over ``environ`` (``os.environ`` by default), so it belongs to one environment; an
     acknowledged open door is honoured with a ``[SECURITY]`` line on the console so the

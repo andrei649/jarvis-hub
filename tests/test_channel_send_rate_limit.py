@@ -108,31 +108,6 @@ class _FakeTransport:
         return _R()
 
 
-@pytest.mark.asyncio
-async def test_webhook_send_is_rate_limited(monkeypatch):
-    from agents.core.channels.webhook_channels import WhatsAppChannel
-    monkeypatch.setenv("JARVIS_CHANNEL_SEND_RATES", "whatsapp:2")
-    srl.reset()
-    transport = _FakeTransport()
-    ch = WhatsAppChannel(config={"phone_id": "PH", "token": "tok"}, transport=transport)
-    r1 = await ch.send("a", to="15551112222")
-    r2 = await ch.send("b", to="15551112222")
-    r3 = await ch.send("c", to="15551112222")          # over the cap
-    assert (r1, r2, r3) == (True, True, False)
-    assert transport.calls == 2                         # the 3rd never hit the network
-
-
-@pytest.mark.asyncio
-async def test_webhook_send_unlimited_by_default(monkeypatch):
-    from agents.core.channels.webhook_channels import WhatsAppChannel
-    srl.reset()
-    transport = _FakeTransport()
-    ch = WhatsAppChannel(config={"phone_id": "PH", "token": "tok"}, transport=transport)
-    for _ in range(10):
-        assert await ch.send("x", to="15551112222") is True
-    assert transport.calls == 10                        # default: nothing dropped
-
-
 # ── read surface: snapshot / status_snapshot ───────────────────────────────────
 def test_snapshot_is_a_pure_view(monkeypatch):
     monkeypatch.setenv("JARVIS_CHANNEL_SEND_RATES", "whatsapp:5")

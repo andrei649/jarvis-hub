@@ -107,6 +107,8 @@ def auxiliary_request_scope(router, backend, model, *, role, request_check=None)
 
 
 async def check_physical_request(request):
+    from agents.core.chat_cloud_history import check_physical_destination
+    check_physical_destination(request)
     state = _physical_guard.get()
     if state is None or (request.method == "DELETE" and state.request_check is None):
         return
@@ -132,6 +134,8 @@ async def check_physical_request(request):
 
 def check_physical_request_sync(request):
     """Synchronous counterpart for owned embedding clients; never run an event loop."""
+    from agents.core.chat_cloud_history import check_physical_destination
+    check_physical_destination(request)
     state = _physical_guard.get()
     if state is None or (request.method == "DELETE" and state.request_check is None):
         return
@@ -378,6 +382,13 @@ def resolve(router, backend, model, route="") -> Resolved:
     profiles = getattr(pool, "_profiles", ()) if pool is not None else ()
     keys = sorted({str(p.api_key) for p in profiles}) if profiles else [str(getattr(backend, "api_key", ""))]
     material = [profile.id, str(endpoint), keys, policy, profile.data_policy, profile.data_policy_models, routing]
+    if profile.id == "chatgpt-plan":
+        from agents.core import chatgpt_connection
+
+        generation = getattr(backend, "generation", None)
+        if not generation or chatgpt_connection.selected_chat_generation(model) != generation:
+            raise DataHandlingRefused("ChatGPT plan selection changed")
+        material.extend([model, generation])
     try:
         scope = hmac.new(_scope_key(), json.dumps(material, sort_keys=True).encode(), hashlib.sha256).hexdigest()
     except Exception:
@@ -456,6 +467,9 @@ def authorize(router, backend, model, route="", *, principal=None, origin=None, 
         principal = current_principal()
     resolved = resolve(router, backend, model, route)
     if resolved.policy != "local":
+        if actual_use:
+            from agents.core.chat_cloud_history import check_cloud_call
+            check_cloud_call(resolved, model)
         # H496: a cloud route spends the owner's provider credential; a guest turn may
         # use it only when the owner shared that provider with guests.
         from agents.core.security.credential_scope import KIND_PROVIDER, CredentialNotShared, check

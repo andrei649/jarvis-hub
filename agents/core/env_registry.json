@@ -865,19 +865,6 @@
    "required_when": "",
    "doc": ""
   },
-  "NERVA_EMAIL_REPLY_MAX_PER_HOUR": {
-   "aliases": [
-    "JARVIS_EMAIL_REPLY_MAX_PER_HOUR"
-   ],
-   "namespace": "hub",
-   "type": "int",
-   "default": "(computed)",
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
   "NERVA_ENV": {
    "aliases": [
     "JARVIS_ENV"
@@ -1952,10 +1939,49 @@
    "type": "text",
    "default": null,
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
+  },
+  "NERVA_OS_INBOX_SUBDIR": {
+   "aliases": [
+    "JARVIS_OS_INBOX_SUBDIR"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_OS_INDEX_DB": {
+   "aliases": [
+    "JARVIS_OS_INDEX_DB"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_OS_MASK_VAULT_PATH": {
+   "aliases": [
+    "JARVIS_OS_MASK_VAULT_PATH"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": false,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
   },
   "NERVA_OS_PROJECT_INDEX": {
    "aliases": [
@@ -1965,10 +1991,10 @@
    "type": "flag",
    "default": false,
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_PROJECT_INDEX_PATH": {
    "aliases": [
@@ -1976,12 +2002,12 @@
    ],
    "namespace": "hub",
    "type": "path",
-   "default": "(computed)",
+   "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_PROJECT_INDEX_SCHEMA": {
    "aliases": [
@@ -1989,12 +2015,12 @@
    ],
    "namespace": "hub",
    "type": "text",
-   "default": "(computed)",
+   "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_PROJECT_REGISTER_DIR": {
    "aliases": [
@@ -2002,12 +2028,12 @@
    ],
    "namespace": "hub",
    "type": "path",
-   "default": "(computed)",
+   "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_REPOSITORY_DOCS": {
    "aliases": [
@@ -2030,10 +2056,10 @@
    "type": "text",
    "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_VAULT_INBOX": {
    "aliases": [
@@ -2042,7 +2068,7 @@
    "namespace": "hub",
    "type": "text",
    "default": "(computed)",
-   "default_varies": false,
+   "default_varies": true,
    "section": "",
    "purpose": "",
    "required_when": "",
@@ -2056,10 +2082,36 @@
    "type": "text",
    "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
+  },
+  "NERVA_OS_VAULT_MAP_PATH": {
+   "aliases": [
+    "JARVIS_OS_VAULT_MAP_PATH"
+   ],
+   "namespace": "hub",
+   "type": "path",
+   "default": "",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_OS_VAULT_MAP_SCHEMA": {
+   "aliases": [
+    "JARVIS_OS_VAULT_MAP_SCHEMA"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
   },
   "NERVA_OS_VAULT_PATH": {
    "aliases": [
@@ -2067,12 +2119,12 @@
    ],
    "namespace": "hub",
    "type": "path",
-   "default": null,
+   "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_PASSIVE_CAPTURE": {
    "aliases": [
@@ -2568,45 +2620,6 @@
    "required_when": "",
    "doc": ""
   },
-  "NERVA_SIGNAL_GOVERNANCE": {
-   "aliases": [
-    "JARVIS_SIGNAL_GOVERNANCE"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SIGNAL_LAYER": {
-   "aliases": [
-    "JARVIS_SIGNAL_LAYER"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SIGNAL_LAYER_MODE": {
-   "aliases": [
-    "JARVIS_SIGNAL_LAYER_MODE"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
   "NERVA_SKILL_ENVIRONMENTS": {
    "aliases": [
     "JARVIS_SKILL_ENVIRONMENTS"
@@ -2697,97 +2710,6 @@
    "purpose": "Next authenticated owner turn warns after this many consecutive committed DENYs. <=0 disables the warning; default 3. This feedback grants no execution authority.",
    "required_when": "",
    "doc": ".env.example"
-  },
-  "NERVA_SMS_ACCOUNT_SID": {
-   "aliases": [
-    "JARVIS_SMS_ACCOUNT_SID"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SMS_ALLOWED_NUMBERS": {
-   "aliases": [
-    "JARVIS_SMS_ALLOWED_NUMBERS"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SMS_AUTH_TOKEN": {
-   "aliases": [
-    "JARVIS_SMS_AUTH_TOKEN"
-   ],
-   "namespace": "hub",
-   "type": "credential",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SMS_ENABLED": {
-   "aliases": [
-    "JARVIS_SMS_ENABLED"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SMS_FROM_NUMBER": {
-   "aliases": [
-    "JARVIS_SMS_FROM_NUMBER"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SMS_REPLY_MAX_PER_HOUR": {
-   "aliases": [
-    "JARVIS_SMS_REPLY_MAX_PER_HOUR"
-   ],
-   "namespace": "hub",
-   "type": "int",
-   "default": "(computed)",
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
-  },
-  "NERVA_SMS_WEBHOOK_URL": {
-   "aliases": [
-    "JARVIS_SMS_WEBHOOK_URL"
-   ],
-   "namespace": "hub",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "",
-   "purpose": "",
-   "required_when": "",
-   "doc": ""
   },
   "NERVA_SOCIAL_LIVE": {
    "aliases": [
@@ -3231,19 +3153,6 @@
    "required_when": "",
    "doc": ""
   },
-  "NERVA_WEBHOOK_CHANNELS": {
-   "aliases": [
-    "JARVIS_WEBHOOK_CHANNELS"
-   ],
-   "namespace": "hub",
-   "type": "json",
-   "default": {},
-   "default_varies": false,
-   "section": "",
-   "purpose": "The cheap win holds — all five adapters exist, in agents/core/channels/webhook_channels.py: WhatsApp Cloud API (:127), Signal via signal-cli REST (:158), Matrix client-server (:183), Teams (:214), Google Chat (:239).",
-   "required_when": "",
-   "doc": "docs/FLAGS.md"
-  },
   "NERVA_WEB_BACKEND": {
    "aliases": [
     "JARVIS_WEB_BACKEND"
@@ -3498,39 +3407,6 @@
    "required_when": "",
    "doc": ".env.example"
   },
-  "DISCORD_BOT_TOKEN": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "credential",
-   "default": null,
-   "default_varies": false,
-   "section": "Discord",
-   "purpose": "Bot token from Discord Developer Portal",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "EMAIL_REQUIRE_SENDER_AUTH": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "H096: the authserv-id of the server that receives your mail (the first word of its Authentication-Results header, e.g. mx.google.com). Only that server's header can mark a sender \"verified\". Unset: every sender shows as unverified;",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "EMAIL_TRUSTED_AUTHSERV_IDS": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "H096: the authserv-id of the server that receives your mail (the first word of its Authentication-Results header, e.g. mx.google.com). Only that server's header can mark a sender \"verified\". Unset: every sender shows as unverified;",
-   "required_when": "",
-   "doc": ".env.example"
-  },
   "EMBED_BACKEND": {
    "aliases": [],
    "namespace": "other",
@@ -3707,50 +3583,6 @@
    "required_when": "",
    "doc": ".env.example"
   },
-  "IMAP_HOST": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "IMAP_PASS": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "credential",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "IMAP_PORT": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "IMAP_USER": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "",
-   "required_when": "",
-   "doc": ".env.example"
-  },
   "KILOCODE_API_KEY": {
    "aliases": [],
    "namespace": "other",
@@ -3861,83 +3693,6 @@
    "required_when": "",
    "doc": ".env.example"
   },
-  "NTFY_INBOUND": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "ntfy (push to your phone, no bot, no account)",
-   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "NTFY_MARKDOWN": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "ntfy (push to your phone, no bot, no account)",
-   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "NTFY_PUBLISH_TOPIC": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "ntfy (push to your phone, no bot, no account)",
-   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "NTFY_TITLE": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "ntfy (push to your phone, no bot, no account)",
-   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "NTFY_TOKEN": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "credential",
-   "default": null,
-   "default_varies": false,
-   "section": "ntfy (push to your phone, no bot, no account)",
-   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "NTFY_TOPIC": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "ntfy (push to your phone, no bot, no account)",
-   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "NTFY_URL": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "ntfy (push to your phone, no bot, no account)",
-   "purpose": "By default Nerva only POSTs to NTFY_URL/NTFY_TOPIC (escalations, job deliveries with channel \"ntfy\"). No default server — name your own (self-hosted keeps it on the LAN) or https://ntfy.sh.",
-   "required_when": "",
-   "doc": ".env.example"
-  },
   "NVIDIA_API_KEY": {
    "aliases": [],
    "namespace": "other",
@@ -4001,72 +3756,6 @@
    "default_varies": false,
    "section": "Web search (the model's web_search / web_extract tools, and research tasks)",
    "purpose": "Nothing is required: with both empty the search falls back to DuckDuckGo's HTML endpoint, which needs the optional `beautifulsoup4` package (requirements-beta.txt) — without it the tool answers websearch_unavailable, never a fake \"nothing f…",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "SLACK_APP_TOKEN": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "credential",
-   "default": null,
-   "default_varies": false,
-   "section": "Slack",
-   "purpose": "Optional live inbox: enable Socket Mode and provide an app-level token with connections:write. Without this, only host-supplied Slack events are received. Setup, event subscriptions and pairing: docs/SLACK_SETUP.md",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "SLACK_BOT_TOKEN": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "credential",
-   "default": null,
-   "default_varies": false,
-   "section": "Slack",
-   "purpose": "",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "SMTP_HOST": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "SMTP_PASS": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "credential",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "SMTP_PORT": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "SMTP_USER": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "SMTP/IMAP (Email Channel)",
-   "purpose": "",
    "required_when": "",
    "doc": ".env.example"
   },
@@ -4221,17 +3910,6 @@
    "default_varies": false,
    "section": "Qdrant Vector Database (optional)",
    "purpose": "Set to \"qdrant\" to use Qdrant instead of in-memory vector store",
-   "required_when": "",
-   "doc": ".env.example"
-  },
-  "WHATSAPP_BRIDGE_URL": {
-   "aliases": [],
-   "namespace": "other",
-   "type": "text",
-   "default": null,
-   "default_varies": false,
-   "section": "LAN Bridges",
-   "purpose": "URLs for local bridge services on your network",
    "required_when": "",
    "doc": ".env.example"
   },

@@ -29,8 +29,7 @@ def _agents(client):
 
 def test_registry_only_agents_are_served(client):
     agents = _agents(client)
-    for aid in ("howard", "argus"):
-        assert aid in agents, f"{aid} missing from /api/agents"
+    assert "howard" in agents, "howard missing from /api/agents"
 
 
 def test_soul_frontmatter_derives_role_and_tier(client):
@@ -39,9 +38,6 @@ def test_soul_frontmatter_derives_role_and_tier(client):
     # tier mapped from the front-matter word (foundation -> FND).
     assert agents["howard"]["role"] == "Digital Twin / Archive"
     assert agents["howard"]["tier"] == "FND"
-    # argus HAS a curated row; it must win over the raw archetype text.
-    assert agents["argus"]["role"] == "Geospatial OSINT / Intel"
-    assert agents["argus"]["tier"] == "BIZ"
 
 
 def test_curated_roles_win_over_frontmatter_wording(client):

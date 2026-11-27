@@ -1,11 +1,35 @@
 # Mobile ⇄ Browser parity ledger
 
+The desktop command palette returns keyboard focus to its opener when the selected
+command leaves focus on the page background. Closing the app cancels a pending
+focus change. Mobile: frozen, 2026-11-25.
+
+The Obsidian index status and manual reindex controls are available in the web
+Console under Vault and in the OS vault settings. Native chat uses the same hub
+index. Index administration is currently a desktop web feature.
+
 The **bridge** that keeps the iOS/Android apps (`mobile/`) in sync with the browser HUD.
 Both clients talk to the **same** HTTP API (`agents/web.py`), so "feature parity" is mostly a
 question of *which hub surfaces the mobile app has caught up to*.
 
 This file is the single source of truth for that gap. Backlog tasks for closing it live under
 **`BACKLOG.md` → ORIZONT 18**.
+
+**Chat source on saved facts (2026-11-26, mobile: frozen).** In the desktop HUD,
+Remember message can link a curated fact to a verified retained turn. The owner
+can see its session, message number and role in Saved Facts. Native mobile has
+no equivalent save-and-inspect action.
+Desktop owners can also match a phrase from a completed reply to a saved fact and open its original message. This lookup is desktop-only under the mobile freeze.
+
+The desktop Work → Projects demo shows a read-only sample board and project activity.
+Mobile: frozen by the 2026-11-25 owner decision.
+
+On desktop, open Console → Start → Integrations to connect a ChatGPT plan,
+list the models visible to that account and confirm which one handles cloud chat.
+Ledger remembers the selection after reload and shows the model on its reply.
+This uses the local hub at `127.0.0.1` and a browser sign-in specifically for
+Nerva. Native account setup and plan-model selection are deferred under the
+2026-11-25 mobile freeze.
 
 Browser Chat, Cockpit and native Chat can search retained message text via
 `POST /sessions/search`. On mobile, **History → Search messages** opens an
@@ -16,11 +40,19 @@ current conversation. Native Chat offers **Use passage in next message** after
 review. Sending rechecks the saved text and attaches a citation to the question.
 A recipient that may use a cloud model requires explicit consent.
 
+Ledger sends the current message to the selected cloud model by default. To include
+earlier turns from this conversation, the owner reviews the provider and model and
+confirms that send. Mobile uses the same current-message default. Its history
+confirmation UI is deferred under the owner's mobile freeze of 2026-11-25.
+
 The browser HUD can download a completed reply as a Word document and individual
 tables as Excel workbooks through `POST /api/canvas/export`. The native apps
 still need a download or share action for these outputs. In web Chat and
 Cockpit, owners can compare selected passages from multiple Word and Excel
 files in one message. The native apps still need a document picker and passage review.
+
+**Office editing (2026-11-26, mobile: frozen).** Desktop chat can download a
+copy of an attached Word document or Excel workbook with a targeted edit.
 
 Web Chat and Cockpit can create a Kanban triage task from a message and attach
 reviewed results from up to eight completed tasks to a single question. Each
@@ -53,7 +85,7 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 | Surface | API | Separate browser `/os/` | Native HUD V2 | Native mobile | Task |
 |---|---|---|---|---|---|
 | 3D workshop, local model edits, saved versions and professional exports | `POST /api/os/workshop/edit`, `GET/POST /api/os/workshop/projects`, `GET /api/os/workshop/project` | Robot, house and miniature with named vault versions and GLB download. The house exports SVG or a JSX script that creates an editable floor plan in desktop Illustrator. | Artifacts reopens versions, chat reviews their state and task comments can link them | ⬜ native scene editor, project picker and export actions remain open | H18.38 |
-| ANDREI OS vault status, graph, note inspection, retrieval and inbox capture | `GET /api/os/status`, `GET /api/os/brain`, `GET /api/os/brain/note`, `GET /api/os/brain/retrieve`, `POST /api/os/brain/capture`, `POST /api/os/brain/chat-note` | ✅ graph, source links and capture | Text composer opens matching passages in long notes, rechecks the selected text and can include its relative path in the saved message. Completed replies can be edited and saved into the vault inbox. | Chat attaches matching excerpts from across a note, saves completed replies to the vault inbox and reopens saved notes. Vault graph navigation and manual passage selection remain open. | H18.38 |
+| ANDREI OS vault status, graph, note inspection, retrieval and inbox capture | `GET /api/os/status`, `GET /api/os/brain`, `GET /api/os/brain/note`, `GET /api/os/brain/retrieve`, `POST /api/os/brain/capture`, `POST /api/os/brain/chat-note` | ✅ graph, source links and capture | Console → Memory → Vault (`VaultPanel`) exposes live Obsidian/Second Brain status, manual reindex, direct `/os/` navigation, vault note search, note inspection and inbox capture; the text composer attaches reviewed passages and saves completed replies into the vault inbox (3D graph stays in `/os/`). | Chat attaches matching excerpts from across a note, saves completed replies to the vault inbox and reopens saved notes. Mobile: frozen, 2026-11-25. | H18.38 |
 | Standalone provider keys, cloud chat consent and local vault paths | Standalone `/api/config`, `/api/status`, `/api/chat` | ✅ standalone Settings; hub hides AI Connections | ➖ standalone-only settings | ➖ standalone-only settings | Intentional standalone-only scope |
 
 The `/os/` page calling hub routes is browser integration evidence, not HUD V2 or
@@ -249,15 +281,11 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Opt-in terminal guardian verdicts (H277) | Same blocked-task projection: `judge.advisory=false`, strict `decision`; pending `judge_mode=smart` | ✅ DENY/ESCALATE, guardian identity and one-task owner override; smart approvals leave the inbox | ⬜ distinct guardian verdict/pending labels; existing owner decisions remain usable | H18.29 / H277 |
 | Guardian denial feedback and observers (H485) | Bounded next authenticated owner-turn prompt observation; consented server extension events around native guardian request/committed decision | Server chat flow warns after repeated DENYs; observer subscriptions use extension declarations, no dedicated HUD editor | Native settings/labels, observer management and device acceptance remain open; no new mobile client implementation | H485 |
 | Capability registry board | user `GET /api/capabilities`; user `GET /api/metrics/capabilities` has no dedicated client caller | ✅ registry board over `/api/capabilities` | ✅ registry board over `/api/capabilities`; no metrics-route caller | H18.22 / H27.8 |
-| WorldView bridge (World tab: liveness + recon read data) | `GET /api/worldview/status`, `GET /api/worldview/overview` | ✅ | ⬜ | |
 | Channel inbox + governed replies | `GET /api/channels/inbox*`, `POST /api/channels/inbox/{thread_id}/reply` | ✅ | ✅ | H18.12 |
-| Slack/Discord inbox replies | Same inbox/reply API; exact room/thread target, existing approval queue | ✅ live inbox composer | ✅ existing Comms screen and client; requires host adapters; Slack automatic ingress uses optional Socket Mode ([setup](../docs/SLACK_SETUP.md)) | HA-4i-comms / 4i-socket |
-| Native Slack slash commands (H057, local 2026-11-12) | Host Socket Mode ingress and `/nerva` fallback; existing command access/inbox/approval flow | Existing inbox and approval surfaces; no new screen | Host/Slack-specific; no new mobile route or screen | Live Slack workspace acceptance unverified |
 | Owner maintenance chat (H084, local 2026-11-12) | Shared `/reload-skills` and `/debug` registry | Existing chat; `/debug` returns local host path | No device acceptance; no report-download screen | Private report creation currently unavailable on Windows |
-| Native Discord commands (H057) | Host SDK command tree; same Gateway and governed replies | Existing inbox/approval surfaces | Discord host integration; no new mobile screen | Live Discord acceptance unverified |
 | Skill slash loads and `/commands` discovery (H079) | Existing chat and command registry; owner skill loads share guarded turn context | V24 command catalog adds bounded owner-only quick/skill/bundle entries and partial/truncated notices | V24 command modal accepts legacy catalogs and new shortcut rows, inserts the exact command into the composer, clears on credential/scope changes; device acceptance unrun | Plugin commands and Telegram/Discord skill menus implemented locally; live provider/device acceptance unrun |
-| Inbound media byte limit (H070) | Existing settings API, `channels.max_inbound_media_bytes`; live Telegram/email enforcement | Existing generic admin settings | Existing settings API; no dedicated media-limit control added or device-tested | Default 8 MiB, ceiling 20 MiB |
-| Channel opening budget (H083, local V45) | Existing admin settings API, `system.channel_connect_timeout_seconds`; Telegram identity, Discord gateway opening, ntfy opening, IMAP connect/login and Slack initial auth/Socket Mode opening, applied at next hub startup | Existing generic admin settings editor; bounded numeric value | No native operator editor added or device-tested; configuration remains on the owner HUD | Local opening deadline tests cover all five transports; worker/SDK cleanup can outlive the budget and live Discord recovery remains unverified |
+| Inbound media byte limit (H070) | Existing settings API, `channels.max_inbound_media_bytes`; live Telegram enforcement | Existing generic admin settings | Existing settings API; no dedicated media-limit control added or device-tested | Default 8 MiB, ceiling 20 MiB |
+| Channel opening budget (H083, local V45) | Existing admin settings API, `system.channel_connect_timeout_seconds`; Telegram identity opening, applied at next hub startup | Existing generic admin settings editor; bounded numeric value | No native operator editor added or device-tested; configuration remains on the owner HUD | Local opening deadline tests cover all five transports; worker/SDK cleanup can outlive the budget and live Discord recovery remains unverified |
 | Web outbound text gate (H069) | Main HTTP/SSE, clarify/poll labels and selected titles sanitized; original choice indices preserved | Empty SSE final replaces draft; tested App events | Server protection applies; mobile empty-final handling/device acceptance not newly verified | Other provider protocols and attachment bytes remain open |
 | Shell reply command (`nerva send --list/--to`) | Same inbox/reply API above; queued task is not a delivery receipt | ✅ existing inbox | ✅ existing inbox; CLI itself is host-only | HA-4i |
 | Spoken morning brief (🔊 SPEAK) | `GET /autonomy/brief` + `POST /tts` (native: hub TTS via expo-audio) | ✅ | ✅ | H18.23 |
@@ -323,7 +351,6 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Mic satellites (pair a device as a mic) | `GET /api/satellites`, `POST /api/satellites/register`, `DELETE /api/satellites/{satellite_id}` | ✅ | ⬜ | |
 | Oracle sync and conflicts | user `GET /api/oracle/status`, `GET /api/oracle/conflicts`; admin `POST /api/oracle/sync`, `POST /api/oracle/conflicts/resolve` | ✅ standalone admin GETs carry the entered admin credential; existing POST paths are separate | ⬜ | |
 | Packs inventory + verification | `GET /api/packs`, `GET /api/packs/{key}/verify` | ✅ | ⬜ | |
-| World signals routing feed | `GET /api/signals/routed`, `GET /api/signals/agent/{agent_id}` | ✅ | ⬜ | |
 | Market watchlist (owner-saved rows; no quotes, no trading) | `GET/POST /api/market/watchlist/saved`, `DELETE /api/market/watchlist/saved/{symbol}` | ✅ | ⬜ | |
 | Onboarding wizard + funnel steps | `GET /api/onboarding/wizard`, `POST /api/onboarding/funnel` | ✅ | ⬜ | |
 | Model setup — hardware tier → governed Ollama pull | `GET /api/onboarding/model-plan`, `POST /api/onboarding/model-pull` | ✅ | ⬜ | |
@@ -345,7 +372,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Transcript → tasks ingest | `POST /api/transcripts/ingest` | ✅ | ⬜ | |
 | Escalation (ask-tier fan-out) | `GET /api/autonomy/escalation/targets` (open); admin `POST /api/autonomy/escalate` | ✅ | ➖ admin ceremony run from the owner HUD; the phone is the escalation *target*, not the fan-out control (triage 2026-09-01) | — |
 | Agent dossier (soul + run history) | `GET /api/agents/{agent_id}/soul`, `GET /api/agents/{agent_id}/history` | ✅ | ⬜ | |
-| Sub-agent steer + stop (H20.6) | `POST /api/subagents/{spawn_id}/steer`, `POST /api/subagents/{spawn_id}/stop` | ⬜ routes shipped, no HUD control yet — the Console SUB-AGENTS panel lists and spawns only | ⬜ | |
+| Sub-agent steer + stop (H20.6) | `POST /api/subagents/{spawn_id}/steer`, `POST /api/subagents/{spawn_id}/stop` | ✅ Console → Sub-agents refreshes the list while a submitted batch is running. Each running task has its own steer and stop controls. Completed tasks expose their saved results. | ⬜ Mobile frozen, 2026-11-25 | |
 | Sub-agent spawn pause (H400) | admin `POST /api/subagents/pause`, `POST /api/subagents/resume`; `gate` on user `GET /api/subagents` | ✅ Console SUB-AGENTS panel (pause / resume, emergency-stop and kill-switch state) | ➖ admin ceremony run from the owner HUD | — |
 | Local models + cloud auth profiles + VLM status | user `GET /api/vlm/status`; admin `POST /api/llm/{load,unload}`, `GET /api/llm/auth-profiles`, `GET /api/models/info`, `GET /api/models/local`, `POST /api/models/local/switch` | ✅ | ➖ hub-host capability (model lifecycle lives on the hub's GPU box; triage 2026-09-01) | — |
 | System profile (read-only; selected via `JARVIS_SYSTEM_PROFILE`) | `GET /api/system/profiles` | ✅ | ⬜ | |
@@ -357,8 +384,9 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Owner event hooks (G17 · H163/H514/H021/H408) | admin `GET /api/hooks`, `POST /api/hooks`, `POST /api/hooks/{id}/{disable,enable,test}`, `DELETE /api/hooks/{id}` (defining or re-enabling queues an irreversible-tier approval card) | ✅ Console HOOKS panel | ➖ hub-host capability (programs on the hub box); the phone decides the `hooks.define` cards through the Approvals tab | — |
 | Channel settings (G21 · H151) | admin `GET /api/admin/channels/config`, `PUT /api/admin/channels/{channel_id}/config`, `PUT /api/admin/channels/{channel_id}/secret`, `DELETE /api/admin/channels/{channel_id}/secret/{name}` | ✅ Console CHANNELS panel | ➖ admin ceremony run from the owner HUD (channel tokens are typed on the hub host) | — |
 | Restart and update check (G21 · H160/H173) | admin `GET /api/admin/ops/update`, `POST /api/admin/ops/update/fetch`, `GET /api/admin/ops/actions/{action_id}`, `POST /api/admin/ops/restart` | ✅ Console RESTART / UPDATE panel | ➖ hub-host capability (restarting and checking the hub's own checkout belong to the owner HUD) | — |
-| Trusted update, verified restart and rollback (H624) | admin `GET /api/admin/ops/update/plan`, `GET /api/admin/ops/update/receipts`, `POST /api/admin/ops/update/apply`, `POST /api/admin/ops/update/rollback`, `POST /api/admin/ops/update/trust` | ✅ Console RESTART / UPDATE panel (plan, request update, request rollback; trust via `nerva update trust`) | ➖ hub-host capability (the cards are accepted in the decision inbox like any other) | — |
-| Nerva Workspace (B2B pilot app: company accounts, departments, documents, assistant, reports, approvals, admin console) | `GET /workspace`, `GET /workspace/{path:path}` (the app shell); `/api/workspace/*` behind the workspace's own session cookie (tiers `ws_user`/`ws_admin`), all 404 unless `NERVA_WORKSPACE=1` | ✅ separate web app at `/workspace`, not a HUD panel | ➖ Nerva Workspace: web only, no native surface (intentional) — company employees use the responsive web app (usable at 360 px); the owner's native apps never sign in to it | — |
+| Trusted update, verified restart and rollback (H624) | admin `GET /api/admin/ops/update/plan`, `GET /api/admin/ops/update/receipts`, `POST /api/admin/ops/update/apply`, `POST /api/admin/ops/update/rollback`, `POST /api/admin/ops/update/trust` | ✅ Console RESTART / UPDATE panel (plan, receipt history disclosure, request update, request rollback; trust via `nerva update trust`) | ➖ hub-host capability (the cards are accepted in the decision inbox like any other) · mobile: frozen, 2026-11-25 | — |
+| Tool loop trail (live bounded tool-event ring) | admin `GET /api/admin/tool-events` | ✅ Console LOGS panel (`Tool loop trail` lazy disclosure with counts and filter) | ➖ admin diagnostic surface on the owner HUD · mobile: frozen, 2026-11-25 | — |
+| Nerva Workspace (B2B pilot app: company accounts, departments, documents, assistant, reports, approvals, admin console) | GET /workspace, GET /workspace/{path:path} (the app shell); /api/workspace/* behind the workspace's own session cookie (tiers ws_user/ws_admin), all 404 unless NERVA_WORKSPACE=1 | ✅ separate web app at /workspace. A report fits a 320 px viewport and wide tables scroll within the report. | ➖ Nerva Workspace: web only, no native surface (intentional) — company employees use the responsive web app; Workspace audit filter actions wrap at 320 px. Mobile: frozen, 2026-11-25. | — |
 
 > **H34.1 ➖ (intentional):** Mission Control is a desktop-operator cockpit (large canvas map,
 > dev-swarm lock files that only exist on the owner's dev machine). Its steering primitives
@@ -367,7 +395,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 
 > **H34.2 ➖ (intentional):** the `/api/presence/owner` write is a signal *from* the owner's
 > desktop host daemon (Windows idle/lock or the Tauri overlay), not a phone control; the phone is
-> the away-notify *target* (it receives the escalated cards over WhatsApp/Telegram), so no native
+> the away-notify *target* (it receives the escalated cards over Telegram), so no native
 > presence UI is needed. The state is already visible in the Mission Control feed.
 
 > **Eval datasets / bench stats ➖ (intentional):** these inherit the decision this file already
@@ -743,3 +771,5 @@ The browser HUD's HUD v2 shell (top bar and badges, ticker, sixteen-mode rail, r
 Native mobile ⬜ has none of this structure and keeps its own tabs. What it lacks: the nine areas and Ctrl K; the running head's signals with their basis and check time; the computed verdict and the day; the docket and its tiered friction (native approves with one tap at every tier, except `toolrpc.desktop_run`, which it cannot approve); the Work overview, the Timeline, Glance; and the stop (native reads the kill switch and the emergency stop, and engages neither). Native decisions still go through the same hub routes and the hub's own checks. **Mobile: frozen, 2026-11-25.** The owner deferred the native Ledger shell until the desktop finish line.
 
 *Verified (2026-11-24, HUD structure rows above):* Vitest, the Ledger render matrix and the fixture-backed Playwright lanes, run on Windows in Chromium only (the cached headless shell 1228) against the built bundle and an isolated fixture hub. Not run: CI, Firefox, WebKit, a device or the native app; the native "none of this structure" statement comes from reading `mobile/`, not from a device run.
+
+2026-11-26 local Workspace reports list width: the desktop list's next-run header and date may wrap at 768–1180 px so its table fits a split window. No route, data or native mobile capability changes; native mobile remains frozen pending the desktop finish line.

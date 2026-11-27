@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -20,6 +21,7 @@ from agents.core.acp import render
 from agents.core.acp.jsonrpc import RpcError
 from agents.core.acp.paths import AcpPathError, confine, session_root, translate
 from agents.core.acp.server import BackendRefused
+from tests.private_file_permissions import assert_private_file
 from tests.test_g11_acp import Editor, FakeBackend, _wire
 
 
@@ -215,7 +217,7 @@ async def test_router_load_list_and_fork_keep_the_folder_binding(tmp_path, monke
         await prepare_session(orch, sid)
         await orch.memory.add_turn(sid, "user", "fix the bug")
         await orch.memory.add_turn(sid, "assistant", "fixed")
-        assert acp_sessions.index_path().stat().st_mode & 0o077 == 0     # owner-only index
+        assert_private_file(acp_sessions.index_path())
 
         held = await router.acp_open_session(body(cwd=str(project), load=sid))
         assert held.status_code == 409 and json.loads(held.body)["error"] == "session_in_use"
@@ -342,14 +344,15 @@ def test_windows_paths_translate_only_under_wsl_and_stay_confined(tmp_path, monk
     assert translate("//wsl.localhost/Ubuntu/home/me", wsl=True) == "/home/me"
     assert translate("C:\\src", wsl=False) == "C:\\src"
     assert translate("/home/me", wsl=True) == "/home/me"
-    monkeypatch.setattr(paths, "translate", lambda raw, wsl=None: translate(raw, wsl=True))
-    share = "\\\\wsl$\\Ubuntu" + str(tmp_path).replace("/", "\\")
-    assert session_root(share) == tmp_path.resolve()
-    assert confine(tmp_path, share + "\\a.txt") == tmp_path.resolve() / "a.txt"
-    with pytest.raises(AcpPathError):
-        confine(tmp_path, "C:\\Windows\\system32")                        # translated, then confined
-    with pytest.raises(AcpPathError):
-        confine(tmp_path, share + "\\..\\..\\etc\\passwd")
+    if os.name != "nt":
+        monkeypatch.setattr(paths, "translate", lambda raw, wsl=None: translate(raw, wsl=True))
+        share = "\\\\wsl$\\Ubuntu" + str(tmp_path).replace("/", "\\")
+        assert session_root(share) == tmp_path.resolve()
+        assert confine(tmp_path, share + "\\a.txt") == tmp_path.resolve() / "a.txt"
+        with pytest.raises(AcpPathError):
+            confine(tmp_path, "C:\\Windows\\system32")                        # translated, then confined
+        with pytest.raises(AcpPathError):
+            confine(tmp_path, share + "\\..\\..\\etc\\passwd")
 
 
 def test_nerva_acp_version_prints_and_exits():

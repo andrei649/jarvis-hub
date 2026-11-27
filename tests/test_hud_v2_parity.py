@@ -45,14 +45,18 @@ RULES = [
     # below reads frontend/src/workspace like any other client.
     ("/api/workspace", "workspace"),
     ("/workspace", "workspace"),
-    # The HUD text composer offers scoped note retrieval; the /os graph and
-    # remaining note/capture controls stay in the separate browser page.
+    # The HUD text composer and Console → Memory → Vault offer scoped note retrieval,
+    # note inspection, live status/reindex and inbox capture; the 3D galaxy/workshop canvas stays in /os.
+    ("/api/os/status", "memory"),
+    ("/api/os/brain/reindex", "memory"),
+    ("/api/os/brain/capture", "memory"),
+    ("/api/os/brain/chat-note", "cockpit"),
     ("/api/os/brain/retrieve", "cockpit"),
     ("/api/os/brain/note", "cockpit"),
     ("/api/kanban/board-note/preview", "cockpit"),
     ("/api/os/workshop/project", "cockpit"),  # GET project and projects; saving stays in /os.
-    # Separate /os client exists, but HUD V2 has no native entry/control for
-    # the rest: docs/design/HUD_V2_REMAINING.md and mobile/PARITY.md.
+    # Separate /os client owns the 3D galaxy (/api/os/brain) and live 3D workshop editor:
+    # docs/design/HUD_V2_REMAINING.md and mobile/PARITY.md.
     ("/api/os/", "HUD_GAP:jarvis-os"),
     ("/os", "HUD_GAP:jarvis-os"),
     # machine-facing — intentionally not a HUD surface
@@ -70,10 +74,8 @@ RULES = [
     # rendered as a panel — a HUD surface for them would be meaningless.
     ("/manifest.webmanifest", "NOT_IN_HUD"),
     ("/sw-v2.js", "NOT_IN_HUD"),
-    # T-0.20 vault (Console → Memory), T-0.41 signals (Console → Interop),
-    # T-0.53 design manifest (Console → Observe).
+    # T-0.20 vault (Console → Memory), T-0.53 design manifest (Console → Observe).
     ("/api/vault", "memory"),
-    ("/api/signals/", "interop"),
     ("/api/packs", "interop"),          # T-0.58 typed Pack Manager inventory
     ("/api/design-manifest", "observe"),
     ("/api/widget/", "interop"),  # embeddable widget runtime (managed under Interop)
@@ -81,6 +83,7 @@ RULES = [
     ("/api/hermes/", "admin"),  # managed runtime controls and task approvals in Admin → Hermes Runtime
     # cockpit / conversation
     ("/chat", "cockpit"),
+    ("/api/chat/cloud-history/preview", "cockpit"),
     ("/api/status", "cockpit"),
     ("/status", "cockpit"),
     ("/api/agents/opinions", "cockpit"),
@@ -204,6 +207,8 @@ RULES = [
     ("/map", "observe"),  # H34.7 Live System Map standalone page (topology + health)
     ("/api/system-map", "observe"),  # H34.7 subsystem-health feed driving the map
     ("/api/health/components", "observe"),
+    ("/api/admin/tool-events", "observe"),  # Observe → Logs lazy ToolEventsDisclosure
+    ("/api/admin/logs", "observe"),         # Observe → Logs (LogsPanel)
     # interop (a2a / mcp client mgmt / webhooks / external write-back + social)
     ("/api/a2a/", "interop"),
     ("/api/admin/mcp", "interop"),
@@ -320,19 +325,24 @@ def test_core_surfaces_each_cover_a_route():
 
 
 def test_jarvis_os_is_an_explicit_native_hud_and_mobile_gap():
-    """The HUD offers scoped note and project reads. The editor lives in /os."""
+    """The HUD offers vault status/search/note/capture and project reads; the 3D galaxy/workshop editor lives in /os."""
     routes = {p for p in _routes() if p.startswith("/api/os/") or p in {"/os", "/os/{path:path}"}}
     assert len(routes) >= 7
-    notes = {"/api/os/brain/retrieve", "/api/os/brain/note"}
+    notes = {"/api/os/brain/retrieve", "/api/os/brain/note", "/api/os/brain/chat-note"}
     assert notes <= routes and all(_classify(path) == "cockpit" for path in notes)
+    memory_os = {"/api/os/status", "/api/os/brain/reindex", "/api/os/brain/capture"}
+    assert memory_os <= routes and all(_classify(path) == "memory" for path in memory_os)
     projects = {"/api/os/workshop/projects", "/api/os/workshop/project"}
     assert projects <= routes and all(_classify(path) == "cockpit" for path in projects)
     picker = (REPO / "frontend/src/workshop-projects.tsx").read_text(encoding="utf-8")
     assert all(path in picker for path in projects)
-    assert {_classify(p) for p in routes - projects - notes} == {"HUD_GAP:jarvis-os"}
+    gap_src = GAP.read_text(encoding="utf-8")
+    for path in ("/api/os/status", "/api/os/brain/reindex", "/api/os/brain/retrieve", "/api/os/brain/note", "/api/os/brain/capture"):
+        assert path in gap_src
+    assert {_classify(p) for p in routes - projects - notes - memory_os} == {"HUD_GAP:jarvis-os"}
     lookup = (REPO / "frontend/src/composer-vault.tsx").read_text(encoding="utf-8")
     cockpit = (REPO / "frontend/src/cockpit.tsx").read_text(encoding="utf-8")
-    assert all(path in lookup for path in notes) and "apiFetchOnce(" in lookup
+    assert all(path in lookup for path in {"/api/os/brain/retrieve", "/api/os/brain/note"}) and "apiFetchOnce(" in lookup
     assert "./composer-vault" in cockpit and "<VaultNoteReview draft={vault}/>" in cockpit
     for file in ("docs/design/HUD_V2_REMAINING.md", "mobile/PARITY.md"):
         doc = (REPO / file).read_text(encoding="utf-8")
@@ -568,10 +578,6 @@ MACHINE_FACING: dict[str, str] = {
         "H624: queued by `nerva update trust` (agents/cli/nerva.py) from a key file on the "
         "owner's machine as an irreversible-tier card; the HUD shows the pinned trust from "
         "GET /api/admin/ops/update and accepts the card in the decision inbox",
-    "/api/admin/ops/update/receipts":
-        "H624: the receipt history read by `nerva update status` (agents/cli/nerva.py); the "
-        "HUD's Restart / Update panel shows the in-flight and last receipt from "
-        "GET /api/admin/ops/update",
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",
@@ -589,7 +595,6 @@ MACHINE_FACING: dict[str, str] = {
     "/.well-known/oauth-protected-resource": "OAuth resource metadata, fetched by clients",
     "/api/a2a/card": "agent-to-agent discovery",
     "/api/a2a/task": "agent-to-agent task submission",
-    "/api/channels/sms/webhook": "G16 (H098): Twilio posts inbound SMS here, signed with X-Twilio-Signature",
     "/api/room-peers/peer/accept": "H658: a member hub redeems an invitation (signed, pinned key)",
     "/api/room-peers/peer/call": "H658: a member hub's signed call under its NervaRoom grant",
     "/api/room-peers/peer/renew": "H658: a member hub renews its NervaRoom grant",
@@ -613,11 +618,9 @@ MACHINE_FACING: dict[str, str] = {
     "/api/plugins/extensions/install": "owner submission of a local author folder or pack, via `nerva extensions install|pack install`",
     "/api/oauth/auth-url": "OAuth dance, driven by the provider/browser",
     "/api/oauth/callback": "OAuth redirect target",
+    "/api/oauth/chatgpt/callback": "ChatGPT redirects the owner's browser here after account sign-in",
     "/api/oauth/mcp/callback": "MCP sign-in redirect target: the browser returns here from the server's "
                                "authorization page (G9 / H692)",
-    "/api/admin/tool-events":
-        "the tool loop's trail, read by `nerva tools` \u2014 the CLI is not in the client "
-        "globs above; the HUD renderer for it is the deferred inline-tool-trail slice",
     "/api/channels/targets":
         "the configured send destinations, read by `nerva send --list` — the CLI is not "
         "in the client globs above; H018/H480 is a shell primitive, and a HUD composer for "
@@ -641,9 +644,7 @@ MACHINE_FACING: dict[str, str] = {
     "/api/browser/broker/artifacts/{artifact_id}/download": "H086: caller/tool one-shot HTTPS binary artifact fetch (X-Artifact-Ticket)",
     "/api/capture/ingest": "passive-capture agent ingest",
     "/api/capture/surfaces": "passive-capture agent",
-    "/api/channels/webhook": "inbound channel webhook",
     "/api/channels/pairing/request": "inbound pairing request from a sender",
-    "/api/channels/{channel_id}/inbound": "inbound webhook delivered by the provider/bridge",
     "/api/widget/{token}/message": "embed snippet, running on a third-party page",
     "/api/toolrpc/call": "ToolRPC transport",
     "/api/toolrpc/tools": "ToolRPC transport",

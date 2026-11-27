@@ -1,7 +1,5 @@
 """Owner-confirmed conversation changes, fenced before any history append."""
 
-import hashlib
-import json
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
@@ -67,11 +65,6 @@ class SessionCommandRuntime:
         if not self._route_current(service, source, delivery, snap.base, snap.generation,
                                    snap.actual, snap.shared):
             return False
-        if source.channel == "ntfy":
-            adapter = (getattr(self.orch, "channels", None) or {}).get("ntfy")
-            allowed = getattr(adapter, "_reply_allowed", None)
-            if not callable(allowed) or not allowed(delivery.get("ntfy_topic"), delivery.get("ntfy_context")):
-                return False
         return (self._clock(snap.actual) == snap.clock
                 and getattr((getattr(self.orch, "channels", None) or {}).get(source.channel),
                             "_pending_callback_generation", None) is snap.transport_generation
@@ -84,20 +77,10 @@ class SessionCommandRuntime:
                                      getattr(worker, "govern_enqueue", None))
 
     def _consent_key(self, source):
-        key = pending_key(source)
-        if source.channel != "ntfy":
-            return key
-        adapter = (getattr(self.orch, "channels", None) or {}).get("ntfy")
-        authority = [getattr(adapter, field, None) for field in ("url", "topic", "publish_topic")]
-        if key is None or any(type(value) is not str or not value for value in authority):
-            raise RewindRefused("ntfy consent authority unavailable")
-        # Stable across restart and credential rotation; a different endpoint
-        # or topic cannot inherit the previous server's standing approval.
-        digest = hashlib.sha256(json.dumps(authority, separators=(",", ":")).encode()).hexdigest()
-        return key[0], f"{key[1]}:ntfy:{digest}", key[2]
+        return pending_key(source)
 
     async def handle(self, source, text, delivery):
-        if source.channel not in {"telegram", "slack", "discord", "ntfy"}:
+        if source.channel != "telegram":
             return None
         service = lifecycle(self.orch)
         operation = "undo" if text.strip() == "/undo" else (

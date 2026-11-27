@@ -83,7 +83,7 @@ is not the production shell renderer; use the Python app for deep-link verificat
 
 The V2 shell, linked `/map` and `/mission-control`, requests, lazy assets and PWA
 follow the prefix. Existing `/v1` remains available but is not claimed prefix-aware.
-Signal Layer and external WorldView retain their own configured origins. Browser
+Browser
 origin remains the browser's trust boundary; path prefixes are deployment locations.
 Service-worker cache names and deletion are isolated by deployment prefix, and APIs
 and mutations remain network-only.

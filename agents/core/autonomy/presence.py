@@ -11,7 +11,7 @@ decide *where* a decision card should land:
     existing Telegram decision-inbox path is unchanged (calm by default).
   * **away** → the owner isn't watching a screen, so finished-work / approval
     cards are *also* fanned out to the governed escalation channels
-    (WhatsApp / Telegram / …) — see ``escalation.AwayNotifier`` — still inside
+    — see ``escalation.AwayNotifier`` — still inside
     the same ≤4/day interrupt budget.
 
 **Default-off / fail-calm.** With no daemon reporting, the state is ``unknown``

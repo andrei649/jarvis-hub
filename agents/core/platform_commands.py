@@ -15,7 +15,7 @@ _MAX_ROWS = 12
 _MAX_NAME = 256
 _USAGE = "Usage: /platform [list|pause <name>|resume <name>]."
 _AUDIT_UNAVAILABLE = " Audit record unavailable."
-_KNOWN_TARGETS = frozenset({"telegram", "discord", "slack", "ntfy", "web", "voice", "email", "sms"})
+_KNOWN_TARGETS = frozenset({"telegram", "web", "voice"})
 _PAUSE_OUTCOMES = frozenset({
     "paused", "unknown", "not_failed", "already_paused", "stop_unconfirmed",
     "owner_changed", "shutdown",

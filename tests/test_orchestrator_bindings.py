@@ -697,7 +697,7 @@ def test_orchestrator_exposes_external_binding_protocol_before_wiring() -> None:
 
     assert orch.autonomy._restart_runtime is runtime_for(orch)
 
-    del orch.argus
+    del orch.oracle_bridge
     assert not isinstance(orch, ExternalOrchestratorBindings)
 
 
@@ -778,17 +778,17 @@ def test_scope_local_unrelated_receiver_replacement_is_not_rejected(source: str)
 
 
 def test_unrelated_same_named_assignment_cannot_satisfy_inventory(tmp_path: Path) -> None:
-    source = "def wire(unrelated, value):\n    unrelated.argus = value\n"
+    source = "def wire(unrelated, value):\n    unrelated.oracle_bridge = value\n"
     writer = tmp_path / "writer.py"
     writer.write_text(source, encoding="utf-8")
 
-    assert "argus" not in _binding_api_calls(writer)
+    assert "oracle_bridge" not in _binding_api_calls(writer)
 
 
 def test_untyped_target_external_binding_write_is_rejected() -> None:
-    source = "def wire(target, value):\n    target.argus = value\n"
+    source = "def wire(target, value):\n    target.oracle_bridge = value\n"
 
-    assert _binding_contract_violations(source, initialized=set()) == ["<fixture>:2:direct:argus"]
+    assert _binding_contract_violations(source, initialized=set()) == ["<fixture>:2:direct:oracle_bridge"]
 
 
 @pytest.mark.parametrize(
@@ -797,16 +797,16 @@ def test_untyped_target_external_binding_write_is_rejected() -> None:
         """
 def wire(target, value):
     write_attribute = setattr
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
         """
 def wire(target, value):
-    object.__setattr__(target, "argus", value)
+    object.__setattr__(target, "oracle_bridge", value)
 """,
         """
 def wire(target, value):
     write_attribute = getattr(object, "__setattr__")
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
     ],
 )
@@ -818,7 +818,7 @@ def test_setter_alias_call_before_later_reassignment_is_rejected() -> None:
     source = """
 def wire(target, replacement, value):
     write_attribute = setattr
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
     write_attribute = replacement
 """
 
@@ -828,7 +828,7 @@ def wire(target, replacement, value):
 def test_named_expression_setter_alias_is_rejected() -> None:
     source = """
 def wire(target, value):
-    (write_attribute := setattr)(target, "argus", value)
+    (write_attribute := setattr)(target, "oracle_bridge", value)
 """
 
     assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
@@ -841,23 +841,23 @@ def wire(target, replacement, value, condition):
     write_attribute = setattr
     if condition:
         write_attribute = replacement
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
         """
 def wire(target, replacement, value, condition):
     write_attribute = setattr if condition else replacement
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
         """
 def wire(target, replacement, value, condition):
-    (write_attribute := setattr if condition else replacement)(target, "argus", value)
+    (write_attribute := setattr if condition else replacement)(target, "oracle_bridge", value)
 """,
         """
 def wire(target, replacement, value, condition):
     write_attribute = setattr
     while condition:
         write_attribute = replacement
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
         """
 def wire(target, replacement, value, condition):
@@ -866,7 +866,7 @@ def wire(target, replacement, value, condition):
         break
     else:
         write_attribute = replacement
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
         """
 def wire(target, replacement, value):
@@ -875,7 +875,7 @@ def wire(target, replacement, value):
         write_attribute = replacement
     except Exception:
         pass
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
         """
 def wire(target, replacement, value):
@@ -886,16 +886,16 @@ def wire(target, replacement, value):
         write_attribute = replacement
     except Exception:
         pass
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
         """
 def wire(target, value, write_attribute=setattr):
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
         """
 def wire(target, replacement, value, condition):
     for write_attribute in (setattr if condition else replacement,):
-        write_attribute(target, "argus", value)
+        write_attribute(target, "oracle_bridge", value)
 """,
     ]
 
@@ -907,7 +907,7 @@ def test_for_loop_setter_target_alias_is_rejected() -> None:
     source = """
 def wire(target, value):
     for write_attribute in (setattr,):
-        write_attribute(target, "argus", value)
+        write_attribute(target, "oracle_bridge", value)
 """
 
     assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
@@ -955,7 +955,7 @@ import builtins
 
 def wire(target, value):
     write_attribute = getattr(builtins, "setattr")
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """
 
     assert _binding_contract_violations(textwrap.dedent(source), initialized=set())
@@ -968,19 +968,19 @@ def wire(target, value):
 from builtins import setattr as write_attribute
 
 def wire(target, value):
-    write_attribute(target, "argus", value)
+    write_attribute(target, "oracle_bridge", value)
 """,
         """
 from builtins import object as root_object
 
 def wire(target, value):
-    root_object.__setattr__(target, "argus", value)
+    root_object.__setattr__(target, "oracle_bridge", value)
 """,
         """
 import builtins
 
 def wire(target, value):
-    builtins.setattr(target, "argus", value)
+    builtins.setattr(target, "oracle_bridge", value)
 """,
     ],
 )
@@ -993,11 +993,11 @@ def test_imported_builtin_setter_aliases_are_rejected(source: str) -> None:
     [
         """
 def wire(target, value, setattr):
-    setattr(target, "argus", value)
+    setattr(target, "oracle_bridge", value)
 """,
         """
 def wire(target, value, object):
-    object.__setattr__(target, "argus", value)
+    object.__setattr__(target, "oracle_bridge", value)
 """,
     ],
 )
@@ -1012,12 +1012,12 @@ from agents.core.orchestrator_bindings import (
 )
 
 def wire(orchestrator, value):
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
 """
     writer = tmp_path / "writer.py"
     writer.write_text(source, encoding="utf-8")
 
-    assert "argus" in _binding_api_calls(writer)
+    assert "oracle_bridge" in _binding_api_calls(writer)
 
 
 def test_binding_api_call_parser_tracks_qualified_call(tmp_path: Path) -> None:
@@ -1025,12 +1025,12 @@ def test_binding_api_call_parser_tracks_qualified_call(tmp_path: Path) -> None:
 import agents.core.orchestrator_bindings as bindings
 
 def wire(orchestrator, value):
-    bindings.bind_external_orchestrator_attribute(orchestrator, "argus", value)
+    bindings.bind_external_orchestrator_attribute(orchestrator, "oracle_bridge", value)
 """
     writer = tmp_path / "writer.py"
     writer.write_text(source, encoding="utf-8")
 
-    assert "argus" in _binding_api_calls(writer)
+    assert "oracle_bridge" in _binding_api_calls(writer)
 
 
 @pytest.mark.parametrize(
@@ -1041,7 +1041,7 @@ def wire(orchestrator, value):
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
 (write_binding,) = (bind_external_orchestrator_attribute,)
-write_binding(orchestrator, "argus", value)
+write_binding(orchestrator, "oracle_bridge", value)
 """,
             5,
         ),
@@ -1050,7 +1050,7 @@ write_binding(orchestrator, "argus", value)
 from agents.core import orchestrator_bindings
 
 local_bindings = orchestrator_bindings
-local_bindings.bind_external_orchestrator_attribute(orchestrator, "argus", value)
+local_bindings.bind_external_orchestrator_attribute(orchestrator, "oracle_bridge", value)
 """,
             5,
         ),
@@ -1059,7 +1059,7 @@ local_bindings.bind_external_orchestrator_attribute(orchestrator, "argus", value
 import agents.core.orchestrator_bindings as bindings
 
 write_binding = getattr(bindings, "bind_external_orchestrator_attribute")
-write_binding(orchestrator, "argus", value)
+write_binding(orchestrator, "oracle_bridge", value)
 """,
             5,
         ),
@@ -1074,7 +1074,7 @@ def test_binding_api_parser_tracks_lexical_alias_forms(
     )
 
     assert errors == []
-    assert calls == [("argus", expected_line, 0)]
+    assert calls == [("oracle_bridge", expected_line, 0)]
 
 
 def test_binding_api_parser_tracks_tuple_subscript_alias() -> None:
@@ -1083,7 +1083,7 @@ from agents.core.orchestrator_bindings import bind_external_orchestrator_attribu
 
 binding_apis = (bind_external_orchestrator_attribute,)
 write_binding = binding_apis[0]
-write_binding(orchestrator, "argus", value)
+write_binding(orchestrator, "oracle_bridge", value)
 """
 
     calls, errors = _binding_api_call_names(
@@ -1091,7 +1091,7 @@ write_binding(orchestrator, "argus", value)
     )
 
     assert errors == []
-    assert calls == [("argus", 6, 0)]
+    assert calls == [("oracle_bridge", 6, 0)]
 
 
 def test_binding_api_alias_call_before_later_reassignment_is_inventoried() -> None:
@@ -1100,7 +1100,7 @@ from agents.core.orchestrator_bindings import bind_external_orchestrator_attribu
 
 def wire(orchestrator, replacement, value):
     write_binding = bind_external_orchestrator_attribute
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
     write_binding = replacement
 """
 
@@ -1109,7 +1109,7 @@ def wire(orchestrator, replacement, value):
     )
 
     assert errors == []
-    assert calls == [("argus", 6, 4)]
+    assert calls == [("oracle_bridge", 6, 4)]
 
 
 def test_named_expression_binding_alias_is_inventoried() -> None:
@@ -1118,7 +1118,7 @@ from agents.core.orchestrator_bindings import bind_external_orchestrator_attribu
 
 def wire(orchestrator, value):
     (write_binding := bind_external_orchestrator_attribute)(
-        orchestrator, "argus", value
+        orchestrator, "oracle_bridge", value
     )
 """
 
@@ -1127,7 +1127,7 @@ def wire(orchestrator, value):
     )
 
     assert errors == []
-    assert calls == [("argus", 5, 4)]
+    assert calls == [("oracle_bridge", 5, 4)]
 
 
 def test_conditional_binding_reassignment_remains_conservative() -> None:
@@ -1139,21 +1139,21 @@ def wire(orchestrator, replacement, value, condition):
     write_binding = bind_external_orchestrator_attribute
     if condition:
         write_binding = replacement
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
 """,
         """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
 def wire(orchestrator, replacement, value, condition):
     write_binding = bind_external_orchestrator_attribute if condition else replacement
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
 """,
         """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
 def wire(orchestrator, replacement, value, condition):
     (write_binding := bind_external_orchestrator_attribute if condition else replacement)(
-        orchestrator, "argus", value
+        orchestrator, "oracle_bridge", value
     )
 """,
         """
@@ -1163,7 +1163,7 @@ def wire(orchestrator, replacement, value, condition):
     write_binding = bind_external_orchestrator_attribute
     while condition:
         write_binding = replacement
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
 """,
         """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
@@ -1174,7 +1174,7 @@ def wire(orchestrator, replacement, value, condition):
         break
     else:
         write_binding = replacement
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
 """,
         """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
@@ -1185,7 +1185,7 @@ def wire(orchestrator, replacement, value):
         write_binding = replacement
     except Exception:
         pass
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
 """,
         """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
@@ -1198,13 +1198,13 @@ def wire(orchestrator, replacement, value):
         write_binding = replacement
     except Exception:
         pass
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
 """,
         """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
 def wire(orchestrator, value, write_binding=bind_external_orchestrator_attribute):
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
 """,
         """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
@@ -1213,7 +1213,7 @@ def wire(orchestrator, replacement, value, condition):
     for write_binding in (
         bind_external_orchestrator_attribute if condition else replacement,
     ):
-        write_binding(orchestrator, "argus", value)
+        write_binding(orchestrator, "oracle_bridge", value)
 """,
     ]
 
@@ -1223,7 +1223,7 @@ def wire(orchestrator, replacement, value, condition):
         )
 
         assert errors == []
-        assert [name for name, _line, _column in calls] == ["argus"]
+        assert [name for name, _line, _column in calls] == ["oracle_bridge"]
 
 
 def test_for_loop_binding_target_alias_is_inventoried() -> None:
@@ -1232,7 +1232,7 @@ from agents.core.orchestrator_bindings import bind_external_orchestrator_attribu
 
 def wire(orchestrator, value):
     for write_binding in (bind_external_orchestrator_attribute,):
-        write_binding(orchestrator, "argus", value)
+        write_binding(orchestrator, "oracle_bridge", value)
 """
 
     calls, errors = _binding_api_call_names(
@@ -1240,7 +1240,7 @@ def wire(orchestrator, value):
     )
 
     assert errors == []
-    assert calls == [("argus", 6, 8)]
+    assert calls == [("oracle_bridge", 6, 8)]
 
 
 def test_dynamic_getattr_binding_api_reference_fails_closed() -> None:
@@ -1249,7 +1249,7 @@ import agents.core.orchestrator_bindings as bindings
 
 API_NAME = "bind_external_orchestrator_attribute"
 write_binding = getattr(bindings, API_NAME)
-write_binding(orchestrator, "argus", value)
+write_binding(orchestrator, "oracle_bridge", value)
 """
 
     calls, errors = _binding_api_call_names(
@@ -1265,7 +1265,7 @@ def test_shadowed_binding_api_name_is_not_counted() -> None:
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
 def wire(bind_external_orchestrator_attribute, orchestrator, value):
-    bind_external_orchestrator_attribute(orchestrator, "argus", value)
+    bind_external_orchestrator_attribute(orchestrator, "oracle_bridge", value)
 """
 
     calls, errors = _binding_api_call_names(
@@ -1283,13 +1283,13 @@ def wire(bind_external_orchestrator_attribute, orchestrator, value):
 from unrelated import orchestrator_bindings
 
 orchestrator_bindings.bind_external_orchestrator_attribute(
-    orchestrator, "argus", value
+    orchestrator, "oracle_bridge", value
 )
 """,
         """
 from unrelated.orchestrator_bindings import bind_external_orchestrator_attribute
 
-bind_external_orchestrator_attribute(orchestrator, "argus", value)
+bind_external_orchestrator_attribute(orchestrator, "oracle_bridge", value)
 """,
     ],
 )
@@ -1307,7 +1307,7 @@ def test_late_global_shadow_cannot_satisfy_inventory() -> None:
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
 def wire(orchestrator, value):
-    bind_external_orchestrator_attribute(orchestrator, "argus", value)
+    bind_external_orchestrator_attribute(orchestrator, "oracle_bridge", value)
 
 def bind_external_orchestrator_attribute(*args):
     return None
@@ -1325,8 +1325,8 @@ def test_duplicate_binding_api_callsites_are_not_collapsed() -> None:
     source = """
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
-bind_external_orchestrator_attribute(orchestrator, "argus", first)
-bind_external_orchestrator_attribute(orchestrator, "argus", second)
+bind_external_orchestrator_attribute(orchestrator, "oracle_bridge", first)
+bind_external_orchestrator_attribute(orchestrator, "oracle_bridge", second)
 """
 
     calls, errors = _binding_api_call_names(
@@ -1334,17 +1334,17 @@ bind_external_orchestrator_attribute(orchestrator, "argus", second)
     )
 
     assert errors == []
-    assert calls == [("argus", 4, 0), ("argus", 5, 0)]
+    assert calls == [("oracle_bridge", 4, 0), ("oracle_bridge", 5, 0)]
 
 
 def test_exact_callsite_inventory_reports_missing_and_extra_locations() -> None:
-    expected = {"argus": (("agents/core/plugin_manager.py", 188, 8),)}
+    expected = {"oracle_bridge": (("agents/core/plugin_manager.py", 188, 8),)}
 
     assert _writer_inventory_mismatches(
-        {"argus": {("agents/core/plugin_manager.py", 189, 8)}},
+        {"oracle_bridge": {("agents/core/plugin_manager.py", 189, 8)}},
         expected=expected,
     ) == [
-        "argus: expected=[('agents/core/plugin_manager.py', 188, 8)] "
+        "oracle_bridge: expected=[('agents/core/plugin_manager.py', 188, 8)] "
         "observed=[('agents/core/plugin_manager.py', 189, 8)]"
     ]
 
@@ -1353,9 +1353,9 @@ def test_exact_callsite_inventory_rejects_duplicate_declared_locations() -> None
     callsite = ("agents/core/plugin_manager.py", 188, 8)
 
     assert _writer_inventory_mismatches(
-        {"argus": {callsite}},
-        expected={"argus": (callsite, callsite)},
-    ) == ["argus: duplicate expected callsites=[('agents/core/plugin_manager.py', 188, 8)]"]
+        {"oracle_bridge": {callsite}},
+        expected={"oracle_bridge": (callsite, callsite)},
+    ) == ["oracle_bridge: duplicate expected callsites=[('agents/core/plugin_manager.py', 188, 8)]"]
 
 
 @pytest.mark.parametrize(
@@ -1365,7 +1365,7 @@ def test_exact_callsite_inventory_rejects_duplicate_declared_locations() -> None
 from agents.core.orchestrator_bindings import bind_external_orchestrator_attribute
 
 def wire(orchestrator, value):
-    bind_external_orchestrator_attribute(orchestrator, "argus", value)
+    bind_external_orchestrator_attribute(orchestrator, "oracle_bridge", value)
 """,
         """
 from agents.core.orchestrator_bindings import (
@@ -1373,7 +1373,7 @@ from agents.core.orchestrator_bindings import (
 )
 
 def wire(orchestrator, value):
-    write_binding(orchestrator, "argus", value)
+    write_binding(orchestrator, "oracle_bridge", value)
 """,
     ],
 )
@@ -1387,7 +1387,7 @@ def test_unlisted_binding_api_writer_fails_inventory_closure(source: str) -> Non
     assert parse_errors == []
     assert _writer_inventory_mismatches(
         observed,
-        expected={"argus": EXTERNAL_BINDING_WRITERS["argus"]},
+        expected={"oracle_bridge": EXTERNAL_BINDING_WRITERS["oracle_bridge"]},
     )
 
 

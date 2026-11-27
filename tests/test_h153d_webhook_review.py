@@ -49,7 +49,7 @@ def _body(sent: dict) -> str:
 
 # ── MAJOR: a push is never rendered, so one long line cannot stall the loop ─────
 
-@pytest.mark.parametrize("channel", ("telegram", "ntfy"))
+@pytest.mark.parametrize("channel", ("telegram",))
 def test_a_long_line_of_brackets_is_pushed_at_once(owner, channel):
     """32,000 ``[`` took the old path about 9 s of a frozen event loop."""
     (client, _events, _turns), adapters = owner
@@ -63,7 +63,7 @@ def test_a_long_line_of_brackets_is_pushed_at_once(owner, channel):
     assert body.startswith("[" * 1_000) and body.endswith("… (cut: the rest was not kept)")
 
 
-@pytest.mark.parametrize("channel", ("telegram", "ntfy"))
+@pytest.mark.parametrize("channel", ("telegram",))
 def test_a_senders_text_arrives_as_written(owner, channel):
     """No markup is rendered and nothing is rewritten: a file name, an address with
     underscores or asterisks, and a Markdown link all arrive exactly as sent."""
@@ -85,29 +85,6 @@ def test_a_spoken_push_reads_the_text_without_its_markup(owner):
     assert adapters["voice"].sent == [{"text": "Webhook ci\n\nbuild log (https://ci.example/1) done"}]
 
 
-async def test_the_ntfy_adapter_sends_a_plain_push_as_it_is():
-    from agents.core.channels.ntfy import NtfyChannel
-
-    class _Http:
-        def __init__(self):
-            self.bodies = []
-
-        async def post(self, url, content=None, headers=None, **kwargs):
-            self.bodies.append(content.decode("utf-8"))
-            return SimpleNamespace(raise_for_status=lambda: None)
-
-        async def aclose(self):
-            pass
-
-    text = "pkg/__init__.py **kept** [a](https://b.example)"
-    plain = NtfyChannel("https://ntfy.example", "topic", client=_Http())
-    assert await plain.send(text, title="t", plain=True) is True
-    assert plain.client.bodies == [text]
-    rendered = NtfyChannel("https://ntfy.example", "topic", client=_Http())
-    assert await rendered.send("**kept**", title="t") is True
-    assert rendered.client.bodies == ["kept"]                 # a reply is still rendered
-
-
 def test_characters_that_hide_or_reorder_text_are_dropped_from_a_push(owner):
     (client, _events, _turns), adapters = owner
     hook = _hook(client, name="issues", deliver="telegram", deliver_only=True)
@@ -125,7 +102,7 @@ def test_characters_that_hide_or_reorder_text_are_dropped_from_a_push(owner):
     "# x" + " " * 16_000 + "y", "# x" + "#" * 16_000 + "y", "[a](https://" * 3_000,
 ], ids=["brackets", "bold", "italic", "underscore", "bold-underscore", "heading-spaces", "heading-hashes",
         "link-urls"])
-@pytest.mark.parametrize("render", ["to_plain", "to_telegram_html", "to_slack_mrkdwn"])
+@pytest.mark.parametrize("render", ["to_plain", "to_telegram_html"])
 def test_rendering_one_long_line_costs_linear_time(text, render):
     """Every other caller of the renderers (a model's reply, a streamed preview) still
     renders; a marker span is bounded, so one long line costs linear time."""

@@ -1,6 +1,7 @@
 """Agent Canvas / A2UI endpoints (H12.18) — extracted from web.py (CLN-3)."""
 
 import asyncio
+import base64
 import threading
 import time
 from functools import partial
@@ -22,6 +23,8 @@ router = APIRouter(tags=["canvas"])
 _canvas_store = None
 _preview_slots = threading.BoundedSemaphore(2)
 _blend_preview_slot = threading.BoundedSemaphore(1)
+_OFFICE_BYTES = 8 * 1024 * 1024
+_OFFICE_BASE64 = ((_OFFICE_BYTES + 2) // 3) * 4
 
 
 class OfficePreviewSegment(BaseModel):
@@ -79,6 +82,14 @@ class ExcelExport(BaseModel, extra="forbid"):
     rows: list[Annotated[list[str], Field(max_length=64)]] = Field(min_length=1, max_length=1001)
 
 
+class OfficeEdit(BaseModel, extra="forbid"):
+    kind: Literal["docx", "xlsx"]
+    source_base64: str = Field(min_length=4, max_length=_OFFICE_BASE64)
+    target: str = Field(min_length=1, max_length=2048)
+    replacement: str = Field(max_length=8192)
+    sheet: str | None = Field(default=None, min_length=1, max_length=31)
+
+
 _EXPORT_BODY = TypeAdapter(Annotated[WordExport | ExcelExport, Field(discriminator="format")])
 
 
@@ -115,11 +126,63 @@ async def canvas_export(request: Request):
         if exc.name != "docx":
             raise
         return nocache_json({"error": "The Word export dependency is unavailable"}, 503)
+    return _office_download(data, mime, filename)
+
+
+def _office_download(data: bytes, mime: str, filename: str) -> Response:
     return Response(data, media_type=mime, headers={
         "Content-Disposition": f'attachment; filename="{filename}"',
         "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "sandbox; default-src 'none'",
     })
+
+
+@router.post(
+    "/api/canvas/office-edit", dependencies=[Depends(user_guard)], response_class=Response,
+    openapi_extra={"requestBody": {"required": True, "content": {
+        "application/json": {"schema": OfficeEdit.model_json_schema()},
+    }}},
+    responses={200: {"content": {mime: {"schema": {"type": "string", "format": "binary"}}
+                                for mime in (WORD_MIME, EXCEL_MIME)}}},
+)
+async def canvas_office_edit(request: Request):
+    """Return an edited copy of a supplied Office file."""
+    from agents.core.office_export import edit_office
+
+    if request.headers.get("content-type", "").partition(";")[0].strip().lower() != "application/json":
+        return nocache_json({"error": "Expected application/json"}, 415)
+    if not _preview_slots.acquire(blocking=False):
+        return nocache_json({"error": "Office processing is busy"}, 429)
+    processing = None
+    try:
+        raw = await read_bounded_body(request, _OFFICE_BASE64 + 128 * 1024)
+        if raw is None:
+            return nocache_json({"error": "Office edit exceeds the upload limit"}, 413)
+        try:
+            edit = OfficeEdit.model_validate_json(raw)
+            source = base64.b64decode(edit.source_base64, validate=True)
+        except ValueError:
+            return nocache_json({"error": "Supply a valid Office file, target and replacement"}, 422)
+        if len(source) > _OFFICE_BYTES:
+            return nocache_json({"error": "Office file exceeds 8 MiB"}, 413)
+        if (edit.kind == "xlsx") != (edit.sheet is not None):
+            return nocache_json({"error": "Select a worksheet for an Excel edit"}, 422)
+        processing = asyncio.create_task(asyncio.to_thread(
+            edit_office, source, edit.kind, edit.target, edit.replacement, edit.sheet))
+        processing.add_done_callback(partial(_release_preview_slot, slots=_preview_slots))
+        try:
+            data = await asyncio.shield(processing)
+        except ModuleNotFoundError as exc:
+            if exc.name != "lxml":
+                raise
+            return nocache_json({"error": "The Office editor is unavailable on this hub"}, 503)
+        except ValueError:
+            return nocache_json({"error": "Cannot edit that target. Choose unique text or an editable cell."}, 422)
+        mime = WORD_MIME if edit.kind == "docx" else EXCEL_MIME
+        return _office_download(data, mime, f"Nerva edited copy.{edit.kind}")
+    finally:
+        if processing is None:
+            _preview_slots.release()
 
 
 @router.post(
@@ -143,7 +206,7 @@ async def canvas_office_preview(request: Request, kind: str = Query(..., json_sc
         return nocache_json({"error": "Office preview is busy"}, 429)
     processing = None
     try:
-        data = await read_bounded_body(request, 8 * 1024 * 1024)
+        data = await read_bounded_body(request, _OFFICE_BYTES)
         if data is None:
             return nocache_json({"error": "Office file exceeds 8 MiB"}, 413)
         if not data or not extract.content_matches(kind, data):

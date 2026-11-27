@@ -212,7 +212,7 @@ class PluginTimeouts:
 def _address_mode(host: str) -> str:
     """Pick the SSRF address class for a host the egress policy already cleared.
 
-    Self-hosted integrations (n8n, SearXNG, Signal, Matrix) are configured with a
+    Self-hosted integrations (n8n, SearXNG) are configured with a
     loopback / RFC1918 *literal* — or the reserved name ``localhost`` — and must
     validate in ``lan`` mode, or local-first deployments cannot reach their own
     services (MOONSHOT §5.1). Every other name stays in ``public`` mode on
@@ -336,7 +336,7 @@ class PluginHTTPClient:
             return "lan"
         elif na == NetworkAccess.RESTRICTED:
             # SEC-5b: static allowlist ∪ hosts registered at init for config/env-
-            # driven plugins (n8n, SearXNG, Signal, Matrix).
+            # driven plugins (n8n, SearXNG).
             allowed = manifest.allowed_domains + dynamic_domains(self.plugin_name)
             if host and host_in_allowlist(host, allowed):
                 return _address_mode(host)

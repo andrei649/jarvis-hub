@@ -208,7 +208,7 @@ def _fixed_content(fd: int) -> None:
         raise OSError("unsafe claim file")
 
 
-_CHANNELS = frozenset({"telegram", "discord", "slack-app", "slack-bot", "ntfy-inbound"})
+_CHANNELS = frozenset({"telegram"})
 
 
 def _acquire_claim(channel: str, token: str, *, root: Path | None = None) -> PollingClaim:
@@ -261,31 +261,6 @@ def acquire_telegram_claim(token: str, *, root: Path | None = None) -> PollingCl
     return _acquire_claim("telegram", token, root=root)
 
 
-def acquire_discord_claim(token: str, *, root: Path | None = None) -> PollingClaim:
-    """Claim one exact Discord token's connection startup/lifetime."""
-    return _acquire_claim("discord", token, root=root)
-
-
-def acquire_slack_app_claim(token: str, *, root: Path | None = None) -> PollingClaim:
-    """Claim one exact Slack app token's Socket Mode connection lifetime."""
-    return _acquire_claim("slack-app", token, root=root)
-
-
-def acquire_slack_bot_claim(token: str, *, root: Path | None = None) -> PollingClaim:
-    """Claim one exact Slack bot token's Socket Mode connection lifetime."""
-    return _acquire_claim("slack-bot", token, root=root)
-
-
-def acquire_ntfy_claim(resource: str, *, root: Path | None = None) -> PollingClaim:
-    """Claim one normalized ntfy subscription identity across local profiles.
-
-    The adapter supplies its normalized GET identity tuple without replay query or bearer
-    token. Only the domain-separated digest reaches the private lock filename.
-    """
-    return _acquire_claim("ntfy-inbound", resource, root=root)
-
-
 __all__ = [
-    "ClaimUnavailable", "PollingClaim", "acquire_telegram_claim", "acquire_discord_claim",
-    "acquire_slack_app_claim", "acquire_slack_bot_claim", "acquire_ntfy_claim",
+    "ClaimUnavailable", "PollingClaim", "acquire_telegram_claim",
 ]

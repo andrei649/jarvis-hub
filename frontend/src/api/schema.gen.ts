@@ -1676,6 +1676,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/canvas/office-edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Canvas Office Edit
+         * @description Return an edited copy of a supplied Office file.
+         */
+        post: operations["canvas_office_edit_api_canvas_office_edit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/canvas/office-preview": {
         parameters: {
             query?: never;
@@ -2205,6 +2225,26 @@ export interface paths {
         get: operations["os_status_api_os_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/os/brain/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Os Reindex
+         * @description Reconcile on-disk changes using the same safe index as chat and the graph.
+         */
+        post: operations["os_reindex_api_os_brain_reindex_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5308,119 +5348,6 @@ export interface paths {
         post?: never;
         /** Vault Delete */
         delete: operations["vault_delete_api_vault__vault_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/signals/routed": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Signals Routed
-         * @description Live signals classified per domain and sliced per interested agent.
-         */
-        get: operations["signals_routed_api_signals_routed_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/signals/agent/{agent_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Signals For Agent
-         * @description One agent's slice of the live feed — exactly the domains it subscribes to.
-         *
-         *     An agent with no declared interests is reported ``known_agent: false`` with an
-         *     empty slice, never silently given the whole feed.
-         */
-        get: operations["signals_for_agent_api_signals_agent__agent_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/signals/brief/{domain}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Signals Domain Brief
-         * @description A compact per-domain brief over the live feed (severity-ranked, honest empties).
-         */
-        get: operations["signals_domain_brief_api_signals_brief__domain__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/signals/governance": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Signals Governance Status
-         * @description Whether the Signal Layer -> approval-inbox bridge is live, and what it has queued.
-         *
-         *     Reads real state, never writes: the bridge's own ``enabled`` flag plus the
-         *     number of ``signal_recommendation`` items already sitting in the decision
-         *     inbox. Off is the default and is reported as a fact, not an error -- the flag
-         *     is the owner's to flip. Submitting is the POST below, never this.
-         */
-        get: operations["signals_governance_status_api_signals_governance_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/signals/governance/submit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Signals Governance Submit
-         * @description Route the live world brief's actionable recommendations into the approval inbox.
-         *
-         *     Honest at every step: no bridge -> ``available: false``; no sidecar -> the
-         *     plugin's own reason verbatim; bridge off -> ``status: "disabled"`` with
-         *     nothing queued. All of those are ``200`` -- from this surface a refusal is a
-         *     real answer, not a transport error. Nothing is ever approved or executed here.
-         */
-        post: operations["signals_governance_submit_api_signals_governance_submit_post"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -9196,6 +9123,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/chatgpt-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connection Status */
+        get: operations["connection_status_api_admin_chatgpt_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/chatgpt-plan/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect */
+        post: operations["connect_api_admin_chatgpt_plan_connect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/oauth/chatgpt/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finish */
+        get: operations["finish_api_oauth_chatgpt_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/chatgpt-plan/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Models */
+        get: operations["models_api_admin_chatgpt_plan_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/chatgpt-plan/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select For Chat
+         * @description Choose a visible plan model for ordinary chat, after the usual settings consent.
+         */
+        post: operations["select_for_chat_api_admin_chatgpt_plan_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/chatgpt-plan/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disconnect */
+        post: operations["disconnect_api_admin_chatgpt_plan_disconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/brain": {
         parameters: {
             query?: never;
@@ -11319,26 +11351,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/channels/webhook": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Channels Webhook List
-         * @description H12.16 — supported governed webhook channels + which are live.
-         */
-        get: operations["channels_webhook_list_api_channels_webhook_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/channels/send-rate-limit": {
         parameters: {
             query?: never;
@@ -11452,31 +11464,6 @@ export interface paths {
          *     a different action (`channel.reply`, KERNEL) and does not come through here.
          */
         post: operations["channels_send_api_channels_send_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/channels/{channel_id}/inbound": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Channel Inbound
-         * @description H12.16 — deliver an inbound webhook payload to a governed channel adapter.
-         *
-         *     The adapter parses (text, sender) and routes through the governed gateway, so
-         *     the H12.19 pairing gate + rate-limit + guardrails all apply before the
-         *     orchestrator sees the text. (Provider signature verification is the host
-         *     seam — front this with the H16.4 signed-webhook path in production.)
-         */
-        post: operations["channel_inbound_api_channels__channel_id__inbound_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13653,6 +13640,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/cloud-history/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Cloud History */
+        post: operations["preview_cloud_history_api_chat_cloud_history_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/resolve": {
         parameters: {
             query?: never;
@@ -15518,26 +15522,6 @@ export interface paths {
         post?: never;
         /** Openai Delete Response */
         delete: operations["openai_delete_response_v1_responses__response_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/channels/sms/webhook": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Sms Webhook
-         * @description Inbound SMS from Twilio: signature, account, replay and sender checks, then the turn.
-         */
-        post: operations["sms_webhook_api_channels_sms_webhook_post"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -17944,6 +17928,21 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** ChatChoice */
+        ChatChoice: {
+            /** Model */
+            model: string;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
+        };
         /** ChatNoteBody */
         ChatNoteBody: {
             /** Targetid */
@@ -18008,6 +18007,7 @@ export interface components {
              * @default false
              */
             allow_board_cloud: boolean;
+            cloud_history?: components["schemas"]["HistoryChoice"] | null;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -18864,6 +18864,19 @@ export interface components {
              * @default false
              */
             confirm: boolean;
+        };
+        /** HistoryChoice */
+        HistoryChoice: {
+            /** Session Id */
+            session_id: string;
+            /** Agent */
+            agent: string;
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Revision */
+            revision: string;
         };
         /** HistoryReference */
         HistoryReference: {
@@ -19901,6 +19914,15 @@ export interface components {
             operation: "run" | "pause" | "resume" | "pin" | "unpin" | "adopt" | "restore" | "archive" | "prune" | "backup" | "rollback" | "purge";
             args?: components["schemas"]["CuratorArgs"];
         };
+        /** PreviewRequest */
+        PreviewRequest: {
+            /** Session Id */
+            session_id: string;
+            /** Agent */
+            agent: string;
+            /** Message */
+            message: string;
+        };
         /** ProcedureBody */
         ProcedureBody: {
             /** Agent */
@@ -20839,6 +20861,7 @@ export interface components {
             store: "memory" | "user";
             /** Value */
             value: string;
+            source?: components["schemas"]["TimelineEntrySource"] | null;
         };
         /**
          * TimelineEntryEdit
@@ -20848,6 +20871,20 @@ export interface components {
         TimelineEntryEdit: {
             /** Value */
             value: string;
+        };
+        /**
+         * TimelineEntrySource
+         * @description A selected native chat turn, verified again at save time.
+         */
+        TimelineEntrySource: {
+            /** Session Id */
+            session_id: string;
+            /** Turn */
+            turn: number;
+            /** Revision */
+            revision: string;
+            /** Excerpt */
+            excerpt: string;
         };
         /** ToolRPCCallBody */
         ToolRPCCallBody: {
@@ -21257,7 +21294,7 @@ export interface components {
              * @default log
              * @enum {string}
              */
-            deliver: "log" | "telegram" | "voice" | "ntfy";
+            deliver: "log" | "telegram" | "voice";
             /**
              * Deliver Only
              * @default false
@@ -21355,7 +21392,7 @@ export interface components {
              * Deliver
              * @enum {string}
              */
-            deliver?: "log" | "telegram" | "voice" | "ntfy";
+            deliver?: "log" | "telegram" | "voice";
             /** Deliver Only */
             deliver_only?: boolean;
             /** Description */
@@ -24176,6 +24213,45 @@ export interface operations {
             };
         };
     };
+    canvas_office_edit_api_canvas_office_edit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Kind
+                     * @enum {string}
+                     */
+                    kind: "docx" | "xlsx";
+                    /** Source Base64 */
+                    source_base64: string;
+                    /** Target */
+                    target: string;
+                    /** Replacement */
+                    replacement: string;
+                    /** Sheet */
+                    sheet?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": string;
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+        };
+    };
     canvas_office_preview_api_canvas_office_preview_post: {
         parameters: {
             query: {
@@ -25002,6 +25078,26 @@ export interface operations {
             };
         };
     };
+    os_reindex_api_os_brain_reindex_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     os_brain_api_os_brain_get: {
         parameters: {
             query?: {
@@ -25039,6 +25135,7 @@ export interface operations {
                 relPath?: string;
                 targetId?: string | null;
                 q?: string;
+                local_only?: boolean;
             };
             header?: never;
             path?: never;
@@ -29821,144 +29918,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    signals_routed_api_signals_routed_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    signals_for_agent_api_signals_agent__agent_id__get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                agent_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    signals_domain_brief_api_signals_brief__domain__get: {
-        parameters: {
-            query?: {
-                top?: number;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                domain: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    signals_governance_status_api_signals_governance_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    signals_governance_submit_api_signals_governance_submit_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
@@ -36542,6 +36501,139 @@ export interface operations {
             };
         };
     };
+    connection_status_api_admin_chatgpt_plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    connect_api_admin_chatgpt_plan_connect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    finish_api_oauth_chatgpt_callback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+        };
+    };
+    models_api_admin_chatgpt_plan_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    select_for_chat_api_admin_chatgpt_plan_select_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatChoice"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_api_admin_chatgpt_plan_disconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     brain_page_brain_get: {
         parameters: {
             query?: never;
@@ -39270,26 +39362,6 @@ export interface operations {
             };
         };
     };
-    channels_webhook_list_api_channels_webhook_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     channels_send_rate_limit_api_channels_send_rate_limit_get: {
         parameters: {
             query?: never;
@@ -39428,37 +39500,6 @@ export interface operations {
             };
         };
     };
-    channel_inbound_api_channels__channel_id__inbound_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                channel_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     dashboard_dashboard_get: {
         parameters: {
             query?: never;
@@ -39548,6 +39589,7 @@ export interface operations {
             query?: {
                 store?: ("facts" | "memory" | "user" | "skill") | null;
                 limit?: number;
+                references?: boolean;
             };
             header?: never;
             path?: never;
@@ -39610,7 +39652,9 @@ export interface operations {
     };
     dashboard_today_entry_api_dashboard_today_entries__entry_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                references?: boolean;
+            };
             header?: never;
             path: {
                 entry_id: string;
@@ -42645,6 +42689,39 @@ export interface operations {
             };
         };
     };
+    preview_cloud_history_api_chat_cloud_history_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryChoice"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     resolve_session_sessions_resolve_post: {
         parameters: {
             query?: never;
@@ -45138,26 +45215,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    sms_webhook_api_channels_sms_webhook_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };

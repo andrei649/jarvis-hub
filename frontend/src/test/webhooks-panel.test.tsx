@@ -495,12 +495,12 @@ describe('WebhooksPanel — the H153 review round', () => {
     render(<WebhooksPanel />);
     await ready();
     fireEvent.click(screen.getByText('ci'));
-    fireEvent.change(screen.getByLabelText('deliver ci to'), { target: { value: 'ntfy' } });
+    fireEvent.change(screen.getByLabelText('deliver ci to'), { target: { value: 'voice' } });
     fireEvent.change(screen.getByLabelText('description of ci'), { target: { value: 'pager' } });
     fireEvent.click(screen.getByRole('button', { name: 'save ci' }));
     await waitFor(() => expect(sent('PATCH')).toHaveLength(1));
     expect(sent('PATCH')[0]).toMatchObject({ admin: 'admin-secret',
-      body: { deliver: 'ntfy', deliver_only: false, description: 'pager', events: [] } });
+      body: { deliver: 'voice', deliver_only: false, description: 'pager', events: [] } });
   });
 
   it('holds the detail save while it is pending, and gives focus back to the hook', async () => {
@@ -603,10 +603,10 @@ describe('WebhooksPanel — the third H153 round', () => {
   it('offers the log and the channels something receives, voice included and web not', async () => {
     render(<WebhooksPanel />);
     await ready();
-    expect(DESTINATIONS).toEqual(['log', 'telegram', 'voice', 'ntfy']);
-    expect(options('deliver to')).toEqual(['log', 'telegram', 'voice', 'ntfy']);
+    expect(DESTINATIONS).toEqual(['log', 'telegram', 'voice']);
+    expect(options('deliver to')).toEqual(['log', 'telegram', 'voice']);
     fireEvent.click(screen.getByText('ci'));
-    expect(options('deliver ci to')).toEqual(['log', 'telegram', 'voice', 'ntfy']);
+    expect(options('deliver ci to')).toEqual(['log', 'telegram', 'voice']);
   });
 
   it('starts a clean form after a create: log, not deliver only, no description', async () => {
@@ -614,7 +614,7 @@ describe('WebhooksPanel — the third H153 round', () => {
     await ready();
     fireEvent.change(screen.getByLabelText('target'), { target: { value: 'friday' } });
     fireEvent.change(screen.getByLabelText('description'), { target: { value: 'pager' } });
-    fireEvent.change(screen.getByLabelText('deliver to'), { target: { value: 'ntfy' } });
+    fireEvent.change(screen.getByLabelText('deliver to'), { target: { value: 'voice' } });
     fireEvent.click(screen.getByLabelText('deliver only (skip the agent)'));
     fireEvent.click(screen.getByText('create'));
     await waitFor(() => expect(sent('POST')).toHaveLength(1));
@@ -666,9 +666,9 @@ describe('WebhooksPanel — the third H153 round', () => {
     await ready();
     fireEvent.click(screen.getByText('ci'));
     expect(screen.getByLabelText('deliver ci to').value).toBe('log');
-    hooks = [{ ...hooks[0], deliver: 'ntfy', deliver_only: true, description: 'moved' }];
+    hooks = [{ ...hooks[0], deliver: 'voice', deliver_only: true, description: 'moved' }];
     fireEvent.click(screen.getByLabelText('Reload'));
-    await waitFor(() => expect(screen.getByLabelText('deliver ci to').value).toBe('ntfy'));
+    await waitFor(() => expect(screen.getByLabelText('deliver ci to').value).toBe('voice'));
     expect(screen.getByLabelText('deliver only for ci (skip the agent)').checked).toBe(true);
     expect(screen.getByLabelText('description of ci').value).toBe('moved');
   });

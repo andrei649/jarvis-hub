@@ -99,10 +99,8 @@ the same second get `-2`, `-3` … at the end of the name.
   a chat's rollover moves only a loop set from that chat). A wakeup holds the conversation
   for its whole run, so a change waits for it, and a wakeup counts as activity in its chat,
   so a chat a loop is still talking in does not roll over for being idle.
-- Wakeup answers appear in the conversation (the HUD chat, `/recap`). On Telegram, ntfy
-  and other chat channels each answer is also sent to the chat the loop was set from.
-  Slack, Discord and email answers stay on their reviewed reply path and are not sent by
-  a loop.
+- Wakeup answers appear in the conversation (the HUD chat, `/recap`). On Telegram each
+  answer is also sent to the chat the loop was set from.
 
 ## /btw — a side question about this conversation
 

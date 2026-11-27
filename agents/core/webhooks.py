@@ -74,18 +74,18 @@ _PLACEHOLDER = re.compile(r"\{([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)\}")
 DELIVER_LOG = "log"
 #: The owner's channels a delivery can reach. ``web`` is a direct-send channel too, but
 #: nothing in the hub connects a client to it, so a push there would never arrive.
-DELIVER_CHANNELS: tuple[str, ...] = ("telegram", "voice", "ntfy")
+DELIVER_CHANNELS: tuple[str, ...] = ("telegram", "voice")
 DELIVER_CHOICES: tuple[str, ...] = (DELIVER_LOG, *DELIVER_CHANNELS)
 #: The channels that reach the owner's pocket or ears (all of them): quiet hours hold them.
 PUSH_CHANNELS = frozenset(DELIVER_CHANNELS)
 #: Destinations a Hermes subscription (or an earlier build) offers that a hook refuses, and why.
 REFUSED_DESTINATIONS = {
-    "email": "email is never an outbound side effect of an inbound delivery "
-             "(the rule ChannelManager.send keeps)",
+    "email": "email is not a channel of this hub",
+    "ntfy": "ntfy is not a channel of this hub",
     "github_comment": "a GitHub comment writes to someone else's system: the hook's agent "
                       "proposes it through governed write-back, one approval each",
-    "discord": "Discord is a reply-only transport here, with no home channel to address",
-    "slack": "Slack is a reply-only transport here, with no home channel to address",
+    "discord": "Discord is not a channel of this hub",
+    "slack": "Slack is not a channel of this hub",
     "web": "the HUD has no receiver for a pushed message yet (nothing connects a client to "
            "the web channel), so a delivery there would never arrive; with log the reply "
            "stays in the hook's session",

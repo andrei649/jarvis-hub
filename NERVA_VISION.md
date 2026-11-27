@@ -41,7 +41,7 @@ a restart:
 |------|--------------------|
 | **Observe** | `core/autonomy/observer.py` + watchers, `passive_capture.py`, channels, heartbeat |
 | **Understand** | memory fusion (vector ⊕ graph, RRF), bi-temporal KG (H14), ingestion pipeline |
-| **Decide** | orchestrator + 17 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
+| **Decide** | orchestrator + 16 specialist agents, autonomy policy, `agent_runtime.py` model-directed loop (H20.R1) |
 | **Act** | the **Action Kernel** (O24 — Gate-K, 21 action kinds mediated), brokers, ToolRPC, sandbox |
 | **Verify** | the **Verification Fabric** (O24 — reality harness, SEAM→WIRED→VERIFIED→GA registry; in-process — resets each boot, a durable committed snapshot is V3, pending) |
 | **Learn** | the governed per-turn learning loop (O20 — `learning/background_review.py`, CoreMemory, skill curator) |
@@ -169,7 +169,7 @@ event, query or policy requires it.*
 speaking, where, and how private the context is; deliver on the right surface (speaker, display,
 phone, headphones) for the person, room, privacy and urgency.*
 
-- **Exists:** web SSE, voice, Telegram, Discord, email, Slack; `channels/session.py` +
+- **Exists:** web SSE, voice, Telegram; `channels/session.py` +
   `gateway.py`; channel inbox transport v0; interrupt budgets (≤4 push/day); Wyoming satellite
   protocol for room voice endpoints.
 - **Missing:** presence-aware delivery as a finished policy (H34.2 owner-presence and H30.6

@@ -58,7 +58,7 @@ class _Native:
         descriptor = ctypes.c_void_p()
         if create:
             sid = self.api._current_sid()
-            sddl = f"D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;{sid})"
+            sddl = f"O:{sid}D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;{sid})"
             if not self.api.a.ConvertStringSecurityDescriptorToSecurityDescriptorW(
                     sddl, 1, ctypes.byref(descriptor), None):
                 raise ctypes.WinError(ctypes.get_last_error())

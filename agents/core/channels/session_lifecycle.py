@@ -364,7 +364,7 @@ class ChannelSessionLifecycle:
         if not self.stalls.is_due(base, episode, timeout):
             return False
         target = self.orch.get_setting("sessions.stall_channel", "telegram")
-        if target not in {"telegram", "ntfy", "web"}:
+        if target not in {"telegram", "web"}:
             return False
         minutes = max(1, int(idle // 60))
         notice = f"Nerva has made no progress on a pending conversation for {minutes} min."

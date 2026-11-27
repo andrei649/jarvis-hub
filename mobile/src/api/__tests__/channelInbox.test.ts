@@ -81,7 +81,7 @@ describe('mobile channel inbox API', () => {
     expect(out.messages[0].text).toBe('ping');
   });
 
-  it.each(['telegram', 'slack', 'discord'])('queues a governed %s reply from mobile without admin auth', async (channel) => {
+  it.each(['telegram', 'web'])('queues a governed %s reply from mobile without admin auth', async (channel) => {
     mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true, queued: true, task_id: 99 }));
 
     const out = await sendChannelReply(

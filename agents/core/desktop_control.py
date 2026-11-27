@@ -27,9 +27,21 @@ Security-critical design:
 
 from __future__ import annotations
 
+import contextlib
 import re
+from collections.abc import Callable
+from typing import Any
 
 from agents.core.desktop_operator import GovernedDesktop
+from agents.core.kernel import (
+    Action,
+    Budget,
+    Capability,
+    Decision,
+    Verdict,
+    authorize,
+    kernel_enabled,
+)
 
 # Canonical launchable apps → display metadata only. The host resolves the key to a vetted
 # launcher; the pack never stores or emits a binary path (that is the arbitrary-exec seam).
@@ -166,26 +178,165 @@ def plan(kind: str, **kwargs) -> dict:
     return _refuse(f"unknown plan kind: {key!r} (expected launch/os_action/recording)")
 
 
-class DesktopControl:
-    """Allowlist planner composed with the H15.3 governed executor.
+def _emit_audit_event(audit: Any, event: str, payload: dict[str, Any], *, actor: str = "jarvis") -> None:
+    """Best-effort structured audit emission supporting both AuditLogger.log and IntentLog.record."""
+    if audit is None:
+        return
+    with contextlib.suppress(Exception):
+        if callable(getattr(audit, "log", None)):
+            audit.log(event, payload)
+        elif callable(getattr(audit, "record", None)):
+            audit.record(actor, event, str(payload.get("status") or event), payload)
 
-    ``run`` forwards the planned steps to `GovernedDesktop` (approval + injection guard);
-    refused plans are dropped before they reach the desktop. Offline by default
-    (`NullDesktopDriver`); a real VM/desktop driver is the host seam.
+
+class DesktopControl:
+    """Allowlist planner composed with the H15.3 governed executor and Action Kernel.
+
+    ``run`` rechecks each admitted plan against the bound ``ActionKernel`` (when provided
+    or when ``JARVIS_ACTION_KERNEL`` is enabled), forwards permitted steps to
+    ``GovernedDesktop`` (approval + injection guard), and emits structured audit entries
+    for refused, kernel-denied, blocked, and executed steps; refused plans are dropped
+    before they reach the desktop. Offline by default (``NullDesktopDriver``).
     """
 
-    def __init__(self, governed: GovernedDesktop | None = None) -> None:
+    def __init__(
+        self,
+        governed: GovernedDesktop | None = None,
+        *,
+        kernel: Callable[[Action], Decision] | None = None,
+        audit: Any = None,
+        agent: str = "jarvis",
+    ) -> None:
         self._gov = governed or GovernedDesktop()
+        self._kernel = kernel
+        self._audit = audit
+        self._agent = agent
 
     @staticmethod
     def allowlist() -> dict:
         return allowlist()
 
+    def _authorize_plan(self, planned: dict) -> Decision | None:
+        if self._kernel is not None:
+            step = planned["step"]
+            act = Action(
+                kind="desktop.control",
+                agent=self._agent,
+                title=str(planned.get("label") or step["action"]),
+                payload={
+                    "action": step["action"],
+                    "args": dict(step.get("args") or {}),
+                    "mutating": bool(planned.get("mutating", True)),
+                },
+            )
+            return self._kernel(act)
+        if kernel_enabled():
+            step = planned["step"]
+            act = Action(
+                kind="desktop.control",
+                agent=self._agent,
+                title=str(planned.get("label") or step["action"]),
+                payload={
+                    "action": step["action"],
+                    "args": dict(step.get("args") or {}),
+                    "mutating": bool(planned.get("mutating", True)),
+                },
+            )
+            return authorize(act, Capability(), Budget(), audit=self._audit)
+        return None
+
     async def run(self, plans: list[dict], *, approver=None, screenshot_text: str = "") -> dict:
-        """Execute the *admitted* plans through the governed desktop. Returns the governed
-        result plus the plans that were refused at the allowlist (never silently dropped)."""
-        steps = [p["step"] for p in (plans or []) if p.get("ok")]
+        """Execute the *admitted* plans through the Action Kernel and governed desktop.
+
+        Returns the governed result plus the plans that were refused at the allowlist
+        or denied by the Action Kernel (never silently dropped).
+        """
         refused = [{"reason": p.get("reason")} for p in (plans or []) if not p.get("ok")]
-        result = await self._gov.run(steps, screenshot_text=screenshot_text, approver=approver)
+        for item in refused:
+            _emit_audit_event(
+                self._audit,
+                "desktop.control.refused",
+                {"status": "refused", "reason": item["reason"]},
+                actor=self._agent,
+            )
+
+        permitted_steps: list[dict] = []
+        denied_entries: list[dict] = []
+        queue_forced_actions: set[int] = set()
+
+        for p in plans or []:
+            if not p.get("ok"):
+                continue
+            step = p["step"]
+            try:
+                decision = self._authorize_plan(p)
+            except Exception:
+                decision = Decision(Verdict.DENY, reason="kernel_error")
+            if decision is not None and decision.verdict is Verdict.DENY:
+                reason = decision.reason or "kernel_denied"
+                entry = {"action": step["action"], "status": "denied", "reason": reason}
+                denied_entries.append(entry)
+                _emit_audit_event(
+                    self._audit,
+                    "desktop.control.denied",
+                    {
+                        "status": "denied",
+                        "action": step["action"],
+                        "args": dict(step.get("args") or {}),
+                        "reason": reason,
+                    },
+                    actor=self._agent,
+                )
+                continue
+            idx = len(permitted_steps)
+            permitted_steps.append(step)
+            if decision is not None and decision.verdict is Verdict.QUEUE:
+                queue_forced_actions.add(idx)
+
+        step_index = 0
+
+        def _effective_approver(action_name: str, action_args: dict) -> bool:
+            if approver is None:
+                return False
+            return bool(approver(action_name, action_args))
+
+        # If the kernel returned QUEUE on a read-only step, require explicit approver consent too.
+        blocked_by_queue: list[dict] = []
+        final_steps: list[dict] = []
+        for idx, step in enumerate(permitted_steps):
+            is_read_only = step["action"] in allowlist()["read_only"]
+            if idx in queue_forced_actions and is_read_only and not _effective_approver(step["action"], dict(step.get("args") or {})):
+                entry = {"action": step["action"], "status": "blocked", "reason": "kernel_queue_requires_approval"}
+                blocked_by_queue.append(entry)
+                _emit_audit_event(
+                    self._audit,
+                    "desktop.control.step",
+                    {"status": "blocked", "action": step["action"], "args": dict(step.get("args") or {})},
+                    actor=self._agent,
+                )
+            else:
+                step_index += 1
+                final_steps.append(step)
+
+        if final_steps or not (denied_entries or blocked_by_queue):
+            result = await self._gov.run(final_steps, screenshot_text=screenshot_text, approver=approver)
+        else:
+            result = {"ok": True, "ran": [], "stopped_early": False}
+
+        for row in result.get("ran") or []:
+            _emit_audit_event(
+                self._audit,
+                "desktop.control.step",
+                {
+                    "status": row.get("status", "unknown"),
+                    "action": row.get("action"),
+                },
+                actor=self._agent,
+            )
+
+        if denied_entries or blocked_by_queue:
+            result["ran"] = [*denied_entries, *blocked_by_queue, *(result.get("ran") or [])]
+        if denied_entries:
+            result["denied"] = denied_entries
         result["refused"] = refused
         return result

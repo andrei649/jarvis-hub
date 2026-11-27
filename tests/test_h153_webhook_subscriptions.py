@@ -895,13 +895,13 @@ def test_list_shows_every_hook_and_says_when_there_is_none(tmp_path, monkeypatch
     code, out, _err = _cli(["webhook", "list"], hub)
     assert code == EXIT_OK and "no webhooks" in out
     a = hub.store.create("jarvis", name="ci", signed=True, events=["push"], filter=[_rule("ref", "exists")])
-    hub.store.create("friday", deliver="ntfy", deliver_only=True)
+    hub.store.create("friday", deliver="voice", deliver_only=True)
     hub.store.set_enabled(a["id"], False)
     code, out, _err = _cli(["webhook", "list"], hub)
     assert code == EXIT_OK
     lines = out.splitlines()
     assert any(a["id"] in ln and "ci" in ln and "agent:jarvis" in ln and "hmac" in ln and "off" in ln for ln in lines)
-    assert any("friday" in ln and "token" in ln and "on" in ln and "-> ntfy" in ln and "deliver only" in ln for ln in lines)
+    assert any("friday" in ln and "token" in ln and "on" in ln and "-> voice" in ln and "deliver only" in ln for ln in lines)
     assert any("events: push" in ln and "filter: 1 rule" in ln for ln in lines)
     code, out, _err = _cli(["webhook", "list", "--json"], hub)
     assert code == EXIT_OK and {h["target"] for h in json.loads(out)["webhooks"]} == {"jarvis", "friday"}

@@ -1157,7 +1157,7 @@ def test_send_to_a_channel_still_requires_a_message():
 
 # ── H480: body from a file or stdin, a subject, quiet, the list filter ───────
 
-_SENT = {"POST /api/channels/send": {"ok": True, "channel": "ntfy", "audited": True}}
+_SENT = {"POST /api/channels/send": {"ok": True, "channel": "voice", "audited": True}}
 
 
 def _posted(hub):
@@ -1167,16 +1167,16 @@ def _posted(hub):
 def test_send_reads_the_body_from_a_file(tmp_path):
     log = tmp_path / "build.log"
     log.write_text("step 1 ok\nstep 2 ok\n", encoding="utf-8")
-    code, out, _err, hub = _run(["send", "--channel", "ntfy", "-f", str(log)], hub=_FakeHub(_SENT))
-    assert code == 0 and "sent to ntfy" in out
+    code, out, _err, hub = _run(["send", "--channel", "voice", "-f", str(log)], hub=_FakeHub(_SENT))
+    assert code == 0 and "sent to voice" in out
     assert _posted(hub) == [("POST", "/api/channels/send",
-                             {"channel": "ntfy", "text": "step 1 ok\nstep 2 ok\n", "source": "nerva.cli.send"})]
+                             {"channel": "voice", "text": "step 1 ok\nstep 2 ok\n", "source": "nerva.cli.send"})]
 
 
 def test_send_reads_stdin_when_the_file_is_a_dash_and_when_stdin_is_a_pipe():
-    code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-f", "-"], hub=_FakeHub(_SENT), stdin="RAM 92%")
+    code, _out, _err, hub = _run(["send", "--channel", "voice", "-f", "-"], hub=_FakeHub(_SENT), stdin="RAM 92%")
     assert code == 0 and _posted(hub)[0][2]["text"] == "RAM 92%"
-    code, _out, _err, hub = _run(["send", "--channel", "ntfy"], hub=_FakeHub(_SENT), stdin="RAM 93%")
+    code, _out, _err, hub = _run(["send", "--channel", "voice"], hub=_FakeHub(_SENT), stdin="RAM 93%")
     assert code == 0 and _posted(hub)[0][2]["text"] == "RAM 93%"
 
 
@@ -1197,30 +1197,30 @@ def _run_with_stdin(argv, inp, hub=None):
 
 def test_send_never_reads_a_terminal_with_or_without_a_dash():
     """A TTY stdin is a usage error, not a hang — also when -f - asks for stdin explicitly."""
-    code, _out, err, hub = _run_with_stdin(["send", "--channel", "ntfy"], _Tty())
+    code, _out, err, hub = _run_with_stdin(["send", "--channel", "voice"], _Tty())
     assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
-    code, _out, err, hub = _run_with_stdin(["send", "--channel", "ntfy", "-f", "-"], _Tty())
+    code, _out, err, hub = _run_with_stdin(["send", "--channel", "voice", "-f", "-"], _Tty())
     assert code == EXIT_USAGE and "terminal" in err and "--file PATH" in err and hub.calls == []
 
 
 def test_send_with_stdin_closed_is_a_usage_error_not_a_traceback():
     """cron and `<&-` leave sys.stdin as None; -f - must say so and exit 2, not crash with exit 1."""
-    code, _out, err, hub = _run_with_stdin(["send", "--channel", "ntfy", "-f", "-"], None)
+    code, _out, err, hub = _run_with_stdin(["send", "--channel", "voice", "-f", "-"], None)
     assert code == EXIT_USAGE and "stdin is closed" in err and hub.calls == []
-    code, _out, err, hub = _run_with_stdin(["send", "--channel", "ntfy"], None)
+    code, _out, err, hub = _run_with_stdin(["send", "--channel", "voice"], None)
     assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
 
 
 def test_send_strips_a_byte_order_mark_and_refuses_a_bom_only_body(tmp_path):
     bom = tmp_path / "bom.txt"
     bom.write_bytes("\ufeffhello\n".encode())
-    code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-f", str(bom)], hub=_FakeHub(_SENT))
+    code, _out, _err, hub = _run(["send", "--channel", "voice", "-f", str(bom)], hub=_FakeHub(_SENT))
     assert code == 0 and _posted(hub)[0][2]["text"] == "hello\n"
     only = tmp_path / "only.txt"
     only.write_bytes("\ufeff \n".encode())
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(only)])
+    code, _out, err, hub = _run(["send", "--channel", "voice", "-f", str(only)])
     assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
-    code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-f", "-"], hub=_FakeHub(_SENT), stdin="\ufeffpiped")
+    code, _out, _err, hub = _run(["send", "--channel", "voice", "-f", "-"], hub=_FakeHub(_SENT), stdin="\ufeffpiped")
     assert code == 0 and _posted(hub)[0][2]["text"] == "piped"
 
 
@@ -1233,36 +1233,36 @@ def test_send_refuses_a_runaway_file_without_loading_it(tmp_path):
             return super().read(size)
 
     big = _Counting("x" * 1_000_000)
-    code, _out, err, hub = _run_with_stdin(["send", "--channel", "ntfy", "-f", "-"], big)
+    code, _out, err, hub = _run_with_stdin(["send", "--channel", "voice", "-f", "-"], big)
     assert code == EXIT_USAGE and "longer than 4,000" in err and hub.calls == []
     assert _Counting.asked == [4_001], "only the bound plus one character is ever requested"
     huge = tmp_path / "huge.log"
     huge.write_text("y" * 50_000, encoding="utf-8")
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(huge)])
+    code, _out, err, hub = _run(["send", "--channel", "voice", "-f", str(huge)])
     assert code == EXIT_USAGE and "huge.log is longer than 4,000" in err and hub.calls == []
 
 
 def test_send_takes_the_argument_or_the_file_not_both(tmp_path):
     log = tmp_path / "a.txt"
     log.write_text("x", encoding="utf-8")
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "hello", "-f", str(log)])
+    code, _out, err, hub = _run(["send", "--channel", "voice", "hello", "-f", str(log)])
     assert code == EXIT_USAGE and "not both" in err and hub.calls == []
 
 
 def test_send_refuses_a_binary_file_without_echoing_it(tmp_path):
     blob = tmp_path / "chart.png"
     blob.write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe secret-bytes")
-    code, out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(blob)])
+    code, out, err, hub = _run(["send", "--channel", "voice", "-f", str(blob)])
     assert code == EXIT_USAGE and "not a text file" in err and "attachments" in err
     assert "secret-bytes" not in err + out and hub.calls == []
 
 
 def test_send_names_an_unreadable_file_and_an_empty_one(tmp_path):
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(tmp_path / "missing.txt")])
+    code, _out, err, hub = _run(["send", "--channel", "voice", "-f", str(tmp_path / "missing.txt")])
     assert code == EXIT_USAGE and "cannot read" in err and "missing.txt" in err and hub.calls == []
     empty = tmp_path / "empty.txt"
     empty.write_text("  \n", encoding="utf-8")
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(empty)])
+    code, _out, err, hub = _run(["send", "--channel", "voice", "-f", str(empty)])
     assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
 
 
@@ -1271,18 +1271,18 @@ def test_send_long_path_diagnostics_preserve_filename_and_escape_controls(tmp_pa
     parent.mkdir()
     huge = parent / "huge.log"
     huge.write_text("y" * 5000, encoding="utf-8")
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(huge)])
+    code, _out, err, hub = _run(["send", "--channel", "voice", "-f", str(huge)])
     assert code == EXIT_USAGE and "huge.log is longer than 4,000" in err
     assert "\x1b" not in err and hub.calls == []
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(parent / "missing\x1b.txt")])
+    code, _out, err, hub = _run(["send", "--channel", "voice", "-f", str(parent / "missing\x1b.txt")])
     assert code == EXIT_USAGE and "cannot read" in err and "missing .txt" in err
     assert "\x1b" not in err and len(err) < 200 and hub.calls == []
 
 
 def test_send_carries_a_subject_separately_to_a_channel_and_as_a_first_line_to_a_thread():
-    code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-s", "[CI]", "build green"], hub=_FakeHub(_SENT))
+    code, _out, _err, hub = _run(["send", "--channel", "voice", "-s", "[CI]", "build green"], hub=_FakeHub(_SENT))
     assert code == 0
-    assert _posted(hub)[0][2] == {"channel": "ntfy", "text": "build green", "subject": "[CI]",
+    assert _posted(hub)[0][2] == {"channel": "voice", "text": "build green", "subject": "[CI]",
                                   "source": "nerva.cli.send"}
     hub = _FakeHub({
         "GET /api/channels/inbox/t1": {"thread": {"thread_id": "t1", "reply": {"channel": "telegram"}}},
@@ -1300,23 +1300,15 @@ def test_send_subject_is_one_printable_bounded_line():
         assert code == EXIT_USAGE and "printable line" in err and hub.calls == []
 
 
-def test_send_refuses_an_ntfy_title_the_adapter_would_mangle_but_not_elsewhere():
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-s", "Déploiement terminé ✓", "hi"])
-    assert code == EXIT_USAGE and "ASCII" in err and hub.calls == []
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-s", "x" * 121, "hi"])
-    assert code == EXIT_USAGE and "120" in err and hub.calls == []
-    code, _out, _err, hub = _run(["send", "--channel", "telegram", "-s", "Déploiement terminé ✓", "hi"], hub=_FakeHub(_SENT))
-    assert code == 0 and _posted(hub)[0][2]["subject"] == "Déploiement terminé ✓"
-
-
 def test_send_refuses_a_body_over_the_carried_bound_before_any_request():
-    """The bound is the seam's own: the subject counts where it becomes the first line, and
-    not for ntfy, where it travels as a header."""
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "x" * 4_001])
+    """The bound is the seam's own: the subject counts, since it becomes the first line."""
+    code, _out, err, hub = _run(["send", "--channel", "voice", "x" * 4_001])
     assert code == EXIT_USAGE and "4,001" in err and "4,000" in err and hub.calls == []
     code, _out, err, hub = _run(["send", "--channel", "telegram", "-s", "[CI]", "x" * 3_998])
     assert code == EXIT_USAGE and "4,004" in err and "subject included" in err and hub.calls == []
-    code, _out, _err, hub = _run(["send", "--channel", "ntfy", "-s", "[CI]", "x" * 3_998], hub=_FakeHub(_SENT))
+    code, _out, err, hub = _run(["send", "--channel", "voice", "-s", "[CI]", "x" * 3_998])
+    assert code == EXIT_USAGE and "subject included" in err and hub.calls == []
+    code, _out, _err, hub = _run(["send", "--channel", "voice", "-s", "[CI]", "x" * 3_994], hub=_FakeHub(_SENT))
     assert code == 0 and len(_posted(hub)) == 1
     hub = _FakeHub({
         "GET /api/channels/inbox/t1": {"thread": {"thread_id": "t1", "reply": {"channel": "telegram"}}},
@@ -1326,10 +1318,10 @@ def test_send_refuses_a_body_over_the_carried_bound_before_any_request():
 
 
 def test_send_quiet_prints_nothing_on_success_and_still_reports_failure():
-    code, out, _err, _hub = _run(["send", "--channel", "ntfy", "-q", "hi"], hub=_FakeHub(_SENT))
+    code, out, _err, _hub = _run(["send", "--channel", "voice", "-q", "hi"], hub=_FakeHub(_SENT))
     assert code == 0 and out == ""
-    hub = _FakeHub({"POST /api/channels/send": {"ok": False, "error": "ntfy is not connected on this hub"}})
-    code, out, err, _hub = _run(["send", "--channel", "ntfy", "-q", "hi"], hub=hub)
+    hub = _FakeHub({"POST /api/channels/send": {"ok": False, "error": "voice is not connected on this hub"}})
+    code, out, err, _hub = _run(["send", "--channel", "voice", "-q", "hi"], hub=hub)
     assert code == EXIT_FAILED and out == "" and "not connected" in err
     hub = _FakeHub({
         "GET /api/channels/inbox/t1": {"thread": {"thread_id": "t1", "reply": {"channel": "telegram"}}},
@@ -1343,7 +1335,7 @@ def test_send_puts_nothing_from_the_hub_or_the_shell_on_the_terminal_raw(tmp_pat
     """Reasons, senders, ids and the typed path are cleaned of control characters, as
     `nerva security audit` does with advisory text."""
     hub = _FakeHub({"POST /api/channels/send": {"ok": False, "error": "\x1b[31mforged\x1b[0m reason"}})
-    code, _out, err, _hub = _run(["send", "--channel", "ntfy", "hi"], hub=hub)
+    code, _out, err, _hub = _run(["send", "--channel", "voice", "hi"], hub=hub)
     assert code == EXIT_FAILED and "\x1b" not in err and "forged" in err
     routes = {
         "GET /api/channels/targets": {"targets": [{"channel": "tele\x1b[31mgram", "ready": True, "reason": "\x07ok"}]},
@@ -1352,9 +1344,9 @@ def test_send_puts_nothing_from_the_hub_or_the_shell_on_the_terminal_raw(tmp_pat
     }
     code, out, err, _hub = _run(["send", "--list"], hub=_FakeHub(routes))
     assert code == 0 and "\x1b" not in out + err and "\x07" not in out
-    code, _out, err, _hub = _run(["send", "--list", "ntfy"], hub=_FakeHub(routes))
+    code, _out, err, _hub = _run(["send", "--list", "voice"], hub=_FakeHub(routes))
     assert code == EXIT_FAILED and "\x1b" not in err and "Configured: tele" in err
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "-f", str(tmp_path / "no\x1b[31mpe.txt")])
+    code, _out, err, hub = _run(["send", "--channel", "voice", "-f", str(tmp_path / "no\x1b[31mpe.txt")])
     assert code == EXIT_USAGE and "\x1b" not in err and "cannot read" in err and hub.calls == []
 
 
@@ -1362,28 +1354,28 @@ def test_send_list_filters_by_channel_and_names_the_configured_ones_when_none_ma
     routes = {
         "GET /api/channels/targets": {"targets": [
             {"channel": "telegram", "ready": True, "reason": ""},
-            {"channel": "ntfy", "ready": False, "reason": "ntfy is not connected on this hub"}]},
+            {"channel": "voice", "ready": False, "reason": "voice is not connected on this hub"}]},
         "GET /api/channels/inbox/status": {"enabled": True},
         "GET /api/channels/inbox?limit=200": {"threads": [
             {"thread_id": "t1", "channel": "telegram", "from": "andrei"},
-            {"thread_id": "t2", "channel": "ntfy", "from": "cron"}]},
+            {"thread_id": "t2", "channel": "voice", "from": "cron"}]},
     }
-    code, out, _err, _hub = _run(["send", "--list", "ntfy"], hub=_FakeHub(routes))
-    assert code == 0 and "--channel ntfy" in out and "--channel telegram" not in out
+    code, out, _err, _hub = _run(["send", "--list", "voice"], hub=_FakeHub(routes))
+    assert code == 0 and "--channel voice" in out and "--channel telegram" not in out
     assert "t2" in out and "t1" not in out
     # A name that can never be a direct-send channel is decided offline: usage, no request.
     code, _out, err, hub = _run(["send", "--list", "signal"], hub=_FakeHub(routes))
-    assert code == EXIT_USAGE and "telegram, web, voice, ntfy" in err and hub.calls == []
+    assert code == EXIT_USAGE and "telegram, web, voice" in err and hub.calls == []
     # A hub that does not list a real channel (older hub) is exit 1 and names what it lists.
     older = {**routes, "GET /api/channels/targets": {"targets": [{"channel": "telegram", "ready": True, "reason": ""}]}}
-    code, _out, err, _hub = _run(["send", "--list", "ntfy"], hub=_FakeHub(older))
-    assert code == EXIT_FAILED and "no targets found for channel 'ntfy'" in err and "Configured: telegram" in err
+    code, _out, err, _hub = _run(["send", "--list", "voice"], hub=_FakeHub(older))
+    assert code == EXIT_FAILED and "no targets found for channel 'voice'" in err and "Configured: telegram" in err
     for extra in (["-s", "x"], ["-f", "-"]):
         code, _out, err, hub = _run(["send", "--list", *extra], hub=_FakeHub(routes))
         assert code == EXIT_USAGE and hub.calls == []
     # A hub without /api/channels/targets at all: the filter is not silently dropped.
     no_targets = {k: v for k, v in routes.items() if "targets" not in k}
-    code, out, err, _hub = _run(["send", "--list", "ntfy"], hub=_FakeHub(no_targets))
+    code, out, err, _hub = _run(["send", "--list", "voice"], hub=_FakeHub(no_targets))
     assert code == 0 and "does not list send targets" in err and "t2" in out and "t1" not in out
     code, _out, err, _hub = _run(["send", "--list", "telegram"], hub=_FakeHub({
         **no_targets, "GET /api/channels/inbox?limit=200": {"threads": []}}))
@@ -1396,7 +1388,7 @@ def test_send_list_says_so_in_one_human_line_when_nothing_is_ready():
         return {
             "GET /api/channels/targets": {"targets": [
                 {"channel": "telegram", "ready": ready, "reason": "" if ready else "no owner chat is configured"},
-                {"channel": "ntfy", "ready": False, "reason": "ntfy is not connected on this hub"}]},
+                {"channel": "voice", "ready": False, "reason": "voice is not connected on this hub"}]},
             "GET /api/channels/inbox/status": {"enabled": True},
             "GET /api/channels/inbox?limit=200": {"threads": []},
         }
@@ -1410,9 +1402,9 @@ def test_send_list_says_so_in_one_human_line_when_nothing_is_ready():
 
 def test_send_treats_a_blank_argument_as_no_message():
     """Hermes' precedence: a blank positional falls through to --file and stdin, never to the hub."""
-    code, _out, err, hub = _run(["send", "--channel", "ntfy", "  "])
+    code, _out, err, hub = _run(["send", "--channel", "voice", "  "])
     assert code == EXIT_USAGE and "no message provided" in err and hub.calls == []
-    code, _out, _err, hub = _run(["send", "--channel", "ntfy", ""], hub=_FakeHub(_SENT), stdin="from the pipe")
+    code, _out, _err, hub = _run(["send", "--channel", "voice", ""], hub=_FakeHub(_SENT), stdin="from the pipe")
     assert code == 0 and _posted(hub)[0][2]["text"] == "from the pipe"
 
 
@@ -1420,14 +1412,14 @@ def test_send_list_shows_configured_destinations_as_well_as_threads():
     hub = _FakeHub({
         "GET /api/channels/targets": {"targets": [
             {"channel": "telegram", "ready": True, "reason": ""},
-            {"channel": "ntfy", "ready": False, "reason": "ntfy is not connected on this hub"}]},
+            {"channel": "voice", "ready": False, "reason": "voice is not connected on this hub"}]},
         "GET /api/channels/inbox/status": {"enabled": True},
         "GET /api/channels/inbox?limit=200": {"threads": []},
     })
     code, out, _err, _hub = _run(["send", "--list"], hub=hub)
     assert code == 0
     assert "--channel telegram" in out and "ready" in out
-    assert "ntfy is not connected on this hub" in out
+    assert "voice is not connected on this hub" in out
 
 
 def test_jobs_advanced_cli_payloads():

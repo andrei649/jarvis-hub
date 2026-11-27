@@ -18,10 +18,12 @@
      require; the hub records the consent in the audit log and stays the one that decides.
    - The Hermes skills catalog is summarised and opens in Skills Import, where it lives. */
 import React, { useMemo, useRef, useState } from 'react';
+import { readDemoMode } from '../demo-mode';
 import { apiDelete, apiPost, apiPut } from '../api/client';
 import { navigateHud } from '../hud-routing';
 import { Card, Tag, inpS, mono, note, refusalReason, useApi } from '../panel-kit';
 import { guardFlags, guardRefusal, type GuardFlags, type GuardRefusal } from '../selection-guard';
+import { ChatGptPlan } from './chatgpt-plan';
 
 export const INTEGRATIONS_PATH = '/api/admin/integrations';
 
@@ -30,7 +32,7 @@ type KeyState = { names: string[]; name: string; primary?: string; set: boolean;
 type Facts = { host: string; host_country: string | null; data_policy: string; data_policy_note: string;
   price_known: 'yes' | 'some' | 'no'; price_note: string; receives: string };
 export type Integration = {
-  id: string; kind: 'search' | 'model' | 'video' | 'channel'; name: string; display_name: string; origin: 'native' | 'hermes';
+  id: string; kind: 'search' | 'model' | 'video'; name: string; display_name: string; origin: 'native' | 'hermes';
   status: 'not_set_up' | 'key_set' | 'shared' | 'active' | 'error'; key: KeyState; facts: Facts;
   selectable: boolean; selected: boolean; choice_editable: boolean; models: string[];
   last_test?: { ok: boolean; message: string } | null;
@@ -229,11 +231,11 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
   );
 }
 
-const KINDS = [['all', 'all'], ['search', 'search'], ['model', 'models'], ['video', 'video'], ['channel', 'channels']] as const;
+const KINDS = [['all', 'all'], ['search', 'search'], ['model', 'models'], ['video', 'video']] as const;
 
 export function IntegrationsPanel() {
   const { d, e, reload } = useApi(INTEGRATIONS_PATH, true, true);
-  const [kind, setKind] = useState<'all' | 'search' | 'model' | 'video' | 'channel'>('all');
+  const [kind, setKind] = useState<'all' | 'search' | 'model' | 'video'>('all');
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -243,6 +245,8 @@ export function IntegrationsPanel() {
   const video = (d as any)?.video;
   const shown = useMemo(() => rows.filter((r) => (kind === 'all' || r.kind === kind)
     && (!q.trim() || `${r.display_name} ${r.name} ${r.facts.host}`.toLowerCase().includes(q.trim().toLowerCase()))), [rows, kind, q]);
+  const showChatGptPlan = !readDemoMode(window.location.search) && (kind === 'all' || kind === 'model')
+    && (!q.trim() || 'chatgpt plan account connection model cont conectare'.includes(q.trim().toLowerCase()));
   const counts = rows.reduce((acc: Record<string, number>, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
   const auto = () => apiDelete('/api/admin/integrations/search-choice', { admin: true })
     .then(() => { setNote('searches choose automatically again'); reload(); })
@@ -290,6 +294,7 @@ export function IntegrationsPanel() {
         <input id="integrations-filter" value={q} onChange={(ev) => setQ(ev.target.value)} style={{ ...inpS, minWidth: 120 }} />
       </div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label="integrations">
+        {showChatGptPlan && <ChatGptPlan />}
         {shown.map((r) => {
           const [label, color] = STATUS[r.status] || [r.status, 'var(--ink-2)'];
           const expanded = open === r.id;
@@ -312,7 +317,7 @@ export function IntegrationsPanel() {
           );
         })}
       </ul>
-      {d && !shown.length && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>nothing matches</div>}
+      {d && !shown.length && !showChatGptPlan && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>nothing matches</div>}
     </Card>
   );
 }

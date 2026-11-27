@@ -158,15 +158,6 @@ BUILTIN_PLUGINS = {
         allowed_domains=["api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com"],
         agents_served=["jarvis", "athena", "stark", "vision", "veronica"],
     ),
-    "ntfy": PluginManifest(
-        id="ntfy",
-        name="ntfy notifications",
-        version="0.1.0",
-        description="Owner-configured ntfy subscription and governed reply transport",
-        network_access=NetworkAccess.RESTRICTED,
-        data_scope=DataScope.TRANSMITTED,
-        agents_served=["jarvis", "veronica"],
-    ),
     "telegram": PluginManifest(
         id="telegram",
         name="Telegram Bot",
@@ -196,16 +187,6 @@ BUILTIN_PLUGINS = {
         data_scope=DataScope.PROCESSED,
         allowed_domains=["www.googleapis.com", "oauth2.googleapis.com"],
         agents_served=["pepper"],
-    ),
-    "whatsapp-bridge": PluginManifest(
-        id="whatsapp-bridge",
-        name="WhatsApp Local Bridge",
-        version="0.1.0",
-        description="Local WhatsApp bridge for Frigga (family data never leaves LAN)",
-        network_access=NetworkAccess.LAN,
-        data_scope=DataScope.LOCAL_ONLY,
-        allowed_domains=[],
-        agents_served=["frigga"],
     ),
     "spotify": PluginManifest(
         id="spotify",
@@ -257,16 +238,6 @@ BUILTIN_PLUGINS = {
         allowed_domains=[],
         agents_served=["steve", "ultron", "jarvis"],
     ),
-    "sms-alerts": PluginManifest(
-        id="sms-alerts",
-        name="SMS Alerts & Notifications",
-        version="0.1.0",
-        description="Twilio-powered urgent offline SMS alerts and notifications",
-        network_access=NetworkAccess.RESTRICTED,
-        data_scope=DataScope.PROCESSED,
-        allowed_domains=["api.twilio.com"],
-        agents_served=["steve", "ultron", "jarvis"],
-    ),
     "crm-sync": PluginManifest(
         id="crm-sync",
         name="Notion CRM Sync",
@@ -287,20 +258,10 @@ BUILTIN_PLUGINS = {
         allowed_domains=["openapi.tuya.com"],
         agents_served=["jarvis", "ultron"],
     ),
-    "signal-layer": PluginManifest(
-        id="signal-layer",
-        name="Jarvis Signal Layer",
-        version="0.1.0",
-        description="Query local situational-awareness signals, evidence, briefs, assessments, and provider health",
-        network_access=NetworkAccess.LAN,
-        data_scope=DataScope.LOCAL_ONLY,
-        allowed_domains=[],
-        agents_served=["jarvis", "friday", "athena", "stark", "vision", "argus"],
-    ),
     # ── SEC-5b: previously-unmanifested networked plugins ─────────────────────
     # These reached the network with no manifest (→ fail-open / unrestricted).
     # Now each is gated by the egress boundary. Config/env-driven hosts (n8n,
-    # SearXNG, Signal, Matrix) carry no static allowlist and are augmented at
+    # SearXNG) carry no static allowlist and are augmented at
     # init via register_dynamic_domain(); see the plugins' constructors.
     "balance": PluginManifest(
         id="balance",
@@ -408,7 +369,7 @@ BUILTIN_PLUGINS = {
         # resolver that could not work behind ``follow_redirects=False``; the resolver is
         # gone, so the egress grant goes with it.)
         allowed_domains=["dns.google"],
-        agents_served=["vision", "argus", "athena"],
+        agents_served=["vision", "athena"],
     ),
     "n8n": PluginManifest(
         id="n8n",
@@ -527,71 +488,6 @@ BUILTIN_PLUGINS = {
         allowed_domains=["api.telnyx.com"],
         agents_served=["all"],
     ),
-    # G16 (H098): SMS replies through Twilio's Messages API (channels/sms.py). Only an
-    # approved channel.reply task at the money tier reaches this egress.
-    "channel_sms": PluginManifest(
-        id="channel_sms",
-        name="Channel: SMS (Twilio)",
-        version="0.1.0",
-        description="Approved SMS replies via the Twilio Messages API",
-        network_access=NetworkAccess.RESTRICTED,
-        data_scope=DataScope.TRANSMITTED,
-        allowed_domains=["api.twilio.com"],
-        agents_served=["all"],
-    ),
-    # Governed webhook channels (channels/webhook_channels.py) — id per channel.
-    "channel_whatsapp": PluginManifest(
-        id="channel_whatsapp",
-        name="Channel: WhatsApp Cloud",
-        version="0.1.0",
-        description="WhatsApp Cloud API (Meta Graph) outbound",
-        network_access=NetworkAccess.RESTRICTED,
-        data_scope=DataScope.TRANSMITTED,
-        allowed_domains=["graph.facebook.com"],
-        agents_served=["all"],
-    ),
-    "channel_google_chat": PluginManifest(
-        id="channel_google_chat",
-        name="Channel: Google Chat",
-        version="0.1.0",
-        description="Google Chat incoming-webhook outbound",
-        network_access=NetworkAccess.RESTRICTED,
-        data_scope=DataScope.TRANSMITTED,
-        allowed_domains=["chat.googleapis.com"],
-        agents_served=["all"],
-    ),
-    "channel_teams": PluginManifest(
-        id="channel_teams",
-        name="Channel: Microsoft Teams",
-        version="0.1.0",
-        description="Microsoft Teams incoming-webhook outbound",
-        network_access=NetworkAccess.RESTRICTED,
-        data_scope=DataScope.TRANSMITTED,
-        # Teams webhook hosts (anchored subdomain match covers per-tenant prefixes);
-        # a config-supplied webhook host is also registered dynamically.
-        allowed_domains=["webhook.office.com", "logic.azure.com"],
-        agents_served=["all"],
-    ),
-    "channel_signal": PluginManifest(
-        id="channel_signal",
-        name="Channel: Signal",
-        version="0.1.0",
-        description="Signal via signal-cli REST API (host from config base_url)",
-        network_access=NetworkAccess.RESTRICTED,
-        data_scope=DataScope.TRANSMITTED,
-        allowed_domains=[],  # base_url is config-driven → registered dynamically
-        agents_served=["all"],
-    ),
-    "channel_matrix": PluginManifest(
-        id="channel_matrix",
-        name="Channel: Matrix",
-        version="0.1.0",
-        description="Matrix client-server API (homeserver from config)",
-        network_access=NetworkAccess.RESTRICTED,
-        data_scope=DataScope.TRANSMITTED,
-        allowed_domains=[],  # homeserver is config-driven → registered dynamically
-        agents_served=["all"],
-    ),
 }
 
 
@@ -614,7 +510,7 @@ def host_in_allowlist(host: str, allowed_domains: list[str]) -> bool:
 
 # ── SEC-5b: runtime allowlist augmentation ───────────────────────────────────
 # Some networked plugins take their egress host from config/env (n8n
-# N8N_BASE_URL, websearch SEARXNG_URL, Signal base_url, Matrix homeserver), so it
+# N8N_BASE_URL, websearch SEARXNG_URL), so it
 # can't be a static ``allowed_domains`` entry. Such a plugin registers its
 # configured host once at init; the egress gate unions these in with the
 # manifest's static allowlist. This keeps the strict-by-default boundary on

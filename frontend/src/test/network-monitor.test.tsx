@@ -18,11 +18,11 @@ function mockFetch(payload) {
 describe('NetworkMonitorPanel (H23.16) — egress ledger is live', () => {
   it('GETs /api/admin/network/calls and shows the clean local-only proof', async () => {
     const fn = mockFetch({
-      plugins: { worldview: { total: 2, allowed: 2, blocked: 0, external: 0, last_host: '127.0.0.1' } },
+      plugins: { weather: { total: 2, allowed: 2, blocked: 0, external: 0, last_host: '127.0.0.1' } },
       recent: [], external_egress_total: 0, local_only_violations: [], clean: true, events_kept: 0,
     });
     render(<NetworkMonitorPanel />);
-    await waitFor(() => expect(screen.getByText('worldview')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('weather')).toBeTruthy());
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/admin/network/calls'))).toBe(true);
     expect(screen.getByText('clean')).toBeTruthy();
     expect(screen.getByText('0 external')).toBeTruthy();

@@ -1,9 +1,9 @@
 /* Channels — each messaging channel's settings, edited in the HUD (G21 · H151/H160).
 
-   The hub owns the rules (agents/core/channel_config.py). A secret (a bot token, a mail
-   password, the ntfy topic) is typed once, stored encrypted by the hub and never shown
-   again: the panel only says whether it is set and where. Plain settings (hosts, ports,
-   allowlists, switches) are stored in the hub's settings. A value set in `.env` wins and is
+   The hub owns the rules (agents/core/channel_config.py). A secret (the bot token)
+   is typed once, stored encrypted by the hub and never shown
+   again: the panel only says whether it is set and where. Plain settings
+   (allowlists, switches) are stored in the hub's settings. A value set in `.env` wins and is
    changed there; a value the administrator pinned cannot be changed here. Channels start
    with the hub, so most changes need a restart: the panel says when one is waiting. */
 import React, { useState } from 'react';
@@ -14,7 +14,7 @@ import { ChannelDeliveriesPanel } from './channel-deliveries';
 export const CHANNELS_CONFIG_PATH = '/api/admin/channels/config';
 
 type FieldState = { name: string; label: string; kind: string; secret: boolean; applies: 'now' | 'restart';
-  set: boolean; source: 'env' | 'hub' | 'managed' | null; editable: boolean; value?: string | null; needs_reentry?: boolean };
+  set: boolean; source: 'env' | 'hub' | 'managed' | null; editable: boolean; value?: string | null };
 type ChannelRow = { id: string; label: string; note: string; running: boolean; fields: FieldState[];
   restart_required: boolean; changed: string[] };
 
@@ -55,7 +55,6 @@ function FieldEditor({ channel, field, onChanged }: { channel: string; field: Fi
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '3px 0' }}>
       <label htmlFor={id} style={{ fontSize: 'var(--n-fs-meta)', minWidth: 180 }}>{field.label}</label>
       {field.secret ? <Tag c={field.set ? 'var(--green)' : 'var(--ink-2)'}>{field.set ? 'set' : 'not set'}</Tag> : null}
-      {field.needs_reentry && <Tag c="var(--amber)">server changed · enter it again</Tag>}
       {field.source && <span style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{SOURCE[field.source] || field.source}</span>}
       {field.editable ? (
         <>

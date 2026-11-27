@@ -5,11 +5,11 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-37899-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-37289-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
-> 17 specialized AI agents orchestrated through Jarvis, running on **your own hardware**, controlled by voice and web.
+> 16 specialized AI agents orchestrated through Jarvis, running on **your own hardware**, controlled by voice and web.
 
 **A private AI OS that cannot silently act beyond the authority you grant it.** Local-first and governed: every autonomous action is risk-gated — a reversible/irreversible **approval queue** for anything consequential, a tamper-evident **audit log**, budgets and a kill-switch, converging on one **Action Kernel** mediation point (opt-in via `JARVIS_ACTION_KERNEL` while it hardens) — and it runs entirely on your own hardware (LM Studio / Ollama on your GPU), **$0/month, no cloud by default**, with a **family agent that never touches the internet**. Where other local agent systems prioritize extensibility and raw autonomy, this system prioritizes governed execution, local ownership, and inspectability. The product it is becoming is **Nerva** (published by Digitaholic; `jarvis-hub` remains the repo codename until the deliberate rename) — the long-term product & capability vision (house brain, media director, cameras, computer operator, self-extension) is in [`NERVA_VISION.md`](NERVA_VISION.md).
 
@@ -37,12 +37,11 @@ A personal AI mesh that handles the cross-section of *your* life: the day job an
 - **Pepper** — Chief of Staff. Calendar + meetings + reflection.
 - **Jerome** — Leisure & Soundtrack. Music, retro tech, decompression.
 
-**Business tier** — 5 agents:
+**Business tier** — 4 agents:
 - **Athena** — External Strategist. Your side business, personal brand, career trajectory.
 - **Stark** — Internal Corporate Intel. Day-job KPIs, board prep, channels.
 - **Veronica** — The Voice. Drafts emails, posts, captions in 5 voice profiles.
 - **Vision** — Deep Researcher + OSINT. Cited synthesis, regulatory watch.
-- **Argus** — Geoint Sentinel. Read-only, governed bridge to the Signal Layer.
 
 **Tech tier** — 3 agents:
 - **Steve** — CTO + Infrastructure. Bonobo + Pi + models + backups.
@@ -87,18 +86,13 @@ support: [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md); tester-level answers:
 - **Model:** `google/gemma-4-31b-a4b` (MoE, ~4B active params) on RTX 5090
 - **Voice:** browser-mic HUD loop ships; server engines are optional manual installs (openWakeWord wake word, faster-whisper STT, edge-tts / Kokoro TTS) — no install path ships them ([`docs/VOICE.md`](docs/VOICE.md))
 - **Memory:** conversation history (JSONL) + vector store (real embeddings via LM Studio/Ollama, hash fallback) + knowledge graph + fused recall (RRF, vector ⊕ graph) + SQLite checkpoints (WAL)
-- **Channels:** web (SSE), voice, telegram, discord, email, slack
+- **Channels:** web (SSE), voice, telegram
 - **Security:** PII/secret scanner, SSRF protection, audit log (Merkle chain), guardrails (WARN/REDACT/BLOCK)
-
-### Signal Layer
-
-
-The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at `:8787`. It turns provider data into evidence, signals, relevance, assessments, briefs, and approval-gated recommendations. It starts in deterministic replay mode by default and can later use a WorldMonitor sidecar as provider #1. The WorldMonitor sidecar convention is `:3100`. See [`services/signal-layer/README.md`](services/signal-layer/README.md).
 
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **37,899** · frontend **5,002** · mobile **522**. Route surface: **939**.
+Generated test matrix: backend **37,289** · frontend **5,028** · mobile **522**. Route surface: **940**.
 <!-- project-status:run:end -->
 
 **One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
@@ -140,8 +134,7 @@ python serve.py              # → http://127.0.0.1:8080
 python -m pytest             # full offline suite — current count auto-synced in STATUS.md
 ```
 
-_Also on Windows:_ **`UPDATE.bat`** pulls the latest and reinstalls. The optional Signal Layer
-is **opt-in** on every platform: `JARVIS_SIGNAL_LAYER=1` starts it at `:8787`. If something you added breaks the hub (a persona
+_Also on Windows:_ **`UPDATE.bat`** pulls the latest and reinstalls. If something you added breaks the hub (a persona
 overlay, a skill, a scheduled job, an MCP server), **`python serve.py --safe-mode`** starts it with
 only what ships: nothing of yours is deleted, the HUD says SAFE MODE, and a normal restart brings it all back.
 
@@ -150,7 +143,6 @@ installer-created Python environment (`.venv/`). Files outside the current insta
 Your data is never touched unless you also pass `--purge-data`.
 
 - **HUD:** http://127.0.0.1:8080/ — the **V2 cockpit** (primary HUD; legacy HUD at `/v1`, override with `JARVIS_HUD=v1`)
-- **Signal Layer:** http://127.0.0.1:8787/healthz (replay mode by default; opt out with `JARVIS_SIGNAL_LAYER=0`)
 - **Admin panel:** http://127.0.0.1:8080/admin
 - **CLI REPL:** `python agents/run.py`
 - **Scripted chat:** [CLI receipts and session attribution](docs/cli-chat-receipts.md).
@@ -424,10 +416,10 @@ Details: [`apps/jarvis-os/README.md`](apps/jarvis-os/README.md).
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **37,899** · frontend **5,002** · mobile **522** · **939** routes · **17** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `84215ba33693`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **37,289** · frontend **5,028** · mobile **522** · **940** routes · **16** active agents · open release gates: **A1, A3, A4, A6** · backlog: **291 done · 23 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `02334d9a3fb4`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
-**v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 17 specialist agents (incl. **Argus** for evidence-based situational awareness and **Howard**, the emerging digital twin; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
+**v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 16 specialist agents (incl. **Howard**, the emerging digital twin; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +
 RAG injection; hot-path perf (SQLite WAL, event-loop offload, checkpoint debounce, query-embedding
 cache, complexity-based model tiering); autonomous proactive cortex (ORIZONT 6); security wedge (encrypted
 secrets, signed skills, reversible/irreversible approval split, quarantine/capability/kill-switch); competitive edge

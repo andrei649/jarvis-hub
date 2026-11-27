@@ -268,12 +268,9 @@ Real code, still AI-doable without owner hardware:
 - GAP-1 residue — the `MediaDriver` injection point + implementation seam for
   `routers/media_director.py`; the acquisition **caller** (scheduled worker or admin action
   invoking `synthesize_and_propose`); the node-mesh transport (`node_transport_not_built`).
-- Agent depth — `agents/vision` + `agents/argus` real implementation (persona-only today);
-  wire Hestia's reads/proposals onto `agents/core/house/**`; H30.8 tail. *Refreshed 2026-09-01
-  (no owner decision taken):* #287 already routes world-intelligence queries through
-  `ArgusInterface` via `plugin_gatherer._signal_layer_answer`; the WorldView handoff's "deeper
-  Argus agent-dispatch routing" is this Phase-4 `agents/argus` slice (BACKLOG ORIZONT 19,
-  no dedicated BACKLOG row yet), still unscheduled.
+- Agent depth — `agents/vision` real implementation (persona-only today). The Argus half of
+  this item, with the Signal Layer and the world-intelligence routing it rode on, was removed
+  on 2026-11-25 (`docs/decisions/2026-11-25-nerva-finish-line.md`).
 - ~~DRA-24 — model cached-input token cost (Gemini context caching is live but costed at zero)~~
   **done** — every price row carries a third `cached` rate and the estimator bills cached input at
   it, so the saving is no longer over-reported (`tests/test_cost_estimator.py`);

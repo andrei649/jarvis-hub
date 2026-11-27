@@ -207,24 +207,6 @@ def test_env_config_is_a_stdlib_leaf():
     assert "load_dotenv" not in src, "env_config must never load .env (posture change)"
 
 
-def test_web_email_ports_use_shared_env_int():
-    """Malformed SMTP/IMAP port env values must fall back, not crash startup."""
-    src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
-    assert 'int(os.environ.get("SMTP_PORT"' not in src
-    assert 'int(os.environ.get("IMAP_PORT"' not in src
-    # H088: the panel's port rule (channel_config.env_port), which also falls back.
-    assert 'channel_port("SMTP_PORT", 587' in src
-    assert 'channel_port("IMAP_PORT", 993' in src
-
-
-def test_webhook_channels_use_shared_env_json_object():
-    """Malformed webhook-channel JSON env must fall back, not hand-roll parsing."""
-    src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
-    assert 'os.environ.get("JARVIS_WEBHOOK_CHANNELS"' not in src
-    assert 'json.loads(wh_raw)' not in src
-    assert 'env_json_object("JARVIS_WEBHOOK_CHANNELS", {})' in src
-
-
 def test_web_cors_origins_use_shared_env_list():
     """Comma-separated CORS origins should use the shared list parser."""
     src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
@@ -307,7 +289,7 @@ _RAW_ENV_READ = re.compile(r"os\.getenv\(|os\.environ\.get\(|os\.environ\[")
 
 # Lower this when you migrate reads. Raising it should be a deliberate,
 # explained choice in the PR — not a reflex to get CI green.
-MAX_RAW_ENV_READS = 110  # RB-2: the bind guard reads its tokens and host under either spelling;
+MAX_RAW_ENV_READS = 96  # RB-2: the bind guard reads its tokens and host under either spelling;
 # G21: channel_config places and withdraws channel values in the process environment itself
 # (two `os.environ[name] = value` writes) and reads each spelling raw in one helper to know
 # which values it placed — env_config's merged, pin-aware read cannot answer that.

@@ -16,7 +16,6 @@ from agents.core.plugins.cloud_llm import CloudLLMPlugin
 PUBLIC_SOULS = (
     Path("agents/_templates/SOUL.template.md"),
     Path("agents/athena/SOUL.md"),
-    Path("agents/argus/SOUL.md"),
     Path("agents/veronica/SOUL.md"),
     Path("agents/vision/SOUL.md"),
 )

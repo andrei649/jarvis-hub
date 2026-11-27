@@ -313,7 +313,7 @@ def _key_for_elsewhere(profile: ProviderProfile, environ: Mapping[str, str] | No
         # the international and the mainland endpoint; HF_TOKEN and Kimi keys have other
         # uses): only the provider the owner selected is probed with them.
         return True
-    if profile.base_url_env:
+    if not profile.auth_env or profile.base_url_env:
         return False
     home = hostname_of(profile.default_base_url)
     return any(other.auth_env == profile.auth_env and other.base_url_env

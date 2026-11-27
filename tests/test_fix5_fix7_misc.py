@@ -1,5 +1,4 @@
-"""Small regression tests for FIX 5 (Argus HUD metadata) and FIX 7 (embedder
-in-process cache thread-safety)."""
+"""Small regression test for FIX 7 (embedder in-process cache thread-safety)."""
 
 import sys
 import threading
@@ -8,19 +7,6 @@ from pathlib import Path
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
-
-
-# ── FIX 5: Argus present in the HUD agent metadata ────────────────────────────
-
-
-def test_argus_in_agent_meta():
-    from agents import web
-
-    assert "argus" in web._AGENT_META, "argus missing from _AGENT_META"
-    meta = web._AGENT_META["argus"]
-    # tier business → BIZ, consistent with the other business-tier agents.
-    assert meta["tier"] == "BIZ"
-    assert "OSINT" in meta["role"] or "Intel" in meta["role"]
 
 
 # ── FIX 7: _PROC_CACHE get/put are lock-guarded ───────────────────────────────

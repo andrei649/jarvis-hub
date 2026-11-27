@@ -16,6 +16,7 @@ import contextlib
 import datetime
 import json
 import os
+import shlex
 import signal
 import ssl
 import subprocess
@@ -42,7 +43,7 @@ LINUX = sys.platform.startswith("linux")
 
 
 def _cmd(mode: str = "full") -> str:
-    return f"{sys.executable} {FAKE} {mode}"
+    return shlex.join([sys.executable, str(FAKE), mode])
 
 
 @pytest.fixture(autouse=True)
@@ -472,6 +473,7 @@ def test_reaper_stops_a_leaderless_group_and_drops_malformed_rows(tmp_path):
             os.kill(child, signal.SIGKILL)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX child registry")
 def test_registry_never_writes_through_a_planted_link(tmp_path):
     target = tmp_path / "elsewhere.json"
     target.write_text('{"keep": "me"}')

@@ -2,6 +2,7 @@
 
 Modes (argv[1]): ``full`` (tools + resources + prompts), ``resources`` (resources and
 prompts only, no tools), ``hang`` (never answers initialize), ``tools`` (tools only),
+``project-marker`` (one read-only tool for a synthetic project),
 ``hostile`` (full, plus identifiers carrying TAG / zero-width / bidi characters),
 ``stderrflood`` (full, writes one 200 KB stderr line with no newline at start).
 
@@ -15,6 +16,7 @@ import base64
 import json
 import os
 import sys
+from pathlib import Path
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else "full"
 INIT = {}
@@ -45,7 +47,7 @@ def ask_client(method, params, rid):
 
 def caps():
     out = {}
-    if MODE in ("full", "tools", "hostile", "stderrflood", "idleflood"):
+    if MODE in ("full", "tools", "hostile", "stderrflood", "idleflood", "project-marker"):
         out["tools"] = {}
     if MODE in ("full", "resources", "hostile", "stderrflood"):
         out["resources"] = {}
@@ -82,6 +84,9 @@ def handle(msg):
     if method == "ping":
         return {}
     if method == "tools/list":
+        if MODE == "project-marker":
+            return {"tools": [{"name": "read_project_marker", "inputSchema": {"type": "object"},
+                               "annotations": {"readOnlyHint": True}}]}
         if MODE == "resources":
             return {"__error__": {"code": -32601, "message": "no tools"}}
         return {"tools": [
@@ -105,6 +110,8 @@ def handle(msg):
     if method == "tools/call":
         name = params.get("name")
         args = params.get("arguments") or {}
+        if MODE == "project-marker" and name == "read_project_marker":
+            return {"content": [], "structuredContent": {"marker": Path("marker.txt").read_text(encoding="utf-8")}}
         if name == "echo":
             return {"content": [{"type": "text", "text": json.dumps(args)}]}
         if name == "snapshot":

@@ -31,6 +31,23 @@ async def admin_guard(request: Request):
     return await _web()._admin_guard(request)
 
 
+def direct_local_owner(request: Request) -> bool:
+    """A local reader must reach the hub directly and hold the web owner's authority."""
+    if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+        return False
+    origin = f"{request.url.scheme}://{request.url.netloc}"
+    return (
+        request.url.hostname in {"127.0.0.1", "::1", "localhost"}
+        and request.headers.get("origin", origin) == origin
+        and request.headers.get("sec-fetch-site") != "cross-site"
+        and not any(
+            key in request.headers
+            for key in ("forwarded", "x-forwarded-for", "x-real-ip", "x-forwarded-host", "x-forwarded-proto")
+        )
+        and _web()._web_principal(request).admin is True
+    )
+
+
 async def owner_web_principal(request: Request,
                               _owner: Annotated[None, Depends(admin_guard)]):
     """Resolve the same owner predicate and principal as the web chat door."""

@@ -1,12 +1,12 @@
 """Integrations endpoints (transcripts / write-back / social / webhook channels) — extracted from web.py (CLN-3)."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import admin_guard, user_guard
 
-from agents.core.web_helpers import nocache_json, safe_reflect
+from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
 
 
@@ -191,17 +191,6 @@ async def channels_inbox_reply(thread_id: str, body: ChannelReplyBody):
     return nocache_json(result, status_code=200 if result.get("ok") else 422)
 
 
-@router.get("/api/channels/webhook", dependencies=[Depends(user_guard)])
-async def channels_webhook_list():
-    """H12.16 — supported governed webhook channels + which are live."""
-    orch = get_orch()
-    from agents.core.channels.webhook_channels import SUPPORTED_CHANNELS, WebhookChannel
-    live = []
-    if orch and hasattr(orch, "channels"):
-        live = [cid for cid, ch in orch.channels.items() if isinstance(ch, WebhookChannel)]
-    return nocache_json({"supported": list(SUPPORTED_CHANNELS), "live": live})
-
-
 @router.get("/api/channels/send-rate-limit", dependencies=[Depends(admin_guard)])
 async def channels_send_rate_limit():
     """0.44 read surface: the per-channel OUTBOUND send rate-limiter status —
@@ -259,7 +248,7 @@ async def channels_dead_target_clear(body: DeadTargetClearBody):
 class ChannelSendBody(BaseModel):
     channel: str = Field(..., max_length=32)
     text: str = Field(..., max_length=4_000)
-    #: One line; ntfy's native title, elsewhere the first line of the message (H480 `-s`).
+    #: One line, sent as the first line of the message (H480 `-s`).
     subject: str = Field("", max_length=200)
     source: str = Field("api", max_length=64)
 
@@ -295,25 +284,3 @@ async def channels_send(body: ChannelSendBody):
     if not result.get("ok"):
         return JSONResponse({"error": result.get("reason", "send refused"), **result}, status_code=422)
     return nocache_json(result)
-
-
-@router.post("/api/channels/{channel_id}/inbound", dependencies=[Depends(user_guard)])
-async def channel_inbound(channel_id: str, request: Request):
-    """H12.16 — deliver an inbound webhook payload to a governed channel adapter.
-
-    The adapter parses (text, sender) and routes through the governed gateway, so
-    the H12.19 pairing gate + rate-limit + guardrails all apply before the
-    orchestrator sees the text. (Provider signature verification is the host
-    seam — front this with the H16.4 signed-webhook path in production.)"""
-    orch = get_orch()
-    if not orch:
-        return JSONResponse({"error": "not initialized"}, status_code=503)
-    ch = orch.channels.get(channel_id) if hasattr(orch, "channels") else None
-    if ch is None or not hasattr(ch, "handle_inbound"):
-        return JSONResponse({"error": f"no webhook channel '{safe_reflect(channel_id)}'"}, status_code=404)
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    reply = await ch.handle_inbound(payload)
-    return nocache_json({"ok": True, "channel": channel_id, "reply": reply})

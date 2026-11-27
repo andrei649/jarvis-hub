@@ -16,12 +16,9 @@ from dataclasses import dataclass
 
 DIALECT_PLAIN = "plain"
 DIALECT_TELEGRAM_HTML = "telegram_html"
-DIALECT_SLACK_MRKDWN = "slack_mrkdwn"
-#: CommonMark-ish markup the channel renders itself (Discord): passed through, only chunked.
+#: CommonMark-ish markup the channel renders itself: passed through, only chunked.
 DIALECT_MARKDOWN = "markdown"
-DIALECTS: tuple[str, ...] = (
-    DIALECT_PLAIN, DIALECT_TELEGRAM_HTML, DIALECT_SLACK_MRKDWN, DIALECT_MARKDOWN,
-)
+DIALECTS: tuple[str, ...] = (DIALECT_PLAIN, DIALECT_TELEGRAM_HTML, DIALECT_MARKDOWN)
 
 
 @dataclass(frozen=True)
@@ -71,6 +68,6 @@ class ChannelDescriptor:
 
 
 __all__ = [
-    "DIALECTS", "DIALECT_MARKDOWN", "DIALECT_PLAIN", "DIALECT_SLACK_MRKDWN",
+    "DIALECTS", "DIALECT_MARKDOWN", "DIALECT_PLAIN",
     "DIALECT_TELEGRAM_HTML", "ChannelDescriptor",
 ]

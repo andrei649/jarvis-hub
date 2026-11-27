@@ -33,14 +33,14 @@ function CommsMode({ t }){
   const C = V2.COMMS;
   const [filter,setFilter]=uS3('all');
   const [sel,setSel]=uS3(C.threads[0]?.id || '');
-  const chIcon = ch => ch==='telegram'?'send':ch==='email'?'comms':ch==='whatsapp'?'chat':ch==='discord'?'chat':'mic';
+  const chIcon = ch => ch==='telegram'?'send':ch==='web'?'chat':'mic';
   const list = C.threads.filter(th=>filter==='all'||th.channel===filter);
   const active = C.threads.find(th=>th.id===sel) || list[0];
   const [reply,setReply]=uS3('');
   const [replyState,setReplyState]=uS3('');
   const activeAny = active as any;
   const activeThread = activeAny?.thread_id || activeAny?.id || '';
-  const canReply = !!activeAny?.replyable && !!activeThread && ['telegram','web','slack','discord'].includes(activeAny.channel);
+  const canReply = !!activeAny?.replyable && !!activeThread && ['telegram','web'].includes(activeAny.channel);
   uE3(()=>{ setReply(''); setReplyState(''); }, [activeThread]);
   const queueReply = () => {
     const text = reply.trim();
@@ -69,7 +69,7 @@ function CommsMode({ t }){
               <div className="cm-mid">
                 <div className="cm-top"><span className="cm-from">{th.from}</span><span className="cm-ts">{th.ts}</span></div>
                 <div className="cm-subj">{th.subj}</div>
-                <div className="cm-handled"><Gl3 id={th.agent} size={10}/>{th.agent}{th.local&&<span className="cm-local">on-device</span>}{th.dir==='out'&&<span className="cm-out">outbound</span>}</div>
+                <div className="cm-handled"><Gl3 id={th.agent} size={10}/>{th.agent}{(th as any).local&&<span className="cm-local">on-device</span>}{th.dir==='out'&&<span className="cm-out">outbound</span>}</div>
               </div>
               {th.unread && <span className="cm-dot"></span>}
             </div>

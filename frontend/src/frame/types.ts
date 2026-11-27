@@ -55,6 +55,8 @@ export interface FrameProps {
   readonly page: RoutePage;
   /** The hub as App's loader last read it. */
   readonly hub: HubSnapshot;
+  /** True when the current Admin inventory cycle has published its result, including an empty or refused result. */
+  readonly adminSettled?: boolean;
   readonly lang: Lang;
   readonly setLang: (lang: Lang) => void;
   /** The resolved scheme (never 'system') and the owner's preference. */

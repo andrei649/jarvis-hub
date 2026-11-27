@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from agents.cli.acp_hub import _stdin_reader
 from agents.core.acp import render
 from agents.core.acp.jsonrpc import JsonRpcConnection, RpcError
 from agents.core.acp.paths import AcpPathError, confine, session_root
@@ -41,13 +42,6 @@ class _PipeWriter:
     def close(self) -> None:
         with contextlib.suppress(OSError):
             os.close(self.fd)
-
-
-async def _pipe_reader(fd: int) -> asyncio.StreamReader:
-    loop = asyncio.get_running_loop()
-    reader = asyncio.StreamReader(limit=4 * 1024 * 1024 + 1)
-    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), os.fdopen(fd, "rb", buffering=0))
-    return reader
 
 
 class FakeBackend:
@@ -179,8 +173,12 @@ async def _wire(backend, editor, **opts):
     a_read, a_write = os.pipe()   # editor → agent
     b_read, b_write = os.pipe()   # agent → editor
     server = AcpServer(backend, poll_interval=0.01, result_wait=0.2, **opts)
-    agent_reader = await _pipe_reader(a_read)
-    editor_reader = await _pipe_reader(b_read)
+    # Windows event loops cannot connect_read_pipe to these anonymous pipes.
+    # Match production ACP's threaded stdin reader and retain each OS stream.
+    agent_stream = os.fdopen(a_read, "rb", buffering=0)
+    editor_stream = os.fdopen(b_read, "rb", buffering=0)
+    agent_reader = await _stdin_reader(agent_stream)
+    editor_reader = await _stdin_reader(editor_stream)
     agent_writer, editor_writer = _PipeWriter(b_write), _PipeWriter(a_write)
     serving = asyncio.ensure_future(server.serve(agent_reader, agent_writer))
     editor.conn = JsonRpcConnection(editor_reader, editor_writer, on_request=editor.on_request,
@@ -189,9 +187,15 @@ async def _wire(backend, editor, **opts):
 
     async def close():
         editor_writer.close()
-        await asyncio.wait_for(serving, 5)
-        agent_writer.close()
-        await asyncio.wait_for(client, 5)
+        try:
+            try:
+                await asyncio.wait_for(serving, 5)
+            finally:
+                agent_writer.close()
+                await asyncio.wait_for(client, 5)
+        finally:
+            agent_stream.close()
+            editor_stream.close()
 
     return server, close
 
@@ -268,6 +272,8 @@ async def test_session_commands_stay_in_the_editor_and_prompt_bounds(tmp_path):
 
 async def test_resource_links_become_confined_file_references(tmp_path):
     (tmp_path / "src.py").write_text("print(1)\n")
+    encoded = tmp_path / "café 50%20.py"
+    encoded.write_text("print(2)\n")
     backend, editor = FakeBackend(), Editor()
     _server, close = await _wire(backend, editor)
     try:
@@ -275,10 +281,15 @@ async def test_resource_links_become_confined_file_references(tmp_path):
         await editor.conn.request("session/prompt", {"sessionId": sid, "prompt": [
             {"type": "text", "text": "look at"},
             {"type": "resource_link", "uri": (tmp_path / "src.py").as_uri(), "name": "src.py"},
+            {"type": "resource_link", "uri": encoded.as_uri(), "name": encoded.name},
+            {"type": "resource_link", "uri": "file://LOCALHOST" + encoded.as_uri()[7:], "name": "local"},
+            {"type": "resource_link", "uri": "file://foreign" + encoded.as_uri()[7:], "name": "remote"},
             {"type": "resource_link", "uri": "file:///etc/passwd", "name": "passwd"},
         ]})
         sent = backend.messages[0]
         assert f"@file:{(tmp_path / 'src.py').resolve()}" in sent
+        assert sent.count(f'@file:"{encoded.resolve()}"') == 2
+        assert "outside this session's folder was left out: remote" in sent
         assert "/etc/passwd" not in sent and "outside this session's folder" in sent
     finally:
         await close()
@@ -305,8 +316,9 @@ async def test_cancel_stops_the_turn(tmp_path):
 # ── H543: permissions are the ordinary approval decision ─────────────────────
 
 
-async def test_accept_posts_the_hub_decision_with_the_real_diff(tmp_path):
-    (tmp_path / "a.txt").write_text("old\n")
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+async def test_accept_posts_the_hub_decision_with_the_real_diff(tmp_path, newline):
+    (tmp_path / "a.txt").write_bytes(("old" + newline).encode())
     backend, editor = FakeBackend([_card()]), Editor("accept")
     _server, close = await _wire(backend, editor)
     try:
@@ -318,7 +330,7 @@ async def test_accept_posts_the_hub_decision_with_the_real_diff(tmp_path):
         request = editor.permissions[0]
         diff = [c for c in request["toolCall"]["content"] if c["type"] == "diff"][0]
         assert diff == {"type": "diff", "path": str((tmp_path / "a.txt").resolve()),
-                        "oldText": "old\n", "newText": "new\n"}
+                        "oldText": "old" + newline, "newText": "new\n"}
         assert request["toolCall"]["kind"] == "edit"
         assert [o["optionId"] for o in request["options"]] == ["accept", "reject"]   # no "always" offered
         final = editor.kinds("tool_call_update")[-1]
@@ -327,18 +339,19 @@ async def test_accept_posts_the_hub_decision_with_the_real_diff(tmp_path):
         await close()
 
 
-async def test_the_diff_base_is_the_disk_and_unsaved_editor_changes_are_named(tmp_path):
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+async def test_the_diff_base_is_the_disk_and_unsaved_editor_changes_are_named(tmp_path, newline):
     # G11 review: the write replaces the file on disk, so the disk is the "before"; an
     # editor buffer that differs is named, never shown as the base.
-    (tmp_path / "a.txt").write_text("on disk\n")
-    backend, editor = FakeBackend([_card()]), Editor("reject", buffer="unsaved buffer\n", fs=True)
+    (tmp_path / "a.txt").write_bytes(("on disk" + newline).encode())
+    backend, editor = FakeBackend([_card()]), Editor("reject", buffer="unsaved buffer" + newline, fs=True)
     _server, close = await _wire(backend, editor)
     try:
         _init_reply, sid = await _init(editor, tmp_path)
         await editor.conn.request("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "x"}]})
         content = editor.permissions[0]["toolCall"]["content"]
         diff = [c for c in content if c["type"] == "diff"][0]
-        assert diff["oldText"] == "on disk\n"
+        assert diff["oldText"] == "on disk" + newline
         assert any("unsaved changes" in c["content"]["text"] for c in content if c["type"] == "content")
         assert editor.reads[0]["path"] == str((tmp_path / "a.txt").resolve())
         assert backend.decisions == [(7, "reject", "rejected in the editor")]
@@ -536,9 +549,14 @@ def test_paths_are_confined(tmp_path):
     for bad in ("../x", "/etc/passwd", "a\x00b", "", "x" * 5000):
         with pytest.raises(AcpPathError):
             confine(root, bad)
-    (tmp_path / "link").symlink_to(tmp_path.parent)
-    with pytest.raises(AcpPathError):
-        confine(root, "link/escape.txt")
+    try:
+        (tmp_path / "link").symlink_to(tmp_path.parent)
+    except OSError as exc:
+        if os.name != "nt" or getattr(exc, "winerror", None) != 1314:
+            raise
+    else:
+        with pytest.raises(AcpPathError):
+            confine(root, "link/escape.txt")
     for bad_root in ("relative", "/", str(tmp_path / "missing")):
         with pytest.raises(AcpPathError):
             session_root(bad_root)
@@ -1037,15 +1055,21 @@ def test_review_token_file_must_be_private(tmp_path):
 
     token = tmp_path / "token"
     token.write_text("s3cret-token\n")
-    token.chmod(0o644)
-    with pytest.raises(ValueError):
-        nerva.read_token_file(str(token))
-    token.chmod(0o600)
+    if os.name == "posix":
+        token.chmod(0o644)
+        with pytest.raises(ValueError):
+            nerva.read_token_file(str(token))
+        token.chmod(0o600)
     assert nerva.read_token_file(str(token)) == "s3cret-token"
     link = tmp_path / "link"
-    link.symlink_to(token)
-    with pytest.raises(ValueError):
-        nerva.read_token_file(str(link))
+    try:
+        link.symlink_to(token)
+    except OSError as exc:
+        if os.name != "nt" or getattr(exc, "winerror", None) != 1314:
+            raise
+    else:
+        with pytest.raises(ValueError):
+            nerva.read_token_file(str(link))
 
     class Client:
         base_url = "http://127.0.0.1:8080"

@@ -41,8 +41,7 @@ WorldView (4D OSINT) is an opt-in companion: `JARVIS_WORLDVIEW=1 ./install.sh`.
 - **Windows:** double-click **`START.bat`** (`START.bat doctor` runs the check-up).
 - **Any OS:** `./start.sh` (or `python serve.py`) → the Command Center opens at
   **http://127.0.0.1:8080/v2** once `/readyz` answers (`--no-browser` to skip;
-  `--doctor` runs the check-up). WorldView / the Signal Layer start only with
-  `JARVIS_WORLDVIEW=1` / `JARVIS_SIGNAL_LAYER=1`.
+  `--doctor` runs the check-up).
 
 Key surfaces:
 - **Command Center (V2 HUD):** http://127.0.0.1:8080/v2 (also at `/`; legacy at `/v1`).
@@ -56,7 +55,7 @@ Key surfaces:
 
 Jarvis is an **orchestrator (Jarvis)** routing a cabinet of specialist agents — e.g.
 **Stark** (engineering), **Ultron** (security), **Frigga** (family/home, strictly local),
-**Gecko** (finance), **Argus** (WorldView/geoint), **Howard** (your emerging digital
+**Gecko** (finance), **Howard** (your emerging digital
 twin), and more — each with its own role, model tier, and capability/network scope. You
 talk to Jarvis; it delegates.
 

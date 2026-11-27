@@ -18,6 +18,8 @@ from agents.core import settings_db
 from agents.core.llm import provider_selection
 from agents.core.llm.providers import selection_gates
 
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX provider package store")
+
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):

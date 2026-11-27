@@ -59,9 +59,6 @@ INTENTIONALLY_OPEN = {
     "POST /v1/chat/completions",
     "POST /v1/responses",
     "DELETE /v1/responses/{response_id}",
-    # G16 (H098): Twilio's inbound SMS. 404 unless SMS is configured; X-Twilio-Signature
-    # (HMAC-SHA1 over URL + sorted params, constant-time) and the account SID in the handler.
-    "POST /api/channels/sms/webhook",
     # H658: remote room members' peer transport. 404 unless JARVIS_ROOM_PEERS; a pinned
     # Ed25519 signature plus the invitation code proof (accept) or the NervaRoom grant this
     # hub issued (call/renew), with nonce/timestamp replay protection.
@@ -202,6 +199,7 @@ IN_HANDLER_GUARDED = {
     # G9 / H692: a browser redirect carries no admin token; the start's binding cookie and
     # a waiting flow's state, both compared in constant time and redeemed once.
     "GET /api/oauth/mcp/callback": "a waiting MCP sign-in's state plus its owner-binding cookie",
+    "GET /api/oauth/chatgpt/callback": "an owner-started, unexpired ChatGPT sign-in and its local browser cookie",
     "POST /api/widget/{token}/message": "widget capability token in the path",
     "GET /api/widget/{token}": "widget capability token in the path",
     "GET /api/widget/{token}/config": "widget capability token in the path",
@@ -211,7 +209,6 @@ IN_HANDLER_GUARDED = {
     "GET /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
     "DELETE /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
     "GET /v1/models": "OpenAI-compatible API key (bearer), API switched on",
-    "POST /api/channels/sms/webhook": "Twilio X-Twilio-Signature (HMAC-SHA1, the SMS auth token)",
     # H658: remote room members (a pinned Ed25519 key signs every request).
     "POST /api/room-peers/peer/accept": "invitation code proof + the member key's Ed25519 signature",
     "POST /api/room-peers/peer/call": "NervaRoom grant this hub issued + the pinned member key's signature",
@@ -270,6 +267,10 @@ IN_HANDLER_STEP_UP = {
 # it is pinned here with a probe.
 _INH = "tests/test_route_inhandler_guards.py::"
 IN_HANDLER_GUARD_SITES = {
+    "agents/core/routers/dashboard.py:dashboard_today_entries": (
+        "tests/test_finish_line_memory_source.py::test_source_references_require_admin_even_when_user_can_read_entries",),
+    "agents/core/routers/dashboard.py:dashboard_today_entry": (
+        "tests/test_finish_line_memory_source.py::test_source_references_require_admin_even_when_user_can_read_entries",),
     "agents/core/routers/kanban.py:events": (
         _INH + "test_websocket_in_handler_guard_refuses_unauthenticated[WS /api/kanban/events]",
         _INH + "test_websocket_closes_when_credential_is_revoked_mid_stream[WS /api/kanban/events]"),
@@ -314,11 +315,14 @@ IN_HANDLER_TIER_SITES = {
         "tests/test_h273e_provenance_review.py::"
         "test_the_mcp_identity_check_refuses_a_revoked_credential_as_the_guard_does",),
     # Step-ups inside user-tier routes.
-    # /chat's body moved into _chat_with_usage (usage/stops scopes) on the PR branch.
+    "agents/web.py:chat": (
+        "tests/test_chat_cloud_history.py::test_cloud_sees_only_this_send_or_confirmed_same_chat",),
     "agents/web.py:_chat_with_usage": (
         "tests/test_h011_preappend_commands.py::test_cli_web_owner_registry_contract_preserves_history_and_exit_status",
         _H441 + "test_explicit_and_effective_default_chat_stream_and_active_memory_are_private"),
-    "agents/web.py:chat_stream": (_INH + "test_chat_stream_binds_the_credentialed_principal",),
+    "agents/web.py:chat_stream": (
+        _INH + "test_chat_stream_binds_the_credentialed_principal",
+        "tests/test_chat_cloud_history.py::test_cloud_sees_only_this_send_or_confirmed_same_chat"),
     # H058: the web door's busy path judges a command as the credentialed principal.
     "agents/web.py:_busy_command_refusal": (
         "tests/test_h058_slash_access.py::test_the_web_door_refuses_a_command_at_once_while_its_session_runs_a_turn",),

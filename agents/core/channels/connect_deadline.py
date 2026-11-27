@@ -1,7 +1,6 @@
 """Validated opening budget shared by channel transports.
 
-This value configures Telegram identity, Discord gateway, ntfy, IMAP and Slack opening
-attempts. It is not a promise that late transport cleanup finishes within the same budget.
+This value configures the Telegram identity opening attempts. It is not a promise that late transport cleanup finishes within the same budget.
 """
 
 from __future__ import annotations

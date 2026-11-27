@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shlex
 import sys
 import time
 from pathlib import Path
@@ -27,7 +28,7 @@ FAKE = Path(__file__).resolve().parent / "fixtures" / "mcp_fake_server.py"
 
 
 def _cmd(mode: str) -> str:
-    return f"{sys.executable} {FAKE} {mode}"
+    return shlex.join([sys.executable, str(FAKE), mode])
 
 
 @pytest.fixture(autouse=True)
@@ -209,7 +210,7 @@ async def test_an_answer_crossing_a_cancellation_reaches_the_server():
                     elicitation={"enabled": True, "max_per_minute": 30})
     manager.register(srv)
     try:
-        await manager.connect_server("docs")
+        assert await manager.connect_server("docs"), srv.last_error
         call = asyncio.create_task(srv.call_tool("ask_input"))
         while not queue.list("pending"):
             await asyncio.sleep(0.01)
