@@ -104,8 +104,8 @@ describe('PairingPanel (H12.19) — sender approvals are live', () => {
       '/api/channels/pairing': {
         senders: [
           { channel: 'telegram', sender_id: '777', name: 'ion', status: 'allowed' },
-          { channel: 'slack', sender_id: 'U9', name: 'spam', status: 'pending' },
-          { channel: 'sms', sender_id: '+40', name: 'troll', status: 'blocked' },
+          { channel: 'telegram', sender_id: '888', name: 'spam', status: 'pending' },
+          { channel: 'telegram', sender_id: '999', name: 'troll', status: 'blocked' },
         ],
         summary: { allowed: 1, pending: 1, blocked: 1 },
       },

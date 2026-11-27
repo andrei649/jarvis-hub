@@ -106,51 +106,6 @@ mutations / media playback / desktop steps can complete on a kernel GRANT
 `registry.py:87`). This is the flag that makes the smart-home story real — flip
 it deliberately, together with the kernel flag.
 
-## `JARVIS_WEBHOOK_CHANNELS`
-
-**Default: empty (no channels wired).** JSON object env:
-`{"<kind>": {<config>}}` read at startup (`agents/web.py:423`).
-
-**The cheap win holds — all five adapters exist**, in
-`agents/core/channels/webhook_channels.py`: WhatsApp Cloud API (`:127`), Signal
-via signal-cli REST (`:158`), Matrix client-server (`:183`), Teams
-(`:214`), Google Chat (`:239`). Registry + builder: `:262`. **No new pip
-dependency:** outbound uses an injectable transport defaulting to the in-house
-egress-gated HTTP client (`webhook_channels.py:113`); `httpx` is already base
-(`requirements.txt:8`).
-
-Reality notes per channel:
-
-- **Signal** needs a *running signal-cli REST daemon* somewhere reachable
-  (`base_url` config) — not a pip install, but an external process you operate.
-- **Inbound delivery** posts to `/api/channels/{id}/inbound`
-  (`agents/core/routers/integrations.py:211`), user-guarded, and provider
-  signature verification is deliberately a host seam — front it with the signed-
-  webhook path in production (`integrations.py:217`). Outbound Teams/Google Chat
-  need an incoming-webhook URL in config.
-- **Matrix end-to-end encryption (H127):** before a send, the hub asks the homeserver
-  whether the room is encrypted (an answer it cannot read counts as encrypted). Nerva has
-  no Olm/Megolm backend (none is pinned), so a send into an encrypted room is **refused**
-  unless the `matrix` config sets `"encrypted_rooms": "allow_plaintext"` (the message then
-  shows as unencrypted to the room) or `"encrypted_rooms": "proxy"` with a loopback
-  `homeserver` URL pointing at a local E2EE proxy such as pantalaimon, which encrypts for
-  this client. Encrypted inbound events are counted and logged, never answered.
-  `"allow_unverified_devices": true` will relax the device check once encryption exists.
-  Device and cross-signing trust: `python -m agents.core.channels.matrix_e2ee
-  verify|verify-master|revoke|devices|status` (encrypted store `<data>/matrix/crypto_store.enc`;
-  without `JARVIS_SECRET_KEY` its key file sits beside it — `crypto_store.enc.key`, 0600 — so
-  the encryption protects a copy of the store, not someone who can read the data dir; set
-  `JARVIS_SECRET_KEY` to keep the key off disk). Only a 404 `M_NOT_FOUND` answer means
-  "not encrypted", re-checked after 30 s; room ids with `/`, `\\` or dot segments are refused.
-- **Governance applies regardless:** inbound senders thread through the pairing
-  gate (`agents/core/channels/gateway.py:65`); outbound is rate-limited only if
-  you opt in (`webhook_channels.py:66`, unlimited by default). iMessage is
-  intentionally excluded (`webhook_channels.py:17`).
-
-**Risk delta vs none:** a misconfigured channel is a door into the governed
-gateway — pairing gate and guardrails hold, but anyone who can reach the inbound
-endpoint with a paired sender can drive the agent. Configure pairing first.
-
 
 ---
 
@@ -1174,10 +1129,7 @@ boot guard `assert_guarded_channels` then refuses to start a channel whose token
 an allowlist names at least one id or `JARVIS_CHANNEL_OPEN=1` acknowledges an open bot. A typo
 refuses boot like the other posture flags. The guard runs twice: early, and again from the
 lifespan once `.env` is loaded (`assert_front_door`), so a token that lives only in `.env` is
-seen. The doors it counts: the Telegram and Discord bots, Slack Socket Mode when both
-`SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` are set, the webhook map, the IMAP inbox
-(whose sender is the `From` address — forgeable without DMARC, so a paired address is a held
-stranger let in, not an authenticated owner). **Cost of ON:** on upgrade the owner must pair
+seen. The door it counts: the Telegram bot. **Cost of ON:** on upgrade the owner must pair
 themselves once — or set `TELEGRAM_ALLOWED_USER_IDS`, which now passes the gate on its own.
 With pairing on, the unauthenticated `POST /api/channels/pairing/request` door is live too
 (bounded pending list, store-wide code-guess budget, the rate limiter); `0` closes it.
@@ -1757,7 +1709,6 @@ failed query to a second configured provider. **Revert:** unset the variable.
 |---|---|---|---|---|
 | `JARVIS_ACTION_KERNEL` | off (`kernel/flags.py:14`) | Broker GRANTs enqueue as `act` (auto-run) instead of inbox-blocked; DENY blocks early | Autonomous execution of reversible actions; money/taint/owner floors remain | Unset + restart: hooks no-op structurally (`http_client.py:48`), tasks return to ask-floor |
 | `JARVIS_UNIFIED_ACTION_API` | off (`capability_actions.py:17`) | Arms house/media/desktop facade; without it those routes refuse forever | Real-world side effects (lights, playback, desktop input) on GRANT | Unset + restart: `perform()` returns `disabled` (`capability_actions.py:129`) |
-| `JARVIS_WEBHOOK_CHANNELS` | `{}` (`web.py:423`) | Wires configured governed channels (WhatsApp/Signal/Matrix/Teams/Google Chat) | New inbound attack surface; Signal needs external daemon; verify signatures at host | Remove key/kinds + restart: nothing registered; unknown kinds warn-and-skip (`webhook_channels.py:290`) |
 | `JARVIS_TERMINAL_TARGETS` | off (checked in the `terminal_run` tool handler) | Arms the gated `terminal_run` ToolRPC tool: post-approval shell commands on named targets through the audit-chained policy plane, docker transport only (`environments/execution.py`) | Approved commands actually execute in the containment sandbox; **ssh** still refuses (`ssh_transport_not_implemented`), and the local host is available only with `JARVIS_TERMINAL_LOCAL_HOST` + `JARVIS_ACTION_KERNEL` + a durable approval (row below) | Unset + restart: the tool refuses `terminal_targets_disabled`; policy plane and audit chain stay inert |
 
 | `JARVIS_PERMISSION_LEDGER` | off (`permission_ledger.py`) | Consent ledger enforces: first contact with an app/site/device/file-root/terminal-target answers `ask`; widening is the `permission.grant` approval task | More approval cards early on; `never` rows and the default-deny list always deny | Unset + restart: `check()` allows legacy callers again, ledger inert |
@@ -1809,7 +1760,6 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `llm.tool_result_retention_seconds` · `llm.tool_result_max_files` *(runtime settings)* | `86400` · `512` (`tool_result_store.py`) | How long a spilled result stays readable under `data/workspace/tool_results/`, and how many are kept. Swept on every write, oldest first, never the file just written | Longer retention keeps more tool output on disk; shorter can retire a spill the model has not read back yet | Set back (no restart): the next write sweeps to the new limits |
 
 Kernel flag alone ≠ smart home. Both kernel + unified flags = facades live.
-Webhook channels cost no dependency, only configuration discipline.
 
 ## H299/H397 result-aware stall policy (2026-10-10 local candidate)
 
@@ -1902,8 +1852,7 @@ message without a restart.
 declared in `agents/core/settings_db.py`).
 
 The chat command plane has two tiers. The **owner** — the principal the turn established
-as the owner: the Telegram owner, a configured Slack/Discord/ntfy owner (`channels.owner_senders`),
-an admin token on the web door — runs every command. Everyone else a channel admitted is the
+as the owner: the Telegram owner, an admin token on the web door — runs every command. Everyone else a channel admitted is the
 **user** tier. This setting decides which user-tier commands a non-owner may run, per
 channel and per scope:
 
@@ -1912,21 +1861,10 @@ channel and per scope:
  "*":        {"dm": ["status", "sessions", "recap", "btw", "jobs", "voice"]}}
 ```
 
-- **Keys** are channel names (`telegram`, `slack`, `discord`, `ntfy`, `web`, …) or `"*"` for
+- **Keys** are channel names (`telegram`, `web`, …) or `"*"` for
   every channel without an entry of its own. Each holds a `dm` and/or a `group` list.
-  A DM is a private chat (Telegram `private`, a Slack `D…` channel, a Discord DM, a Teams
-  `personal` conversation, a Google Chat direct message, a Signal or WhatsApp message outside
-  a group, the web chat, and any channel that has no groups — voice, email, ntfy); a group,
-  supergroup, guild channel, thread, Teams group chat or channel, Google Chat space, Signal
-  group or WhatsApp group (`group_id`) is a group. **A Matrix room is a DM only when the
-  homeserver proves it:** a room event does not say whether its room is a DM, so for a
-  slash command the Matrix adapter asks the homeserver (`/account/whoami` once, then the
-  room's `members` other than those who left, with the adapter's own token and egress-gated
-  transport, bounded at 5 s) and judges the room a DM when its members are exactly the
-  sender and this bot, both joined. Anything it cannot prove — no `homeserver` or `token`
-  configured, an error or non-200 reply, a timeout, a malformed reply, a third member
-  joined, invited, knocking or banned — is judged as a group, the less trusted scope. Plain
-  chat is never looked up. **Doors that bind no sender are the channel `unknown`:** the MCP
+  A DM is a private chat (Telegram `private`, the web chat, and any channel that has no
+  groups — voice); a group, supergroup or thread is a group. **Doors that bind no sender are the channel `unknown`:** the MCP
   server's agent tools, room messages, the notes rewrite, the workflow step builder, an
   agent webhook delivery and the local `python -m agents.run` REPL pass text to the hub
   without establishing who sent it, so their commands are judged as a non-owner's in channel
@@ -1975,15 +1913,11 @@ floor only. The web door's `/chat` judges no reset trigger, so it lists and runs
 **Where it is checked:** on the cold path (`CommandRegistry.dispatch`, inside the turn); on
 the busy path — a command that arrives while a turn holds its session is refused at once,
 before the running-work interrupt and the session lease: in `Orchestrator.channel_handler`
-for every channel; on Telegram it is first handed over beside the chat's lane, and on
-Discord and Slack beside the author's batch lock (`Gateway.pre_lane_refused` →
-`Orchestrator.command_refused_here`, asked for plain text too, so a non-owner's custom
-reset trigger such as `start over` is caught), so it does not queue behind the running turn
-nor hold Slack's event dispatcher behind it — on Telegram on a lane of its own, never behind
-a `/btw` still waiting on its model call. With inbound batching off
-(`JARVIS_INBOUND_BATCH_MS=0`) Slack's event dispatcher is held by every running turn, as it
-was before batching (its bounded ingress queue is the only buffer), so there a refused Slack
-command is read — and refused — only once that turn ends; on the web door in `POST /chat` and `/chat/stream`
+for every channel; on Telegram it is first handed over beside the chat's lane
+(`Gateway.pre_lane_refused` → `Orchestrator.command_refused_here`, asked for plain text
+too, so a non-owner's custom reset trigger such as `start over` is caught), so it does not
+queue behind the running turn — on a lane of its own, never behind a `/btw` still waiting
+on its model call; on the web door in `POST /chat` and `/chat/stream`
 (`Orchestrator.busy_command_refusal`); a `/btw` side question is judged as it is answered
 beside a running turn, and before a route with no conversation yet says so — and again for
 quick commands, on the raw typed name (`quick_commands.dispatch_quick`), with an alias

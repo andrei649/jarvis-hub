@@ -398,45 +398,6 @@ async def test_a_refused_command_skips_the_telegram_chat_lane_while_that_chat_ru
     assert "backend lm-studio" in await _reply_to(hub, GUEST_ID, before)
 
 
-async def test_a_refused_discord_command_does_not_wait_behind_the_authors_running_turn(store):
-    """Discord holds an author's next turn behind the one running in that channel (the
-    batcher's key lock). A command the author may not run is handed over beside it, through
-    the same Gateway probe the hub wires; one the author may run still waits its turn."""
-    from agents.core.channels.discord import DiscordChannel
-    from tests.test_slash_commands import _bare_orchestrator
-
-    store({"discord": {"dm": ["status"]}})
-    orch, _seen = _bare_orchestrator()
-    gateway = Gateway(handler=None, command_probe=orch.command_refused_here)
-    delivered, release = [], asyncio.Event()
-
-    async def handler(text, **_kwargs):
-        delivered.append(text)
-        if text == "a long question":
-            await release.wait()
-
-    channel = DiscordChannel(token="fake", handler=handler, pre_turn_refused=gateway.pre_lane_refused)
-    author = SimpleNamespace(id=7, bot=False)
-
-    def message(text):
-        return SimpleNamespace(author=author, channel=SimpleNamespace(id=900, parent_id=None),
-                               guild=None, content=text, webhook_id=None, edited_at=None)
-
-    running = asyncio.create_task(channel._handle_message(message("a long question")))
-    while delivered != ["a long question"]:
-        await asyncio.sleep(0.01)
-    try:
-        await asyncio.wait_for(channel._handle_message(message("/pause")), 5)
-        assert delivered == ["a long question", "/pause"] and not release.is_set()
-        allowed = asyncio.create_task(channel._handle_message(message("/status")))
-        await asyncio.sleep(0.2)
-        assert delivered == ["a long question", "/pause"]          # it waits its turn
-    finally:
-        release.set()
-    await asyncio.wait_for(asyncio.gather(running, allowed), 5)
-    assert delivered == ["a long question", "/pause", "/status"]
-
-
 async def test_the_web_door_refuses_a_command_at_once_while_its_session_runs_a_turn(web_chat, store, monkeypatch):
     """``POST /chat`` and ``/chat/stream`` interrupt running work and then wait for the
     session's lease; a command the requester may not run is refused before either."""
@@ -467,49 +428,6 @@ async def test_the_web_door_refuses_a_command_at_once_while_its_session_runs_a_t
         release.set()
         await holder
     assert sorted(row["command"] for row in _denials(web_chat.orch.audit)) == ["pause", "sessions"]
-
-
-async def test_a_refused_slack_command_does_not_hold_the_dispatcher_behind_the_members_turn(store):
-    """Slack's batcher runs a member's turn on its timer while the event dispatcher keeps
-    reading, and holds that member's next command behind the running turn — the dispatcher
-    with it. A command the member may not run is handed over beside it through the same
-    Gateway probe the hub wires (a ``D`` channel judged as a DM); one it may run still waits."""
-    from agents.core.channels.slack import SlackChannel
-    from tests.test_slash_commands import _bare_orchestrator
-
-    store({"slack": {"dm": ["status"]}})
-    orch, _seen = _bare_orchestrator()
-    gateway = Gateway(handler=None, command_probe=orch.command_refused_here)
-    delivered, release = [], asyncio.Event()
-
-    async def handler(text, **_kwargs):
-        delivered.append(text)
-        if text == "a long question":
-            await release.wait()
-
-    channel = SlackChannel(token="fake", handler=handler, pre_turn_refused=gateway.pre_lane_refused)
-    assert channel._batch.enabled                   # the default: batched, so a turn runs on a timer
-    member = {"channel": "D0123", "user": "T0001:U0007"}
-    await asyncio.wait_for(channel.receive_event("a long question", **member), 5)   # returns at once
-    while delivered != ["a long question"]:
-        await asyncio.sleep(0.01)
-    try:
-        await asyncio.wait_for(channel.receive_event("/pause", **member), 5)
-        assert delivered == ["a long question", "/pause"] and not release.is_set()
-        allowed = asyncio.create_task(channel.receive_event("/status", **member))
-        await asyncio.sleep(0.2)
-        assert delivered == ["a long question", "/pause"]          # it waits its turn
-        # In a room the member's /status is not on the DM list: refused, so beside too.
-        await asyncio.wait_for(channel.receive_event("/status", channel="C0456", user="T0001:U0007"), 5)
-        assert delivered == ["a long question", "/pause", "/status"] and not release.is_set()
-    finally:
-        release.set()
-    await asyncio.wait_for(allowed, 5)
-    assert delivered == ["a long question", "/pause", "/status", "/status"]
-    assert gateway.pre_lane_refused(channel="slack", sender="T0001:U0007", chat_id="D0123",
-                                    text="/status") is False
-    assert gateway.pre_lane_refused(channel="slack", sender="T0001:U0007", chat_id="C0456",
-                                    text="/status") is True
 
 
 async def test_a_busy_path_refusal_still_goes_out_as_the_command_completed_event(hub, web_chat, store, monkeypatch):
@@ -886,143 +804,12 @@ async def test_the_principal_scope_follows_the_adapters_chat_type():
     assert seen["principal"].scope == "group"
     await orch.channel_handler("/status", channel="telegram", chat_id=7, sender="7")
     assert seen["principal"].scope == "dm"
-    assert orch._channel_principal("slack", "T1:U1", None, orch._principal_chat_type(
-        "slack", {"slack_channel": "D123"})).scope == "dm"
-    assert orch._channel_principal("slack", "T1:U1", None, orch._principal_chat_type(
-        "slack", {"slack_channel": "C123", "thread_ts": "1.2"})).scope == "group"
-    assert orch._channel_principal("discord", "9", None, "thread").scope == "group"
-    # The webhook channels report the chat type their provider states.
-    from agents.core.channels.webhook_channels import GoogleChatChannel, SignalChannel, TeamsChannel
-
-    def scope(adapter, payload):
-        return orch._channel_principal(adapter.channel_id, "u", None, orch._principal_chat_type(
-            adapter.channel_id, adapter.parse_inbound(payload))).scope
-
-    teams = {"text": "/status", "from": {"id": "u1"}, "conversation": {"id": "c1"}}
-    assert scope(TeamsChannel(), {**teams, "conversation": {"id": "c1", "conversationType": "personal"}}) == "dm"
-    assert scope(TeamsChannel(), {**teams, "conversation": {"id": "c1", "conversationType": "groupChat"}}) == "group"
-    assert scope(TeamsChannel(), {**teams, "conversation": {"id": "c1", "conversationType": "channel"}}) == "group"
-    chat = {"message": {"text": "/status", "sender": {"name": "users/1"}}}
-    assert scope(GoogleChatChannel(), {**chat, "space": {"name": "spaces/1", "spaceType": "DIRECT_MESSAGE"}}) == "dm"
-    assert scope(GoogleChatChannel(), {**chat, "space": {"name": "spaces/1", "type": "ROOM"}}) == "group"
-    assert scope(GoogleChatChannel(), {**chat, "space": {"name": "spaces/1", "spaceType": "SPACE"}}) == "group"
-    signal = {"envelope": {"source": "+1555", "dataMessage": {"message": "/status"}}}
-    assert scope(SignalChannel(), signal) == "dm"
-    assert scope(SignalChannel(), {"envelope": {"source": "+1555", "dataMessage": {
-        "message": "/status", "groupInfo": {"groupId": "g1"}}}}) == "group"
-    # WhatsApp's Cloud API names the group a participant wrote in.
-    from agents.core.channels.webhook_channels import MatrixChannel, WhatsAppChannel
-
-    def whatsapp(**extra):
-        return {"entry": [{"changes": [{"value": {"messages": [
-            {"from": "40700000000", "type": "text", "text": {"body": "/status"}, **extra}]}}]}]}
-
-    assert scope(WhatsAppChannel(), whatsapp()) == "dm"
-    assert scope(WhatsAppChannel(), whatsapp(group_id="120363000000000000")) == "group"
-    # A Matrix room event never says whether its room is a DM: the less trusted scope.
-    matrix = {"events": [{"type": "m.room.message", "sender": "@u:hs", "room_id": "!r:hs",
-                          "content": {"body": "/status"}}]}
-    assert scope(MatrixChannel(), matrix) == "group"
-    assert orch._channel_principal("matrix", "@u:hs", None, orch._principal_chat_type(
-        "matrix", {"room_id": "!r:hs", "chat_type": "private"})).scope == "dm"
     token = bind_turn_principal(Principal(channel="web"))
     try:
         assert (await orch._slash_access_denial("hello there")) is None
         assert (await orch._slash_access_denial("/frobnicate")) is None   # unknown: not judged
     finally:
         reset_turn_principal(token)
-
-
-
-class _Homeserver:
-    """The Matrix adapter's injected transport, standing in for the homeserver: who this
-    bot is, and each room's member events (``None`` = the request fails)."""
-
-    BOT = "@nerva:hs.example"
-
-    def __init__(self):
-        self.rooms: dict[str, list | None] = {}
-        self.calls: list[str] = []
-        self.status = 200
-
-    @staticmethod
-    def member(user, membership="join"):
-        return {"type": "m.room.member", "state_key": user, "content": {"membership": membership}}
-
-    async def request(self, method, url, headers=None, json=None):
-        from urllib.parse import unquote
-
-        assert method == "GET" and headers == {"Authorization": "Bearer matrix-token"}
-        self.calls.append(url)
-        path = url.removeprefix("https://hs.example/_matrix/client/v3/")
-        if path == "account/whoami":
-            body = {"user_id": self.BOT}
-        else:
-            room, _, rest = path.removeprefix("rooms/").partition("/")
-            assert rest == "members?not_membership=leave"
-            events = self.rooms[unquote(room)]
-            if events is None:
-                raise OSError("homeserver unreachable")
-            body = {"chunk": events}
-        return SimpleNamespace(status_code=self.status, json=lambda: body)
-
-
-async def test_a_matrix_room_is_a_dm_only_when_the_homeserver_proves_it(hub, store):
-    """A Matrix room event never says whether its room is a DM. For a command, the adapter
-    asks the homeserver it already sends through: a room whose members are exactly the
-    sender and this bot, both joined, is a DM, so the DM list applies; a third member —
-    joined or only invited — an unreachable or erroring homeserver, and an adapter with no
-    homeserver configured are all judged as a group, the less trusted scope. Plain chat is
-    never looked up, and this bot's own id is read once."""
-    from agents.core.channels.webhook_channels import MatrixChannel
-
-    store({"matrix": {"dm": ["status"], "group": []}})
-    homeserver = _Homeserver()
-    guest, bot = "@guest:hs.example", _Homeserver.BOT
-    homeserver.rooms = {
-        "!dm:hs.example": [homeserver.member(guest), homeserver.member(bot),
-                           homeserver.member("@gone:hs.example", "leave")],
-        "!trio:hs.example": [homeserver.member(guest), homeserver.member(bot),
-                             homeserver.member("@third:hs.example")],
-        "!invite:hs.example": [homeserver.member(guest), homeserver.member(bot),
-                               homeserver.member("@later:hs.example", "invite")],
-        "!down:hs.example": None,
-    }
-    pairing = SimpleNamespace(is_allowed=lambda channel, sender: True,
-                              gate_inbound=lambda channel, sender, code=None: {"allowed": True})
-    gateway = Gateway(handler=hub.orch.channel_handler, pairing=pairing)
-    matrix = MatrixChannel(handler=gateway.route, transport=homeserver,
-                           config={"homeserver": "https://hs.example", "token": "matrix-token"})
-
-    async def say(room, text, adapter=matrix):
-        return await adapter.handle_inbound({"events": [{
-            "type": "m.room.message", "sender": guest, "room_id": room, "content": {"body": text}}]})
-
-    assert "backend lm-studio" in await say("!dm:hs.example", "/status")
-    assert (await say("!dm:hs.example", "/whoami")).startswith("You — matrix (DM)")
-    assert _denials(hub.orch.audit) == []
-    for room in ("!trio:hs.example", "!invite:hs.example", "!down:hs.example"):
-        refused = await say(room, "/status")
-        assert refused.startswith("⛔ /status is admin-only here. You can run: /help, /whoami. "), room
-        assert "allow it in a group here" in refused
-    homeserver.status = 403
-    assert (await say("!dm:hs.example", "/status")).startswith("⛔ /status is admin-only here")
-    unconfigured = MatrixChannel(handler=gateway.route, transport=homeserver)
-    calls = len(homeserver.calls)
-    assert (await say("!dm:hs.example", "/status", unconfigured)).startswith("⛔ /status is admin-only here")
-    assert len(homeserver.calls) == calls                      # nothing to ask, nothing asked
-    assert [(row["command"], row["scope"]) for row in _denials(hub.orch.audit)] == [("status", "group")] * 5
-    # One whoami for this adapter; one membership read per command; none for plain chat.
-    assert [url.rsplit("/", 1)[-1] for url in homeserver.calls].count("whoami") == 1
-    assert len(homeserver.calls) == 1 + 6
-    homeserver.status = 200
-    enriched = await matrix.enrich_inbound({"text": "hello there", "sender": guest, "room_id": "!dm:hs.example"})
-    assert "chat_type" not in enriched and len(homeserver.calls) == 7
-    # A room id from the payload never leaves its path segment.
-    assert "chat_type" not in await matrix.enrich_inbound(
-        {"text": "/status", "sender": guest, "room_id": "../../admin"})
-    assert len(homeserver.calls) == 7
-    assert "rooms/%21dm%3Ahs.example/members" in homeserver.calls[1]
 
 
 # ── the gate answers before any input or configuration check ─────────────────────
@@ -1153,38 +940,3 @@ async def test_a_refused_telegram_command_never_waits_behind_a_running_side_ques
     finally:
         release.set()
     assert [row["command"] for row in _denials(hub.orch.audit)] == ["sessions"]
-
-
-async def test_a_guests_plain_text_reset_trigger_does_not_wait_behind_the_discord_authors_turn(store):
-    """The batcher Discord and Slack share asks the hub for plain text too, so a custom reset
-    trigger that is no ``/command`` is handed over beside the author's running turn."""
-    from agents.core.channels.discord import DiscordChannel
-    from tests.test_slash_commands import _bare_orchestrator
-
-    orch, _seen = _bare_orchestrator()
-    orch._runtime_settings["sessions.reset_triggers"] = ["/new", "/reset", "start over"]
-    gateway = Gateway(handler=None, command_probe=orch.command_refused_here)
-    delivered, release = [], asyncio.Event()
-
-    async def handler(text, **_kwargs):
-        delivered.append(text)
-        if text == "a long question":
-            await release.wait()
-
-    channel = DiscordChannel(token="fake", handler=handler, pre_turn_refused=gateway.pre_lane_refused)
-    author = SimpleNamespace(id=7, bot=False)
-
-    def message(text):
-        return SimpleNamespace(author=author, channel=SimpleNamespace(id=900, parent_id=None),
-                               guild=None, content=text, webhook_id=None, edited_at=None)
-
-    running = asyncio.create_task(channel._handle_message(message("a long question")))
-    while delivered != ["a long question"]:
-        await asyncio.sleep(0.01)
-    try:
-        await asyncio.wait_for(channel._handle_message(message("start over")), 5)
-        assert delivered == ["a long question", "start over"] and not release.is_set()
-    finally:
-        release.set()
-    await asyncio.wait_for(running, 5)
-    assert gateway.pre_lane_refused(channel="discord", sender="7", chat_id=900, text="how are you") is False

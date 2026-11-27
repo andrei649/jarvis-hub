@@ -11206,26 +11206,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/channels/webhook": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Channels Webhook List
-         * @description H12.16 — supported governed webhook channels + which are live.
-         */
-        get: operations["channels_webhook_list_api_channels_webhook_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/channels/send-rate-limit": {
         parameters: {
             query?: never;
@@ -11339,31 +11319,6 @@ export interface paths {
          *     a different action (`channel.reply`, KERNEL) and does not come through here.
          */
         post: operations["channels_send_api_channels_send_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/channels/{channel_id}/inbound": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Channel Inbound
-         * @description H12.16 — deliver an inbound webhook payload to a governed channel adapter.
-         *
-         *     The adapter parses (text, sender) and routes through the governed gateway, so
-         *     the H12.19 pairing gate + rate-limit + guardrails all apply before the
-         *     orchestrator sees the text. (Provider signature verification is the host
-         *     seam — front this with the H16.4 signed-webhook path in production.)
-         */
-        post: operations["channel_inbound_api_channels__channel_id__inbound_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -15405,26 +15360,6 @@ export interface paths {
         post?: never;
         /** Openai Delete Response */
         delete: operations["openai_delete_response_v1_responses__response_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/channels/sms/webhook": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Sms Webhook
-         * @description Inbound SMS from Twilio: signature, account, replay and sender checks, then the turn.
-         */
-        post: operations["sms_webhook_api_channels_sms_webhook_post"];
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -21144,7 +21079,7 @@ export interface components {
              * @default log
              * @enum {string}
              */
-            deliver: "log" | "telegram" | "voice" | "ntfy";
+            deliver: "log" | "telegram" | "voice";
             /**
              * Deliver Only
              * @default false
@@ -21242,7 +21177,7 @@ export interface components {
              * Deliver
              * @enum {string}
              */
-            deliver?: "log" | "telegram" | "voice" | "ntfy";
+            deliver?: "log" | "telegram" | "voice";
             /** Deliver Only */
             deliver_only?: boolean;
             /** Description */
@@ -39019,26 +38954,6 @@ export interface operations {
             };
         };
     };
-    channels_webhook_list_api_channels_webhook_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     channels_send_rate_limit_api_channels_send_rate_limit_get: {
         parameters: {
             query?: never;
@@ -39156,37 +39071,6 @@ export interface operations {
                 "application/json": components["schemas"]["ChannelSendBody"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    channel_inbound_api_channels__channel_id__inbound_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                channel_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -44887,26 +44771,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    sms_webhook_api_channels_sms_webhook_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };

@@ -29,18 +29,3 @@ vision policy, and the current byte limit; failed captions are never cached.
 
 This setting does not enable remote inference or outbound file delivery. No live Telegram or email provider acceptance was performed for this
 local implementation.
-
-# Discord owner-DM file replies
-
-A reply to a paired owner's Discord DM may name up to four files with standalone
-`MEDIA:` lines. The governed `channel.reply` task resolves each file under the
-existing outbound media allowlist and shows its name, size, and SHA-256 on an
-approval card. An approved task rechecks the current owner pairing, exact
-inbound message and DM recipient, and each file's metadata and bytes before
-using the Discord SDK. The transport records a receipt for the reply and for
-each file. Duplicate approved deliveries are suppressed when the delivery
-ledger is available. A failed file send leaves the reply marked partial.
-
-Ordinary Discord text sends keep `MEDIA:` lines as text. They cannot upload a
-file without a live broker approval permit. No live Discord provider send was
-performed for this local implementation.

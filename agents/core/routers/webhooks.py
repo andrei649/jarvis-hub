@@ -424,12 +424,6 @@ _KEPT = {
 }
 
 
-def _ascii_title(text: str) -> str:
-    """*text* as printable ASCII (a letter keeps its base, anything else is "?")."""
-    folded = unicodedata.normalize("NFKD", text)
-    return "".join(ch if ch.isascii() else "?" for ch in folded if not unicodedata.combining(ch))
-
-
 #: Characters that render as nothing but are not format or control characters: the
 #: combining grapheme joiner, the Hangul fillers, Mongolian variation selectors and the
 #: blank braille pattern (review-H153e NIT-1).
@@ -525,8 +519,6 @@ async def _push(orch, store, hook: dict, text: str, event: str, *, in_session: b
                        f"over this hook's push limit ({PUSHES.limit} an hour): not pushed; {kept}")
     label = _event_name(str(live.get("name") or live.get("target") or "webhook"), 80)
     subject = f"Webhook {label}" + (f" - {_event_name(event, 64)}" if event else "")
-    if channel == "ntfy":                        # a title is an HTTP header: printable ASCII
-        subject = _ascii_title(subject)[:outbound.NTFY_TITLE_CHARS]   # send_to_target strips it
     # The text as written: the sender wrote it, or steered the turn that did, so no
     # markup is rendered (a link shows its address) and nothing is rewritten. Rendering
     # it here cost quadratic time on one long line of a 5 MiB body, on the event loop

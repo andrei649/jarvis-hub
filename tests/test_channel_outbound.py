@@ -79,8 +79,8 @@ def test_the_environment_overrides_the_stored_owner_chat(monkeypatch):
 
 
 def test_a_channel_that_addresses_itself_needs_no_destination():
-    orch = make_orch(channels={"ntfy": _Adapter()})
-    assert outbound.resolve_destination(orch, "ntfy") == ({}, "")
+    orch = make_orch(channels={"voice": _Adapter()})
+    assert outbound.resolve_destination(orch, "voice") == ({}, "")
 
 
 def test_a_missing_owner_chat_is_refused_by_name_not_generically():
@@ -108,6 +108,14 @@ def test_email_is_not_a_direct_send_channel():
     assert kwargs is None and "direct-send" in reason
 
 
+@pytest.mark.parametrize("name", ["slack", "discord", "sms", "ntfy", "email", "matrix", "whatsapp"])
+def test_a_removed_platform_is_refused_even_with_an_adapter_registered(name):
+    """A removed platform's name is not a destination: it is refused, never sent to."""
+    assert name not in outbound.DIRECT_SEND_CHANNELS
+    kwargs, reason = outbound.resolve_destination(make_orch(channels={name: _Adapter()}), name)
+    assert kwargs is None and "direct-send" in reason
+
+
 # ── listing targets ──────────────────────────────────────────────────────────
 
 def test_targets_list_unready_channels_with_the_reason_rather_than_hiding_them():
@@ -116,7 +124,7 @@ def test_targets_list_unready_channels_with_the_reason_rather_than_hiding_them()
     assert set(rows) == set(outbound.DIRECT_SEND_CHANNELS)
     assert rows["telegram"]["connected"] is True and rows["telegram"]["ready"] is False
     assert outbound.OWNER_CHAT_SETTING in rows["telegram"]["reason"]
-    assert rows["ntfy"]["connected"] is False
+    assert rows["voice"]["connected"] is False
 
 
 def test_a_ready_target_carries_the_channels_own_caps():
@@ -208,14 +216,6 @@ async def test_the_configured_send_rate_limit_applies_to_this_path_too(monkeypat
 
 # ── a subject (H480 `-s`) ────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_ntfy_gets_the_subject_as_its_native_title_and_the_body_untouched():
-    adapter = _Adapter()
-    orch = make_orch(channels={"ntfy": adapter})
-    result = await outbound.send_to_target(orch, "ntfy", "build green", subject="[CI]")
-    assert result["ok"] is True
-    assert adapter.sent == [("build green", {"title": "[CI]"})]
-
 
 @pytest.mark.asyncio
 async def test_other_channels_get_the_subject_as_the_first_line_in_hermes_shape():
@@ -238,22 +238,8 @@ async def test_a_subject_that_is_not_one_printable_line_is_refused(subject):
     assert result["ok"] is False and "printable line" in result["reason"] and adapter.sent == []
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("subject", ["Déploiement terminé ✓", "日本語のタイトル", "x" * (outbound.NTFY_TITLE_CHARS + 1)])
-async def test_ntfy_refuses_a_title_its_adapter_would_silently_mangle(subject):
-    """NtfyChannel._clean_title strips non-ASCII, cuts at 120 and falls back to "Nerva";
-    the seam refuses with the reason instead of delivering a title nobody asked for."""
-    adapter = _Adapter()
-    orch = make_orch(channels={"ntfy": adapter})
-    result = await outbound.send_to_target(orch, "ntfy", "hi", subject=subject)
-    assert result["ok"] is False and "ntfy" in result["reason"] and "ASCII" in result["reason"]
-    assert adapter.sent == []
-    assert outbound.subject_problem("telegram", subject[: outbound.MAX_SUBJECT_CHARS]) == ""
-
-
 def test_carried_length_is_the_seams_own_rule():
     assert outbound.carried_length("telegram", "x" * 10, "[CI]") == 16     # "[CI]\n\n" + body
-    assert outbound.carried_length("ntfy", "x" * 10, "[CI]") == 10         # the title is a header
     assert outbound.carried_length("", "x" * 10, "") == 10
 
 

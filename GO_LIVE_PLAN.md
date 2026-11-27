@@ -5,7 +5,7 @@
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v1.0.0** · backend **37,821** · frontend **4,979** · mobile **522** · **934** routes · **16** active agents · open owner gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · commit `02334d9a3fb4`.
+> Generated project status: **v1.0.0** · backend **37,824** · frontend **4,979** · mobile **522** · **934** routes · **16** active agents · open owner gates: **A1, A3, A4, A6** · backlog: **289 done · 25 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · commit `02334d9a3fb4`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision) — superseded 2026-08-28:** the July framing
@@ -24,7 +24,6 @@
 
 - **Web HUD** — React (vanilla, no JSX), SSE streaming, mobile PWA, offline support
 - **Telegram** — webhook + polling, inline Approve/Edit/Reject/Postpone buttons, ≤4 push/day budget
-- **Discord, Slack, Email** — SMTP/IMAP, full two-way
 - **Voice** — faster-whisper STT → edge-tts / XTTS / ElevenLabs / Kokoro TTS, <1.5s first audio, hands-free barge-in, global audio window manager
 - **Sandbox** — Docker code execution with allowlist + timeout + audit
 - **Admin panel** — runtime settings watcher (30s refresh), audit log, 100-interaction history, latency charts
@@ -125,7 +124,7 @@
 | Frontend | Vanilla React (`createElement`, no JSX), SSE |
 | Voice STT | faster-whisper |
 | Voice TTS | edge-tts (primary), XTTS, ElevenLabs, Kokoro |
-| Integrations | Google OAuth 2.0, Spotify, Tavily, Apple HealthKit, n8n, Discord, Slack, Telegram, Docker |
+| Integrations | Google OAuth 2.0, Spotify, Tavily, Apple HealthKit, n8n, Telegram, Docker |
 | Infrastructure | RTX 5090 24GB VRAM, 192GB DDR5, Windows/Linux/Mac |
 
 **Total operating cost: $0/month** (all free tiers).
@@ -320,7 +319,7 @@ LM Studio + Ollama on local GPU. Zero API cost for 99% of tasks. Athena escalate
 | Metric | Value |
 |--------|-------|
 | Active agents | 18 (+ 14 bench) |
-| Channels | 7 (web, voice, Telegram, Discord, Slack, email, sandbox) |
+| Channels | 4 (web, voice, Telegram, sandbox) |
 | Tests passing | see [STATUS.md](STATUS.md) (auto-synced) |
 | API endpoints | see [STATUS.md](STATUS.md) (auto-synced) |
 | Monthly cost | $0 |

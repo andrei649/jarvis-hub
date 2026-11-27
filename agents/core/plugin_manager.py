@@ -29,7 +29,7 @@ from .plugins.oauth import load_token as _load_token
 logger = logging.getLogger("jarvis.plugins.manager")
 
 #: Registry keys that are not the plugin's gate id.
-_GATE_IDS = {"whatsapp": "whatsapp-bridge"}
+_GATE_IDS: dict[str, str] = {}
 
 # The names are also the historical module attributes patched by a few tests. A
 # constructor is resolved only after the owner's boot load set admits its key.
@@ -50,13 +50,11 @@ _PLUGIN_CLASSES = {
     "OsintEnrichPlugin": "osint_enrich",
     "PostizPlugin": "postiz",
     "RevenueCatPlugin": "revenuecat",
-    "SMSAlertsPlugin": "sms_alerts",
     "SpotifyPlugin": "spotify_plugin",
     "StockQuotesPlugin": "stock_quotes",
     "TelegramBotPlugin": "telegram_bot",
     "WeatherPlugin": "weather",
     "WebSearchPlugin": "websearch",
-    "WhatsAppBridgePlugin": "whatsapp_bridge",
 }
 
 
@@ -296,11 +294,6 @@ class PluginManager:
             self.plugins["gmail"] = _plugin_class("GmailPlugin")(
                 access_token=gmail_token,
             )
-        if permitted("whatsapp"):
-            self.plugins["whatsapp"] = _plugin_class("WhatsAppBridgePlugin")(
-                bridge_url=env_str("WHATSAPP_BRIDGE_URL", "http://192.168.1.100:3000"),
-                configured=bool(env_str("WHATSAPP_BRIDGE_URL")),
-            )
         if permitted("spotify"):
             spotify_token = env_str("SPOTIFY_ACCESS_TOKEN") or (_load_token("spotify") or {}).get("access_token", "")
             spotify_refresh = env_str("SPOTIFY_REFRESH_TOKEN") or (_load_token("spotify") or {}).get("refresh_token", "")
@@ -360,12 +353,6 @@ class PluginManager:
             self.plugins["n8n"] = _plugin_class("N8NPlugin")(
                 base_url=env_str("N8N_BASE_URL"),
                 api_key=env_str("N8N_API_KEY"),
-            )
-        if permitted("sms-alerts"):
-            self.plugins["sms-alerts"] = _plugin_class("SMSAlertsPlugin")(
-                account_sid=orch.get_setting("plugins.twilio_account_sid", ""),
-                auth_token=orch.get_setting("plugins.twilio_auth_token", ""),
-                from_number=orch.get_setting("plugins.twilio_from_number", ""),
             )
         if permitted("crm-sync"):
             self.plugins["crm-sync"] = _plugin_class("CRMSyncPlugin")(

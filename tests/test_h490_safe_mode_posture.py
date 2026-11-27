@@ -513,19 +513,6 @@ def test_the_inbound_receiver_answers_503_in_safe_mode(monkeypatch):
     assert safe_mode.status()["skipped"] == ["outbound_webhooks"]
 
 
-def test_the_lifespan_starts_no_ntfy_or_webhook_channel_in_safe_mode():
-    source = (REPO / "agents/web.py").read_text(encoding="utf-8")
-    ntfy = source.split("ntfy_ch = NtfyChannel.from_env(", 1)[1].split("await orch.register_channel(ntfy_ch)", 1)[0]
-    assert "if ntfy_ch is not None and safe_mode.enabled():" in ntfy
-    assert 'safe_mode.note("outbound_webhooks")' in ntfy and "ntfy_ch = None" in ntfy
-    hooks = source.split('wh_cfg = env_json_object("JARVIS_WEBHOOK_CHANNELS", {})', 1)[1].split("channels_from_config(", 1)[0]
-    assert "if wh_cfg and safe_mode.enabled():" in hooks
-    assert 'safe_mode.note("outbound_webhooks")' in hooks and "wh_cfg = {}" in hooks
-    # safe_mode is bound in the lifespan before either read.
-    lifespan = source.split("async def lifespan(application: FastAPI):", 1)[1]
-    assert lifespan.index("safe_mode.enabled()") < lifespan.index("NtfyChannel.from_env")
-
-
 # ── memory ───────────────────────────────────────────────────────────────────────
 
 def _recall_self(hits):

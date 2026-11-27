@@ -286,7 +286,7 @@ function formatCommsTs(value: any): string {
   return text(value, 'live');
 }
 
-function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = []) {
+function roomsToComms(rooms: any[], inboxThreads: any[] = []) {
   const liveInbox = inboxThreads.slice(0, 12).map((thread: any, i: number) => {
     const channel = text(thread.channel, 'telegram').toLowerCase();
     return {
@@ -301,7 +301,7 @@ function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = 
       unread: thread.unread !== false,
       dir: 'in',
       local: true,
-      replyable: ['telegram', 'web', 'slack', 'discord'].includes(channel),
+      replyable: ['telegram', 'web'].includes(channel),
     };
   });
   const roomThreads = rooms.slice(0, 12).map((room: any, i: number) => ({
@@ -317,12 +317,6 @@ function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = 
     local: true,
   }));
   const threads = [...liveInbox, ...roomThreads].slice(0, 12);
-  const channelRows = channels
-    .filter((channel: any) => ['discord', 'slack'].includes(text(channel?.id).toLowerCase()))
-    .map((channel: any) => {
-      const id = text(channel.id).toLowerCase();
-      return { id, label: id === 'discord' ? 'Discord' : 'Slack', count: 0 };
-    });
   const inboxRows = Array.from(new Set(liveInbox.map((thread: any) => thread.channel))).map((id: any) => ({
     id,
     label: id === 'web' ? 'Web' : id.charAt(0).toUpperCase() + id.slice(1),
@@ -331,7 +325,7 @@ function roomsToComms(rooms: any[], channels: any[] = [], inboxThreads: any[] = 
   return {
     ...V2.COMMS,
     threads,
-    channels: [...inboxRows, { id: 'room', label: 'Rooms', count: roomThreads.length }, ...channelRows],
+    channels: [...inboxRows, { id: 'room', label: 'Rooms', count: roomThreads.length }],
   };
 }
 
@@ -560,15 +554,12 @@ export function useLiveModes(): LiveModes {
 
       await Promise.all([
         apiGet('/api/rooms').catch(() => null),
-        apiGet('/status').catch(() => null),
         apiGet('/api/channels/inbox').catch(() => null),
-      ]).then(([rooms, status, inbox]: any[]) => {
+      ]).then(([rooms, inbox]: any[]) => {
         const list = firstArr(rooms, 'rooms');
-        const channels = firstArr(status, 'channels')
-          .filter((channel: any) => ['discord', 'slack'].includes(text(channel?.id).toLowerCase()));
         const inboxThreads = firstArr(inbox, 'threads');
-        if (list.length || channels.length || inboxThreads.length) {
-          set('COMMS', roomsToComms(list, channels, inboxThreads));
+        if (list.length || inboxThreads.length) {
+          set('COMMS', roomsToComms(list, inboxThreads));
           mark('COMMS');
         }
       }).catch(() => {});
@@ -598,10 +589,6 @@ export function useLiveModes(): LiveModes {
       if (pluginReady(pluginList, 'apple-health')) {
         set('HEALTH', { ...V2.HEALTH, rings: [], metrics: [], week: [], plan: [], sync: 'Apple Health · configured LAN bridge' });
         mark('HEALTH');
-      }
-      if (pluginReady(pluginList, 'whatsapp-bridge')) {
-        set('FAMILY', { ...V2.FAMILY, members: [], events: [], reminders: [] });
-        mark('FAMILY');
       }
 
       if (current(loadId) && changed) setVer((v) => v + 1);

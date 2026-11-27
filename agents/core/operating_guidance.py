@@ -363,15 +363,6 @@ _SURFACES = {
         "rejects markup, the channel retries that chunk as plain text. Prefer bullets or labeled lines for "
         "structured data; avoid tables."
     ),
-    "discord": (
-        "You are on Discord. Discord renders Markdown text; keep structured data in bullets or labeled "
-        "lines rather than tables. Long replies are split into messages."
-    ),
-    "slack": (
-        "You are on Slack. Common Markdown is converted to Slack mrkdwn and long replies are split "
-        "into messages. Prefer bullets or labeled lines for structured data."
-    ),
-    "email": "You are communicating by email. Write clear, concise plain text with a useful line structure.",
 }
 _FLAGS = frozenset({
     "task_completion", "parallel_tool_calls", "tool_use_enforcement", "execution_guidance",

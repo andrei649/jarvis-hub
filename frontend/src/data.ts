@@ -90,7 +90,7 @@ const DOSSIER = {
   gecko:{ archetype:'Markets & Capital', personality:'Analytical, risk-aware, market-focused. Tracks markets and manages budgets.', model:'gemma-4-26b-a4b', channel:'telegram', heartbeat:'2h', policy:'auto', plugins:[], skills:2, memory_facts:5, soul:'You are Gecko, the market analyst. Track trends, assess risk.' },
   hercules:{ archetype:'Fitness & Nutrition', personality:'Motivating, data-driven, health-focused. Tracks fitness and wellness metrics.', model:'gemma-4-26b-a4b', channel:'telegram', heartbeat:'2h', policy:'auto', plugins:['apple-health'], skills:2, memory_facts:8, soul:'You are Hercules, the fitness coach. Track thoroughly, motivate clearly.' },
   hephaestus:{ archetype:'Builder & Mechanic', personality:'Practical, detail-oriented. Manages builds and tracks parts.', model:'gemma-4-26b-a4b', channel:'telegram', heartbeat:'2h', policy:'auto', plugins:[], skills:3, memory_facts:10, soul:'You are Hephaestus, the builder. Build carefully, track precisely.' },
-  frigga:{ archetype:'Family Matriarch', personality:'Warm, protective, family-focused. Manages family data, local-only.', model:'gemma-4-26b-a4b', channel:'local', heartbeat:'4h', policy:'local', plugins:['whatsapp-bridge'], skills:2, memory_facts:18, soul:'You are Frigga, the family guardian. Protect fiercely, remember always.' },
+  frigga:{ archetype:'Family Matriarch', personality:'Warm, protective, family-focused. Manages family data, local-only.', model:'gemma-4-26b-a4b', channel:'local', heartbeat:'4h', policy:'local', plugins:[], skills:2, memory_facts:18, soul:'You are Frigga, the family guardian. Protect fiercely, remember always.' },
   howard:{ archetype:'Digital Twin / Archive', personality:'Retentive, precise, unhurried. Keeps the long archive and answers from it rather than from guesswork.', model:'gemma-4-26b-a4b', channel:'telegram', heartbeat:'no', policy:'local', plugins:[], skills:1, memory_facts:14, soul:'You are Howard, the archive. Answer from what is recorded; say so when nothing is.' },
 };
 
@@ -388,17 +388,12 @@ const INTEROP = {
 const COMMS = {
   threads:[
     { id:'c1', channel:'telegram', from:'Andrei', agent:'pepper', subj:'Move the 16:30?', preview:'Pepper: Pushed the research sync to 17:15 — Vision is async, so no conflict. Confirmed.', ts:'09:12', unread:false, dir:'in' },
-    { id:'c2', channel:'email', from:'Raiffeisen · M. Pop', agent:'stark', subj:'QBR agenda', preview:'Stark drafted a reply attaching the KPI deltas; held the churn-cohort slide pending your call.', ts:'08:47', unread:true, dir:'in' },
-    { id:'c3', channel:'whatsapp', from:'Cosmina', agent:'frigga', subj:'OOO Mon–Tue', preview:'Frigga noted locally — out for family Mon–Tue. Kept on-device.', ts:'08:30', unread:false, dir:'in', local:true },
     { id:'c4', channel:'voice', from:'Andrei', agent:'jarvis', subj:'Morning, what\'s my day?', preview:'Jarvis: Three meetings, Raiffeisen 14:00 matters most. Clear weather — good day to cycle.', ts:'08:02', unread:false, dir:'in' },
     { id:'c5', channel:'telegram', from:'Veronica', agent:'veronica', subj:'LinkedIn draft', preview:'Held — Ultron flagged a client name as sensitive. Awaiting your clearance to send.', ts:'07:50', unread:true, dir:'out' },
-    { id:'c6', channel:'email', from:'GitHub', agent:'oracle', subj:'PR #155 merged', preview:'Oracle: HUD v2 brief merged to main. Build pipeline green.', ts:'07:20', unread:false, dir:'in' },
     { id:'c7', channel:'telegram', from:'Gecko', agent:'gecko', subj:'Cash buffer', preview:'€4.2k over target buffer — sweep to savings ladder? Awaiting approval.', ts:'06:55', unread:true, dir:'out' },
   ],
   channels:[
     { id:'telegram', label:'Telegram', count:3 },
-    { id:'email', label:'Email', count:2 },
-    { id:'whatsapp', label:'WhatsApp', count:1 },
     { id:'voice', label:'Voice', count:1 },
   ],
 };
@@ -416,7 +411,6 @@ const ADMIN = {
     { name:'Google Calendar', scope:'www.googleapis.com', net:'restricted', on:true },
     { name:'Telegram Bot', scope:'api.telegram.org', net:'restricted', on:true },
     { name:'Spotify', scope:'api.spotify.com', net:'restricted', on:true },
-    { name:'WhatsApp Bridge', scope:'LAN', net:'lan', on:true },
     { name:'Apple Health', scope:'LAN', net:'lan', on:true },
     { name:'Homebridge', scope:'LAN', net:'lan', on:true },
     { name:'Cloud LLM Fallback', scope:'anthropic · openai', net:'restricted', on:true },
@@ -430,8 +424,6 @@ const ADMIN = {
   channels:[
     { name:'Voice (local)', status:'active' },
     { name:'Telegram', status:'active' },
-    { name:'Email (IMAP/SMTP)', status:'active' },
-    { name:'WhatsApp (bridge)', status:'active' },
     { name:'Web', status:'active' },
   ],
   backups:[

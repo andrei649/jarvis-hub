@@ -41,7 +41,7 @@ async def host(monkeypatch, *, sink=True):
     clock = Clock()
     manager = ChannelManager()
     manager._failure_escalation = FailureEscalation(clock=clock)
-    source, destination = Adapter("slack"), Adapter("ntfy")
+    source, destination = Adapter("voice"), Adapter("telegram")
     manager.register(source)
     if sink:
         manager.register(destination)
@@ -117,10 +117,10 @@ async def test_initial_zero_unknown_and_pause_break_pending_failure_duration(mon
         source.health.state = "retrying"
         clock.now = 900
         await sample(manager)
-        manager._platform_paused["slack"] = (source, "paused")
+        manager._platform_paused["voice"] = (source, "paused")
         clock.now = 1200
         await sample(manager)
-        manager._platform_paused.pop("slack")
+        manager._platform_paused.pop("voice")
         await sample(manager)
         clock.now = 1499
         await sample(manager)
@@ -185,20 +185,20 @@ async def test_repeated_start_replaces_one_monitor_and_stop_joins_it(monkeypatch
 async def test_stale_sample_cannot_replace_new_registration_episode(monkeypatch):
     monkeypatch.setattr(delivery_ledger, "store", lambda: None)
     manager = ChannelManager()
-    trigger, old, replacement = Adapter("discord"), Adapter("slack"), Adapter("slack")
+    trigger, old, replacement = Adapter("web"), Adapter("voice"), Adapter("voice")
     manager.register(trigger)
     manager.register(old)
     await manager.start_all()
     try:
         def replace_during_snapshot():
             manager.register(replacement)
-            revision = manager._platform_revisions["slack"]
-            manager._failure_escalation.fatal("slack", replacement, revision)
+            revision = manager._platform_revisions["voice"]
+            manager._failure_escalation.fatal("voice", replacement, revision)
             return {"state": "healthy"}
 
         trigger.health_snapshot = replace_during_snapshot
         manager._sample_escalation(manager._platform_epoch)
-        episode = manager._failure_escalation._episodes["slack"]
+        episode = manager._failure_escalation._episodes["voice"]
         assert episode.adapter is replacement and episode.spent
     finally:
         await manager.stop_all()

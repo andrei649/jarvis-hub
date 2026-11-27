@@ -142,8 +142,6 @@ class Gateway:
         # that isn't allowed is held for owner approval; the message never reaches
         # the handler. No pairing gate or no sender → routes as before.
         sender = kwargs.get("sender")
-        if channel == "ntfy" and (self.pairing is None or sender is None):
-            return None
         if self.pairing is not None and sender is not None:
             try:
                 decision = self.pairing.gate_inbound(channel, str(sender),
@@ -181,10 +179,7 @@ class Gateway:
 
         try:
             origin = origin_for_channel(channel)
-            if channel in {"slack", "discord", "ntfy", "sms"}:
-                kwargs["origin"] = origin
-            else:
-                kwargs.setdefault("origin", origin)
+            kwargs.setdefault("origin", origin)
             inbound_meta = self._inbound_meta(channel, text, origin=origin)
             if inbound_meta:
                 kwargs.setdefault("_inbound_meta", dict(inbound_meta))
@@ -193,8 +188,6 @@ class Gateway:
             kwargs.pop("_inbox_message_id", None)
             metadata = {**kwargs, **inbound_meta}
             recorded = self._record_inbox(channel, text, sender=sender, metadata=metadata)
-            if channel in {"slack", "discord", "ntfy", "sms"}:
-                kwargs["_inbox_message_id"] = recorded.get("id", "") if recorded else ""
             from ..command_source import bind_source
 
             # Even a nested same-task route must clear a prior route's sealed source.
@@ -244,8 +237,7 @@ class Gateway:
         Native adapters also call this before chat batching/lanes. No model fallback is
         permitted here; false leaves normal routing responsible for the message.
         """
-        target = {"telegram": "chat_id", "slack": "slack_channel", "discord": "channel_id",
-                  "ntfy": "ntfy_topic"}.get(channel)
+        target = {"telegram": "chat_id"}.get(channel)
         if (target is None or kwargs.get("observe_only")
                 or kwargs.get("pending_input_eligible", True) is not True
                 or not isinstance(text, str) or not callable(self.pending_handler)
@@ -272,18 +264,6 @@ class Gateway:
         """Verified pending-only button ingress; never dispatch a model turn."""
         if not isinstance(callback, dict) or not callable(self.pending_callback_handler):
             return None
-        if channel in {"slack", "discord"}:
-            from .pending_input_workspace import valid_callback
-
-            if not valid_callback(callback, channel) or self.pairing is None:
-                return None
-            try:
-                if self.pairing.is_allowed(channel, callback["sender"]) is not True:
-                    return None
-                return await self.pending_callback_handler(callback, channel=channel)
-            except Exception:
-                logger.warning("Gateway: workspace pending callback not applied")
-                return None
         if channel != "telegram":
             return None
         sender = callback.get("from")

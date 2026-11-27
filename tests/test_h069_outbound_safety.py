@@ -124,14 +124,9 @@ def test_silence_token():
 # ── every transport seam runs it ─────────────────────────────────────────────────
 
 def test_every_adapter_send_is_wrapped():
-    import agents.core.channels.discord  # noqa: F401
-    import agents.core.channels.email  # noqa: F401
-    import agents.core.channels.ntfy  # noqa: F401
-    import agents.core.channels.slack  # noqa: F401
-    import agents.core.channels.sms  # noqa: F401
+    import agents.core.channels.telegram  # noqa: F401
     import agents.core.channels.voice  # noqa: F401
     import agents.core.channels.web  # noqa: F401
-    import agents.core.channels.webhook_channels  # noqa: F401
 
     def walk(cls):
         for sub in cls.__subclasses__():
@@ -139,7 +134,7 @@ def test_every_adapter_send_is_wrapped():
             yield from walk(sub)
 
     adapters = [c for c in walk(ChannelAdapter) if c.__module__.startswith("agents.core.channels")]
-    assert len(adapters) >= 8
+    assert len(adapters) >= 3
     for cls in adapters:
         assert getattr(cls.send, "__outbound_safe__", False), cls
 
@@ -169,8 +164,10 @@ def test_chunked_transports_never_split_a_secret_past_the_gate():
     text = ("x" * 90) + " " + ANTHROPIC + " tail"
     pieces = chunk(text, 64)
     assert all(ANTHROPIC[:20] not in p for p in pieces)
-    from agents.core.channels.discord import DiscordChannel
-    assert all(ANTHROPIC not in p for p in render_outbound(text, DiscordChannel.descriptor))
+    from agents.core.channels.descriptor import DIALECT_MARKDOWN, ChannelDescriptor
+
+    descriptor = ChannelDescriptor(dialect=DIALECT_MARKDOWN, max_message_length=2000)
+    assert all(ANTHROPIC not in p for p in render_outbound(text, descriptor))
 
 
 class _Resp:
@@ -491,14 +488,6 @@ async def test_r3_telegram_button_labels_are_masked():
     assert channel.client.posts[0]["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "h067:t:1:c0"
 
 
-def test_r3_slack_button_labels_are_masked():
-    from agents.core.channels.slack import SlackChannel
-
-    markup = {"inline_keyboard": [[{"text": f"Use {GHP}", "callback_data": "h067:AbCdEfGhIjKlMnOp:1:c0"}]]}
-    blocks = SlackChannel._pending_blocks("Pick one", markup)
-    assert blocks is not None and GHP[:40] not in repr(blocks)
-
-
 def test_r3_card_choices_are_masked_where_the_card_is_built():
     from agents.core.channels.pending_input_cards import NativePromptCards
 
@@ -574,24 +563,6 @@ def test_m2_code_that_mentions_a_password_is_not_mangled(code):
 @pytest.mark.parametrize("secret", ["password: hunter22!", 'pwd="abcd"', "PASSWORD=Tr0ub4dor&3"])
 def test_m2_a_password_literal_is_still_masked(secret):
     assert "[REDACTED:password_assignment]" in outbound_safety.sanitize_text(secret)
-
-
-def test_m4_ntfy_title_is_gated():
-    from agents.core.channels.ntfy import title_header
-
-    assert GHP not in title_header(f"CI {GHP}") and title_header(f"CI {GHP}").startswith("CI ")
-
-
-@pytest.mark.asyncio
-async def test_m4_email_subject_is_gated_and_one_line():
-    from agents.core.channels.email import EmailChannel
-
-    sent = []
-    channel = EmailChannel(smtp_config={"host": "smtp.example"})
-    channel._smtp_send = lambda msg, to: sent.append(msg)
-    assert await channel.send("body", to="me@example.org", subject=f"key {GHP}\nBcc: x@y")
-    subject = sent[0]["Subject"]
-    assert GHP not in subject and "\n" not in subject
 
 
 @pytest.mark.asyncio

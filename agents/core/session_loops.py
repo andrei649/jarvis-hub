@@ -297,17 +297,14 @@ async def _judge(orch: Any, until: str, reply: str) -> tuple[str, str]:
 
 #: Channels whose replies the HUD or the CLI read from the session itself.
 _SESSION_SURFACES = frozenset({"", "web", "cli", "loop", "voice"})
-#: Channels whose replies go through the governed workspace reply path (``channel.reply``);
-#: a loop does not push to them on its own.
-_GOVERNED_REPLY_CHANNELS = frozenset({"slack", "discord", "email"})
 
 
 async def _deliver(orch: Any, route: dict, text: str) -> bool:
-    """Push *text* to the chat the loop was set from (Telegram, ntfy, …) through the
-    channel manager's own send contract. The HUD and the CLI read the session instead;
-    Slack, Discord and email replies stay on their governed path and are not pushed."""
+    """Push *text* to the chat the loop was set from (Telegram) through the channel
+    manager's own send contract, which refuses any channel it does not list. The HUD
+    and the CLI read the session instead."""
     channel = str((route or {}).get("channel") or "")
-    if not text or channel in _SESSION_SURFACES or channel in _GOVERNED_REPLY_CHANNELS:
+    if not text or channel in _SESSION_SURFACES:
         return False
     manager = getattr(orch, "channel_manager", None)
     send = getattr(manager, "send", None)

@@ -34,7 +34,7 @@ describe('CommsMode — live channel inbox reply transport', () => {
     };
     global.fetch = vi.fn((url, init) => {
       const path = String(url);
-      if (/^\/api\/channels\/inbox\/(telegram|slack|discord)%3Aabc\/reply$/.test(path) && init?.method === 'POST') {
+      if (/^\/api\/channels\/inbox\/(telegram|web)%3Aabc\/reply$/.test(path) && init?.method === 'POST') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, queued: true, task_id: 7 }) });
       }
       return Promise.reject(new Error('unexpected fetch: ' + path));
@@ -45,7 +45,7 @@ describe('CommsMode — live channel inbox reply transport', () => {
     V2.COMMS = original;
   });
 
-  it.each(['telegram', 'slack', 'discord'])('posts a governed reply draft for a live %s thread', async (channel) => {
+  it.each(['telegram', 'web'])('posts a governed reply draft for a live %s thread', async (channel) => {
     Object.assign(V2.COMMS.threads[0], { id: `${channel}:abc`, thread_id: `${channel}:abc`, channel });
     V2.COMMS.channels = [{ id: channel, label: channel, count: 1 }];
     render(<CommsMode t={t} />);

@@ -33,13 +33,11 @@ _KEYLESS: frozenset[str] = frozenset({
 _NEEDS: dict[str, list[str]] = {
     "iot-control": ["plugins.tuya_client_id", "plugins.tuya_secret", "plugins.tuya_device_id"],
     "balance": ["plugins.gecko_ing_client_id", "plugins.gecko_libra_token", "plugins.gecko_csv_path"],
-    "sms-alerts": ["plugins.twilio_account_sid", "plugins.twilio_auth_token", "plugins.twilio_from_number"],
     "crm-sync": ["plugins.notion_integration_token", "plugins.notion_database_id"],
     "gmail": ["Google OAuth (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)"],
     "google-calendar": ["Google OAuth (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)"],
     "spotify": ["Spotify OAuth (SPOTIFY_CLIENT_ID / SPOTIFY_ACCESS_TOKEN)"],
     "telegram": ["TELEGRAM_BOT_TOKEN"],
-    "whatsapp-bridge": ["WHATSAPP_BRIDGE_URL"],
     "apple-health": ["APPLE_HEALTH_BRIDGE_URL"],
     "homebridge": ["HOMEBRIDGE_URL", "HOMEBRIDGE_TOKEN"],
     # H310: the backend is picked per call by JARVIS_WEB_BACKEND / _PROVIDER_TIER, so
@@ -70,7 +68,6 @@ def live_plugin_for(orch, plugin_id: str):
     """
     live_plugins = getattr(orch, "plugins", {}) or {}
     aliases = {
-        "whatsapp-bridge": "whatsapp",
         # the page reader dials under its own manifest but lives on the search plugin
         "webread": "websearch",
     }

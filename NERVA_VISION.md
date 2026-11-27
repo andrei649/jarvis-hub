@@ -169,7 +169,7 @@ event, query or policy requires it.*
 speaking, where, and how private the context is; deliver on the right surface (speaker, display,
 phone, headphones) for the person, room, privacy and urgency.*
 
-- **Exists:** web SSE, voice, Telegram, Discord, email, Slack; `channels/session.py` +
+- **Exists:** web SSE, voice, Telegram; `channels/session.py` +
   `gateway.py`; channel inbox transport v0; interrupt budgets (≤4 push/day); Wyoming satellite
   protocol for room voice endpoints.
 - **Missing:** presence-aware delivery as a finished policy (H34.2 owner-presence and H30.6

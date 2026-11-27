@@ -171,7 +171,7 @@ _REVIEW_NOTICE_LINES = 4
 #: H403: the channels whose reply is text a person reads, where an ``ℹ`` footer is safe.
 #: Voice (the reply is spoken), email, webhook and gateway replies (machine-consumed)
 #: are not: their turns open no notice collector, so the summary waits for a HUD or chat.
-_NOTICE_FOOTER_CHANNELS = frozenset({"telegram", "slack", "discord", "ntfy"})
+_NOTICE_FOOTER_CHANNELS = frozenset({"telegram"})
 
 HANDOFF_PREFIX = "[handoff:"
 SKILL_PREFIX = "[learn:"
@@ -2311,7 +2311,7 @@ class Orchestrator:
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
         """Admit ingress before pending-input interception or conversation changes."""
         from .command_source import plaintext_restart
-        from .commands import _pause, _resume, rewrite_bang
+        from .commands import _pause, _resume
         from .restart_runtime import runtime_for
 
         runtime = runtime_for(self)
@@ -2325,7 +2325,6 @@ class Orchestrator:
                     and not kwargs.get("message_thread_id") and plaintext_restart(text)):
                 text = "/restart"
                 kwargs["pending_input_eligible"] = False
-            text = rewrite_bang(text, registry if isinstance(registry, CommandRegistry) else None, channel)
             if isinstance(registry, CommandRegistry):
                 parsed = registry.parse(text)
                 command = registry.get(parsed[0]) if parsed else None
@@ -2349,7 +2348,7 @@ class Orchestrator:
         pending_scope = ExitStack()
         action_origin = kwargs.pop("origin", origin_for_channel(channel))
         kwargs.pop("_inbound_meta", None)
-        inbox_message_id = kwargs.pop("_inbox_message_id", "")
+        kwargs.pop("_inbox_message_id", None)
         # Hermes absorption 0.4: an observed group message becomes context, never an answer.
         observe_only = bool(kwargs.pop("observe_only", False))
         # H057 normalization happens once at ingress; observed text stays literal.
@@ -2361,24 +2360,13 @@ class Orchestrator:
         reset_trigger_token = _reset_trigger_turn.set(True)     # H058: see reset_triggers_judged
         # DRA-08: one description of *who is talking to us*, built from the
         # identity metadata the adapters already put on the wire (telegram
-        # chat_id/sender, email sender, slack_channel, matrix room_id, teams
-        # conversation, google-chat space). Drives both halves below: the
-        # session key and the delivery decision.
-        thread_id = (kwargs.get("chat_id") or kwargs.get("slack_channel")
-                     or kwargs.get("room_id") or kwargs.get("conversation") or kwargs.get("space"))
+        # chat_id/sender). Drives both halves below: the session key and the
+        # delivery decision.
+        thread_id = kwargs.get("chat_id")
         chat_type = kwargs.get("chat_type")
         if channel == "telegram" and kwargs.get("message_thread_id"):
             thread_id = f"{thread_id}:topic:{kwargs['message_thread_id']}"
             chat_type = "thread"
-        if channel == "slack":
-            thread_id = kwargs.get("slack_channel")
-            if thread_id and kwargs.get("thread_ts"):
-                thread_id = f"{thread_id}:{kwargs['thread_ts']}"
-                chat_type = "thread"
-            elif not chat_type:
-                chat_type = "private" if str(thread_id or "").startswith("D") else "group"
-        elif channel == "discord":
-            thread_id = kwargs.get("channel_id")
         source = SessionSource(
             channel=channel,
             sender=kwargs.get("sender"),
@@ -2401,16 +2389,12 @@ class Orchestrator:
                 return response
             pending = self._pending_input_service()
             if pending is not None and not observe_only:
-                pending_scope.enter_context(pending.bind(
-                    source, {**kwargs, "_inbox_message_id": inbox_message_id}))
+                pending_scope.enter_context(pending.bind(source, kwargs))
                 intercepted = (pending.intercept(source, text)
                                if kwargs.get("pending_input_eligible", True) is True else None)
                 if intercepted is not None:
                     if intercepted:
-                        if channel in {"slack", "discord", "ntfy", "sms"}:
-                            self._queue_workspace_reply(channel, inbox_message_id, intercepted)
-                        else:
-                            await self.channel_manager.send(channel, intercepted, **kwargs)
+                        await self.channel_manager.send(channel, intercepted, **kwargs)
                     return intercepted
             # H058, the busy path: while a turn holds this route's session, a command this
             # sender may not run here is answered at once — before the conversation-change
@@ -2422,19 +2406,16 @@ class Orchestrator:
             if pending is not None and not observe_only and denied is None:
                 command_reply = await pending.command(source, text, kwargs)
                 if command_reply is not None:
-                    if channel in {"slack", "discord"}:
-                        self._queue_workspace_reply(channel, inbox_message_id, command_reply)
-                    else:
-                        delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
-                                    if key in kwargs}
-                        await self.channel_manager.send(channel, command_reply, **delivery,
-                                                        voice=False, plain=True)
+                    delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
+                                if key in kwargs}
+                    await self.channel_manager.send(channel, command_reply, **delivery,
+                                                    voice=False, plain=True)
                     return command_reply
             # H3.3: cross-channel context is opt-in. When enabled, every channel
             # shares self.session_id (web<->telegram continuity). When off (default),
             # any channel turn that carries a real identity (a thread, a sender or a
             # client) gets its own deterministic session — telegram's per-chat_id
-            # isolation (H1.2) generalised to email and the webhook channels.
+            # isolation (H1.2), generalised.
             # A turn with no identity at all (voice; web through the gateway with no
             # client_id) has nothing to isolate *by*, so it stays on the shared session.
             # Hermes absorption 4c: on a channel that can edit a sent message the reply is
@@ -2499,10 +2480,7 @@ class Orchestrator:
             # ChannelManager.send's contract gate (_SUPPORTED_SEND_CHANNELS).
             decision = self._delivery_router.resolve(source, text=response or "")
             if decision.send and decision.target:
-                if channel in {"slack", "discord", "ntfy", "sms"}:
-                    self._queue_workspace_reply(channel, inbox_message_id, response)
-                else:
-                    await self.channel_manager.send(decision.target.channel, response, **kwargs)
+                await self.channel_manager.send(decision.target.channel, response, **kwargs)
             return response
         finally:
             pending_scope.close()
@@ -2591,7 +2569,7 @@ class Orchestrator:
     async def channel_pending_handler(self, text: str, channel: str = "telegram", **kwargs) -> bool:
         """Pending-only ingress; never enter a conversation lease or model turn."""
         pending = self.__dict__.get("_pending_inputs")
-        if (channel not in {"telegram", "slack", "discord", "ntfy"} or kwargs.get("observe_only") or pending is None
+        if (channel != "telegram" or kwargs.get("observe_only") or pending is None
                 or kwargs.get("pending_input_eligible", True) is not True):
             return False
         thread_id = kwargs.get("chat_id")
@@ -2599,15 +2577,6 @@ class Orchestrator:
         if channel == "telegram" and kwargs.get("message_thread_id"):
             thread_id = f"{thread_id}:topic:{kwargs['message_thread_id']}"
             chat_type = "thread"
-        elif channel == "slack":
-            thread_id = kwargs.get("slack_channel")
-            if thread_id and kwargs.get("thread_ts"):
-                thread_id = f"{thread_id}:{kwargs['thread_ts']}"
-                chat_type = "thread"
-            elif not chat_type:
-                chat_type = "private" if str(thread_id or "").startswith("D") else "group"
-        elif channel == "discord":
-            thread_id = kwargs.get("channel_id")
         source = SessionSource(channel=channel, sender=kwargs.get("sender"),
                                thread_id=thread_id, chat_type=chat_type,
                                client_id=kwargs.get("client_id"))
@@ -2617,20 +2586,10 @@ class Orchestrator:
                                     self._principal_chat_type(channel, kwargs))
         )
         try:
-            from .channels.pending_input_runtime import pending_key
-
-            key = pending_key(source)
-            prompt = pending.inputs.pending(key) if key is not None else None
-            binding = pending._delivered.get(prompt.id) if prompt is not None else None
             intercepted = pending.intercept(source, text, pending_only=True)
             if intercepted is None:
                 return False
             if intercepted:
-                if channel in {"slack", "discord", "ntfy"}:
-                    if binding is not None:
-                        self._queue_workspace_reply(
-                            channel, binding.delivery.get("_inbox_message_id", ""), intercepted)
-                    return True
                 delivery = {key: kwargs[key] for key in ("chat_id", "message_thread_id")
                             if key in kwargs}
                 try:
@@ -2650,26 +2609,6 @@ class Orchestrator:
         pending = self.__dict__.get("_pending_inputs")
         if pending is None or not isinstance(callback, dict):
             return None
-        if channel in {"slack", "discord"}:
-            from .channels.pending_input_workspace import valid_callback
-
-            if not valid_callback(callback, channel):
-                return None
-            origin_token = bind_action_origin(origin_for_channel(channel))
-            principal_token = bind_turn_principal(
-                self._channel_principal(channel, callback["sender"], None))
-            try:
-                result = pending.cards.handle_workspace(callback)
-                if result.applied and result.status == "awaiting_text":
-                    binding = pending._delivered.get(result.prompt_id)
-                    if binding is not None:
-                        self._queue_workspace_reply(
-                            channel, binding.delivery.get("_inbox_message_id", ""),
-                            EphemeralReply("Type your answer."))
-                return result
-            finally:
-                reset_turn_principal(principal_token)
-                reset_action_origin(origin_token)
         if channel != "telegram":
             return None
         sender, message = callback.get("from"), callback.get("message")
@@ -2708,35 +2647,11 @@ class Orchestrator:
             service = self._pending_inputs = ChannelPendingRuntime(self)
         return service
 
-    def _queue_workspace_reply(self, channel: str, message_id: str, response: str) -> None:
-        """Workspace replies share the inbox's Action Kernel/approval boundary."""
-        broker = getattr(self, "channel_replies", None)
-        if not broker or not message_id:
-            logger.debug("Workspace reply unavailable: no broker or persisted inbound turn")
-            return
-        try:
-            result = broker.request_for_message(
-                message_id, response, channel=channel, source="channel.auto_reply",
-            )
-            if not result.get("ok") or not result.get("queued"):
-                logger.info("Workspace reply not queued: %s", result.get("reason", "queue_unavailable"))
-        except Exception:
-            logger.warning("Workspace reply request failed closed", exc_info=True)
-
     @staticmethod
     def _principal_chat_type(channel: str, kwargs: dict):
         """The chat type the adapter reported, before any thread override: what decides
-        a command's DM or group scope (H058). Slack names a DM by its ``D`` channel. A Matrix
-        room event never says whether its room is a DM; the Matrix adapter reports
-        ``private`` only when the homeserver proves it (the room's members are the sender
-        and the bot, both joined), and every other Matrix command is judged in group scope: the
-        less trusted one, never a DM list handed to a room of strangers."""
-        kind = kwargs.get("chat_type")
-        if channel == "slack" and not kind:
-            kind = "private" if str(kwargs.get("slack_channel") or "").startswith("D") else "group"
-        elif channel == "matrix" and not kind:
-            kind = "group"
-        return kind
+        a command's DM or group scope (H058)."""
+        return kwargs.get("chat_type")
 
     def _channel_principal(self, channel: str, sender, chat_id, chat_type=None) -> Principal:
         """Bind admin authority to an explicit current owner identity."""
@@ -2758,23 +2673,6 @@ class Orchestrator:
                     allowed_user_ids=getattr(adapter, "allowed_users", None),
                 ),
             )
-        elif channel in {"slack", "discord", "ntfy"}:
-            configured = self.get_setting("channels.owner_senders", {})
-            owners = configured.get(channel) if type(configured) is dict else None
-            pattern = (r"T[A-Z0-9]{1,63}:[UW][A-Z0-9]{1,63}" if channel == "slack"
-                       else r"[A-Za-z0-9_-]{1,64}" if channel == "ntfy" else r"[1-9][0-9]{0,19}")
-            adapter = (getattr(self, "channels", None) or {}).get(channel)
-            pairing = getattr(adapter, "pairing", None) or getattr(adapter, "_pairing", None)
-            if (type(owners) is list and len(owners) <= 64
-                    and all(type(owner) is str and re.fullmatch(pattern, owner) for owner in owners)
-                    and sender_text in owners and getattr(adapter, "_running", False)
-                    and pairing is not None
-                    and (channel != "ntfy" or (getattr(adapter, "inbound", False)
-                                                and sender_text == getattr(adapter, "topic", None)))):
-                try:
-                    admin = pairing.is_allowed(channel, sender_text) is True
-                except Exception:
-                    admin = False
         return Principal(
             channel=channel, sender=sender_text, admin=admin,
             chat=None if chat_id is None else str(chat_id),
@@ -2837,8 +2735,6 @@ class Orchestrator:
             if target is None:
                 return False
             reported = {"chat_type": chat_type}
-            if channel == "slack":
-                reported["slack_channel"] = chat_id            # a Slack DM is its ``D`` channel
             principal = self._channel_principal(channel, sender, chat_id,
                                                 self._principal_chat_type(channel, reported))
             return not can_run(registry, principal, target[0], quick=target[1])
@@ -3224,10 +3120,6 @@ class Orchestrator:
     def _begin_channel_draft(self, channel: str, source, kwargs: dict):
         """A streaming draft for this turn, or None when the channel cannot edit, the
         owner turned streaming off, or the router would not deliver to this source."""
-        # Full workspace replies are approved through channel.reply. An editable
-        # transport alone is not authority to publish tokens before that decision.
-        if channel in {"slack", "discord", "ntfy", "sms"}:
-            return None
         try:
             if self.get_setting("channels.streaming_replies", True) is not True:
                 return None
@@ -7214,7 +7106,7 @@ class Orchestrator:
                 # First-run UX: "no model loaded" is the single most common failure,
                 # and a raw "[jarvis error: No LLM backend available]" tells the user
                 # nothing. Return one friendly, actionable line instead — on every
-                # channel (web/telegram/discord/CLI), not just the HUD.
+                # channel (web/telegram/CLI), not just the HUD.
                 if "No LLM backend available" in str(e):
                     return agent_id, NO_MODEL_REPLY, 0.0, current_action_origin()
                 return agent_id, f"[{agent_id} error: {e}]", 0.0, current_action_origin()
@@ -7258,7 +7150,7 @@ class Orchestrator:
         # on the release, and docs/METRICS.md defines it as "% served on-device", so the
         # error was both systematic and in the flattering direction.
         # The streaming path was never affected: it selects the backend inside its own
-        # per-agent loop. This is the non-streaming half (Telegram, Discord, voice,
+        # per-agent loop. This is the non-streaming half (Telegram, voice,
         # /chat, MCP, rooms, webhooks, eval, workflows).
         self._last_routes = {}
         for agent_id, resp, latency, _origin in results_list:
@@ -7472,13 +7364,13 @@ class Orchestrator:
                 cached_tokens = (reported[2] if reported is not None
                                  else 0 if incomplete else cached_prefix)
                 metadata = {
-                    # CDX-2: record the real origin (web/telegram/discord/voice/
+                    # CDX-2: record the real origin (web/telegram/voice/
                     # autonomy/…) instead of always "web", so the %-local/cloud
                     # ratio and per-channel analytics aren't silently skewed.
                     "channel": channel,
                     # DRA-24: the streaming loop measures the request it actually
                     # sent (prompt + soul, or cached prefix + tail); every other
-                    # channel — Telegram, Discord, voice, /chat, MCP, eval — leaves the
+                    # channel — Telegram, voice, /chat, MCP, eval — leaves the
                     # map empty and keeps today's raw-text estimate rather than
                     # reporting zero. `cached_tokens <= input_tokens` holds by
                     # construction, which is what stops the estimator inventing a

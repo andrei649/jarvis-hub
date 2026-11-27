@@ -129,9 +129,6 @@ async def autonomy_task_preview(task_id: int):
         return JSONResponse({"error": "not found"}, status_code=404)
     from agents.core.autonomy.dry_run import preview_task
     preview = preview_task(task)
-    if task.kind == "channel.reply" and isinstance(task.payload, dict) and "native_prompt" in task.payload:
-        review = getattr(getattr(orch, "channel_replies", None), "review_prompt", None)
-        preview["prompt"] = review(task) if callable(review) else {"available": False}
     return nocache_json(preview)
 
 

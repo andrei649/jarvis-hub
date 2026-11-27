@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from typing import Literal, NotRequired, Optional, TypedDict
 
-from agents.core.env_config import env_flag, env_int, env_json_object, env_list, env_str
+from agents.core.env_config import env_flag, env_int, env_list, env_str
 from agents.core.cors_policy import normalize_cors_origins
 from agents.core.host_policy import allowed_hosts, host_accepted
 from agents.core.proxy_trust import (
@@ -29,11 +29,7 @@ from agents.core.paths import data_path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from agents.core.channels.discord import DiscordChannel
-from agents.core.channels.email import EmailChannel
 from agents.core.channels.gateway import Gateway
-from agents.core.channels.ntfy import NtfyChannel
-from agents.core.channels.slack import SlackChannel
 from agents.core.channels.telegram import TelegramChannel
 from agents.core.channels.group_policy import GroupPolicy
 from agents.core.channels.voice import VoiceChannel
@@ -726,109 +722,6 @@ async def lifespan(application: FastAPI):
         logger.info("Telegram channel wired with bot token")
     else:
         logger.warning("TELEGRAM_BOT_TOKEN not set — telegram channel disabled")
-
-    discord_token = os.environ.get("DISCORD_BOT_TOKEN", "")
-    if discord_token:
-        discord_ch = DiscordChannel(
-            token=discord_token, handler=gateway.route, pairing=gateway.pairing,
-            connect_timeout_seconds=channel_open_timeout,
-            command_registry=orch.commands,
-            skill_loader=orch.skills,
-            skill_owner=lambda sender, channel_id, chat_type: orch._channel_principal(
-                "discord", sender, channel_id, chat_type).admin is True,
-            skill_taken=orch._command_name_taken,
-            pending_reply_handler=gateway.route_pending,
-            pending_callback_handler=gateway.route_pending_callback,
-            pre_turn_refused=gateway.pre_lane_refused,
-        )
-        await orch.register_channel(discord_ch)
-        logger.info("Discord channel wired")
-
-    # ntfy (Hermes absorption 4g): a push to the owner's phone with no bot and no account.
-    # Receiving is explicitly opt-in; the topic is the identity and is never logged.
-    ntfy_ch = NtfyChannel.from_env(os.environ, connect_timeout_seconds=channel_open_timeout)
-    if ntfy_ch is not None and safe_mode.enabled():
-        # H490: in safe mode no outbound webhook is started (ntfy, the webhook channels).
-        safe_mode.note("outbound_webhooks")
-        ntfy_ch = None
-    if ntfy_ch is not None:
-        ntfy_ch.handler = gateway.route
-        ntfy_ch.pairing = gateway.pairing
-        ntfy_ch.pending_reply_handler = gateway.route_pending
-        await orch.register_channel(ntfy_ch)
-        logger.info("ntfy channel wired")
-
-    from agents.core.channel_config import env_port as channel_port   # H088: the panel's port rule
-
-    smtp_host = os.environ.get("SMTP_HOST", "")
-    imap_host = os.environ.get("IMAP_HOST", "")
-    if smtp_host and imap_host:
-        # EmailChannel takes smtp_config/imap_config dicts (keys: host/port/user/
-        # password). Passing flat smtp_host=... kwargs raised TypeError at startup,
-        # so this branch never ran until the config shape was corrected.
-        email_ch = EmailChannel(
-            handler=gateway.route,
-            connect_timeout_seconds=channel_open_timeout,
-            # H096: attachments are opened only for senders this gate admits.
-            pairing=gateway.pairing,
-            smtp_config={
-                "host": smtp_host, "port": channel_port("SMTP_PORT", 587),
-                "user": os.environ.get("SMTP_USER", ""),
-                "password": os.environ.get("SMTP_PASS", ""),
-            },
-            imap_config={
-                "host": imap_host, "port": channel_port("IMAP_PORT", 993),
-                "user": os.environ.get("IMAP_USER", ""),
-                "password": os.environ.get("IMAP_PASS", ""),
-            },
-        )
-        await orch.register_channel(email_ch)
-        logger.info("Email channel wired")
-
-    slack_token = os.environ.get("SLACK_BOT_TOKEN", "")
-    if slack_token:
-        slack_ch = SlackChannel(
-            token=slack_token, handler=gateway.route,
-            connect_timeout_seconds=channel_open_timeout,
-            app_token=os.environ.get("SLACK_APP_TOKEN", ""),
-            command_registry=orch.commands,
-            pairing=gateway.pairing,
-            pending_reply_handler=gateway.route_pending,
-            pending_callback_handler=gateway.route_pending_callback,
-            pre_turn_refused=gateway.pre_lane_refused,
-        )
-        await orch.register_channel(slack_ch)
-        logger.info("Slack channel wired")
-
-    # G16 (H098) — SMS through Twilio. Default-off (JARVIS_SMS_ENABLED + account, number,
-    # auth token); inbound arrives on the signed webhook (routers/channels_sms.py) and a
-    # reply leaves only as an approved channel.reply task at the money tier.
-    from agents.core.channels import sms as _sms
-    if _sms.enabled() and safe_mode.enabled():
-        safe_mode.note("outbound_webhooks")
-    elif _sms.enabled():
-        # Wired whenever switched on: the webhook and the sender check the account, number
-        # and token on every request, so a token set later in the HUD works without a restart.
-        sms_ch = _sms.SmsChannel(handler=gateway.route, pairing=gateway.pairing)
-        gateway.register_channel(sms_ch.channel_id)
-        await orch.register_channel(sms_ch)
-        missing = _sms.missing_config()
-        logger.info("SMS channel wired (Twilio)%s",
-                    f"; answering 404 until set: {', '.join(missing)}" if missing else "")
-
-    # H12.16 — broaden governed channels (WhatsApp/Signal/Matrix/Teams/Google
-    # Chat). Configured via JARVIS_WEBHOOK_CHANNELS = {"<kind>": {<config>}}.
-    # Default-off; each adapter routes inbound through the same governed gateway.
-    wh_cfg = env_json_object("JARVIS_WEBHOOK_CHANNELS", {})
-    if wh_cfg and safe_mode.enabled():
-        safe_mode.note("outbound_webhooks")
-        wh_cfg = {}
-    if wh_cfg:
-        from core.channels.webhook_channels import channels_from_config
-        for ch in channels_from_config(wh_cfg, gateway.route):
-            gateway.register_channel(ch.channel_id)
-            await orch.register_channel(ch)
-            logger.info("Webhook channel wired: %s", ch.channel_id)
 
     # H677: the first message must not race a cold model. Wait for the boot warm-up —
     # bounded by system.startup_warmup_timeout_seconds — before any channel opens.
@@ -2532,7 +2425,6 @@ from agents.core.routers.model_setup import router as _model_setup_router  # noq
 from agents.core.routers.permissions import router as _permissions_router  # noqa: E402
 from agents.core.routers.report import router as _report_router  # noqa: E402
 from agents.core.routers.openai_compat import router as _openai_compat_router  # noqa: E402
-from agents.core.routers.channels_sms import router as _channels_sms_router  # noqa: E402
 from agents.core.routers.files import router as _files_router  # noqa: E402
 from agents.core.routers.room_peers import router as _room_peers_router  # noqa: E402
 from agents.core.routers.hooks import router as _hooks_router  # noqa: E402  (G17 owner hooks)
@@ -2701,9 +2593,6 @@ app.include_router(_report_router)
 # G12 (H560/H614): OpenAI-compatible API. Off unless openai_api.enabled; each route checks
 # its own bearer key in the handler (never the hub tokens), see routers/openai_compat.py.
 app.include_router(_openai_compat_router)
-# G16 (H098): Twilio's inbound SMS webhook. 404 unless SMS is configured; the handler checks
-# X-Twilio-Signature (HMAC-SHA1) and the account, never a hub token (routers/channels_sms.py).
-app.include_router(_channels_sms_router)
 # G21 (H142): the owner's HUD file browser over approved folders. Admin-only; rename and
 # delete are approval cards at the irreversible tier, never applied by the request.
 app.include_router(_files_router)

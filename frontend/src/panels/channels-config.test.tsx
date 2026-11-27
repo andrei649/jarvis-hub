@@ -9,13 +9,9 @@ const SECRET = '123456789:typed-telegram-token-AAAA';
 const field = (over) => ({ name: 'X', label: 'X', kind: 'text', secret: false, applies: 'restart', set: false,
   source: null, editable: true, value: null, ...over });
 const LISTING = { precedence: 'env', setting: 'channels.config', channels: [
-  { id: 'telegram', label: 'Telegram', note: '', running: false, restart_required: true, changed: ['TELEGRAM_BOT_TOKEN'], fields: [
+  { id: 'telegram', label: 'Telegram', note: '', running: true, restart_required: true, changed: ['TELEGRAM_BOT_TOKEN'], fields: [
     field({ name: 'TELEGRAM_BOT_TOKEN', label: 'Bot token', kind: 'secret', secret: true, set: true, source: 'hub' }),
     field({ name: 'TELEGRAM_ALLOWED_USER_IDS', label: 'Owner ids', kind: 'int_list', set: true, source: 'env', editable: false, value: '42' }),
-  ] },
-  { id: 'email', label: 'Email', note: '', running: true, restart_required: false, changed: [], fields: [
-    field({ name: 'SMTP_HOST', label: 'SMTP host', kind: 'host' }),
-    field({ name: 'IMAP_PASS', label: 'IMAP password', kind: 'secret', secret: true, set: false, source: null, needs_reentry: true }),
   ] },
 ] };
 
@@ -67,24 +63,20 @@ describe('Channels panel', () => {
     await waitFor(() => expect(container.innerHTML).not.toContain(SECRET));
   });
 
-  it('says when a secret was withheld because its server changed', async () => {
-    hub(() => ({ status: 200, body: LISTING }));
-    render(<ChannelsConfigPanel />);
-    await screen.findByText('Email');
-    fireEvent.click(screen.getAllByText('configure')[1]);
-    expect(screen.getByText('server changed · enter it again')).toBeTruthy();
-  });
-
   it('writes a plain setting and says why a refused one was refused', async () => {
+    const editable = { ...LISTING, channels: [{ ...LISTING.channels[0], fields: [
+      LISTING.channels[0].fields[0],
+      field({ name: 'TELEGRAM_ALLOWED_USER_IDS', label: 'Owner ids', kind: 'int_list' }),
+    ] }] };
     const calls = hub((url, method) => (method === 'PUT'
-      ? { status: 422, body: { error: 'invalid_value', field: 'SMTP_HOST' } }
-      : { status: 200, body: LISTING }));
+      ? { status: 422, body: { error: 'invalid_value', field: 'TELEGRAM_ALLOWED_USER_IDS' } }
+      : { status: 200, body: editable }));
     render(<ChannelsConfigPanel />);
-    await screen.findByText('Email');
-    fireEvent.click(screen.getAllByText('configure')[1]);
-    fireEvent.change(screen.getByLabelText('SMTP host'), { target: { value: 'bad host' } });
-    fireEvent.click(screen.getAllByText('save')[0]);
-    expect(await screen.findByText(/SMTP_HOST not changed · SMTP_HOST is not valid/)).toBeTruthy();
-    expect(calls.find((c) => c.method === 'PUT').body).toEqual({ values: { SMTP_HOST: 'bad host' } });
+    await screen.findByText('Telegram');
+    fireEvent.click(screen.getAllByText('configure')[0]);
+    fireEvent.change(screen.getByLabelText('Owner ids'), { target: { value: 'bad ids' } });
+    fireEvent.click(screen.getAllByText('save')[1]);
+    expect(await screen.findByText(/TELEGRAM_ALLOWED_USER_IDS not changed · TELEGRAM_ALLOWED_USER_IDS is not valid/)).toBeTruthy();
+    expect(calls.find((c) => c.method === 'PUT').body).toEqual({ values: { TELEGRAM_ALLOWED_USER_IDS: 'bad ids' } });
   });
 });

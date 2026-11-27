@@ -164,11 +164,11 @@ describe('advanced job builder', () => {
 });
 
 it('shows diagnostics and updates job notes through admin endpoints', async()=>{
-  const calls=mockFetch({'GET /api/jobs/doctor':{problems:[{reason:'ntfy missing'}]},'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[JOB],scheduler:{alive:true}},'PUT /api/jobs/abc123abc123/notepad':{ok:true}});
+  const calls=mockFetch({'GET /api/jobs/doctor':{problems:[{reason:'telegram missing'}]},'GET /api/jobs/blueprints':BLUEPRINTS,'GET /api/jobs':{jobs:[JOB],scheduler:{alive:true}},'PUT /api/jobs/abc123abc123/notepad':{ok:true}});
   render(<JobsPanel />);
   await screen.findByText('stand-up');
   fireEvent.click(screen.getByText('doctor'));
-  await screen.findByText(/ntfy missing/);
+  await screen.findByText(/telegram missing/);
   fireEvent.click(screen.getByText('edit'));
   fireEvent.change(screen.getByLabelText('notepad for abc123abc123'),{target:{value:'memo'}});
   fireEvent.click(screen.getByText('save notes'));

@@ -31,8 +31,7 @@ async def test_closed_ingress_never_enters_pending_or_model():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('text,channel', [('/pause', 'telegram'), ('/resume', 'telegram'),
-                                         ('/stop', 'telegram'), ('!resume', 'slack'),
-                                         ('/nerva resume', 'slack')])
+                                         ('/stop', 'telegram'), ('/nerva resume', 'telegram')])
 async def test_builtin_recovery_reaches_original_access_gate(text, channel):
     orch = Orchestrator.__new__(Orchestrator)
     orch.commands = build_default_registry()

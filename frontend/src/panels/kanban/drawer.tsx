@@ -145,7 +145,7 @@ function TaskDetails({
     return [...seen].sort();
   }, [profiles, knownAssignees, task?.assignee]);
   const channelOptions = useMemo(() => {
-    const seen = new Set<string>(['telegram', 'discord', 'slack', 'email']);
+    const seen = new Set<string>(['telegram']);
     for (const ch of homeChannels?.channels || []) if (ch.platform) seen.add(ch.platform);
     return [...seen];
   }, [homeChannels]);

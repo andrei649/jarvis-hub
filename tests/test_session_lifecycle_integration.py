@@ -252,28 +252,6 @@ async def test_observe_only_reset_is_context_and_never_rotates_or_replies(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_workspace_reset_ack_keeps_the_existing_inbox_approval_path(tmp_path):
-    orch, cap, _ = host(tmp_path)
-    orch._runtime_settings["channels.owner_senders"] = {"ntfy": ["home"]}
-    orch.channels = {"ntfy": SimpleNamespace(
-        _running=True, inbound=True, topic="home",
-        pairing=SimpleNamespace(is_allowed=lambda channel, sender: True),
-    )}
-    requests = []
-
-    def request(message_id, text, **kwargs):
-        requests.append((message_id, text, kwargs))
-        return {"ok": True, "queued": True}
-
-    orch.channel_replies = SimpleNamespace(request_for_message=request)
-    reply = await orch.channel_handler("/new", channel="ntfy", sender="home", chat_id="home",
-                                       _inbox_message_id="stored-reset")
-    assert requests == [("stored-reset", reply, {"channel": "ntfy", "source": "channel.auto_reply"})]
-    assert "new conversation" in reply.lower()
-    assert cap["sent"] == cap["sessions"] == []
-
-
-@pytest.mark.asyncio
 async def test_actual_processing_progress_notifies_once_and_completion_drains(tmp_path, monkeypatch):
     from agents.core.channels import outbound
     from agents.core.channels.session_lifecycle import lifecycle
@@ -362,25 +340,6 @@ async def test_batched_telegram_topics_never_merge_and_keep_their_metadata(monke
         assert all(meta["chat_type"] == "supergroup" for _, meta in received)
     finally:
         await channel.client.aclose()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("guild,parent,kind", [(None, None, "private"), (object(), None, "group"),
-                                              (object(), 7, "thread")])
-async def test_real_discord_ingress_carries_the_normalized_chat_type(monkeypatch, guild, parent, kind):
-    from agents.core.channels.discord import DiscordChannel
-
-    monkeypatch.setenv("JARVIS_INBOUND_BATCH_MS", "0")
-    received = []
-
-    async def handle(text, **meta):
-        received.append(meta)
-
-    channel = DiscordChannel(token="synthetic", handler=handle)
-    message = SimpleNamespace(author=SimpleNamespace(id=42), channel=SimpleNamespace(id=12, parent_id=parent),
-                              guild=guild, content="hello")
-    await channel._handle_message(message)
-    assert received[0]["chat_type"] == kind
 
 
 @pytest.mark.asyncio

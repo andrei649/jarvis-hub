@@ -225,3 +225,14 @@ async def test_decision_cards_are_sent_as_built():
     card = {"text": "*Decide*", "parse_mode": "Markdown", "reply_markup": {"inline_keyboard": []}}
     assert await channel.send_card(9, card) is True
     assert channel.client.posts[0][1] == {"chat_id": 9, **card}
+
+
+def test_markdown_passes_through_and_is_only_chunked():
+    from agents.core.channels.descriptor import DIALECT_MARKDOWN, ChannelDescriptor
+    from agents.core.channels.render import render, render_outbound
+
+    assert render("**b** <tag>", DIALECT_MARKDOWN) == "**b** <tag>"
+    descriptor = ChannelDescriptor(dialect=DIALECT_MARKDOWN, max_message_length=2000)
+    pieces = render_outbound("\n\n".join("word " * 300 for _ in range(3)), descriptor)
+    assert len(pieces) >= 2 and all(len(p) <= 2000 for p in pieces)
+    assert pieces[0].startswith("word")

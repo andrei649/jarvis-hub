@@ -137,9 +137,10 @@ def test_deliver_only_to_the_log_is_refused_it_would_keep_nothing(hub, sends, da
 @pytest.mark.parametrize("destination, reason", [
     ("email", "email"),
     ("github_comment", "write-back"),
-    ("discord", "reply-only"),
-    ("slack", "reply-only"),
-    ("pigeon", "log, telegram, voice, ntfy"),
+    ("discord", "not a channel of this hub"),
+    ("slack", "not a channel of this hub"),
+    ("ntfy", "not a channel of this hub"),
+    ("pigeon", "log, telegram, voice"),
 ])
 def test_destinations_nerva_does_not_offer_are_refused_by_name(hub, destination, reason):
     client, _events, _turns = hub
@@ -185,7 +186,7 @@ def test_a_long_reply_is_cut_to_what_the_channel_carries(hub, sends, daytime, mo
         return "x" * 10_000
 
     monkeypatch.setattr(get_orch(), "handle_input", long_reply)
-    hook = _hook(client, name="n", deliver="ntfy")
+    hook = _hook(client, name="n", deliver="voice")
     _post(client, hook, {"text": "hi"})
     sent = sends[0][0]
     assert len(sent["text"]) + len(sent["subject"]) + 2 <= MAX_TEXT_CHARS
@@ -218,15 +219,15 @@ def test_a_workflow_result_is_delivered_too(hub, sends, daytime, monkeypatch):
 def test_a_destination_change_is_audited(hub):
     client, events, _turns = hub
     hook = _hook(client)
-    changed = client.patch(f"/api/webhooks/{hook['id']}", json={"deliver": "ntfy", "deliver_only": True,
+    changed = client.patch(f"/api/webhooks/{hook['id']}", json={"deliver": "voice", "deliver_only": True,
                                                                 "description": "from CI"}, headers=_ADMIN)
-    assert changed.status_code == 200 and changed.json()["webhook"]["deliver"] == "ntfy"
+    assert changed.status_code == 200 and changed.json()["webhook"]["deliver"] == "voice"
     # Guard telemetry is queued separately and can arrive after the action audit.
     # Keep the assertion about webhook changes independent of that worker's timing.
     action_events = _action_events(events)
     assert [event.action_taken for event in action_events] == ["webhook_create", "webhook_update"]
     row = action_events[-1].content_preview
-    assert "deliver=ntfy" in row and "deliver_only=True" in row
+    assert "deliver=voice" in row and "deliver_only=True" in row
 
 
 @pytest.mark.parametrize("extra", [{"skills": ["triage"]}, {"enabled": False}, {"deliver_chat_id": "42"}])
@@ -256,7 +257,7 @@ def test_only_a_literal_true_skips_the_agent(tmp_path):
 
 def test_a_hand_edited_destination_delivers_only_to_the_log(tmp_path):
     store = WebhookStore(path=tmp_path / "wh.json")
-    rec = store.create("jarvis", deliver="ntfy")
+    rec = store.create("jarvis", deliver="voice")
     store._hooks[rec["id"]]["deliver"] = "email"          # a hand edit
     assert store.destination(store.get(rec["id"])) == "log"
     store._hooks[rec["id"]]["deliver"] = 7

@@ -31,7 +31,7 @@ def _elapsed(render, text):
 
 
 @pytest.mark.parametrize("unit", ["`a` ", "`**a "])
-@pytest.mark.parametrize("name", ["to_telegram_html", "to_slack_mrkdwn"])
+@pytest.mark.parametrize("name", ["to_telegram_html"])
 def test_inline_code_spans_render_in_linear_time(name, unit):
     from agents.core.channels import render
 
@@ -45,19 +45,17 @@ def test_inline_code_spans_render_in_linear_time(name, unit):
 
 
 def test_restored_spans_keep_their_escaping_and_a_spelled_placeholder_stays():
-    from agents.core.channels.render import to_slack_mrkdwn, to_telegram_html
+    from agents.core.channels.render import to_telegram_html
 
     assert to_telegram_html("a `x<y` and `z` **b**") == "a <code>x&lt;y</code> and <code>z</code> <b>b</b>"
-    assert to_slack_mrkdwn("`c&d` _e_") == "`c&amp;d` _e_"
     assert "code9" in to_telegram_html("`a` \x00code9\x00")
 
 
 def test_an_ordinary_long_link_still_renders_as_a_link():
-    from agents.core.channels.render import to_slack_mrkdwn, to_telegram_html
+    from agents.core.channels.render import to_telegram_html
 
     url = "https://example.com/" + "p" * 150
     assert f'<a href="{url}">docs</a>' in to_telegram_html(f"[docs]({url})")
-    assert f"<{url}|docs>" in to_slack_mrkdwn(f"[docs]({url})")
 
 
 # ── MINOR-2 / NIT-2: the first-read waiters ────────────────────────────────────────

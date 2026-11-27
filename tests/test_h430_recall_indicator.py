@@ -532,7 +532,7 @@ def _channel_orch(memory):
     return orch
 
 
-@pytest.mark.parametrize("channel", ["telegram", "slack", "discord", "ntfy"])
+@pytest.mark.parametrize("channel", ["telegram"])
 def test_an_owners_channel_reply_carries_the_line(channel):
     memory = _Memory([CLEAN, _hit("second", hit_id="m2")])
     orch = _channel_orch(memory)

@@ -83,11 +83,7 @@ def test_surface_hints_match_registered_text_renderers_without_foreign_delivery_
     telegram = build_operating_guidance(model="x", surface="telegram")
     assert "HTML" in telegram and "markup" in telegram
     assert "plain text" in telegram
-    slack = build_operating_guidance(model="x", surface="slack")
-    assert "mrkdwn" in slack
-    email = build_operating_guidance(model="x", surface="email")
-    assert "plain text" in email
-    discord = build_operating_guidance(model="x", surface="discord")
-    assert "Markdown" in discord
-    for text in (telegram, slack, email, discord):
+    cli = build_operating_guidance(model="x", surface="cli")
+    assert "plain text" in cli
+    for text in (telegram, cli):
         assert "MEDIA:" not in text and "::preview" not in text

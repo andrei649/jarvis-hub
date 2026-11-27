@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from agents import web
-from tests.test_ntfy_inbound import until
+from tests.support.waiting import until
 from tests.test_pending_input_web import stream_host
 
 

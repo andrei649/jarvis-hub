@@ -2,7 +2,7 @@
 agent: agent-id
 cadence: cron:* * * * *
 silent_by_default: true
-channel: [voice | telegram | slack | log-only]
+channel: [voice | telegram | log-only]
 enabled: true
 do_not_disturb:
   - timezone: Europe/Bucharest

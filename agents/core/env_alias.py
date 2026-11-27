@@ -323,7 +323,6 @@ PATH_TYPED = frozenset({
 CREDENTIALS = frozenset({
     "ADMIN_TOKEN", "USER_TOKEN", "AUDIT_KEY", "SECRET_KEY", "TOKEN_KEY", "BACKUP_KEY", "E2E_SYNC_KEY",
     "SKILL_SIGNING_KEY", "A2A_KEY", "HERMES_BRIDGE_TOKEN",
-    "SMS_AUTH_TOKEN",  # G16: the Twilio auth token signs webhooks and pays for replies
     "ROOM_FENCING_SECRET",  # H657: HMAC key authenticating room authority proofs
 })
 #: Masked by name, and not a credential: an integer, a flag, a ``{{secret:…}}`` handle, a

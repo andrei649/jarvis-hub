@@ -20,12 +20,10 @@ failure to record is returned in the result rather than swallowed. A reply *into
 conversation* is a different action (`channel.reply`, KERNEL) and does not come through
 here.
 
-**Email is deliberately absent**, exactly as it is absent from ``ChannelManager.send``:
-keeping SMTP out of the generic send API is what stops untrusted inbound mail from
-gaining an outbound side effect. Adding it here would reopen that by the back door.
+**A channel outside** :data:`DIRECT_SEND_CHANNELS` **is refused**, exactly as it is by
+``ChannelManager.send``: a name this module does not list never reaches a transport.
 
-**A subject is one line, carried the way each transport can.** ntfy has a native title
-and gets it as one; every other channel gets Hermes' shape — the subject, a blank line,
+**A subject is one line.** Every channel gets Hermes' shape — the subject, a blank line,
 the message — so a script's ``-s "[CI]"`` reads the same wherever it lands. The outer
 length bound applies to what is actually delivered, subject included.
 """
@@ -38,9 +36,8 @@ from typing import Any
 logger = logging.getLogger("jarvis.channels.outbound")
 
 #: Channels that can accept a message addressed to the owner with no prior thread.
-#: Mirrors the dispatch arms of ``ChannelManager.send``; email is excluded on purpose
-#: (see the module docstring), and so are the reply-only transports.
-DIRECT_SEND_CHANNELS = ("telegram", "web", "voice", "ntfy")
+#: Mirrors the dispatch arms of ``ChannelManager.send``.
+DIRECT_SEND_CHANNELS = ("telegram", "web", "voice")
 
 #: Longest message this seam will carry. The per-channel cap in the descriptor is
 #: usually smaller and the adapter chunks to it; this is only the outer bound that
@@ -49,8 +46,6 @@ MAX_TEXT_CHARS = 4_000
 
 #: A subject is a line, not a paragraph.
 MAX_SUBJECT_CHARS = 200
-#: ntfy carries the subject as an HTTP header: printable ASCII, and its adapter cuts at 120.
-NTFY_TITLE_CHARS = 120
 
 OWNER_CHAT_SETTING = "autonomy.owner_chat_id"
 OWNER_CHAT_ENV = "AUTONOMY_OWNER_CHAT_ID"
@@ -143,17 +138,12 @@ def subject_problem(channel: str, subject: str) -> str:
     """Why *subject* cannot be carried to *channel*, or "" when it can.
 
     One line means one *printable* line: ``str.isprintable`` refuses every control
-    character and every Unicode line or paragraph separator, not just LF and CR. ntfy's
-    title travels as an HTTP header, and its adapter would silently strip non-ASCII and
-    cut at 120 — refusing here, with the reason, beats delivering a mangled title.
+    character and every Unicode line or paragraph separator, not just LF and CR.
     """
     if not subject:
         return ""
     if len(subject) > MAX_SUBJECT_CHARS or not subject.isprintable():
         return f"the subject must be one printable line of at most {MAX_SUBJECT_CHARS} characters"
-    if str(channel or "").strip().lower() == "ntfy" and (not subject.isascii() or len(subject) > NTFY_TITLE_CHARS):
-        return (f"ntfy carries a title of printable ASCII, at most {NTFY_TITLE_CHARS} characters; "
-                "put anything else in the message")
     return ""
 
 
@@ -166,8 +156,6 @@ def _with_subject(name: str, body: str, subject: str, kwargs: dict[str, Any]) ->
     """``(body, send kwargs)`` with *subject* carried the way *name* can carry it."""
     if not subject:
         return body, kwargs
-    if name == "ntfy":
-        return body, {**kwargs, "title": subject}
     return f"{subject}\n\n{body}", kwargs
 
 
@@ -181,8 +169,8 @@ async def send_to_target(orch: Any, channel: str, text: str, *, subject: str = "
     it, not discover it later from an empty log. *subject* is optional and one line.
 
     *plain* marks a notice whose text came from outside (a webhook's sender, or a turn
-    it steered): Telegram and ntfy show it as it is, with no markup rendered and nothing
-    rewritten (Telegram with no link preview and no voice note, which would also take
+    it steered): Telegram shows it as it is, with no markup rendered and nothing
+    rewritten (no link preview and no voice note, which would also take
     the chat's pending voice turn). Voice speaks the words without the markup, because
     a symbol read aloud is noise; the text is bounded here, so that render is cheap.
     """
@@ -210,8 +198,6 @@ async def send_to_target(orch: Any, channel: str, text: str, *, subject: str = "
     body, kwargs = _with_subject(name, body, title, kwargs)
     if plain and name == "telegram":
         kwargs = {**kwargs, "plain": True, "voice": False}
-    elif plain and name == "ntfy":
-        kwargs = {**kwargs, "plain": True}
     if len(body) > MAX_TEXT_CHARS:
         return {"ok": False, "reason": f"the message is longer than {MAX_TEXT_CHARS} characters"}
 
@@ -243,6 +229,6 @@ async def send_to_target(orch: Any, channel: str, text: str, *, subject: str = "
 
 
 __all__ = [
-    "DIRECT_SEND_CHANNELS", "MAX_SUBJECT_CHARS", "MAX_TEXT_CHARS", "NTFY_TITLE_CHARS", "OWNER_CHAT_SETTING",
+    "DIRECT_SEND_CHANNELS", "MAX_SUBJECT_CHARS", "MAX_TEXT_CHARS", "OWNER_CHAT_SETTING",
     "carried_length", "configured_targets", "resolve_destination", "send_to_target", "subject_problem",
 ]

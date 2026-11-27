@@ -45,10 +45,10 @@ describe('readStatusChrome', () => {
   it('maps the gateway, session and version fields of /status', () => {
     expect(readStatusChrome({
       version: '1.4.0',
-      gateway: { state: 'running', running: ['telegram', 'discord'], running_count: 2, total: 3 },
+      gateway: { state: 'running', running: ['telegram', 'voice'], running_count: 2, total: 3 },
       sessions: { active: 4, window_s: 900, state: 'known' },
     })).toEqual({
-      gateway: { state: 'running', running: ['telegram', 'discord'], total: 3 },
+      gateway: { state: 'running', running: ['telegram', 'voice'], total: 3 },
       sessions: { active: 4, windowS: 900 },
       version: '1.4.0',
     });
@@ -70,12 +70,12 @@ describe('the running foot follows the polled /status', () => {
   it('shows running channels, the active-session count and the version', async () => {
     const { data, container } = await foot({
       version: '1.4.0',
-      gateway: { state: 'running', running: ['discord', 'telegram'], running_count: 2, total: 3 },
+      gateway: { state: 'running', running: ['telegram', 'voice'], running_count: 2, total: 3 },
       sessions: { active: 5, window_s: 900, state: 'known' },
     });
-    expect(data.chrome.gateway.running).toEqual(['discord', 'telegram']);
+    expect(data.chrome.gateway.running).toEqual(['telegram', 'voice']);
     expect(part(container, 'gateway').textContent).toContain('2 of 3 running');
-    expect(part(container, 'gateway').getAttribute('title')).toBe('discord, telegram');
+    expect(part(container, 'gateway').getAttribute('title')).toBe('telegram, voice');
     expect(part(container, 'gateway').getAttribute('data-state')).toBe('running');
     // from 2200px the whole sentence; below, the count alone with the window in its title (CSS shows one)
     expect(part(container, 'sessions').querySelector('[data-show-from="xl"]')?.textContent).toBe('5 sessions in the last 15 min');

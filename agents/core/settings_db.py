@@ -253,7 +253,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="sessions", key="reset_by_channel", value={}, label="Conversation reset overrides by channel", kind="json"),
     dict(category="sessions", key="reset_triggers", value=["/new", "/reset"], label="Owner commands that start a new conversation", kind="tags"),
     dict(category="sessions", key="stall_seconds", value=300, label="No-progress notice after seconds", kind="number"),
-    dict(category="sessions", key="stall_channel", value="telegram", label="No-progress notice channel", kind="select", opts=["telegram", "ntfy", "web"]),
+    dict(category="sessions", key="stall_channel", value="telegram", label="No-progress notice channel", kind="select", opts=["telegram", "web"]),
     dict(category="sessions", key="store_max_age_days", value=90, label="Retire idle route indexes after days (0 disables)", kind="number"),
     # product — owner-consented posture, default OFF. O26-P2.4 wave 1 wakes the
     # "knows you" stack only after the onboarding/product setting selects it.
@@ -482,7 +482,6 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
     dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
     dict(category="channels",key="pending_inputs_enabled", value=False, label="Chat clarification preview (restart to apply)", kind="toggle"),
-    dict(category="channels", key="owner_senders", value={}, label="Command owners: Slack team:user, Discord user ID or ntfy receive topic; current pairing required", kind="json"),
     dict(category="channels", key="config", value={}, label="Channel settings set in the HUD Channels panel (no secrets; .env wins; restart to apply)", kind="json"),
     # G12 (H560/H614) — the OpenAI-compatible API (/v1/chat/completions, /v1/responses,
     # /v1/models). Off by default; an administrator can pin it (managed config.yaml).
@@ -508,7 +507,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="sessions", key="reset_triggers", value=["/new", "/reset"], label="Exact texts that start a new conversation", kind="json"),
     dict(category="sessions", key="store_max_age_days", value=90, label="Retire idle routing-index entries after days (0 = off; transcripts remain saved)", kind="number"),
     dict(category="sessions", key="stall_seconds", value=300, label="Notify when a pending conversation has no processing progress for seconds (0 = off)", kind="number"),
-    dict(category="sessions", key="stall_channel", value="telegram", label="Owner-configured destination for session stall notices", kind="select", opts=["telegram", "ntfy", "web"]),
+    dict(category="sessions", key="stall_channel", value="telegram", label="Owner-configured destination for session stall notices", kind="select", opts=["telegram", "web"]),
     # webhooks — H153: the platform-level receiver switch. Off, every inbound delivery
     # is refused with 503 before its body is read; hooks keep their credentials.
     dict(category="webhooks", key="receiver_enabled", value=True, label="Inbound webhook receiver (off: every delivery is refused; hooks keep their credentials)", kind="toggle"),
@@ -520,17 +519,15 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="plugins", key="telegram",         value=True,                  label="Telegram",           kind="toggle"),
     dict(category="plugins", key="gmail",            value=True,                  label="Gmail",              kind="toggle"),
     dict(category="plugins", key="google-calendar",  value=True,                  label="Google Calendar",    kind="toggle"),
-    dict(category="plugins", key="whatsapp-bridge",  value=True,                  label="WhatsApp Bridge",    kind="toggle"),
     dict(category="plugins", key="spotify",          value=True,                  label="Spotify",            kind="toggle"),
     dict(category="plugins", key="apple-health",     value=True,                  label="Apple Health",       kind="toggle"),
     dict(category="plugins", key="homebridge",       value=True,                  label="Homebridge",         kind="toggle"),
-    dict(category="plugins", key="sms-alerts",       value=True,                  label="SMS Alerts & Notifications", kind="toggle"),
     dict(category="plugins", key="crm-sync",         value=True,                  label="Notion CRM Sync", kind="toggle"),
     dict(category="plugins", key="iot-control",       value=True,                  label="Tuya SmartHome IoT", kind="toggle"),
     dict(category="plugins", key="revenuecat",       value=True,                  label="RevenueCat Revenue", kind="toggle"),
     dict(category="plugins", key="meta-ads",         value=True,                  label="Meta Ads Insights",  kind="toggle"),
     dict(category="plugins", key="postiz",           value=True,                  label="Postiz Social Scheduler", kind="toggle"),
-    # twilio — sms alerts
+    # twilio — rows of the sms-alerts plugin (removed 2026-11-25); nothing reads them now
     dict(category="plugins", key="twilio_account_sid",  value="",    label="Twilio Account SID",                kind="text"),
     dict(category="plugins", key="twilio_auth_token",   value="",    label="Twilio Auth Token",                 kind="text"),
     dict(category="plugins", key="twilio_from_number",  value="",    label="Twilio From Number",                kind="text"),
@@ -578,7 +575,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="log_backups",      value=5,                     label="Rotated log backups", kind="number"),
     # H182: on battery below this percent, the heavy background jobs skip their run (0 = never, 100 = always).
     dict(category="system",  key="battery_defer_percent", value=50,               label="On battery below this %, defer heavy background jobs (0 = never)", kind="number"),
-    dict(category="system",  key="channel_connect_timeout_seconds", value=15, label="Telegram, Discord, ntfy, IMAP and Slack opening timeout in seconds (1–25; applies on next hub start)", kind="number"),
+    dict(category="system",  key="channel_connect_timeout_seconds", value=15, label="Telegram opening timeout in seconds (1–25; applies on next hub start)", kind="number"),
     dict(category="system",  key="startup_warmup_timeout_seconds", value=20,      label="At start, wait up to this many seconds for the local model to warm up before accepting messages (0 = don't wait)", kind="number"),
     # H448 — Hermes `context.memory_trim`: after a turn and on the minute housekeeping tick
     # (the scheduler's memory-trim job), at most every cooldown_seconds, collect reference
@@ -1508,7 +1505,6 @@ LITERAL: dict[tuple[str, str], str] = {
                          "a reference in its command would put a variable the list withholds on the child's argv"),
     ("autonomy", "owner_chat_id"): _OWNER_BINDING,
     ("autonomy", "owner_user_ids"): _OWNER_BINDING,
-    ("channels", "owner_senders"): _OWNER_BINDING,
     ("llm", "default_model"): _MODEL_CHOICE,
     ("llm", "claude_model"): _MODEL_CHOICE,
     ("llm", "gemini_model"): _MODEL_CHOICE,

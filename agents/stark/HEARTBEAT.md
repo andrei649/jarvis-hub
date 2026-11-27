@@ -14,7 +14,7 @@ enabled: true
 
 ## Checklist
 
-1. Scan Slack for overnight mentions and decisions
+1. Scan flagged work email for overnight decisions
 2. Check GA4 for anomaly alerts (traffic/conversion drops >15%)
 3. Check Firebase for crash alerts
 4. Flag any emails from direct manager or exec team

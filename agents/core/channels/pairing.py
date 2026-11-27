@@ -302,9 +302,6 @@ def channel_open_acknowledged() -> bool:
 #: cannot disagree about which channels have one. (Hermes absorption 5b)
 CHANNEL_ALLOWLIST_ENVS: dict[str, str] = {
     "telegram": "TELEGRAM_ALLOWED_USER_IDS",
-    # G16 (H098): the owner's own numbers in E.164 (``+15551234567``); the parse below keeps
-    # their digits, which is the sender id the SMS adapter threads.
-    "sms": "JARVIS_SMS_ALLOWED_NUMBERS",
 }
 
 
@@ -778,8 +775,8 @@ class SenderPairing(JsonStore):
         entry's digest (H497) and the entry is removed the moment it matches —
         before the sender is approved — so two redemptions racing each other
         resolve to exactly one winner. A token for a different channel is refused
-        rather than honoured: a link minted for Telegram must not pair a Discord
-        account.
+        rather than honoured: a link minted for one channel must not pair an account
+        on another.
         """
         candidate = str(token or "").strip()
         moment = time.time() if now is None else float(now)

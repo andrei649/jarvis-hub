@@ -13,7 +13,7 @@ from contextlib import suppress
 from . import hub_update_apply
 from .channels.outbound_safety import sanitize_text
 
-_CHAT_CHANNELS = frozenset({"web", "telegram", "discord", "slack", "matrix"})
+_CHAT_CHANNELS = frozenset({"web", "telegram"})
 _REQUEST_LOCK = threading.Lock()
 _WITHHELD = "A reply could not be checked before sending, so it was withheld."
 _STATUS_UNAVAILABLE = "Update status unavailable; check the local update status before retrying."

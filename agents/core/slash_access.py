@@ -1,8 +1,8 @@
 """H058 — per-command access tiers on the chat command plane (Hermes ``gateway/slash_access.py``).
 
 Of the people a channel already lets talk to the hub, the **owner** (the admin tier: the
-principal the turn established as the owner — the Telegram owner, a configured Slack/
-Discord/ntfy owner, an admin token on the web door) may run every command. Everyone else is
+principal the turn established as the owner — the Telegram owner, an admin token on the
+web door) may run every command. Everyone else is
 the **user** tier and runs the floor — ``/help`` and ``/whoami``, which no setting removes —
 plus the user-tier commands the owner allows for that channel and scope in
 ``commands.user_allowed_commands``, keyed separately for a DM and a group::
@@ -28,10 +28,9 @@ Hermes rebuild note asked for and never shipped — and goes out as the ``comman
 extension event (status ``refused``) on every path that answers it. ``/whoami`` reports the
 platform, scope, sender id, tier and the exact command list. The orchestrator asks this
 module on the cold path (``CommandRegistry.dispatch``), on the busy path (a channel command
-is judged before the session lease and the running-work interrupt, and on Telegram, Discord
-and Slack a refused one is handed over beside the chat's lane or the author's batch lock
-instead of behind its running turn — except on Slack with inbound batching off, whose event
-dispatcher every running turn holds, as before batching; the web door's ``/chat`` and ``/chat/stream`` judge it
+is judged before the session lease and the running-work interrupt, and on Telegram a
+refused one is handed over beside the chat's lane instead of behind its running turn;
+the web door's ``/chat`` and ``/chat/stream`` judge it
 before their interrupt and lease; the ``/btw`` side question is judged as it is answered
 beside a running turn, before a route with no conversation says so) and again for quick
 commands, on the raw typed name. The gate answers before any input or configuration check
@@ -43,8 +42,7 @@ floor command (``floor_command``: ``/help`` or ``/whoami`` in any casing, with t
 stored one is ignored at dispatch. On a channel, where reset triggers are judged,
 ``/whoami``, ``/help`` and a denial's "You can run" list (``listed_names``) leave out a
 user-tier command whose bare ``/name`` is a reset trigger, since the channel refuses that
-text. A Matrix room is a DM only when the Matrix adapter's homeserver lookup proves it;
-otherwise its commands are judged in group scope.
+text.
 """
 
 from __future__ import annotations
@@ -70,7 +68,7 @@ ANY_CHANNEL = "*"
 #: API is a machine door, not a chat the owner configured: only an explicit
 #: ``"openai_api"`` entry grants its guests commands above the floor.
 EXPLICIT_ONLY_CHANNELS = frozenset({"openai_api"})
-#: Hermes ``_DM_CHAT_TYPES`` (plus Slack's ``im``): everything else is a group.
+#: Hermes ``_DM_CHAT_TYPES``: everything else is a group.
 DM_CHAT_TYPES = frozenset({"", "dm", "direct", "private", "im"})
 PREVIEW = 12
 AUDIT_ACTION = "slash_command_denied"

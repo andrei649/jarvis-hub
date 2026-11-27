@@ -15,29 +15,6 @@ sys.path.insert(0, str(repo_root))
 sys.path.insert(0, str(repo_root / "agents"))
 
 
-# ── email channel constructor (channels/email.py + web.py wiring) ─────────────
-
-def test_email_channel_accepts_config_dicts():
-    from agents.core.channels.email import EmailChannel
-    # The shape agents/web.py wires. Pre-fix web.py passed smtp_host=... kwargs,
-    # which this constructor rejects — proving that branch never ran.
-    ch = EmailChannel(
-        handler=lambda *a, **k: None,
-        smtp_config={"host": "smtp.example.com", "port": 587, "user": "u", "password": "p"},
-        imap_config={"host": "imap.example.com", "port": 993, "user": "u", "password": "p"},
-    )
-    assert ch.smtp["host"] == "smtp.example.com"
-    assert ch.imap["port"] == 993
-
-
-def test_web_wiring_uses_config_dicts_not_flat_kwargs():
-    # Guard the call site: the wiring must not regress to smtp_host= kwargs
-    # (which raise TypeError against EmailChannel.__init__ at startup).
-    src = (repo_root / "agents" / "web.py").read_text()
-    assert "smtp_config={" in src, "web.py must build an smtp_config dict"
-    assert "smtp_host=smtp_host" not in src, "flat smtp_host= kwargs crash EmailChannel at startup"
-
-
 # ── XFF rate-limit trust (web.py) ─────────────────────────────────────────────
 
 def _fake_request(headers: dict, peer: str):

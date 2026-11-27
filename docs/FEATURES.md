@@ -66,9 +66,7 @@ machine.
 
 - **HUD V2 cockpit** (web, SSE) · **voice** — the browser-mic HUD loop ships today; server-side
   STT/TTS engines (faster-whisper, edge-tts/Kokoro) are manual extras that degrade to 503 until
-  installed, and the wake-word pipeline additionally needs extra native deps · **Telegram ·
-  email** built in; **Discord · Slack** work once their SDKs are installed
-  (`pip install discord.py slack_sdk`).
+  installed, and the wake-word pipeline additionally needs extra native deps · **Telegram** built in.
 - **Mobile companion app** — approvals, tasks, comms inbox, memory + knowledge graph, security
   posture (read-only where it should be).
 - CLI REPL and admin panel; **400 HTTP routes** with OpenAPI→TypeScript typegen.
@@ -78,7 +76,7 @@ machine.
 - **Skills system** — discover, execute, generate; import from Hermes / OpenClaw / GitHub formats;
   marketplace with signing + quarantine.
 - **Sandboxed code execution** (Docker + subprocess) with environment scrubbing and output caps.
-- **Plugin layer** — weather, news, Gmail, WhatsApp local bridge, Spotify, Telegram bot, cloud
+- **Plugin layer** — weather, news, Gmail, Spotify, Telegram bot, cloud
   LLM… every third-party service is explicit, scope-limited, audited, and disable-able — and an
   unconfigured integration self-reports **MOCK/degraded** instead of pretending to work.
 - Governed **MCP client** and Tool-RPC over an allowlist.

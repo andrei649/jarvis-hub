@@ -175,8 +175,8 @@ import { ObserveMode } from '../modes2';
 import { AdminMode } from '../modes3';
 
 const SEED_FICTION_OBSERVE = ['tr-8f3a', 'gemma-4-26b', 'athena'];
-const SEED_FICTION_ADMIN = ['sk-ant', 'jarvis-prime', '02:30 today', 'WhatsApp (bridge)',
-  'Gmail API', 'Google Calendar', 'Telegram Bot', 'Spotify', 'WhatsApp Bridge',
+const SEED_FICTION_ADMIN = ['sk-ant', 'jarvis-prime', '02:30 today',
+  'Gmail API', 'Google Calendar', 'Telegram Bot', 'Spotify',
   'Apple Health', 'Homebridge', 'Cloud LLM Fallback'];
 
 describe('ObserveMode over the honest corpus shows no seed fiction', () => {

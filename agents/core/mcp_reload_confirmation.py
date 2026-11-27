@@ -124,7 +124,7 @@ def actor_for(principal: Any) -> tuple[str, str | None, str | None, str] | None:
         return None
     channel, sender, chat, scope = (getattr(principal, key, None)
                                     for key in ("channel", "sender", "chat", "scope"))
-    if channel not in {"web", "telegram", "discord", "slack", "matrix"} or scope not in {"dm", "group"}:
+    if channel not in {"web", "telegram"} or scope not in {"dm", "group"}:
         return None
     if any(value is not None and (type(value) is not str or not value or len(value) > 256)
            for value in (sender, chat)):

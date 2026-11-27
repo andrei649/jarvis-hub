@@ -13,7 +13,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from .pending_input import PendingInputs, Prompt
-from .pending_input_workspace import receipt_identity, valid_callback, valid_receipt
 
 _DATA = re.compile(r"h067:([A-Za-z0-9_-]{16}):([0-9]{1,10}):([a-z][0-9]?)\Z")
 _RECOMMENDED = re.compile(r"\s*\(recommended\)\s*$", re.IGNORECASE)
@@ -107,8 +106,7 @@ class NativePromptCards:
             rows.append([self._button(card, "Once", "n"), self._button(card, "Always", "a")])
         elif not prompt.awaiting_text:
             for index, choice in enumerate(prompt.choices or ()):
-                label = f"{index + 1}. {choice}" if prompt.key[0] in {"slack", "discord"} else choice
-                label = f"✓ {label}" if index in card.selected else label
+                label = f"✓ {choice}" if index in card.selected else choice
                 rows.append([self._button(card, label, f"{'t' if prompt.multi_select else 'c'}{index}")])
             if prompt.multi_select:
                 rows.append([self._button(card, "Submit", "s")])
@@ -203,40 +201,6 @@ class NativePromptCards:
             return rejected
         # Fresh owner/pairing/origin eligibility must precede every mutation.
         if not self._is_eligible(prompt):
-            return rejected
-        return self._apply(card, prompt, action)
-
-    def bind_workspace(self, token: str, receipt: dict) -> bool:
-        if self._closed or type(token) is not str or not valid_receipt(receipt):
-            return False
-        card = self._cards.get(token)
-        if card is None or card.prompt.key[0] != receipt["channel"]:
-            return False
-        prompt = self._current(card)
-        if prompt is None or not self._is_eligible(prompt):
-            return False
-        identity = receipt_identity(receipt)
-        if card.receipt is not None:
-            return card.receipt == identity
-        card.receipt = identity
-        return True
-
-    def handle_workspace(self, callback: dict) -> CardResult:
-        rejected = CardResult(False, "rejected")
-        if self._closed or not isinstance(callback, dict):
-            return rejected
-        channel = callback.get("channel")
-        if not valid_callback(callback, channel):
-            return rejected
-        token, revision, action = _DATA.fullmatch(callback["data"]).groups()
-        card = self._cards.get(token)
-        if (card is None or card.prompt.key[0] != channel
-                or card.receipt != receipt_identity(callback)
-                or card.prompt.key[2] != callback["sender"]
-                or card.revision != int(revision)):
-            return rejected
-        prompt = self._current(card)
-        if prompt is None or not self._is_eligible(prompt):
             return rejected
         return self._apply(card, prompt, action)
 

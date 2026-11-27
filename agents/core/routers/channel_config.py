@@ -117,14 +117,9 @@ async def channel_config_put(body: PlainBody, channel_id: str = Path(..., patter
         return _env_owned(str(exc))
     except cc.FrontDoorRefused as exc:
         return nocache_json({"error": "front_door", "detail": str(exc)}, status_code=409)
-    except cc.BoundSecretInEnv as exc:
-        return nocache_json({"error": "bound_secret_in_env", "name": exc.endpoint, "secret": exc.secret,
-                             "detail": str(exc)}, status_code=409)
     except ManagedRefused as exc:
         return await _managed(exc, channel_id)
-    await _audit(f"channels: {channel_id} settings set: {result['written']}"
-                 + (f"; secrets cleared for the new server: {result['cleared_secrets']}"
-                    if result["cleared_secrets"] else ""), "channel_config_set")
+    await _audit(f"channels: {channel_id} settings set: {result['written']}", "channel_config_set")
     return nocache_json({"ok": True, **result, "channel": _row(channel_id)})
 
 

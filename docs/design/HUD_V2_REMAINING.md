@@ -740,12 +740,12 @@ Standalone AI Connections and its default-off cloud chat consent are confined to
 the standalone server. Hub `/os` hides those settings and uses the hub's separate
 `/chat` policy; no hub bypass is demonstrated by the standalone finding.
 
-Local gateway continuation, 2026-11-12: native Slack slash commands and the
-`/nerva` fallback use the existing command access, inbox and approval surfaces.
-This is host/Slack-specific behavior; it adds no HUD endpoint or screen. Workspace
-configuration and live Slack acceptance remain external prerequisites.
-Native Discord commands likewise use existing inbox/approval surfaces; health
-reports registration/hidden counts. Live Discord acceptance is unrun. The
+Messaging platforms other than Telegram (Slack, Discord, SMS, ntfy, email, Matrix and
+the webhook channels) were removed on 2026-11-25 by owner decision
+(`docs/decisions/2026-11-25-nerva-finish-line.md`): the Channels panel lists Telegram
+only, the Comms mode offers a governed reply for Telegram and web threads only, the
+Integrations panel has no channel kind and webhook deliveries go to the log, Telegram
+or voice. The `/nerva` command fallback stays. The
 `channels.max_inbound_media_bytes` limit uses existing generic admin settings;
 no dedicated media control or frontend/device acceptance is claimed.
 
@@ -774,8 +774,7 @@ Owner `/reload-skills` uses the shared chat registry and existing command catalo
 no dedicated reload screen is added. Telegram static sticker caption/cache is a
 host channel feature. Native/mobile media and reload acceptance remain unrun.
 Owner `/debug` returns a local report path through existing chat; it has no upload
-or new screen and currently refuses on Windows. Discord attachments use existing
-inbox/approval cards; native provider acceptance is unrun.
+or new screen and currently refuses on Windows.
 
 Local candidates, 2026-11-03: H220 adds Usage/Billing estimates, measured
 local/cloud/unknown aggregates, a Command Center link, and current-turn usage
@@ -1142,17 +1141,16 @@ with plugin-configured checks instead of seeded success. Still open:
   without a reliable stream reader, and rejects an oversized `Content-Length` before reading.
 - **Trust**: real `%‑local` meter (needs a locality/cost summary endpoint, §6).
 - **Autonomy**: per‑agent AUTO/ASK/OFF **policies** (settings‑backed).
-- **Comms**: rooms + registered **Discord/Slack** channel status now feed the mode. The Console now
+- **Comms**: rooms and the live channel inbox feed the mode. The Console now
   has a Safe Comms draft surface over `GET/POST /api/integrations/social`, so X post/reply/DM drafts
   enter the existing approval queue/preview path instead of sending directly. #551 adds
   channel inbox transport v0 for telegram/web: inbound threads persist through
   `GET /api/channels/inbox*`, live rows show a governed reply composer, and replies queue through
   `POST /api/channels/inbox/{thread_id}/reply` before approved sends use the live channel manager.
-  Email/WhatsApp inbox transport remains deferred until their live send seams are proven.
 - **Finance / Health / Knowledge / Family**: base mode switching is plugin-gated. Finance reads saved
   watchlist/payments and keeps `balance` mock payloads as SEED; Health waits for the Apple Health LAN
-  bridge; Knowledge waits for configured websearch backend; Family waits for WhatsApp bridge/frigga
-  live data.
+  bridge; Knowledge waits for configured websearch backend; Family has no live source
+  (the WhatsApp bridge plugin was removed on 2026-11-25).
 - **Dossier**: wire to `/api/agents/{id}/soul` + `/memory/{id}` + run history `/api/agents/{id}/history`
   (currently reads the `DOSSIER` mock).
 

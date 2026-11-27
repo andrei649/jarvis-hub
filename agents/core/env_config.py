@@ -338,7 +338,7 @@ def env_json_object(name: str, default: dict | None = None) -> dict:
 def env_int_map(name: str, default: dict[str, int] | None = None) -> dict[str, int]:
     """Best-effort ``key:int`` map: bad entries are skipped, never raised.
 
-    Format is a comma-separated list such as ``"whatsapp:10,teams:30"``.
+    Format is a comma-separated list such as ``"telegram:10,voice:30"``.
     Whitespace is ignored around keys and values; blank keys, missing separators,
     and non-integer values are omitted. A fresh dict is returned every time.
     """
@@ -392,7 +392,7 @@ HUB_ENV_SUFFIXES = frozenset({
     "COMFYUI_CHECKPOINTS", "COMFYUI_URL", "COMPANY_MODE", "CONTAINER", "CORS_ORIGINS", "CSP",
     "DEEP_MODEL", "DESKTOP_HOST", "DESKTOP_ISOLATED", "DEVICE_ID", "DEVICE_LABEL", "DISABLE_CSP", "DRIVE_AI_DEST",
     "DRIVE_AI_FLAGS", "DRIVE_AI_INDEX", "DRIVE_AI_MODE", "DRIVE_AI_REMOTE", "DRIVE_AI_SYNC",
-    "E2E_SYNC", "E2E_SYNC_DIR", "E2E_SYNC_KEY", "EMAIL_REPLY_MAX_PER_HOUR", "ENV", "ENVIRONMENT_HINT", "EVAL_LIVE",
+    "E2E_SYNC", "E2E_SYNC_DIR", "E2E_SYNC_KEY", "ENV", "ENVIRONMENT_HINT", "EVAL_LIVE",
     "EVAL_LIVE_MIN_SCORE", "EVAL_LIVE_MODEL", "EVAL_LIVE_URL", "EVAL_STORE", "EXEC_TEMP_DIR",
     "FAULT_INJECT", "FILE_MAX_BYTES", "FILE_ROOTS", "FILE_TOOLS", "FORGET_ARCHIVE_DIR",
     "FORGET_ARCHIVE_KEEP", "HARDENED",
@@ -428,12 +428,10 @@ HUB_ENV_SUFFIXES = frozenset({
     "TERMINAL_TIMEOUT_S", "TESTING", "TLS_INSECURE_TARGETS", "TOKEN_KEY", "TRUSTED_PROXIES", "TZ",
     "TRUSTED_PROXY", "UNIFIED_ACTION_API", "USER_HOME", "USER_TOKEN", "VIDEO_ANALYSIS", "VIDEO_PROVIDER",
     "VOICE_COMMANDS", "VOICE_COMMAND_TIMEOUT_S", "VRAM_RESERVE_MB", "VRAM_TOTAL_MB", "WASM_PYTHON",
-    "WEBHOOK_CHANNELS", "WEB_BACKEND", "WEB_BLOCKED_DOMAINS", "WEB_PROVIDER_TIER", "WEB_RESCUE",
+    "WEB_BACKEND", "WEB_BLOCKED_DOMAINS", "WEB_PROVIDER_TIER", "WEB_RESCUE",
     "WORKFLOW_PERSIST", "WRITEBACK_LIVE",
-    # G16: channel media delivery (H070) and the SMS channel (H098).
+    # G16: channel media delivery (H070).
     "MEDIA_DELIVERY_DIRS", "MEDIA_DELIVERY_MAX_BYTES",
-    "SMS_ACCOUNT_SID", "SMS_ALLOWED_NUMBERS", "SMS_AUTH_TOKEN", "SMS_ENABLED", "SMS_FROM_NUMBER",
-    "SMS_REPLY_MAX_PER_HOUR", "SMS_WEBHOOK_URL",
     # G21: the owner's HUD file browser (H142).
     "FILE_BROWSER_DIRS", "FILE_BROWSER_MAX_BYTES",
     # G17: owner event hooks (H163/H021/H514/H408).

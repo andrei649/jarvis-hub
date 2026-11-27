@@ -101,15 +101,9 @@ def test_heartbeat_imports():
 def test_channels_import():
     from core.channels.voice import VoiceChannel
     from core.channels.telegram import TelegramChannel
-    from core.channels.discord import DiscordChannel
-    from core.channels.email import EmailChannel
-    from core.channels.slack import SlackChannel
     from core.channels.base import ChannelAdapter
     assert VoiceChannel is not None
     assert TelegramChannel is not None
-    assert DiscordChannel is not None
-    assert EmailChannel is not None
-    assert SlackChannel is not None
     assert ChannelAdapter is not None
 
 

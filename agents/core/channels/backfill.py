@@ -1,13 +1,11 @@
 """backfill.py — catching up on what was sent while the hub was not listening, within bounds (H116).
 
-Telegram keeps undelivered updates for a day and ntfy caches messages for hours, but the hub
-kept its read position only in memory: after a restart Telegram re-sent whatever it had not
-seen confirmed (including an update the hub had already answered, so a crash between the
-answer and the next poll answered it twice), and ntfy subscribed from "now", losing every
-message sent during the gap.
+Telegram keeps undelivered updates for a day, but the hub kept its read position only in
+memory: after a restart Telegram re-sent whatever it had not seen confirmed (including an
+update the hub had already answered, so a crash between the answer and the next poll
+answered it twice).
 
-Now each channel persists its read position (Telegram's update offset, ntfy's last message
-time and ids) in the reliability store and resumes from it. What comes back — after a
+Now the channel persists its read position (Telegram's update offset) in the reliability store and resumes from it. What comes back — after a
 restart, and after an outage while running — is a **backfill**: messages dated before the
 moment the channel was reading again (the *cutoff*, compared at whole-second precision, the
 precision the platforms date messages with). A backfill is bounded and gated:
@@ -26,10 +24,9 @@ precision the platforms date messages with). A backfill is bounded and gated:
 * A message older than the window (``JARVIS_CHANNEL_BACKFILL_WINDOW_S``, 6 h by default)
   is skipped; so is everything past the budget (``JARVIS_CHANNEL_BACKFILL_MAX``, 20
   messages per catch-up). Telegram reads the whole backlog first and keeps the **newest**
-  20 overall; ntfy streams its cache in order and keeps the **earliest** 20 of each
-  connection. ``0`` for either turns backfill off: old messages are then all skipped.
+  20 overall. ``0`` for either turns backfill off: old messages are then all skipped.
 * Inbound is **at most once**: the position is saved as each update is taken, before it is
-  handled, and ntfy ids already taken are remembered across restarts. A message whose turn
+  handled. A message whose turn
   was still queued when the process died is not re-run (an action is never replayed); the
   owner sends it again.
 
@@ -129,7 +126,7 @@ class BackfillBudget:
         return True
 
     def admit(self, sent_at, now: float) -> bool:
-        """In order (ntfy): within the window and the budget; counts what it refuses."""
+        """In order: within the window and the budget; counts what it refuses."""
         if not self.fresh(sent_at, now):
             return False
         if self.processed >= self.limit:

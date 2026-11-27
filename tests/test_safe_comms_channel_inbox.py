@@ -18,7 +18,6 @@ from agents.core.autonomy.queue import TaskQueue, TaskStatus
 from agents.core.autonomy.worker import AutonomyWorker
 from agents.core.channel_inbox import ChannelInboxStore
 from agents.core.channel_reply import ChannelReplyBroker
-from agents.core.channels.email import EmailChannel
 from agents.core.channels.gateway import Gateway
 from agents.core.channels.manager import ChannelManager
 from agents.core.kernel import Decision, Verdict
@@ -108,19 +107,13 @@ def test_channel_reply_request_reaches_decision_inbox(tmp_path, monkeypatch):
     assert task.payload["reply"] == {"chat_id": 99}
     assert any(t.id == task.id for t in queue.pending_decisions())
 
-    # Email remains governed by the same action boundary: a kernel DENY blocks
-    # before an executor or SMTP transport can be reached.
-    email = inbox.record_inbound(
-        "email",
-        "please answer",
-        sender="ana@example.com",
-        metadata={"from_addr": "ana@example.com", "subject": "Ping"},
-    )
+    # The same action boundary governs every reply: a kernel DENY blocks before an
+    # executor or a transport can be reached.
     monkeypatch.setattr("agents.core.kernel.kernel_enabled", lambda: True)
     denied = ChannelReplyBroker(
         inbox=inbox,
         kernel=lambda action: Decision(Verdict.DENY, reason="policy_denied"),
-    ).request(email["thread_id"], "do not send")
+    ).request(inbound["thread_id"], "do not send")
     assert denied["ok"] is False
     assert denied["reason"] == "policy_denied"
 
@@ -160,42 +153,33 @@ async def test_approved_channel_reply_sends_and_records_outbound(tmp_path):
     assert [m["direction"] for m in messages] == ["in", "out"]
     assert messages[-1]["reply_to"] == inbound["id"]
 
-    # Registering EmailChannel must NOT make the generic inbound-response path
-    # capable of SMTP. Only the governed ChannelReplyBroker executor can use the
-    # dedicated reply transport.
-    smtp = []
-    email_channel = EmailChannel(smtp_config={"host": "smtp.local", "from": "jarvis@local"})
-    email_channel._smtp_send = lambda msg, to_addr: smtp.append((msg, to_addr))
-    manager.register(email_channel)
-    assert await manager.send(
-        "email", "must not send", to="ana@example.com", subject="Ping"
-    ) is False
-    assert smtp == []
+    # A removed platform fails closed at every seam, even with an adapter registered
+    # under its name: the inbox does not store it, the generic send and the governed
+    # reply transport refuse it, and an approved task written for it is blocked.
+    class FakeRemoved(FakeTelegram):
+        channel_id = "email"
 
-    email_inbound = inbox.record_inbound(
-        "email",
-        "hello",
-        sender="ana@example.com",
-        metadata={"from_addr": "ana@example.com", "subject": "Ping"},
-    )
-    email_task = SimpleNamespace(payload={
-        "thread_id": email_inbound["thread_id"],
-        "message_id": email_inbound["id"],
-        "channel": "email",
-        "text": "calendar is clear",
-        "reply": {"to": "ana@example.com", "subject": "Ping"},
-    })
-    email_out = await broker.execute(email_task)
-    assert email_out["status"] == "ok"
-    assert len(smtp) == 1
-    assert smtp[0][1] == "ana@example.com"
-    assert smtp[0][0]["Subject"] == "Ping"
+    removed = FakeRemoved()
+    manager.register(removed)
+    assert inbox.record_inbound("email", "hello", sender="ana@example.com",
+                                metadata={"to": "ana@example.com"}) is None
+    assert await manager.send("email", "must not send", to="ana@example.com") is False
+    assert await manager.send_channel_reply("email", "must not send", to="ana@example.com") is False
+    for channel, reply in (("email", {"to": "ana@example.com"}), ("slack", {"slack_channel": "C1"}),
+                           ("discord", {"channel_id": "123"}), ("sms", {"sms_to": "+15551234567"}),
+                           ("ntfy", {"ntfy_topic": "home", "ntfy_context": "a" * 64})):
+        stale = SimpleNamespace(payload={"thread_id": f"{channel}:abc", "message_id": "m1",
+                                         "channel": channel, "text": "x", "reply": reply})
+        assert await broker.execute(stale) == {
+            "status": "blocked", "reason": "unsupported_channel", "channel": channel}
+    prompt = SimpleNamespace(payload={**task.payload, "native_prompt": {"sender": "42", "expires_at": None}})
+    assert (await broker.execute(prompt))["reason"] == "invalid_native_prompt"
+    assert removed.sent == [] and len(fake.sent) == 1
 
 
 @pytest.mark.parametrize("channel,reply", [
     ("telegram", {"chat_id": 99}),
-    ("slack", {"slack_channel": "C1", "thread_ts": "100.001"}),
-    ("discord", {"channel_id": "123"}),
+    ("web", {"client_id": "c1"}),
 ])
 def test_channel_inbox_api_lists_threads_messages_and_status(monkeypatch, tmp_path, channel, reply):
     from agents import web
@@ -220,8 +204,7 @@ def test_channel_inbox_api_lists_threads_messages_and_status(monkeypatch, tmp_pa
 
 @pytest.mark.parametrize("channel,reply", [
     ("telegram", {"chat_id": 99}),
-    ("slack", {"slack_channel": "C1", "thread_ts": "100.001"}),
-    ("discord", {"channel_id": "123"}),
+    ("web", {"client_id": "c1"}),
 ])
 def test_channel_inbox_reply_api_enqueues_governed_reply(monkeypatch, tmp_path, channel, reply):
     from agents import web

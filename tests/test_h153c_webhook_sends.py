@@ -42,7 +42,7 @@ from tests.test_h153b_webhook_delivery import (  # noqa: F401  (receiver is a fi
     receiver,
 )
 
-CHANNELS = ("telegram", "voice", "ntfy")
+CHANNELS = ("telegram", "voice")
 
 
 def _at(hour: int) -> float:
@@ -112,9 +112,7 @@ def test_each_offered_channel_receives_the_reply(owner, channel):
     assert reply.json()["delivery"] == {"channel": channel, "ok": True}
     assert [name for name, adapter in adapters.items() if adapter.sent] == [channel]
     sent = adapters[channel].sent
-    if channel == "ntfy":                   # a native title, the text as written
-        assert sent == [{"text": "done", "title": "Webhook ci - check_run", "plain": True}]
-    elif channel == "telegram":             # the owner's chat, as plain text, never spoken
+    if channel == "telegram":               # the owner's chat, as plain text, never spoken
         assert sent == [{"text": "Webhook ci - check_run\n\ndone", "chat_id": 4242, "plain": True, "voice": False}]
     else:                                   # ChannelManager hands the voice adapter the text alone
         assert sent == [{"text": "Webhook ci - check_run\n\ndone"}]
@@ -145,7 +143,7 @@ def test_web_is_not_offered_because_nothing_in_the_hub_receives_it(hub):
     from agents.core import webhooks
 
     client, _events, _turns = hub
-    assert webhooks.DELIVER_CHOICES == ("log", "telegram", "voice", "ntfy")
+    assert webhooks.DELIVER_CHOICES == ("log", "telegram", "voice")
     refused = client.post("/api/webhooks", json={"target": "jarvis", "deliver": "web"}, headers=_ADMIN)
     assert refused.status_code == 422 and "no receiver" in refused.text
     hook = _hook(client)
@@ -155,12 +153,13 @@ def test_web_is_not_offered_because_nothing_in_the_hub_receives_it(hub):
 
 
 @pytest.mark.parametrize("destination, reason", [
-    ("email", "email is never an outbound side effect of an inbound delivery"),
+    ("email", "email is not a channel of this hub"),
+    ("ntfy", "ntfy is not a channel of this hub"),
     ("github_comment", "governed write-back"),
-    ("discord", "Discord is a reply-only transport here"),
-    ("slack", "Slack is a reply-only transport here"),
+    ("discord", "Discord is not a channel of this hub"),
+    ("slack", "Slack is not a channel of this hub"),
     ("web", "the HUD has no receiver for a pushed message"),
-    ("pigeon", "deliver is one of log, telegram, voice, ntfy"),
+    ("pigeon", "deliver is one of log, telegram, voice"),
 ])
 def test_a_refused_destination_says_why(hub, destination, reason):
     client, _events, _turns = hub
@@ -180,26 +179,10 @@ def test_the_schema_names_the_destinations():
 
     schemas = web.app.openapi()["components"]["schemas"]
     for name in ("WebhookCreateBody", "WebhookUpdateBody"):
-        assert schemas[name]["properties"]["deliver"]["enum"] == ["log", "telegram", "voice", "ntfy"]
+        assert schemas[name]["properties"]["deliver"]["enum"] == ["log", "telegram", "voice"]
 
 
 # ── what the owner sees ──────────────────────────────────────────────────────────
-
-@pytest.mark.parametrize("name, body, headers, starts", [
-    ("Alertă build " + "x" * 90, {"text": "hi"}, {"X-GitHub-Event": "deployment_status." + "y" * 50},
-     "Webhook Alerta build xxx"),
-    ("ci", {"text": "hi", "event": "déploiement · fini"}, {}, "Webhook ci - deploiement ? fini"),
-    ("n" * 80, {"text": "hi"}, {"X-GitHub-Event": "e" * 28 + " tail"}, "Webhook " + "n" * 80 + " - " + "e" * 28),
-])
-def test_an_ntfy_title_is_printable_ascii_whatever_the_hook_and_event_are_called(owner, name, body, headers,
-                                                                                  starts):
-    (client, _events, _turns), adapters = owner
-    hook = _hook(client, name=name, deliver="ntfy")
-    reply = _post(client, hook, body, **headers)
-    assert reply.json()["delivery"] == {"channel": "ntfy", "ok": True}
-    title = adapters["ntfy"].sent[0]["title"]
-    assert title.isascii() and title.isprintable() and len(title) <= 120 and title == title.strip()
-    assert title.startswith(starts)
 
 
 def test_a_senders_link_arrives_with_its_address_never_as_markup(owner):
@@ -346,15 +329,15 @@ def test_a_delivery_record_that_cannot_be_saved_does_not_fail_the_delivery(owner
     from agents.core.routers import webhooks as router
 
     (client, _events, _turns), adapters = owner
-    hook = _hook(client, deliver="ntfy")
+    hook = _hook(client, deliver="voice")
 
     def disk_full(*args, **kwargs):
         raise OSError("disk full")
 
     monkeypatch.setattr(router._webhook_store, "mark_delivered", disk_full)
     reply = _post(client, hook, {"text": "hi"})
-    assert reply.status_code == 200 and reply.json()["delivery"] == {"channel": "ntfy", "ok": True}
-    assert len(adapters["ntfy"].sent) == 1
+    assert reply.status_code == 200 and reply.json()["delivery"] == {"channel": "voice", "ok": True}
+    assert len(adapters["voice"].sent) == 1
 
 
 def test_a_turn_that_raises_is_recorded_on_the_hook(owner, monkeypatch):
@@ -437,15 +420,16 @@ def test_a_hook_pushes_at_most_its_hourly_limit(owner, monkeypatch):
     assert webhooks.PUSH_LIMIT == 30
     now = {"t": 1_000.0}
     monkeypatch.setattr(webhooks, "PUSHES", webhooks.PushLimit(limit=2, window=3_600, clock=lambda: now["t"]))
-    loud = _hook(client, name="loud", deliver="ntfy", deliver_only=True)
-    other = _hook(client, name="other", deliver="ntfy", deliver_only=True)
+    loud = _hook(client, name="loud", deliver="voice", deliver_only=True)
+    other = _hook(client, name="other", deliver="voice", deliver_only=True)
     answers = [_post(client, loud, {"text": f"n{i}"}).json()["delivery"] for i in range(3)]
     assert [answer["ok"] for answer in answers] == [True, True, False]
     assert answers[2]["reason"] == "over this hook's push limit (2 an hour): not pushed; the text was not kept"
     assert _post(client, other, {"text": "mine"}).json()["delivery"]["ok"] is True      # each hook its own
     now["t"] += 3_601
     assert _post(client, loud, {"text": "later"}).json()["delivery"]["ok"] is True
-    assert [sent["text"] for sent in adapters["ntfy"].sent] == ["n0", "n1", "mine", "later"]
+    # voice carries the subject as the first line; the pushed text follows it
+    assert [sent["text"].split("\n\n", 1)[1] for sent in adapters["voice"].sent] == ["n0", "n1", "mine", "later"]
 
 
 # ── a change during the turn reaches the push ────────────────────────────────────
@@ -482,7 +466,7 @@ def test_a_switch_thrown_during_the_turn_stops_the_push(owner, receiver, monkeyp
         assert _listed(client, hook["id"])["last_delivery"]["reason"] == reason
 
 
-@pytest.mark.parametrize("now_to", ["ntfy", "log"])
+@pytest.mark.parametrize("now_to", ["voice", "log"])
 def test_the_push_goes_where_the_hook_says_when_it_is_sent(owner, monkeypatch, now_to):
     from agents.core.app_state import get_orch
     from agents.core.routers import webhooks as router
@@ -498,7 +482,8 @@ def test_the_push_goes_where_the_hook_says_when_it_is_sent(owner, monkeypatch, n
     reply = _post(client, hook, {"text": "hi"})
     assert reply.json()["delivery"] == {"channel": now_to, "ok": True}
     assert adapters["telegram"].sent == []
-    assert [sent["text"] for sent in adapters["ntfy"].sent] == (["summary"] if now_to == "ntfy" else [])
+    assert [sent["text"] for sent in adapters["voice"].sent] == (
+        ["Webhook jarvis\n\nsummary"] if now_to == "voice" else [])
 
 
 def test_a_switch_off_that_lands_during_the_second_receiver_read_stops_the_delivery(hub, monkeypatch):
@@ -849,16 +834,16 @@ def test_a_hand_edited_deliver_only_that_is_not_literally_true_runs_the_agent(ow
     from agents.core.routers import webhooks as router
 
     (client, _events, turns), adapters = owner
-    hook = _hook(client, deliver="ntfy")
+    hook = _hook(client, deliver="voice")
     router._webhook_store._hooks[hook["id"]]["deliver_only"] = "yes"
     _post(client, hook, {"text": "hi"})
-    assert turns == ["hi"] and adapters["ntfy"].sent[0]["text"] == "done"
+    assert turns == ["hi"] and adapters["voice"].sent[0]["text"] == "Webhook jarvis\n\ndone"
 
 
 @pytest.mark.parametrize("value", ["yes", 1, "true"])
 def test_create_takes_deliver_only_as_a_real_boolean(hub, value):
     client, _events, _turns = hub
-    body = {"target": "jarvis", "deliver": "ntfy", "deliver_only": value}
+    body = {"target": "jarvis", "deliver": "voice", "deliver_only": value}
     assert client.post("/api/webhooks", json=body, headers=_ADMIN).status_code == 422
 
 
@@ -875,8 +860,8 @@ def test_a_hand_edited_last_delivery_that_is_not_a_record_is_not_listed(tmp_path
     rec = store.create("jarvis")
     store._hooks[rec["id"]]["last_delivery"] = "delivered, trust me"
     assert "last_delivery" not in store.list()[0]
-    store.mark_delivered(rec["id"], "ntfy", True)
-    assert store.list()[0]["last_delivery"]["channel"] == "ntfy"
+    store.mark_delivered(rec["id"], "voice", True)
+    assert store.list()[0]["last_delivery"]["channel"] == "voice"
 
 
 def test_a_delivery_reason_is_one_bounded_line(tmp_path):
@@ -896,6 +881,6 @@ def test_a_save_that_fails_undoes_a_destination_change(tmp_path, monkeypatch):
 
     monkeypatch.setattr(store, "_save", disk_full)
     with pytest.raises(OSError):
-        store.update(rec["id"], deliver="ntfy", deliver_only=True, description="changed")
+        store.update(rec["id"], deliver="voice", deliver_only=True, description="changed")
     kept = store.get(rec["id"])
     assert (kept["deliver"], kept["deliver_only"], kept["description"]) == ("telegram", False, "builds")

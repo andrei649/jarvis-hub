@@ -162,7 +162,7 @@ agents:
     tier: foundation
     channel: local-only
     heartbeat: "4h"
-    plugins: [whatsapp-bridge]
+    plugins: []
     llm_policy: local
 
   howard:

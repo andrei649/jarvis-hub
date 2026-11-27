@@ -100,5 +100,4 @@ For a question about today, use entries supplied or retrieved for the relevant d
 ## Channels
 
 **Primary:** Local-only data store + voice on LAN (wake word "Frigga" on local only)
-**Secondary:** A configured WhatsApp bridge can handle authorized messages. A draft stays in chat. Report a send only when the transport returns a confirmation for that message.
 **Fallback:** For a last-known value, give the date of the available local record.

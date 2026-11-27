@@ -46,12 +46,12 @@ describe('RunningFoot', () => {
 
   it('shows running channels, the active sessions and the version', () => {
     render(<RunningFoot lang="en" demo={false} turns={[]} hub={hubWith({ chrome: chrome({
-      version: '1.4.0', gateway: { state: 'running', running: ['discord', 'telegram'], running_count: 2, total: 3 },
+      version: '1.4.0', gateway: { state: 'running', running: ['telegram', 'voice'], running_count: 2, total: 3 },
       sessions: { active: 5, window_s: 900, state: 'known' },
     }) })} />);
     expect(part('gateway')?.getAttribute('data-state')).toBe('running');
     expect(part('gateway')?.textContent).toContain('2 of 3 running');
-    expect(part('gateway')?.getAttribute('title')).toBe('discord, telegram');
+    expect(part('gateway')?.getAttribute('title')).toBe('telegram, voice');
     expect(sessionsLong()).toBe('5 sessions in the last 15 min');
     expect(sessionsShort()).toBe('5 sessions');
     expect(part('sessions')?.getAttribute('title')).toBe('5 sessions in the last 15 min');
@@ -60,7 +60,7 @@ describe('RunningFoot', () => {
 
   it('draws the channels at every width: whole from 2200px, a compact reading below it (status chrome H133)', () => {
     render(<RunningFoot lang="en" demo={false} turns={[]} hub={hubWith({ chrome: chrome({
-      version: '1.4.0', gateway: { state: 'running', running: ['discord'], running_count: 1, total: 1 },
+      version: '1.4.0', gateway: { state: 'running', running: ['telegram'], running_count: 1, total: 1 },
       sessions: { active: 2, window_s: 900, state: 'known' },
     }) })} />);
     const channels = document.querySelector('[data-runfoot="channels"]') as HTMLElement;

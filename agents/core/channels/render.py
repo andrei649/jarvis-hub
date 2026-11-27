@@ -26,7 +26,6 @@ from collections.abc import Callable
 from .descriptor import (
     DIALECT_MARKDOWN,
     DIALECT_PLAIN,
-    DIALECT_SLACK_MRKDWN,
     DIALECT_TELEGRAM_HTML,
     ChannelDescriptor,
 )
@@ -138,50 +137,14 @@ def to_plain(text: str) -> str:
     return "\n".join(parts)
 
 
-def _inline_mrkdwn(text: str) -> str:
-    """One paragraph of Slack-escaped prose → mrkdwn with balanced markers only."""
-    codes: list[str] = []
-
-    def _stash(match: re.Match) -> str:
-        codes.append(f"`{match.group(1)}`")
-        return _CODE_PLACEHOLDER.format(len(codes) - 1)
-
-    out = _INLINE_CODE_RE.sub(_stash, text)
-    out = _LINK_RE.sub(lambda m: f"<{m.group(2)}|{m.group(1)}>", out)
-    # Italic before bold: once ``**b**`` has become ``*b*`` it must not be read as italic.
-    out = _ITALIC_RE.sub(r"_\1_", out)
-    out = _BOLD_RE.sub(r"*\1*", out)
-    out = _BOLD_UNDERSCORE_RE.sub(r"*\1*", out)
-    lines = []
-    for line in out.split("\n"):
-        heading = _heading(line)
-        lines.append(f"*{heading.group(2)}*" if heading else line)
-    out = "\n".join(lines)
-    return _restore_codes(out, codes)
-
-
-def to_slack_mrkdwn(text: str) -> str:
-    """Markdown-ish reply → Slack ``mrkdwn`` (``*bold*``, ``_italic_``, ``<url|text>``,
-    ``&amp; &lt; &gt;`` escaped in prose and code alike)."""
-    parts: list[str] = []
-    for is_code, block in _split_fences(str(text or "")):
-        escaped = block.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        if is_code:
-            parts.append("```\n" + escaped + "\n```")
-        else:
-            parts.append(_inline_mrkdwn(escaped))
-    return "\n".join(part for part in parts if part)
-
-
 def to_markdown(text: str) -> str:
-    """A channel that renders Markdown itself (Discord) gets the source as it is."""
+    """A channel that renders Markdown itself gets the source as it is."""
     return str(text or "")
 
 
 RENDERERS: dict[str, Callable[[str], str]] = {
     DIALECT_PLAIN: to_plain,
     DIALECT_TELEGRAM_HTML: to_telegram_html,
-    DIALECT_SLACK_MRKDWN: to_slack_mrkdwn,
     DIALECT_MARKDOWN: to_markdown,
 }
 
@@ -269,5 +232,5 @@ def render_outbound(text: str, descriptor: ChannelDescriptor) -> list[str]:
 
 __all__ = [
     "RENDERERS", "chunk", "render", "render_outbound", "to_markdown", "to_plain",
-    "to_slack_mrkdwn", "to_telegram_html",
+    "to_telegram_html",
 ]

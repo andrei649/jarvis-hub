@@ -31,7 +31,7 @@ import pytest
 from agents import web
 from agents.cli.client import HubError
 from agents.cli.nerva import EXIT_FAILED, EXIT_OK, Context, main
-from tests.test_ntfy_inbound import until
+from tests.support.waiting import until
 from tests.test_pending_input_web import stream_host
 
 SECRET_VALUE = "sk-h226-synthetic-VALUE-0042"

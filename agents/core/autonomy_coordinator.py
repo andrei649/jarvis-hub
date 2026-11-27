@@ -223,8 +223,8 @@ class AutonomyCoordinator:
 
         H34.2: the Telegram notifier is wrapped in an ``AwayNotifier`` so that,
         when the owner is away from the desk (``owner_presence.is_away()``), the
-        same decision card is ALSO fanned out to the governed escalation channels
-        (WhatsApp / Signal / …). That wrap runs *inside* the worker's single
+        same decision card is ALSO fanned out to the governed escalation channels.
+        That wrap runs *inside* the worker's single
         budget-gated push, so away-notify stays within the same ≤4/day interrupt
         budget; Telegram is excluded from the away fan-out to avoid a duplicate
         plain-text card on the channel that already got the rich one.
@@ -2413,9 +2413,6 @@ class AutonomyCoordinator:
                 channel_manager=getattr(self._orch, "channel_manager", None),
                 audit=getattr(self._orch, "audit", None),
                 kernel=_broker_kernel,
-                task_reader=getattr(getattr(self._orch, "autonomy_queue", None), "get", None),
-                discord_media_owner=lambda sender, channel_id: self._orch._channel_principal(
-                    "discord", sender, channel_id, "private").admin is True,
             ),
         )
         executor.register("channel.reply", self._orch.channel_replies.execute)

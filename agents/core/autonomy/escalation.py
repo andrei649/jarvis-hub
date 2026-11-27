@@ -2,7 +2,7 @@
 escalation.py — H12.11 Extended escalation channels.
 
 Escalations (decision cards, alerts) can be delivered beyond Telegram — to any
-configured channel adapter (WhatsApp / Signal / Slack / Discord / email / …) —
+configured channel adapter —
 but **governed**: only channels on the allowlist receive escalations, delivery is
 best-effort, and a plain channel-agnostic message is rendered (vs the
 Telegram-markdown card). The channel adapters already exist (ChannelAdapter).
@@ -144,7 +144,7 @@ class AwayNotifier:
 
     Wraps a *base* notifier (the Telegram decision-inbox card) so that, when the
     owner is **away from the desk**, the same card is ALSO fanned out to the
-    governed escalation channels (WhatsApp / Telegram / …) — because the owner
+    governed escalation channels — because the owner
     isn't watching a screen. When the owner is present / idle / unknown, only the
     base notifier runs and behavior is unchanged (calm by default).
 

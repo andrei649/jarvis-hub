@@ -17,7 +17,6 @@ from agents.core.commands import (
     CommandRegistry,
     SlashCommand,
     build_default_registry,
-    rewrite_bang,
     telegram_menu,
 )
 
@@ -63,24 +62,6 @@ async def test_an_alias_is_judged_as_its_canonical_command(registry):
     guest = Principal(channel="telegram", sender="9", admin=False)
     outcome = await registry.dispatch("/estop now", orch=None, principal=guest)
     assert outcome is not None and outcome.name == "pause" and outcome.status != "answered"
-
-
-@pytest.mark.parametrize("channel, text, expected", [
-    ("slack", "!status", "/status"),
-    ("slack", "  !estop  now", "/estop  now"),
-    ("matrix", "!h", "/h"),
-    ("slack", "!nonsense here", "!nonsense here"),        # unknown: a message, not a command
-    ("slack", "!!status", "!!status"),
-    ("slack", "wow! status", "wow! status"),
-    ("telegram", "!status", "!status"),                   # only where / does not reach the bot
-    ("discord", "!status", "!status"),
-])
-def test_bang_prefix(registry, channel, text, expected):
-    assert rewrite_bang(text, registry, channel) == expected
-
-
-def test_bang_without_a_registry_is_inert():
-    assert rewrite_bang("!status", None, "slack") == "!status"
 
 
 def test_telegram_menu_projection(registry):
@@ -198,36 +179,3 @@ def test_the_default_menu_is_what_a_guest_may_run(registry, monkeypatch):
     for scope in ("dm", "group"):
         visible = {c.name for c in registry.visible(Principal(channel="telegram", admin=False, scope=scope))}
         assert shown <= visible
-
-
-@pytest.mark.asyncio
-async def test_an_observed_group_message_is_stored_as_written():
-    from agents.core.orchestrator import Orchestrator
-
-    seen = []
-
-    class _Stop(Exception):
-        pass
-
-    orch = Orchestrator.__new__(Orchestrator)
-    orch.commands = build_default_registry()
-    orch._channel_principal = lambda *a, **k: (_ for _ in ()).throw(_Stop())
-
-    def principal(channel, sender, chat, kind):
-        seen.append("principal")
-        raise _Stop
-
-    orch._channel_principal = principal
-    orch._principal_chat_type = lambda channel, kwargs: "group"
-    import agents.core.commands as commands_module
-
-    calls = []
-    original = commands_module.rewrite_bang
-    commands_module.rewrite_bang = lambda text, reg, channel: calls.append(text) or original(text, reg, channel)
-    try:
-        for observe in (True, False):
-            with pytest.raises(_Stop):
-                await orch.channel_handler("!status", channel="slack", observe_only=observe, sender="U1")
-    finally:
-        commands_module.rewrite_bang = original
-    assert calls == ["!status"]          # rewritten only for the answered message

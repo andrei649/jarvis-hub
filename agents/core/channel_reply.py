@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import json
 import logging
-import math
-import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
 
 from .automation_contracts import (
     ContractTemplate,
@@ -22,49 +16,13 @@ from .automation_contracts import (
 from .autonomy.dry_run import preview_task
 from .channel_inbox import SUPPORTED_INBOX_CHANNELS, ChannelInboxStore
 from .channels.ephemeral import EphemeralReply, ephemeral_ttl
-from .channels.pending_input_workspace import (
-    pack_markup,
-    receipt_matches,
-    unpack_markup,
-    valid_markup,
-)
-from .env_config import env_int
 
 logger = logging.getLogger("jarvis.channel_reply")
 
 CHANNEL_REPLY_CONTRACT_KIND = "channel_reply"
 CHANNEL_REPLY_TASK_KIND = "channel.reply"
 _RISK_TIER = 2
-#: G16 (H098): an SMS reply costs money per message, so it is the irreversible/money tier
-#: (3): the policy answers ASK at that tier in every mode, and the kernel can only QUEUE it.
-_SMS_RISK_TIER = 3
-_SMS_REPLY_DEFAULT_MAX_PER_HOUR = 10
-_E164 = re.compile(r"\+[1-9][0-9]{6,14}")
 _TEXT_CAP = 4_000
-# STAB-4 (#933): governed email replies are capped per recipient. The cap is
-# enforced in ChannelReplyBroker.execute, immediately before SMTP, never at
-# request/queue time — a queued draft is not a send.
-_EMAIL_REPLY_WINDOW_SECONDS = 3600.0
-_EMAIL_REPLY_DEFAULT_MAX_PER_HOUR = 10
-_PROMPT_TEXT_CAP = 80_000
-_PROMPT_CONTENT_BYTES = 2 * 1024 * 1024
-_PROMPT_CONTENT_TOTAL = 32 * 1024 * 1024
-
-
-@dataclass
-class _PromptDelivery:
-    future: asyncio.Future
-    current: Callable
-    deadline: float | None
-    payload: dict | None = None
-    content: bytes | None = None
-
-    def live(self):
-        try:
-            return (not self.future.done() and self.current() is True
-                    and (self.deadline is None or time.monotonic() < self.deadline))
-        except Exception:
-            return False
 
 
 def _contract_template() -> ContractTemplate:
@@ -80,68 +38,17 @@ def _contract_template() -> ContractTemplate:
             return "chat_id" in reply
         if channel == "web":
             return "client_id" in reply
-        if channel == "email":
-            return "to" in reply
-        if channel == "slack":
-            target = reply.get("slack_channel")
-            thread = reply.get("thread_ts")
-            return (
-                isinstance(target, str)
-                and re.fullmatch(r"[A-Za-z0-9_-]{1,200}", target) is not None
-                and (thread is None or (
-                    isinstance(thread, str)
-                    and re.fullmatch(r"[0-9]{1,20}\.[0-9]{1,10}", thread) is not None
-                ))
-            )
-        if channel == "discord":
-            target = reply.get("channel_id")
-            return (
-                isinstance(target, (str, int)) and not isinstance(target, bool)
-                and re.fullmatch(r"[1-9][0-9]{0,19}", str(target)) is not None
-            )
-        if channel == "sms":
-            return (set(reply) == {"sms_to"} and isinstance(reply.get("sms_to"), str)
-                    and _E164.fullmatch(reply["sms_to"]) is not None)
-        if channel == "ntfy":
-            return (isinstance(reply.get("ntfy_topic"), str)
-                    and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", reply["ntfy_topic"]) is not None
-                    and isinstance(reply.get("ntfy_context"), str)
-                    and re.fullmatch(r"[a-f0-9]{64}", reply["ntfy_context"]) is not None)
         return False
-
-    def native_prompt_valid(view, now):
-        if "native_prompt" not in view:
-            return True
-        prompt = view["native_prompt"]
-        if (type(prompt) is not dict
-                or type(prompt.get("sender")) is not str or not prompt["sender"]):
-            return False
-        text_only = view.get("channel") == "ntfy" and prompt.get("mode") == "text"
-        if not text_only and view.get("channel") not in {"slack", "discord"}:
-            return False
-        fields = {"expires_at", "sender"} | ({"mode"} if text_only else set())
-        inline_fields = fields | (set() if text_only else {"buttons"})
-        if set(prompt) == inline_fields:
-            if not text_only and unpack_markup(prompt["buttons"]) is None:
-                return False
-        elif set(prompt) == fields | {"content_sha256", "content_size"}:
-            if (type(prompt["content_sha256"]) is not str
-                    or re.fullmatch(r"[a-f0-9]{64}", prompt["content_sha256"]) is None
-                    or type(prompt["content_size"]) is not int
-                    or not 0 < prompt["content_size"] <= _PROMPT_CONTENT_BYTES):
-                return False
-        else:
-            return False
-        expiry = prompt["expires_at"]
-        return (expiry is None or (type(expiry) in {int, float}
-                                  and math.isfinite(expiry) and expiry > now))
 
     return ContractTemplate(kind=CHANNEL_REPLY_CONTRACT_KIND, constraints=(
         one_of("kind", {CHANNEL_REPLY_TASK_KIND}),
         field_present("thread_id", "text"),
         predicate("supported_channel", supported_channel, reason="unsupported_channel"),
         predicate("reply_target_present", reply_target_present, reason="missing_reply_target"),
-        predicate("native_prompt_valid", native_prompt_valid, reason="invalid_native_prompt"),
+        # A task that carries a native prompt was written for a channel that no longer
+        # exists; it is refused, never sent as plain text.
+        predicate("no_native_prompt", lambda view, _now: "native_prompt" not in view,
+                  reason="invalid_native_prompt"),
         predicate("ephemeral_ttl_valid", lambda view, _now: "ephemeral_ttl" not in view or
                   (type(view["ephemeral_ttl"]) is int and 0 <= view["ephemeral_ttl"] <= 86400),
                   reason="invalid_ephemeral_ttl"),
@@ -150,299 +57,34 @@ def _contract_template() -> ContractTemplate:
 
 CHANNEL_REPLY_CONTRACT = _contract_template()
 
-_SHA256 = re.compile(r"[a-f0-9]{64}")
-_ATTACHMENT_KEYS = frozenset({"path", "name", "mime", "bytes", "sha256"})
-
-
-def _email_attachments(text: str):
-    """Split a governed reply into its words and the files its ``MEDIA:`` lines name,
-    each resolved under :mod:`channels.media_delivery` (approved folders only, no secrets,
-    bounded size). A refused file refuses the whole reply: the drafter is told why rather
-    than the owner approving a mail that silently lost an attachment."""
-    from .channels import media_delivery
-
-    words, paths = media_delivery.extract_directives(text)
-    if not paths:
-        return text, []
-    if len(paths) > media_delivery.MAX_FILES_PER_REPLY:
-        return "", f"attachment_refused:{media_delivery.REASON_TOO_MANY}"
-    files = []
-    for path in paths:
-        item = media_delivery.resolve(path)
-        if isinstance(item, media_delivery.Refusal):
-            return "", f"attachment_refused:{item.reason}"
-        files.append({"path": path, "name": item.name, "mime": item.mime,
-                      "bytes": len(item.data), "sha256": item.sha256})
-    return words, files
-
-
-def _folder(path: str) -> str:
-    import os.path
-
-    return os.path.dirname(path) or "/"
-
-
-def _human_size(size: int) -> str:
-    value = float(size)
-    for unit in ("bytes", "KB", "MB"):
-        if value < 1024 or unit == "MB":
-            return f"{int(value)} bytes" if unit == "bytes" else f"{value:.1f} {unit}"
-        value /= 1024
-    return f"{size} bytes"
-
-
-def _approved_attachments(listed):
-    """Re-resolve approved attachments before transport and require exact metadata/bytes."""
-    from .channels import media_delivery
-
-    if (not isinstance(listed, list) or not listed
-            or len(listed) > media_delivery.MAX_FILES_PER_REPLY):
-        return "attachment_binding_invalid"
-    files = []
-    for entry in listed:
-        if (not isinstance(entry, dict) or set(entry) != _ATTACHMENT_KEYS
-                or not isinstance(entry.get("path"), str)
-                or not isinstance(entry.get("sha256"), str)
-                or _SHA256.fullmatch(entry["sha256"]) is None):
-            return "attachment_binding_invalid"
-        item = media_delivery.resolve(entry["path"])
-        if isinstance(item, media_delivery.Refusal):
-            return f"attachment_refused:{item.reason}"
-        if (item.sha256 != entry["sha256"] or len(item.data) != entry.get("bytes")
-                or item.name != entry.get("name") or item.mime != entry.get("mime")):
-            return "attachment_changed"
-        files.append(item)
-    return files
-
-
-def _risk_tier(channel) -> int:
-    return _SMS_RISK_TIER if channel == "sms" else _RISK_TIER
-
-
-def _sms_reply_cap_from_env() -> int:
-    """Per-number hourly SMS reply cap (JARVIS_SMS_REPLY_MAX_PER_HOUR, default 10); junk
-    or a non-positive value keeps the default, never removes the cap."""
-    return env_int("JARVIS_SMS_REPLY_MAX_PER_HOUR", _SMS_REPLY_DEFAULT_MAX_PER_HOUR, minimum=1)
-
-
-def _normalize_email_address(value) -> str:
-    return str(value or "").strip().lower()
-
-
-def _email_reply_cap_from_env() -> int:
-    """Per-recipient hourly email-reply cap, operator-tunable, fail-safe.
-
-    JARVIS_EMAIL_REPLY_MAX_PER_HOUR, default 10. Unset / unparseable /
-    non-positive values fall back to the default rather than disabling the
-    cap — an operator typo must narrow, never remove, the STAB-4 limit.
-    Read via env_int (not a raw os.environ read) so the AUD-14 raw-env-read
-    ratchet in test_o26_p2_env_config.py does not grow: env_int with
-    minimum=1 returns the default for exactly the same junk inputs.
-    """
-    return env_int(
-        "JARVIS_EMAIL_REPLY_MAX_PER_HOUR",
-        _EMAIL_REPLY_DEFAULT_MAX_PER_HOUR,
-        minimum=1,
-    )
-
-
-class EmailReplyRateLimiter:
-    """Per-recipient sliding-window limiter for governed email replies.
-
-    Only successful sends are recorded (see ChannelReplyBroker.execute):
-    a blocked or failed attempt must not itself consume quota, and a
-    refusal must not be counted as a send.
-    """
-
-    def __init__(self, *, max_per_hour: int | None = None,
-                 window_seconds: float = _EMAIL_REPLY_WINDOW_SECONDS,
-                 now_fn=None) -> None:
-        self._cap = (max_per_hour if max_per_hour is not None
-                     else _email_reply_cap_from_env())
-        self._cap = self._cap if self._cap > 0 else _EMAIL_REPLY_DEFAULT_MAX_PER_HOUR
-        self._window = float(window_seconds)
-        self._now_fn = now_fn or time.monotonic
-        self._hits: dict[str, list[float]] = {}
-
-    @property
-    def cap(self) -> int:
-        return self._cap
-
-    def _live(self, recipient: str, now: float) -> list[float]:
-        hits = [t for t in self._hits.get(recipient, ()) if now - t < self._window]
-        self._hits[recipient] = hits
-        return hits
-
-    def blocked(self, recipient: str, *, now: float | None = None) -> bool:
-        return len(self._live(recipient, self._now_fn() if now is None else now)) >= self._cap
-
-    def record(self, recipient: str, *, now: float | None = None) -> None:
-        now = self._now_fn() if now is None else now
-        hits = self._live(recipient, now)
-        hits.append(now)
-        self._hits[recipient] = hits
-
 
 class ChannelReplyBroker:
     """Reply draft -> approval queue -> live channel send."""
 
     def __init__(self, *, inbox: ChannelInboxStore | None = None,
                  enqueue: Callable | None = None, channel_manager=None,
-                 agent: str = "veronica", audit=None, kernel=None, task_reader=None,
-                 email_allowlist=None, email_reply_max_per_hour: int | None = None,
-                 email_reply_limiter=None, discord_media_owner: Callable | None = None) -> None:
+                 agent: str = "veronica", audit=None, kernel=None) -> None:
         self._inbox = inbox or ChannelInboxStore()
         self._enqueue = enqueue
         self._channel_manager = channel_manager
         self.agent = agent
         self._audit = audit
         self._kernel = kernel
-        self._task_reader = task_reader
-        self._discord_media_owner = discord_media_owner
-        self._pending_prompts: dict[int, _PromptDelivery] = {}
-        # STAB-4 (#933) — email-only, enforced in execute() before SMTP.
-        # An explicit allowlist is an additional restriction on top of the
-        # inbound-sender binding: None means "no extra allowlist", a
-        # non-empty set means the recipient must be in it.
-        allowlist = {_normalize_email_address(a) for a in (email_allowlist or ())}
-        allowlist.discard("")
-        self._email_allowlist = frozenset(allowlist) or None
-        self._email_reply_limiter = (email_reply_limiter
-                                     or EmailReplyRateLimiter(
-                                         max_per_hour=email_reply_max_per_hour))
-        # G16 (H098): paid SMS replies, capped per number before Twilio is called.
-        self._sms_reply_limiter = EmailReplyRateLimiter(max_per_hour=_sms_reply_cap_from_env())
-
-    async def deliver_prompt(self, message_id: str, text: str, *, channel: str,
-                             sender: str, markup: dict | None, current: Callable,
-                             timeout_seconds: float | None = 3600) -> dict | bool | None:
-        """Wait for actual governed delivery, never for approval alone.
-
-        The in-process binding deliberately does not survive restart. A stale
-        durable task cannot send a question whose resolver no longer exists.
-        """
-        text_only = channel == "ntfy" and markup is None
-        if (not (text_only or (channel in {"slack", "discord"} and valid_markup(markup)))
-                or not callable(current) or len(self._pending_prompts) >= 4096
-                or type(text) is not str or not text.strip() or len(text) > _PROMPT_TEXT_CAP):
-            return None
-        if timeout_seconds is not None and (type(timeout_seconds) not in {int, float}
-                or not math.isfinite(timeout_seconds) or timeout_seconds <= 0):
-            return None
-        message = self._inbox.get_message(message_id)
-        if (not message or message.get("direction") != "in" or message.get("channel") != channel
-                or message.get("sender") != sender):
-            return None
-        future = asyncio.get_running_loop().create_future()
-        entry = _PromptDelivery(future, current, None if timeout_seconds is None
-                                else time.monotonic() + timeout_seconds)
-        task_id = None
-        try:
-            if not entry.live():
-                return None
-            result = self._request({
-                "thread_id": message["thread_id"], "last_message_id": message["id"],
-                "channel": channel, "reply": dict(message.get("reply") or {}), "from": sender,
-            }, text, agent=None, source="pending-input", pending=entry, native_prompt={
-                **({"mode": "text"} if text_only else {"buttons": pack_markup(markup)}), "sender": sender,
-                "expires_at": None if timeout_seconds is None else time.time() + timeout_seconds,
-            })
-            task_id = result.get("task_id")
-            if (result.get("ok") is not True or result.get("queued") is not True
-                    or type(task_id) is not int or task_id <= 0):
-                return None
-            while not future.done():
-                if not entry.live():
-                    return None
-                if callable(self._task_reader):
-                    queued = self._task_reader(task_id)
-                    if (queued is None or queued.payload != entry.payload
-                            or queued.status in {"rejected", "cancelled", "failed", "done"}):
-                        return None
-                await asyncio.wait({future}, timeout=0.1)
-            return future.result()
-        finally:
-            if type(task_id) is int:
-                self._pending_prompts.pop(task_id, None)
-            if not future.done():
-                future.cancel()
-
-    def close_pending_prompts(self):
-        for entry in self._pending_prompts.values():
-            if not entry.future.done():
-                entry.future.set_result(None)
-        self._pending_prompts.clear()
 
     def request(self, thread_id: str, text: str, *, agent: str | None = None,
                 source: str = "") -> dict:
         thread = self._inbox.thread(thread_id)
         if thread is None:
             return {"ok": False, "reason": "unknown_thread"}
-        if thread.get("channel") == "email":
-            # STAB-4: execute() binds an email reply to the inbound message it answers.
-            # Once a reply is sent, the thread's latest message is our own outbound, so
-            # a follow-up from the thread binds to the latest inbound email instead.
-            inbound = next((m for m in reversed(self._inbox.messages(
-                thread_id, limit=getattr(self._inbox, "max_messages", 500)))
-                if m.get("direction") == "in" and m.get("channel") == "email"), None)
-            if inbound is None:
-                return {"ok": False, "reason": "unknown_inbound_message"}
-            thread = {**thread, "last_message_id": inbound["id"],
-                      "reply": dict(inbound.get("reply") or {}),
-                      "sender_auth": inbound.get("sender_auth")}
         return self._request(thread, text, agent=agent, source=source)
 
-    def request_for_message(self, message_id: str, text: str, *, channel: str,
-                            agent: str | None = None, source: str = "") -> dict:
-        """Queue an automatic reply to the exact persisted inbound turn.
-
-        A concurrent arrival must not move the reply to the thread's latest
-        message. The gateway supplies this id after pairing and persistence.
-        """
-        message = self._inbox.get_message(message_id)
-        if (message is None or message.get("direction") != "in"
-                or message.get("channel") != channel):
-            return {"ok": False, "reason": "unknown_inbound_message"}
-        # H120: one card per provider message. A second request for the same stored turn,
-        # or for a redelivery of the same provider message (after the gateway's window,
-        # after a restart), gets the existing task instead of a second approval card.
-        existing = self._inbox.reply_task_for(message)
-        if existing is not None:
-            self._record("channel_reply.duplicate", channel, thread_id=message["thread_id"])
-            return {"ok": True, "queued": False, "duplicate": True, "task_id": existing,
-                    "kind": CHANNEL_REPLY_TASK_KIND}
-        result = self._request({
-            "thread_id": message["thread_id"],
-            "last_message_id": message["id"],
-            "channel": channel,
-            "reply": dict(message.get("reply") or {}),
-            "from": message.get("sender", ""),
-            "sender_auth": message.get("sender_auth"),
-        }, text, agent=agent, source=source)
-        if result.get("queued") and type(result.get("task_id")) is int:
-            self._inbox.mark_reply_task(message["id"], result["task_id"])
-        return result
-
-    def _discord_media_target(self, sender, channel_id) -> object | None:
-        """Recheck owner pairing and the live SDK DM, at request and at send."""
-        manager = self._channel_manager
-        adapter = getattr(manager, "channels", {}).get("discord") if manager is not None else None
-        check = getattr(adapter, "media_target_allowed", None)
-        if not callable(check) or not callable(self._discord_media_owner):
-            return None
-        try:
-            return adapter if check(sender, channel_id, self._discord_media_owner) is True else None
-        except Exception:
-            return None
-
-    def _request(self, thread: dict, text: str, *, agent: str | None, source: str,
-                 pending: _PromptDelivery | None = None, native_prompt: dict | None = None) -> dict:
+    def _request(self, thread: dict, text: str, *, agent: str | None, source: str) -> dict:
         from .action_origin import current_action_origin
         from .security.taint import mark_if_untrusted
 
         origin = current_action_origin()
         thread_id = thread["thread_id"]
-        clean_text = str(text or "").strip()[:_PROMPT_TEXT_CAP if pending else _TEXT_CAP]
+        clean_text = str(text or "").strip()[:_TEXT_CAP]
         if not clean_text:
             return {"ok": False, "reason": "missing_text"}
         payload = {
@@ -459,67 +101,12 @@ class ChannelReplyBroker:
             default = get_value("display", "ephemeral_system_ttl", 0) if text.ttl_seconds is None else 0
             # Bound transport-owned timers; zero retains the notice.
             payload["ephemeral_ttl"] = min(ephemeral_ttl(text, default=default), 86400)
-        if native_prompt is not None:
-            payload["native_prompt"] = native_prompt
-        if payload["channel"] in {"email", "discord"} and pending is None:
-            if payload["channel"] == "discord":
-                from .channels import media_delivery
-
-                # No disk read for a stranger or a group. The extractor only parses lines.
-                if media_delivery.extract_directives(clean_text)[1]:
-                    inbound = self._inbox.get_message(payload["message_id"])
-                    target = payload["reply"].get("channel_id")
-                    if (not inbound or inbound.get("direction") != "in"
-                            or inbound.get("channel") != "discord"
-                            or inbound.get("thread_id") != thread_id
-                            or inbound.get("reply") != payload["reply"]
-                            or self._discord_media_target(inbound.get("sender"), target) is None):
-                        return {"ok": False, "reason": "discord_media_owner_dm_required"}
-            # H096: `MEDIA:` lines in an email reply become attachments. Each file is
-            # resolved under the media-delivery policy NOW, and its name, size and SHA-256
-            # go on the approval card; execute() sends only those exact bytes.
-            words, files = _email_attachments(clean_text)
-            if isinstance(files, str):
-                return {"ok": False, "reason": files}
-            if files:
-                if not words:
-                    return {"ok": False, "reason": "missing_text"}
-                payload["text"] = words
-                payload["attachments"] = files
         payload = mark_if_untrusted(payload, origin)
-        if pending is not None:
-            from .autonomy.mediation import canonical_json
-
-            try:
-                canonical_json(payload)
-            except ValueError:
-                # Keep full content on the existing, non-restartable binding.
-                # Only its exact digest and length enter the signed task.
-                try:
-                    content = json.dumps({"text": clean_text, "buttons": native_prompt.get("buttons")},
-                                         ensure_ascii=False, allow_nan=False, sort_keys=True,
-                                         separators=(",", ":")).encode("utf-8")
-                    if (len(content) > _PROMPT_CONTENT_BYTES
-                            or len(content) + sum(len(e.content or b"") for e in self._pending_prompts.values())
-                            > _PROMPT_CONTENT_TOTAL):
-                        return {"ok": False, "reason": "prompt_content_capacity"}
-                    payload["text"] = clean_text[:1024] + "\n[Full question and choices available in preview]"
-                    payload["native_prompt"] = {
-                        "sender": native_prompt["sender"], "expires_at": native_prompt["expires_at"],
-                        "content_sha256": hashlib.sha256(content).hexdigest(), "content_size": len(content),
-                        **({"mode": "text"} if native_prompt.get("mode") == "text" else {}),
-                    }
-                    canonical_json(payload)
-                except (ValueError, TypeError, KeyError, UnicodeError):
-                    return {"ok": False, "reason": "invalid_prompt_content"}
-                pending.content = content
-            pending.payload = json.loads(json.dumps(payload))
-        tier = _risk_tier(payload["channel"])
         contract_payload = {
             **payload,
             "kind": CHANNEL_REPLY_TASK_KIND,
             "agent": agent or self.agent,
-            "risk_tier": tier,
+            "risk_tier": _RISK_TIER,
         }
         try:
             decision = CHANNEL_REPLY_CONTRACT.evaluate(contract_payload, now=time.time())
@@ -532,28 +119,11 @@ class ChannelReplyBroker:
             return {"ok": False, "reason": denial, "kind": CHANNEL_REPLY_TASK_KIND}
 
         title = f"Reply via {thread['channel']}: {thread.get('from') or thread['thread_id']}"
-        if thread["channel"] == "email":
-            # H096: the card says what the receiving server made of the sender, and
-            # which files would leave.
-            from .channels.email_inbound import SenderAuth, clean_sender_auth
-
-            auth = clean_sender_auth(thread.get("sender_auth"))
-            title += f" ({SenderAuth(**auth).label if auth else 'unverified sender'})"
-            if payload.get("attachments"):
-                # What leaves, readably: the file, the folder it is read from, its size
-                # and the start of its SHA-256 (the full digest is in the payload).
-                title += " + attaching " + "; ".join(
-                    f"{a['name']} from {_folder(a['path'])} ({_human_size(a['bytes'])}, "
-                    f"sha256 {a['sha256'][:12]})" for a in payload["attachments"])
-        if thread["channel"] == "discord" and payload.get("attachments"):
-            title += " + attaching " + "; ".join(
-                f"{a['name']} ({_human_size(a['bytes'])}, sha256 {a['sha256'][:12]})"
-                for a in payload["attachments"])
         preview = preview_task({
             "kind": CHANNEL_REPLY_TASK_KIND,
             "title": title,
             "payload": payload,
-            "risk_tier": tier,
+            "risk_tier": _RISK_TIER,
         })
         autonomy_level = "ask"
         if self._kernel is not None:
@@ -563,8 +133,7 @@ class ChannelReplyBroker:
                     kind=CHANNEL_REPLY_TASK_KIND,
                     agent=agent or self.agent,
                     title=title,
-                    # An SMS reply states its money tier to the policy (stricter only).
-                    payload={**payload, "risk_tier": tier} if tier != _RISK_TIER else payload,
+                    payload=payload,
                     origin=origin,
                 ))
                 if verdict.verdict is Verdict.DENY:
@@ -580,24 +149,18 @@ class ChannelReplyBroker:
                 CHANNEL_REPLY_TASK_KIND,
                 title,
                 payload=payload,
-                risk_tier=tier,
-                # A file leaving by email always waits for the owner's card (H096).
-                autonomy_level=("ask" if tier >= _SMS_RISK_TIER or payload.get("attachments")
-                                else autonomy_level),
+                risk_tier=_RISK_TIER,
+                autonomy_level=autonomy_level,
                 origin=origin,
             )
         except Exception:
             logger.warning("channel reply enqueue failed", exc_info=True)
             return {"ok": False, "reason": "enqueue_failed", "kind": CHANNEL_REPLY_TASK_KIND}
-        if pending is not None and type(task_id) is int and task_id > 0:
-            self._pending_prompts[task_id] = pending
         self._record("channel_reply.request", thread["channel"], thread_id=thread_id)
         return {"ok": True, "queued": True, "task_id": task_id,
                 "kind": CHANNEL_REPLY_TASK_KIND, "title": title, "preview": preview}
 
     async def execute(self, task) -> dict:
-        if isinstance(task.payload, dict) and "native_prompt" in task.payload:
-            return await self._execute_prompt(task)
         payload = getattr(task, "payload", None) or {}
         channel = (payload.get("channel") or "").strip().lower()
         text = str(payload.get("text") or "")[:_TEXT_CAP]
@@ -616,78 +179,6 @@ class ChannelReplyBroker:
             return {"status": "blocked", "reason": denial, "channel": channel}
         if "ephemeral_ttl" in payload:
             text = EphemeralReply(text, payload["ephemeral_ttl"])
-        if channel == "ntfy":
-            message = self._inbox.get_message(message_id)
-            if (not message or message.get("direction") != "in"
-                    or message.get("channel") != channel or message.get("thread_id") != thread_id
-                    or message.get("reply") != reply):
-                return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
-        extra_files: list = []
-        discord_adapter = None
-        discord_sender = ""
-        if channel == "discord" and "attachments" in payload:
-            inbound = self._inbox.get_message(message_id) if message_id else None
-            if (not inbound or inbound.get("direction") != "in"
-                    or inbound.get("channel") != "discord"
-                    or inbound.get("thread_id") != thread_id
-                    or inbound.get("reply") != reply):
-                return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
-            discord_sender = str(inbound.get("sender") or "")
-            discord_adapter = self._discord_media_target(discord_sender, reply.get("channel_id"))
-            if discord_adapter is None:
-                return {"status": "blocked", "reason": "discord_media_owner_dm_required",
-                        "channel": channel}
-            files = await asyncio.to_thread(_approved_attachments, payload["attachments"])
-            if isinstance(files, str):
-                return {"status": "blocked", "reason": files, "channel": channel}
-            extra_files = files
-        if channel == "email":
-            # STAB-4 (#933), enforced here — the last step before SMTP.
-            # 1. The reply recipient must be exactly the inbound sender who
-            #    opened this thread (that sender already passed the gateway
-            #    pairing gate on arrival). A crafted task that redirects the
-            #    reply to any other address is blocked, as is a task whose
-            #    inbound binding is missing or has changed.
-            # 2. If an explicit allowlist was configured, it must also match.
-            # 3. Per-recipient hourly volume is capped before SMTP.
-            recipient = _normalize_email_address(reply.get("to"))
-            inbound = self._inbox.get_message(message_id) if message_id else None
-            if (not inbound or inbound.get("direction") != "in"
-                    or inbound.get("channel") != "email"
-                    or inbound.get("thread_id") != thread_id):
-                return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
-            inbound_sender = _normalize_email_address(inbound.get("sender"))
-            if not recipient or not inbound_sender or recipient != inbound_sender:
-                return {"status": "blocked", "reason": "reply_recipient_mismatch", "channel": channel}
-            if self._email_allowlist is not None and recipient not in self._email_allowlist:
-                return {"status": "blocked", "reason": "sender_not_allowlisted", "channel": channel}
-            # H096: the threading headers are the inbound message's own, never the task's.
-            inbound_reply = inbound.get("reply") if isinstance(inbound.get("reply"), dict) else {}
-            if any(str(reply.get(k) or "") != str(inbound_reply.get(k) or "")
-                   for k in ("in_reply_to", "references")):
-                return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
-            if self._email_reply_limiter.blocked(recipient):
-                return {"status": "blocked", "reason": "email_reply_rate_limited", "channel": channel}
-            if "attachments" in payload:
-                files = await asyncio.to_thread(_approved_attachments, payload["attachments"])
-                if isinstance(files, str):
-                    return {"status": "blocked", "reason": files, "channel": channel}
-                extra_files = files
-        if channel == "sms":
-            # G16 (H098), enforced here — the last step before Twilio. The reply goes to
-            # the exact number that wrote the inbound message it answers (that number
-            # passed the allowlist/pairing check on arrival), at most N per hour.
-            from .channels.sms import sender_id
-
-            recipient = str(reply.get("sms_to") or "")
-            inbound = self._inbox.get_message(message_id) if message_id else None
-            if (not inbound or inbound.get("direction") != "in" or inbound.get("channel") != "sms"
-                    or inbound.get("thread_id") != thread_id or inbound.get("reply") != reply):
-                return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
-            if inbound.get("sender") != sender_id(recipient):
-                return {"status": "blocked", "reason": "reply_recipient_mismatch", "channel": channel}
-            if self._sms_reply_limiter.blocked(recipient):
-                return {"status": "blocked", "reason": "sms_reply_rate_limited", "channel": channel}
         if self._channel_manager is None:
             return {"status": "failed", "reason": "channel_manager_unavailable",
                     "channel": channel}
@@ -695,39 +186,13 @@ class ChannelReplyBroker:
         if not callable(send_reply):
             return {"status": "failed", "reason": "reply_transport_unavailable",
                     "channel": channel}
-        extra = {}
-        if channel == "email" and extra_files:
-            extra["attachments"] = extra_files
-        if channel == "discord" and extra_files:
-            extra["attachments"] = tuple(extra_files)
-            extra["delivery_key"] = f"channel.reply:{task.id}"
-        if channel == "sms" and type(getattr(task, "id", None)) is int:
-            # H081 x G16: a retried task never sends the paid message twice.
-            extra["delivery_key"] = f"channel.reply:{task.id}"
         try:
-            if channel == "discord" and extra_files:
-                from .channels.discord_media import DiscordMediaPermit, bind_permit
-
-                permit = DiscordMediaPermit(
-                    task=asyncio.current_task(), adapter=discord_adapter,
-                    channel_id=int(reply["channel_id"]), sender_id=int(discord_sender),
-                    reply_task_id=task.id, files=extra["attachments"],
-                    owner_allowed=self._discord_media_owner,
-                )
-                with bind_permit(permit):
-                    sent = await send_reply(channel, text, **reply, **extra)
-            else:
-                sent = await send_reply(channel, text, **reply, **extra)
+            sent = await send_reply(channel, text, **reply)
         except Exception:
             logger.warning("channel reply send failed", exc_info=True)
             return {"status": "failed", "reason": "send_failed", "channel": channel}
         if not sent:
             return {"status": "failed", "reason": "send_failed", "channel": channel}
-        if channel == "email":
-            # Only a successful send consumes rate-limit quota.
-            self._email_reply_limiter.record(_normalize_email_address(reply.get("to")))
-        if channel == "sms":
-            self._sms_reply_limiter.record(str(reply.get("sms_to") or ""))
         self._inbox.record_outbound(
             channel,
             text,
@@ -737,108 +202,6 @@ class ChannelReplyBroker:
         )
         self._record("channel_reply.execute", channel, thread_id=thread_id)
         return {"status": "ok", "channel": channel, "thread_id": thread_id}
-
-    def _prompt_content(self, task):
-        """Hydrate only the exact live task; no path, disk or cross-task lookup."""
-        payload = task.payload
-        entry = self._pending_prompts.get(task.id)
-        if (entry is None or not entry.live() or entry.payload != payload
-                or task.kind != CHANNEL_REPLY_TASK_KIND
-                or task.status in {"rejected", "cancelled", "failed", "done"}):
-            return None
-        if callable(self._task_reader):
-            queued = self._task_reader(task.id)
-            if (queued is None or queued.payload != payload
-                    or queued.status in {"rejected", "cancelled", "failed", "done"}):
-                return None
-        decision = CHANNEL_REPLY_CONTRACT.evaluate({**payload, "kind": CHANNEL_REPLY_TASK_KIND},
-                                                   now=time.time())
-        if contract_denial(decision):
-            return None
-        message = self._inbox.get_message(payload["message_id"])
-        prompt = payload["native_prompt"]
-        if (not message or message.get("direction") != "in"
-                or message.get("channel") != payload["channel"]
-                or message.get("thread_id") != payload["thread_id"]
-                or message.get("reply") != payload["reply"]
-                or message.get("sender") != prompt["sender"]):
-            return None
-        if "content_sha256" not in prompt:
-            return {"text": payload["text"], "markup": None if prompt.get("mode") == "text"
-                    else unpack_markup(prompt["buttons"])}
-        content = entry.content
-        if (type(content) is not bytes or len(content) != prompt["content_size"]
-                or hashlib.sha256(content).hexdigest() != prompt["content_sha256"]):
-            return None
-        try:
-            body = json.loads(content)
-            if (type(body) is not dict or set(body) != {"text", "buttons"}
-                    or type(body["text"]) is not str or not body["text"].strip()
-                    or len(body["text"]) > _PROMPT_TEXT_CAP):
-                return None
-            if prompt.get("mode") == "text":
-                return {"text": body["text"], "markup": None} if body["buttons"] is None else None
-            markup = unpack_markup(body["buttons"])
-            return {"text": body["text"], "markup": markup} if markup is not None else None
-        except (ValueError, UnicodeError):
-            return None
-
-    def review_prompt(self, task):
-        """Full content for the existing owner-only preview, without sending."""
-        content = self._prompt_content(task)
-        if content is None:
-            return {"available": False}
-        return {"available": True, "text": content["text"],
-                "choices": [b["text"] for row in (content["markup"] or {}).get("inline_keyboard", []) for b in row]}
-
-    async def _execute_prompt(self, task):
-        payload = task.payload
-        entry = self._pending_prompts.get(task.id)
-        result = {"status": "blocked", "reason": "prompt_binding_lost",
-                  "channel": payload.get("channel")}
-        receipt = None
-        accepted = False
-        try:
-            content = self._prompt_content(task)
-            if content is None:
-                return result
-            text_only = payload["native_prompt"].get("mode") == "text"
-            send = getattr(self._channel_manager, "send_channel_text_prompt" if text_only
-                           else "send_channel_prompt", None)
-            if not callable(send) or not entry.live():
-                return result
-            if text_only:
-                receipt = await send(payload["channel"], content["text"],
-                                     current=lambda: self._prompt_content(task) == content, **payload["reply"])
-            else:
-                receipt = await send(payload["channel"], content["text"], content["markup"], **payload["reply"])
-            if (self._prompt_content(task) != content
-                    or (receipt is not True if text_only else not receipt_matches(
-                        receipt, payload["channel"], payload["reply"], payload["native_prompt"]["sender"]))):
-                return result
-            if callable(self._task_reader):
-                queued = self._task_reader(task.id)
-                if queued is None or queued.payload != entry.payload:
-                    return result
-            self._inbox.record_outbound(payload["channel"], content["text"],
-                                        thread_id=payload["thread_id"],
-                                        reply_to=payload["message_id"], metadata=payload["reply"])
-            self._record("channel_reply.prompt.execute", payload["channel"],
-                         thread_id=payload["thread_id"])
-            entry.future.set_result(receipt)
-            accepted = True
-            return {"status": "ok", "channel": payload["channel"],
-                    "thread_id": payload["thread_id"]}
-        except Exception:
-            logger.warning("Governed prompt delivery failed")
-            return {**result, "status": "failed", "reason": "prompt_delivery_failed"}
-        finally:
-            if entry is not None and not entry.future.done():
-                entry.future.set_result(None)
-            if not accepted and receipt is not None:
-                discard = getattr(self._channel_manager, "discard_pending_card", None)
-                if callable(discard):
-                    discard(payload["channel"], receipt)
 
     def _record(self, action: str, why: str, **meta) -> None:
         if self._audit is None:

@@ -70,8 +70,10 @@ def test_google_directives_only_for_google_family_with_tools():
 def test_surface_selection_and_override_are_presentation_only():
     telegram = build_operating_guidance(model="x", surface="telegram")
     assert "Telegram" in telegram and "tables" in telegram
-    discord = build_operating_guidance(model="x", surface="discord")
-    assert "Discord" in discord and "Telegram" not in discord
+    cli = build_operating_guidance(model="x", surface="cli")
+    assert "terminal" in cli and "Telegram" not in cli
+    removed = build_operating_guidance(model="x", surface="discord")      # a removed platform has no hint
+    assert "Discord" not in removed and "Telegram" not in removed
     custom = build_operating_guidance(
         model="x", surface="telegram", platform_overrides={"telegram": "Prefer short paragraphs."}
     )

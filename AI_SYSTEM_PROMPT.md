@@ -37,8 +37,8 @@ governed autonomy, voice, and a governed capability-acquisition pipeline.
 | Frontend HUD | React 18 + TypeScript + Vite; Vitest + Playwright; OpenAPI→TS typegen (`schema.gen.ts`) |
 | Mobile | React Native (Expo-style, Jest tests) — read-mostly parity surfaces (`mobile/PARITY.md`) |
 | Voice | Browser loop (mic→`/api/voice/stt` Whisper→`/tts` clone chain) + server pipeline (openWakeWord, faster-whisper, XTTS→ElevenLabs→Fish→edge-tts→Kokoro) |
-| Channels | Web SSE, Voice, Telegram, Discord, Slack, Email (SMTP/IMAP), webhook bridges (WhatsApp/Signal/Matrix/Teams/Google Chat) |
-| Integrations | ~25 plugins (Gmail, Google Calendar, Spotify, Tavily/SearXNG, n8n, Homebridge, Tuya, Twilio, Notion, RevenueCat, Meta Ads, Postiz, …) behind a per-agent permission gate |
+| Channels | Web SSE, Voice, Telegram |
+| Integrations | ~25 plugins (Gmail, Google Calendar, Spotify, Tavily/SearXNG, n8n, Homebridge, Tuya, Notion, RevenueCat, Meta Ads, Postiz, …) behind a per-agent permission gate |
 | Protocols | MCP client (**stdio only** — remote transports refused at the admin API) **and** MCP server (governed route tools); A2A inbound (HMAC + contract) |
 | Tooling | pytest (`asyncio_mode=auto`, offline, socket-blocked), Ruff, Bandit, vulture; `scripts/code_health.py`; `scripts/status_sync.py` (generated counters) |
 

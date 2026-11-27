@@ -1,9 +1,8 @@
 """H067 gateway/model clarification binding, before conversation turn leases.
 
-This runtime supports Telegram, governed Slack/Discord cards, typed ntfy prompts
-and authenticated HTTP questions. `nerva chat` answers through the HTTP poll binding
-(GET /chat/pending, POST /chat/pending/{id}/answer), the same one the HUD's
-non-streaming turn uses (H226). Email remains separate work.
+This runtime supports Telegram and authenticated HTTP questions. `nerva chat` answers
+through the HTTP poll binding (GET /chat/pending, POST /chat/pending/{id}/answer), the
+same one the HUD's non-streaming turn uses (H226). Any other channel is refused.
 
 Secret entry (H226): ``request_secret`` asks the owner of an HTTP poll turn to store
 one named secret. The value never crosses this runtime, the turn or the answer route:
@@ -90,21 +89,14 @@ class ChannelPendingRuntime:
         self._http_acks: dict[str, asyncio.Future] = {}
         self._card_tokens: dict[str, str] = {}
         self._card_generations: dict[str, object] = {}
-        self._card_receipts: dict[str, dict] = {}
         self.cards = NativePromptCards(self.inputs, self._card_eligible)
 
     def _card_eligible(self, prompt):
         binding = self._delivered.get(prompt.id) or self._offered.get(prompt.id)
         if (binding is None or not binding.active
-                or binding.source.channel not in {"telegram", "slack", "discord", "ntfy", "web"}
+                or binding.source.channel not in {"telegram", "web"}
                 or pending_key(binding.source) != prompt.key or not self._allowed(binding.source)):
             return False
-        if binding.source.channel == "ntfy":
-            adapter = (getattr(self.orch, "channels", None) or {}).get("ntfy")
-            allowed = getattr(adapter, "_reply_allowed", None)
-            if (not callable(allowed) or not allowed(binding.delivery.get("ntfy_topic"),
-                                                       binding.delivery.get("ntfy_context"))):
-                return False
         if prompt.id in self._card_generations:
             adapter = (getattr(self.orch, "channels", None) or {}).get(binding.source.channel)
             if (not getattr(adapter, "_running", False)
@@ -117,79 +109,6 @@ class ChannelPendingRuntime:
             return binding.source.channel == "web" and binding.http_poll and binding.owner_now()
         return (prompt.kind != "confirmation" or self.orch._channel_principal(
             binding.source.channel, binding.source.sender, binding.delivery.get("chat_id")).admin)
-
-    async def _deliver_workspace(self, prompt, binding, text):
-        from .pending_input_workspace import receipt_matches
-
-        channel = binding.source.channel
-        broker = getattr(self.orch, "channel_replies", None)
-        deliver = getattr(broker, "deliver_prompt", None)
-        adapter = (getattr(self.orch, "channels", None) or {}).get(channel)
-        generation = getattr(adapter, "_pending_callback_generation", None)
-        if (not callable(deliver) or generation is None or not getattr(adapter, "_running", False)
-                or not binding.delivery.get("_inbox_message_id")):
-            return False
-        self._offered[prompt.id] = binding
-        self._card_generations[prompt.id] = generation
-        offer = None
-        receipt = None
-
-        def current():
-            self.inputs.pending(prompt.key, prompt.kind)
-            return prompt.id in self.inputs._active and self._card_eligible(prompt)
-
-        try:
-            offer = self.cards.register(prompt)
-            receipt = await deliver(binding.delivery["_inbox_message_id"], text, channel=channel,
-                                    sender=binding.source.sender, markup=offer.markup,
-                                    current=current, timeout_seconds=None if prompt.deadline is None
-                                    else max(0, prompt.deadline - time.monotonic()))
-            if (current() and receipt_matches(receipt, channel, binding.delivery, binding.source.sender)
-                    and self.cards.bind_workspace(offer.token, receipt)):
-                self._card_tokens[prompt.id] = offer.token
-                self._card_receipts[prompt.id] = receipt
-                self._delivered[prompt.id] = binding
-                return True
-            return False
-        except Exception:
-            return False
-        finally:
-            self._offered.pop(prompt.id, None)
-            if prompt.id not in self._card_tokens:
-                if offer is not None:
-                    self.cards.discard(offer.token)
-                self._card_generations.pop(prompt.id, None)
-                discard = getattr(self.orch.channel_manager, "discard_pending_card", None)
-                if receipt is not None and callable(discard):
-                    discard(channel, receipt)
-
-    async def _deliver_ntfy(self, prompt, binding, text):
-        broker = getattr(self.orch, "channel_replies", None)
-        deliver = getattr(broker, "deliver_prompt", None)
-        adapter = (getattr(self.orch, "channels", None) or {}).get("ntfy")
-        generation = getattr(adapter, "_pending_callback_generation", None)
-        if not callable(deliver) or generation is None or not binding.delivery.get("_inbox_message_id"):
-            return False
-        self._offered[prompt.id] = binding
-        self._card_generations[prompt.id] = generation
-
-        def current():
-            self.inputs.pending(prompt.key, prompt.kind)
-            return prompt.id in self.inputs._active and self._card_eligible(prompt)
-
-        try:
-            receipt = await deliver(binding.delivery["_inbox_message_id"], text, channel="ntfy",
-                                    sender=binding.source.sender, markup=None, current=current,
-                                    timeout_seconds=None if prompt.deadline is None else
-                                    max(0, prompt.deadline - time.monotonic()))
-            if receipt is True and current():
-                self._delivered[prompt.id] = binding
-                return True
-            return False
-        finally:
-            self._offered.pop(prompt.id, None)
-            if prompt.id not in self._delivered:
-                self._card_generations.pop(prompt.id, None)
 
     async def _deliver(self, prompt, binding, text):
         """Bind native callbacks only after a strict transport receipt; else use text."""
@@ -215,10 +134,6 @@ class ChannelPendingRuntime:
                 self._delivered[prompt.id] = binding
                 return True
             return False
-        if binding.source.channel in {"slack", "discord"}:
-            return await self._deliver_workspace(prompt, binding, text)
-        if binding.source.channel == "ntfy":
-            return await self._deliver_ntfy(prompt, binding, text)
         if binding.source.channel != "telegram":
             return False
         from .manager import CardAttempt
@@ -277,10 +192,6 @@ class ChannelPendingRuntime:
         if token is not None:
             self.cards.discard(token)
         self._card_generations.pop(prompt.id, None)
-        receipt = self._card_receipts.pop(prompt.id, None)
-        discard = getattr(self.orch.channel_manager, "discard_pending_card", None)
-        if receipt is not None and callable(discard):
-            discard(prompt.key[0], receipt)
         self.inputs.cancel_prompt(prompt.id, prompt.key)
 
     def enabled(self):
@@ -304,9 +215,6 @@ class ChannelPendingRuntime:
             return False
         adapter = (getattr(self.orch, "channels", None) or {}).get(source.channel)
         if adapter is None:
-            return False
-        if source.channel == "ntfy" and (not getattr(adapter, "_running", False)
-                or not getattr(adapter, "inbound", False) or source.sender != getattr(adapter, "topic", None)):
             return False
         pairing = getattr(adapter, "_pairing", None) or getattr(adapter, "pairing", None)
         if pairing is None:
@@ -412,9 +320,6 @@ class ChannelPendingRuntime:
         # Only trusted transport routing metadata crosses into the tool callback.
         fields = {
             "telegram": ("chat_id", "message_thread_id"),
-            "slack": ("slack_channel", "thread_ts", "_inbox_message_id"),
-            "discord": ("channel_id", "_inbox_message_id"),
-            "ntfy": ("chat_id", "ntfy_topic", "ntfy_context", "_inbox_message_id"),
         }.get(source.channel, ())
         metadata = {
             key: delivery[key] for key in fields if key in delivery
@@ -440,8 +345,6 @@ class ChannelPendingRuntime:
         if prompt is None or prompt.id not in self._delivered:
             return None
         binding = self._delivered[prompt.id]
-        if source.channel in {"slack", "discord", "ntfy"} and not self._card_eligible(prompt):
-            return None
         if not binding.active:
             self.inputs.cancel(key)
             return None
@@ -451,15 +354,6 @@ class ChannelPendingRuntime:
             return "" if self.inputs.cancel_prompt(prompt.id, key) else None
         if prompt.kind == "confirmation" and parse_confirmation(text) is None:
             return None
-        if source.channel == "ntfy" and prompt.kind == "clarify":
-            parsed = parse_clarify(text, prompt.choices, prompt.multi_select, prompt.awaiting_text)
-            # Hermes's text-only fallback maps valid choices first, then
-            # accepts an own answer; it must not wait for an Other button.
-            if (parsed.status in {"prose", "invalid_selection"}
-                    and text.strip() and len(text.strip()) <= 16384
-                    and self.inputs.mark_other(prompt.id, key)
-                    and self.inputs.resolve(prompt.id, key, text.strip())):
-                return ""
         if prompt.kind == "clarify" and pending_only and parse_clarify(
             text, prompt.choices, prompt.multi_select, prompt.awaiting_text
         ).status in {"prose", "fallthrough"}:
@@ -540,7 +434,7 @@ class ChannelPendingRuntime:
             binding is None
             or binding.runtime is not self
             or not binding.active
-            or binding.source.channel not in {"telegram", "slack", "discord", "ntfy", "web"}
+            or binding.source.channel not in {"telegram", "web"}
             or (binding.source.channel == "web"
                 and ((not callable(binding.http_send) and not binding.http_poll)
                      or not callable(binding.http_current)))
@@ -587,8 +481,6 @@ class ChannelPendingRuntime:
             )
         else:
             text += "\nType your answer."
-        if binding.source.channel == "ntfy" and prompt.choices:
-            text += "\nYou can also type your own answer."
 
         def current():
             candidate = self.inputs.pending(prompt.key, "clarify")
@@ -756,14 +648,6 @@ class ChannelPendingRuntime:
             if not ack.done():
                 ack.cancel()
         self._http_acks.clear()
-        discard = getattr(self.orch.channel_manager, "discard_pending_card", None)
-        if callable(discard):
-            for receipt in self._card_receipts.values():
-                discard(receipt["channel"], receipt)
-        self._card_receipts.clear()
-        close_prompts = getattr(getattr(self.orch, "channel_replies", None), "close_pending_prompts", None)
-        if callable(close_prompts):
-            close_prompts()
         self._delivered.clear()
         self._offered.clear()
         self._card_tokens.clear()

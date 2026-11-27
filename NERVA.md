@@ -70,9 +70,6 @@ agents/
 │   │   ├── web.py           # WebChannel (SSE streaming)
 │   │   ├── voice.py         # Voice channel (silero TTS)
 │   │   ├── telegram.py      # Telegram bot channel
-│   │   ├── discord.py       # Discord bot channel
-│   │   ├── email.py         # Email channel (SMTP + IMAP)
-│   │   ├── slack.py         # Slack bot channel
 │   │   └── gateway.py       # Message routing gateway
 │   ├── plugins/
 │   │   ├── weather.py       # Weather plugin (wttr.in)
@@ -80,8 +77,7 @@ agents/
 │   │   ├── cloud_llm.py     # Cloud LLM plugin (Anthropic/OpenAI)
 │   │   ├── spotify_plugin.py
 │   │   ├── gmail_plugin.py
-│   │   ├── telegram_bot.py
-│   │   └── whatsapp_bridge.py
+│   │   └── telegram_bot.py
 │   ├── voice/
 │   │   ├── pipeline.py      # Voice pipeline
 │   │   ├── tts.py           # Text-to-speech (edge-tts)
@@ -207,7 +203,7 @@ curl.exe http://127.0.0.1:8080/status
 <!-- project-status:jarvis-stats:start -->
 - 16 active agents; registry-derived
 - 934 HTTP routes; parity-snapshot-derived
-- Tests: backend **37,821** · frontend **4,979** · mobile **522**
+- Tests: backend **37,824** · frontend **4,979** · mobile **522**
 - Version: **v1.0.0** · source commit `02334d9a3fb4`
 - Backlog ledger: 289 done · 25 open or blocked of 314 horizon rows — proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist
 - H23 roll-up: 28/30 done, 1 blocked, 1 open; release gates: A1, A3, A4, A6

@@ -40,14 +40,14 @@ def test_no_contract_and_no_declared_needs_is_unknown_not_live():
 def test_degradation_info_overrides_a_configured_signal():
     """The plugin's own contract beats an inferred `configured`.
 
-    sms-alerts and crm-sync expose no configured attribute but DO report degradation, so
-    they used to render a green LIVE chip next to their own [MOCK] chip — a visible
+    crm-sync exposes no configured attribute but DO report degradation, so
+    it used to render a green LIVE chip next to its own [MOCK] chip — a visible
     contradiction rather than a clean lie, but still wrong.
     """
-    verdict = honesty_for("sms-alerts", configured=True, configuration_source="loaded",
+    verdict = honesty_for("crm-sync", configured=True, configuration_source="loaded",
                           degraded=True)
     assert verdict["status"] == "needs_config"
-    assert verdict["needs"] == _NEEDS["sms-alerts"]
+    assert verdict["needs"] == _NEEDS["crm-sync"]
 
 
 def test_a_genuinely_configured_plugin_is_still_live():

@@ -189,3 +189,14 @@ def test_fork_child_cannot_unlock_parent_claim(tmp_path):
         if process.poll() is None:
             process.kill()
             process.wait(timeout=5)
+
+
+@pytest.mark.parametrize("channel", ["../other", "discord", "slack-app", "slack-bot", "ntfy-inbound", ""])
+def test_private_channel_allowlist_cannot_become_a_path_argument(tmp_path, channel):
+    """Only a listed channel can hold a claim: a path-shaped name and the names of the
+    removed platforms are refused before any claim directory is created."""
+    root = tmp_path / "install"
+    with pytest.raises(ClaimUnavailable) as error:
+        polling_claims._acquire_claim(channel, TOKEN, root=root)
+    assert error.value.reason == "unavailable"
+    assert not (root.parent / f".{root.name}-channel-claims").exists()

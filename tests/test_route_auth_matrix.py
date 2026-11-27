@@ -59,9 +59,6 @@ INTENTIONALLY_OPEN = {
     "POST /v1/chat/completions",
     "POST /v1/responses",
     "DELETE /v1/responses/{response_id}",
-    # G16 (H098): Twilio's inbound SMS. 404 unless SMS is configured; X-Twilio-Signature
-    # (HMAC-SHA1 over URL + sorted params, constant-time) and the account SID in the handler.
-    "POST /api/channels/sms/webhook",
     # H658: remote room members' peer transport. 404 unless JARVIS_ROOM_PEERS; a pinned
     # Ed25519 signature plus the invitation code proof (accept) or the NervaRoom grant this
     # hub issued (call/renew), with nonce/timestamp replay protection.
@@ -211,7 +208,6 @@ IN_HANDLER_GUARDED = {
     "GET /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
     "DELETE /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
     "GET /v1/models": "OpenAI-compatible API key (bearer), API switched on",
-    "POST /api/channels/sms/webhook": "Twilio X-Twilio-Signature (HMAC-SHA1, the SMS auth token)",
     # H658: remote room members (a pinned Ed25519 key signs every request).
     "POST /api/room-peers/peer/accept": "invitation code proof + the member key's Ed25519 signature",
     "POST /api/room-peers/peer/call": "NervaRoom grant this hub issued + the pinned member key's signature",

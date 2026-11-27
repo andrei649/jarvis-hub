@@ -412,13 +412,7 @@ def test_no_approval_queue_means_nothing_changes(env, client):
 
 # ══ slice 2 — channel settings (H151 / H160) ═════════════════════════════════════
 
-CHANNEL_NAMES = ("TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS", "DISCORD_BOT_TOKEN", "SLACK_BOT_TOKEN",
-                 "SLACK_APP_TOKEN", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "IMAP_HOST", "IMAP_PORT",
-                 "IMAP_USER", "IMAP_PASS", "NTFY_URL", "NTFY_TOPIC", "NTFY_TOKEN", "NTFY_TITLE", "NTFY_INBOUND",
-                 "NTFY_PUBLISH_TOPIC", "NTFY_MARKDOWN", "JARVIS_SMS_ENABLED", "NERVA_SMS_ENABLED",
-                 "JARVIS_SMS_ACCOUNT_SID", "NERVA_SMS_ACCOUNT_SID", "JARVIS_SMS_AUTH_TOKEN", "NERVA_SMS_AUTH_TOKEN",
-                 "JARVIS_SMS_FROM_NUMBER", "NERVA_SMS_FROM_NUMBER", "JARVIS_SMS_ALLOWED_NUMBERS",
-                 "NERVA_SMS_ALLOWED_NUMBERS", "JARVIS_SMS_WEBHOOK_URL", "NERVA_SMS_WEBHOOK_URL")
+CHANNEL_NAMES = ("TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS")
 TG_TOKEN = "123456789:synthetic-telegram-bot-token-AAAA-ZZZZ"
 CBASE = "/api/admin/channels"
 
@@ -482,8 +476,8 @@ def test_every_channel_route_refuses_a_non_admin(chub):
 def test_the_listing_shows_every_channel_and_whether_it_runs(chub):
     body = chub.client.get(f"{CBASE}/config", headers=ADMIN).json()
     ids = [c["id"] for c in body["channels"]]
-    assert ids == ["telegram", "discord", "slack", "email", "ntfy", "sms"]
-    assert _channel(chub, "telegram")["running"] is True and _channel(chub, "email")["running"] is False
+    assert ids == ["telegram"]
+    assert _channel(chub, "telegram")["running"] is True
     token = _field(_channel(chub, "telegram"), "TELEGRAM_BOT_TOKEN")
     assert token == {**token, "secret": True, "set": False, "source": None, "editable": True}
     assert "value" not in token
@@ -539,50 +533,43 @@ def test_a_secret_cannot_be_written_as_a_plain_setting_or_to_another_channel(chu
 def test_plain_settings_go_to_the_settings_database_validated(chub):
     from agents.core import channel_config, settings_db
 
-    response = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {
-        "SMTP_HOST": "smtp.example.org", "SMTP_PORT": 587, "SMTP_USER": "owner@example.org",
-        "IMAP_HOST": "imap.example.org", "IMAP_PORT": "993"}})
+    name = "TELEGRAM_ALLOWED_USER_IDS"
+    response = chub.client.put(f"{CBASE}/telegram/config", headers=ADMIN, json={"values": {name: "42, 43"}})
     assert response.status_code == 200, response.text
-    assert settings_db.get_value("channels", "config", {})["SMTP_HOST"] == "smtp.example.org"
-    assert os.environ["SMTP_PORT"] == "587"
-    row = _channel(chub, "email")
-    assert _field(row, "SMTP_HOST") == {**_field(row, "SMTP_HOST"), "value": "smtp.example.org", "source": "hub"}
+    assert settings_db.get_value("channels", "config", {})[name] == "42,43"
+    assert os.environ[name] == "42,43"
+    row = _channel(chub, "telegram")
+    assert _field(row, name) == {**_field(row, name), "value": "42,43", "source": "hub"}
     assert row["restart_required"] is True
-    for cid, bad in (("email", {"SMTP_PORT": 70000}), ("email", {"SMTP_HOST": "bad host;rm"}),
-                     ("email", {"SMTP_USER": "a\nb"}), ("ntfy", {"NTFY_URL": "file:///etc/passwd"})):
-        refused = chub.client.put(f"{CBASE}/{cid}/config", headers=ADMIN, json={"values": bad})
+    for bad in ({name: "42;rm"}, {name: "a\nb"}, {name: "1.5"}, {name: True}):
+        refused = chub.client.put(f"{CBASE}/telegram/config", headers=ADMIN, json={"values": bad})
         assert refused.status_code == 422, bad
-    assert os.environ["SMTP_PORT"] == "587"
-    cleared = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"SMTP_USER": None}})
-    assert cleared.status_code == 200 and "SMTP_USER" not in os.environ
+    # a removed channel is not a channel: its settings are refused, valid or not
+    for cid, values in (("email", {"SMTP_HOST": "smtp.example.org"}), ("ntfy", {"NTFY_URL": "https://ntfy.example.org"}),
+                        ("sms", {"JARVIS_SMS_ENABLED": True}), ("slack", {name: "42"})):
+        gone = chub.client.put(f"{CBASE}/{cid}/config", headers=ADMIN, json={"values": values})
+        assert gone.status_code == 404, cid
+    assert os.environ[name] == "42,43" and "SMTP_HOST" not in os.environ
+    cleared = chub.client.put(f"{CBASE}/telegram/config", headers=ADMIN, json={"values": {name: None}})
+    assert cleared.status_code == 200 and name not in os.environ
+    assert chub.client.put(f"{CBASE}/telegram/config", headers=ADMIN,
+                           json={"values": {name: "42"}}).status_code == 200
     # at the next start the stored values are placed again, before the channels are wired
     channel_config.reset_for_tests()
-    assert "SMTP_HOST" not in os.environ
-    assert set(channel_config.apply_stored()) == {"SMTP_HOST", "SMTP_PORT", "IMAP_HOST", "IMAP_PORT"}
-    assert os.environ["IMAP_PORT"] == "993"
-
-
-def test_sms_settings_apply_now(chub):
-    response = chub.client.put(f"{CBASE}/sms/config", headers=ADMIN, json={"values": {
-        "JARVIS_SMS_ACCOUNT_SID": "AC00000000000000000000000000000000",
-        "JARVIS_SMS_FROM_NUMBER": "+15550001111", "JARVIS_SMS_ALLOWED_NUMBERS": "+15550002222, +15550003333"}})
-    assert response.status_code == 200, response.text
-    from agents.core.channels import sms
-
-    assert sms.allowed_numbers() == frozenset({"+15550002222", "+15550003333"})
-    assert _channel(chub, "sms")["restart_required"] is False
-    bad = chub.client.put(f"{CBASE}/sms/config", headers=ADMIN, json={"values": {"JARVIS_SMS_FROM_NUMBER": "555"}})
-    assert bad.status_code == 422
+    assert name not in os.environ
+    assert set(channel_config.apply_stored()) == {name}
+    assert os.environ[name] == "42"
 
 
 def test_env_wins_over_the_hud(chub, monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "from-dot-env-token-0000000000")
-    monkeypatch.setenv("SMTP_HOST", "env.example.org")
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "7")
     secret = chub.client.put(f"{CBASE}/telegram/secret", headers=ADMIN,
                              json={"name": "TELEGRAM_BOT_TOKEN", "value": TG_TOKEN})
     assert secret.status_code == 409 and secret.json()["error"] == "env_managed"
-    plain = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"SMTP_HOST": "x.example.org"}})
-    assert plain.status_code == 409
+    plain = chub.client.put(f"{CBASE}/telegram/config", headers=ADMIN,
+                            json={"values": {"TELEGRAM_ALLOWED_USER_IDS": "8"}})
+    assert plain.status_code == 409 and os.environ["TELEGRAM_ALLOWED_USER_IDS"] == "7"
     assert os.environ["TELEGRAM_BOT_TOKEN"] == "from-dot-env-token-0000000000"
     row = _channel(chub, "telegram")
     token = _field(row, "TELEGRAM_BOT_TOKEN")
@@ -598,10 +585,11 @@ def test_a_managed_pin_or_managed_mode_refuses_the_write(chub, monkeypatch):
     monkeypatch.setenv("NERVA_MANAGED_DIR", str(directory))
     monkeypatch.setattr(managed_scope, "_TRUST_ANY_OWNER_FOR_TESTS", True)
     monkeypatch.setattr("agents.core.settings_db._LAST_VALID_PIN", {})
-    (directory / ".env").write_text("SMTP_HOST=pinned.example.org\nTELEGRAM_BOT_TOKEN=admin-token-000000000000\n",
+    (directory / ".env").write_text("TELEGRAM_ALLOWED_USER_IDS=7\nTELEGRAM_BOT_TOKEN=admin-token-000000000000\n",
                                     encoding="utf-8")
     managed_scope.invalidate()
-    refused = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"SMTP_HOST": "x.example.org"}})
+    refused = chub.client.put(f"{CBASE}/telegram/config", headers=ADMIN,
+                              json={"values": {"TELEGRAM_ALLOWED_USER_IDS": "8"}})
     assert refused.status_code == 409 and refused.json()["error"] == "managed"
     secret = chub.client.put(f"{CBASE}/telegram/secret", headers=ADMIN,
                              json={"name": "TELEGRAM_BOT_TOKEN", "value": TG_TOKEN})
@@ -611,14 +599,15 @@ def test_a_managed_pin_or_managed_mode_refuses_the_write(chub, monkeypatch):
     (directory / ".env").unlink()
     (directory / ".managed").write_text("ask your administrator\n", encoding="utf-8")
     managed_scope.invalidate()
-    locked = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"IMAP_HOST": "i.example.org"}})
-    assert locked.status_code == 409 and "IMAP_HOST" not in os.environ
+    locked = chub.client.put(f"{CBASE}/telegram/config", headers=ADMIN,
+                             json={"values": {"TELEGRAM_ALLOWED_USER_IDS": "9"}})
+    assert locked.status_code == 409 and os.environ.get("TELEGRAM_ALLOWED_USER_IDS") != "9"
 
 
 def test_a_cross_site_channel_write_is_refused(chub):
-    response = chub.client.put(f"{CBASE}/email/config", headers={**ADMIN, "Sec-Fetch-Site": "cross-site"},
-                               json={"values": {"SMTP_HOST": "x.example.org"}})
-    assert response.status_code == 403 and "SMTP_HOST" not in os.environ
+    response = chub.client.put(f"{CBASE}/telegram/config", headers={**ADMIN, "Sec-Fetch-Site": "cross-site"},
+                               json={"values": {"TELEGRAM_ALLOWED_USER_IDS": "42"}})
+    assert response.status_code == 403 and "TELEGRAM_ALLOWED_USER_IDS" not in os.environ
 
 
 def test_channel_secrets_never_reach_a_sandboxed_child(chub):
@@ -778,88 +767,6 @@ def test_an_unknown_action_is_404(ops):
 
 NTFY_TOKEN = "tk_synthetic_ntfy_token_0123456789"
 IMAP_PASSWORD = "synthetic-imap-app-password-XYZ"
-
-
-def test_m1_ntfy_url_must_be_https_unless_loopback(chub):
-    for bad in ("http://ntfy.example.org", "ftp://ntfy.example.org", "https://u:p@ntfy.example.org"):
-        assert chub.client.put(f"{CBASE}/ntfy/config", headers=ADMIN,
-                               json={"values": {"NTFY_URL": bad}}).status_code == 422, bad
-    for ok in ("https://ntfy.example.org", "http://127.0.0.1:8090", "http://localhost:8090"):
-        assert chub.client.put(f"{CBASE}/ntfy/config", headers=ADMIN,
-                               json={"values": {"NTFY_URL": ok}}).status_code == 200, ok
-
-
-def test_m1_moving_an_endpoint_clears_its_bound_secret(chub):
-    c = chub.client
-    assert c.put(f"{CBASE}/ntfy/config", headers=ADMIN,
-                 json={"values": {"NTFY_URL": "https://ntfy.owner.example"}}).status_code == 200
-    assert c.put(f"{CBASE}/ntfy/secret", headers=ADMIN, json={"name": "NTFY_TOKEN", "value": NTFY_TOKEN}).status_code == 200
-    assert c.put(f"{CBASE}/ntfy/secret", headers=ADMIN, json={"name": "NTFY_TOPIC", "value": "owner-topic"}).status_code == 200
-    # an unrelated field keeps the secret
-    assert c.put(f"{CBASE}/ntfy/config", headers=ADMIN, json={"values": {"NTFY_TITLE": "Nerva"}}).json()["cleared_secrets"] == []
-    assert os.environ["NTFY_TOKEN"] == NTFY_TOKEN
-    moved = c.put(f"{CBASE}/ntfy/config", headers=ADMIN, json={"values": {"NTFY_URL": "https://other.example"}})
-    assert moved.status_code == 200
-    assert moved.json()["cleared_secrets"] == ["NTFY_TOKEN", "NTFY_TOPIC"]
-    assert "NTFY_TOKEN" not in os.environ and "NTFY_TOPIC" not in os.environ
-    assert any("secrets cleared for the new server" in preview for _, preview in chub.orch.audit.rows)
-    # the email password the same way, port included
-    assert c.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"IMAP_HOST": "imap.owner.example"}}).status_code == 200
-    assert c.put(f"{CBASE}/email/secret", headers=ADMIN, json={"name": "IMAP_PASS", "value": IMAP_PASSWORD}).status_code == 200
-    assert c.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"IMAP_PORT": 1993}}).json()["cleared_secrets"] == ["IMAP_PASS"]
-    assert "IMAP_PASS" not in os.environ
-
-
-def test_m1_an_endpoint_cannot_move_away_from_a_secret_in_env(chub, monkeypatch):
-    monkeypatch.setenv("SMTP_PASS", "dot-env-smtp-password")
-    c = chub.client
-    response = c.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"SMTP_HOST": "smtp.elsewhere.example"}})
-    assert response.status_code == 409 and response.json()["error"] == "bound_secret_in_env"
-    assert "SMTP_HOST" not in os.environ and "dot-env-smtp-password" not in response.text
-
-
-def test_m1_a_secret_whose_server_changed_out_of_band_is_withheld_at_start(chub):
-    from agents.core import channel_config, integration_keys, settings_db
-
-    c = chub.client
-    c.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"IMAP_HOST": "imap.owner.example"}})
-    c.put(f"{CBASE}/email/secret", headers=ADMIN, json={"name": "IMAP_PASS", "value": IMAP_PASSWORD})
-    # the generic settings route (or a hand edit) repoints the server, bypassing the panel
-    settings_db.put_category("channels", {"config": {"IMAP_HOST": "attacker.example.net"}})
-    # the next start
-    integration_keys._PLACED.clear()
-    channel_config.reset_for_tests()
-    for name in ("IMAP_PASS", "IMAP_HOST"):
-        os.environ.pop(name, None)
-    integration_keys.apply_stored()
-    channel_config.apply_stored()
-    assert os.environ.get("IMAP_HOST") == "attacker.example.net"
-    assert "IMAP_PASS" not in os.environ
-    field = next(f for f in _channel(chub, "email")["fields"] if f["name"] == "IMAP_PASS")
-    assert field["needs_reentry"] is True
-    # an unchanged server keeps its secret across a start
-    settings_db.put_category("channels", {"config": {"IMAP_HOST": "imap.owner.example"}})
-    integration_keys._PLACED.clear()
-    channel_config.reset_for_tests()
-    for name in ("IMAP_PASS", "IMAP_HOST"):
-        os.environ.pop(name, None)
-    integration_keys.apply_stored()
-    channel_config.apply_stored()
-    assert os.environ.get("IMAP_PASS") == IMAP_PASSWORD
-
-
-def test_m1_the_email_channel_verifies_the_mail_servers_certificates(monkeypatch):
-    import ssl
-
-    from agents.core.channels import email as email_channel
-
-    monkeypatch.delenv("JARVIS_TLS_INSECURE_TARGETS", raising=False)
-    monkeypatch.delenv("NERVA_TLS_INSECURE_TARGETS", raising=False)
-    context = email_channel._tls_context("imap.example.org")
-    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname is True
-    monkeypatch.setenv("JARVIS_TLS_INSECURE_TARGETS", "mail.local")
-    assert email_channel._tls_context("imap.example.org").verify_mode == ssl.CERT_REQUIRED
-    assert email_channel._tls_context("mail.local").verify_mode == ssl.CERT_NONE
 
 
 def test_m1_roots_refuse_links_code_and_hidden_folders(env, monkeypatch, tmp_path):

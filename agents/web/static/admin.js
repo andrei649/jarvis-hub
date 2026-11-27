@@ -387,7 +387,6 @@ const FRIENDLY_NAMES = {
   telegram: "Activare plugin Telegram Bot",
   gmail: "Activare plugin Gmail API",
   "google-calendar": "Activare plugin Google Calendar",
-  "whatsapp-bridge": "Activare punte locală WhatsApp",
   spotify: "Activare plugin Control Spotify",
   "apple-health": "Activare sincronizare Apple Health",
   homebridge: "Activare integrare Smart Home (Homebridge)",
@@ -486,7 +485,7 @@ function GlobalConfigPage({ settings, dirty, onUpdate, onSave }) {
     {
       title: "🔌 Extensii & Module Active (Plugins)",
       desc: "Activarea live a modulelor suplimentare integrate în platformă.",
-      keys: ["plugins.weather", "plugins.news", "plugins.cloud-llm", "plugins.gmail", "plugins.google-calendar", "plugins.whatsapp-bridge", "plugins.spotify", "plugins.apple-health", "plugins.homebridge"]
+      keys: ["plugins.weather", "plugins.news", "plugins.cloud-llm", "plugins.gmail", "plugins.google-calendar", "plugins.spotify", "plugins.apple-health", "plugins.homebridge"]
     },
     {
       title: "🔑 Chei API & Conexiuni Bancare",
@@ -585,7 +584,7 @@ function AgentCard({ agent, onUpdate }) {
     open && h('div',{className:'admin-agent-body'},
       h(ToggleRow,{label:'Status (active)',value:agent.status==='active',onChange:v=>onUpdate(agent.id,'status',v?'active':'paused')}),
       h(InputRow,{label:'Model',value:agent.model||'',onChange:v=>onUpdate(agent.id,'model',v)}),
-      h(SelectRow,{label:'Channel',value:agent.channel||'voice',onChange:v=>onUpdate(agent.id,'channel',v),opts:['voice','web','telegram','discord','email','slack']}),
+      h(SelectRow,{label:'Channel',value:agent.channel||'voice',onChange:v=>onUpdate(agent.id,'channel',v),opts:['voice','web','telegram']}),
       h(SelectRow,{label:'Tier',value:agent.tier||'FND',onChange:v=>onUpdate(agent.id,'tier',v),opts:['CNS','BIZ','SEC','FND']}),
     ),
   );

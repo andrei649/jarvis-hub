@@ -398,18 +398,18 @@ def test_a_switched_off_plugin_is_not_built(monkeypatch):
     from agents.core.autonomy.watchers import EmailProbe
 
     everything, _orch = _manager(monkeypatch)
-    assert {"gmail", "weather", "whatsapp", "oracle-bridge"} <= set(everything.plugins)
-    _declare(plugins_disabled="gmail,weather,whatsapp-bridge,oracle-bridge")
+    assert {"gmail", "weather", "spotify", "oracle-bridge"} <= set(everything.plugins)
+    _declare(plugins_disabled="gmail,weather,spotify,oracle-bridge")
     manager, orch = _manager(monkeypatch)
-    assert set(manager.plugins) == set(everything.plugins) - {"gmail", "weather", "whatsapp", "oracle-bridge"}
+    assert set(manager.plugins) == set(everything.plugins) - {"gmail", "weather", "spotify", "oracle-bridge"}
     assert orch.oracle_bridge is None
     assert asyncio.run(EmailProbe(gmail_plugin=manager.get("gmail"))()) == []
 
 
 def test_an_only_list_builds_just_what_it_names(monkeypatch):
-    _declare(plugins_only="news,whatsapp-bridge")
+    _declare(plugins_only="news,spotify")
     manager, _orch = _manager(monkeypatch)
-    assert set(manager.plugins) == {"news", "whatsapp"}
+    assert set(manager.plugins) == {"news", "spotify"}
 
 
 def test_the_capability_board_reads_the_live_gate():
