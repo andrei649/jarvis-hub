@@ -1185,7 +1185,7 @@ function App({ floating = false }: {
           <Glance hub={hub} lang={frameLang} demo={demo} clock={minuteClock} turns={turns} onExit={closeHudOverlay} navigate={navigateHud} />
         </RouteBoundary>
       ) : (
-        <Frame route={route} page={page} hub={hub} lang={frameLang} setLang={setLang} scheme={scheme} schemePreference={schemePreference}
+        <Frame route={route} page={page} hub={hub} adminSettled={liveModes.adminSettled} lang={frameLang} setLang={setLang} scheme={scheme} schemePreference={schemePreference}
           setScheme={setScheme} theme={themeById(look)} navigation={FRAME_NAVIGATION} onFind={openFind} onGlance={openGlance}
           demo={demo} onExitDemo={exitDemo} turns={turns} shortcutOverrides={shortcutOverrides} voiceStatus={voice.status}
           power={power} pressure={pressure} onDismissPressure={dismissPressure} routeNotice={notice}
