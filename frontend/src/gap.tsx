@@ -156,8 +156,35 @@ export function CapturePanel() {
   const status = useApi('/api/capture/status');
   const recs = arr(d, 'records');
   const enabled = status.d && status.d.enabled;
+  const [transcript, setTranscript] = useState('');
+  const [syncNote, setSyncNote] = useState(null);
   const del = (id) => apiDelete('/api/capture/' + encodeURIComponent(id)).then(reload).catch(() => {});
   const clearAll = () => act('/api/capture/clear', {}, reload);
+  const exportJson = () => {
+    apiGet('/api/capture/export')
+      .then((snap) => {
+        const blob = new Blob([JSON.stringify(snap, null, 2)], { type: 'application/json' });
+        const u = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = u;
+        a.download = 'nerva-capture-export.json';
+        a.click();
+        URL.revokeObjectURL(u);
+      })
+      .catch(() => {});
+  };
+  const syncTranscript = () => {
+    const text = transcript.trim();
+    if (!text) return;
+    act('/api/transcripts/ingest', { transcript: text, source: 'hud.capture' }, (r) => {
+      setTranscript('');
+      const items = Array.isArray(r?.items) ? r.items.length : (r?.queued ?? 0);
+      const cap = r?.capture?.captured ? 'inbox synced' : 'inbox off';
+      setSyncNote(`transcript processed (${items} item(s) · ${cap})`);
+      reload();
+      status.reload();
+    }, (err) => setSyncNote(`sync refused · ${err?.message || 'error'}`));
+  };
   return (
     <Card title="AMBIENT CAPTURE" live={asLive(status.d, enabled)} sub={status.d ? (enabled ? 'on' : 'off') + ' · ' + recs.length : null} onReload={() => { reload(); status.reload(); }}>
       <State e={e} loading={loading} n={recs.length} />
@@ -165,12 +192,29 @@ export function CapturePanel() {
         <Row key={r.id ?? i}>
           <span style={{ ...noteS, color: 'var(--ink-2)' }}>{r.preview || r.surface}</span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+            {r.kind === 'transcript' && <Tag c="var(--accent-light)">transcript</Tag>}
             {r.surface && <Tag>{r.surface}</Tag>}
             <button className="tool-btn" title="delete" onClick={() => del(r.id)}>✕</button>
           </span>
         </Row>
       ))}
-      {recs.length > 0 && <div style={{ marginTop: 8 }}><button className="tool-btn" onClick={clearAll}>clear all</button></div>}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+        {recs.length > 0 && <button className="tool-btn" onClick={clearAll}>clear all</button>}
+        <button className="tool-btn" type="button" onClick={exportJson}>export json</button>
+      </div>
+      <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--panel-line)' }}>
+        <textarea
+          aria-label="transcript to sync"
+          value={transcript}
+          onChange={(ev) => setTranscript(ev.target.value)}
+          placeholder="paste meeting or voice transcript to extract actions & sync redacted preview…"
+          style={{ ...taS, minHeight: 44 }}
+        />
+        <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="tool-btn" type="button" onClick={syncTranscript}>sync transcript</button>
+          {syncNote && <span style={{ ...noteS, fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>{syncNote}</span>}
+        </div>
+      </div>
       {recs.length === 0 && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>nothing captured · opt-in surfaces stream here, each deletable</div>}
     </Card>
   );

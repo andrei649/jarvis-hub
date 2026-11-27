@@ -54,4 +54,33 @@ describe('CapturePanel — the privacy-forward capture stream is live', () => {
     render(<CapturePanel />);
     await waitFor(() => expect(screen.getByText(/nothing captured/)).toBeTruthy());
   });
+
+  it('syncs a transcript into the inbox and exports the redacted snapshot', async () => {
+    const fn = mockFetch({
+      enabled: true,
+      surfaces: { files: true },
+      records: [
+        { id: 'r2', surface: 'files', kind: 'transcript', source: 'capture-panel', preview: 'action items…', created_at: 2 },
+      ],
+    });
+    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:cap'), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<CapturePanel />);
+    await waitFor(() => expect(screen.getByText('action items…')).toBeTruthy());
+    expect(screen.getByText('transcript')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('sync transcript'));
+    const textarea = await screen.findByLabelText('transcript to sync');
+    fireEvent.change(textarea, { target: { value: 'Owner: ship Capture Inbox sync.' } });
+    const buttons = screen.getAllByText('sync transcript');
+    fireEvent.click(buttons[buttons.length - 1]);
+    await waitFor(() => expect(
+      fn.mock.calls.some((c) => String(c[0]).includes('/api/transcripts/ingest') && c[1]?.method === 'POST')
+    ).toBe(true));
+
+    fireEvent.click(screen.getByText('export json'));
+    await waitFor(() => expect(
+      fn.mock.calls.some((c) => String(c[0]).includes('/api/capture/export'))
+    ).toBe(true));
+  });
 });

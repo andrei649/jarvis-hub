@@ -164,6 +164,26 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # after an exact Kernel decision. The tier-three human floor remains.
     "hub.update": Mediation.KERNEL,
     "hub.restart": Mediation.KERNEL,
+    # DRA-59 — exact coordinator task kinds (`build_executor`) mediated under
+    # JARVIS_TASK_MEDIATION=enforce; unknown/suffixed kinds stay unclassified.
+    "search": Mediation.KERNEL,
+    "monitor": Mediation.KERNEL,
+    "scan": Mediation.KERNEL,
+    "lookup": Mediation.KERNEL,
+    "check": Mediation.KERNEL,
+    "summarize": Mediation.KERNEL,
+    "analyze": Mediation.KERNEL,
+    "review": Mediation.KERNEL,
+    "draft": Mediation.KERNEL,
+    "plan": Mediation.KERNEL,
+    "prepare": Mediation.KERNEL,
+    "note": Mediation.KERNEL,
+    "reminder": Mediation.KERNEL,
+    "memory_write": Mediation.KERNEL,
+    "prompt_optimization": Mediation.KERNEL,
+    "agent_promotion": Mediation.KERNEL,
+    "calendar_event": Mediation.KERNEL,
+    "restart_service": Mediation.KERNEL,
 }
 
 

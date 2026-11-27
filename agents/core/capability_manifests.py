@@ -738,6 +738,61 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.autonomy.goal_contract:propose",
         contract_ref="agents.core.autonomy.goal_contract:SCHEMA",
     ),
+    **{
+        _kind: _action(
+            _kind,
+            f"Run a read-only {_kind} autonomy task through configured websearch network egress.",
+            risk="read_only",
+            supports=("search",),
+            rollback=RollbackContract(
+                mode="cancel",
+                description=f"Reject a blocked {_kind} task before websearch dispatch.",
+                limitations="Approved or running work has no guaranteed cancellation after dispatch.",
+            ),
+            implementation="agents.core.autonomy_coordinator:AutonomyCoordinator.build_executor",
+        )
+        for _kind in ("search", "monitor", "scan", "lookup", "check")
+    },
+    **{
+        _kind: _action(
+            _kind,
+            f"Run a governed {_kind} autonomy task through the coordinator LLM executor.",
+            risk="read_only",
+            supports=("execute",),
+            rollback=RollbackContract(
+                mode="cancel",
+                description=f"Reject or cancel a queued {_kind} task before worker execution.",
+                limitations="Completed synthesis output is recorded in the task result.",
+            ),
+            implementation="agents.core.autonomy_coordinator:AutonomyCoordinator.build_executor",
+        )
+        for _kind in (
+            "summarize",
+            "analyze",
+            "review",
+            "draft",
+            "plan",
+            "prepare",
+            "note",
+            "reminder",
+            "memory_write",
+            "prompt_optimization",
+            "agent_promotion",
+            "calendar_event",
+        )
+    },
+    "restart_service": _action(
+        "restart_service",
+        "Run a governed RemediationRunner service restart for an allowlisted local service.",
+        risk="reversible",
+        supports=("execute",),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Reject a blocked service-restart task before remediation dispatch.",
+            limitations="Once the service restart runs, state reflects the restarted service.",
+        ),
+        implementation="agents.core.autonomy_coordinator:AutonomyCoordinator.build_executor",
+    ),
 }
 
 
