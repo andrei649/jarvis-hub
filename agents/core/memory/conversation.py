@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 from agents.core.paths import data_root
 from agents.core.turn_usage import validated_model_calls
@@ -252,7 +253,7 @@ class ConversationMemory:
 
     async def new_session(self, session_id: str = None) -> str:
         async with self._lock:
-            sid = session_id or datetime.now(timezone.utc).strftime("session_%Y%m%d_%H%M%S")
+            sid = session_id or f"session_{uuid4().hex}"
             if sid in self.pending_rewinds:
                 raise UnverifiedRewind("conversation rewind head unverified")
             if sid not in self.sessions:
