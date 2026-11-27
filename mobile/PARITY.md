@@ -13,6 +13,9 @@ can see its session, message number and role in Saved Facts. Native mobile has
 no equivalent save-and-inspect action.
 Desktop owners can also match a phrase from a completed reply to a saved fact and open its original message. This lookup is desktop-only under the mobile freeze.
 
+The desktop Work → Projects demo shows a read-only sample board and project activity.
+Mobile: frozen by the 2026-11-25 owner decision.
+
 Browser Chat, Cockpit and native Chat can search retained message text via
 `POST /sessions/search`. On mobile, **History → Search messages** opens an
 owner search. **Review source** reads the exact saved turn. **Continue this

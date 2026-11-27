@@ -10,7 +10,7 @@ is `2fef89c7641f` and the Workspace tree is `592996ea1752`.
 Chromium at 1920×1080 showed one fixture channel and 41 sessions in the normal
 footer. Demo showed its sample label and omitted both counts. Work › Projects
 mounted in Ledger dark and Classic Obsidian dark. The wider Projects demo-data
-issue recorded below remains open. The visual run covered these two looks.
+issue recorded below was still open at that revision. The visual run covered these two looks.
 
 The full `python scripts/status_sync.py --check` exited 0 with 37,713 Linux
 backend outcomes collected, 5,026 frontend tests passing across 442 files and
@@ -87,9 +87,10 @@ So Codex can skip these in its step 2:
   `apps/jarvis-os/vault_search.py`) and bandit (its log had expired; the redesign's four backend files
   add nothing bandit flags). The fourth, `test (ubuntu-latest)`, was ruff: the base's errors plus the
   redesign's, now fixed.
-- **Still open, found while checking:** under `?demo=1`, Work › Projects still draws the hub's own
-  rooms, missions, sessions and activity (labelled "LIVE") and the live Kanban state. They are
-  labelled honestly, but they are the hub's data on a page that says it shows a demo sample.
+- **Work › Projects demo isolation, updated 2026-11-26.** The original demo mounted the live
+  board, rooms, missions, sessions and activity. The new demo renders a read-only exhibition
+  project in English or Romanian. Exiting the demo opens the real board and project controls.
+  The packaged browser regression is `frontend/e2e/projects-demo.spec.ts`.
 
 Verified: `npx tsc --noEmit` clean; Vitest on `src/frame`, `src/pages`, `src/panels` and the app,
 desktop and demo-exit tests, 79–83 files, all passed; `pytest tests/test_observer_since.py` passed.

@@ -1292,7 +1292,7 @@ type LedgerModeContext = {
    LedgerPage's (they read the hub, the clock and this tab's turns). */
 function ledgerModeBody(mode: string, t: any, ctx: LedgerModeContext): React.ReactNode {
   switch (mode) {
-    case 'projects': return <ProjectsMode t={t} onDiscussResult={ctx.onDiscussResult as any} />;
+    case 'projects': return <ProjectsMode t={t} demo={ctx.demo} lang={ctx.frameLang} onDiscussResult={ctx.onDiscussResult as any} />;
     case 'jobs': return <JobsWorkspace />;
     // The roster opens the Dossier without changing who the owner writes to (§3.2).
     case 'agents': return <AgentsMode agents={ctx.agents} onOpen={ctx.onOpenAgent} t={t} onChanged={ctx.onChanged} />;

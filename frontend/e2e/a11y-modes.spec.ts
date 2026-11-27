@@ -185,14 +185,8 @@ async function waitForAdminEstopReadiness(page: Page, timeoutMs = 25_000): Promi
   return observed as AdminEstopOutcome;
 }
 
-/* One caveat that belongs next to the list rather than in a commit message. `projects` does not
-   go through the demo path at all: app.tsx's `ledgerModeBody` renders `<ProjectsMode t={t} />`
-   without `demo`, and ModePage has no live keys for it, so it is drawn the same way in both lanes.
-   Its demo lane is not independent coverage of its live one: both run the same component against
-   the same backend, whose four panels are their own "nothing yet" empty states (ROOMS 0, MISSIONS
-   0, ACTIVITY "no activity yet"). That is NOT the area-page empty state, so `empty` is correctly
-   false and the demo pin below cannot flag it. What a green lane proves for `projects` is that its
-   frame and empty states are clean; a populated projects surface is still unscanned. */
+/* Projects has different bodies in the two lanes. Demo scans the read-only exhibition sample.
+   The live walk covers the boards and panels populated by its fixture hub. */
 
 /** The two viewports, and why each is here — see (3) above. */
 const VIEWPORTS = [

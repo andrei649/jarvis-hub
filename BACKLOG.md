@@ -7424,6 +7424,9 @@ three times as much**, which is the more useful fact:
       panels are their own "nothing yet" empty states. That is not `ModeEmpty`, so the demo pin
       cannot flag it — what a green lane proves for `projects` is that its chrome and empty states
       are clean, and the spec says so in a comment rather than letting the tick imply more.
+      Update, 2026-11-26. The Ledger Projects demo now renders a read-only sample. Its browser
+      regression opens the sample, verifies that board and mission requests wait, and exits demo
+      to read the fixture mission on the real board page. See `frontend/e2e/projects-demo.spec.ts`.
       (5) **The Admin rail button could not be clicked reliably at all** — and the walk was passing
       by luck. `world_app.tsx` paints a `button.tool-btn` at `position:fixed; left:16; bottom:16;
       zIndex:60`, directly over the bottom of the rail; at 1440×900 Admin occupies y 847.8–885.9
