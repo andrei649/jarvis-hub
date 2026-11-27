@@ -316,8 +316,9 @@ async def test_cancel_stops_the_turn(tmp_path):
 # ── H543: permissions are the ordinary approval decision ─────────────────────
 
 
-async def test_accept_posts_the_hub_decision_with_the_real_diff(tmp_path):
-    (tmp_path / "a.txt").write_text("old\n")
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+async def test_accept_posts_the_hub_decision_with_the_real_diff(tmp_path, newline):
+    (tmp_path / "a.txt").write_bytes(("old" + newline).encode())
     backend, editor = FakeBackend([_card()]), Editor("accept")
     _server, close = await _wire(backend, editor)
     try:
@@ -329,7 +330,7 @@ async def test_accept_posts_the_hub_decision_with_the_real_diff(tmp_path):
         request = editor.permissions[0]
         diff = [c for c in request["toolCall"]["content"] if c["type"] == "diff"][0]
         assert diff == {"type": "diff", "path": str((tmp_path / "a.txt").resolve()),
-                        "oldText": "old\n", "newText": "new\n"}
+                        "oldText": "old" + newline, "newText": "new\n"}
         assert request["toolCall"]["kind"] == "edit"
         assert [o["optionId"] for o in request["options"]] == ["accept", "reject"]   # no "always" offered
         final = editor.kinds("tool_call_update")[-1]
@@ -338,18 +339,19 @@ async def test_accept_posts_the_hub_decision_with_the_real_diff(tmp_path):
         await close()
 
 
-async def test_the_diff_base_is_the_disk_and_unsaved_editor_changes_are_named(tmp_path):
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+async def test_the_diff_base_is_the_disk_and_unsaved_editor_changes_are_named(tmp_path, newline):
     # G11 review: the write replaces the file on disk, so the disk is the "before"; an
     # editor buffer that differs is named, never shown as the base.
-    (tmp_path / "a.txt").write_text("on disk\n")
-    backend, editor = FakeBackend([_card()]), Editor("reject", buffer="unsaved buffer\n", fs=True)
+    (tmp_path / "a.txt").write_bytes(("on disk" + newline).encode())
+    backend, editor = FakeBackend([_card()]), Editor("reject", buffer="unsaved buffer" + newline, fs=True)
     _server, close = await _wire(backend, editor)
     try:
         _init_reply, sid = await _init(editor, tmp_path)
         await editor.conn.request("session/prompt", {"sessionId": sid, "prompt": [{"type": "text", "text": "x"}]})
         content = editor.permissions[0]["toolCall"]["content"]
         diff = [c for c in content if c["type"] == "diff"][0]
-        assert diff["oldText"] == "on disk\n"
+        assert diff["oldText"] == "on disk" + newline
         assert any("unsaved changes" in c["content"]["text"] for c in content if c["type"] == "content")
         assert editor.reads[0]["path"] == str((tmp_path / "a.txt").resolve())
         assert backend.decisions == [(7, "reject", "rejected in the editor")]
