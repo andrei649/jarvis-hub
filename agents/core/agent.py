@@ -851,6 +851,8 @@ class Agent:
         return model
 
     def build_prompt(self, text: str, context: dict) -> str:
+        from .chat_cloud_history import remember_instructions
+        remember_instructions(self.id, context)
         agent_context = context.get("agent_context", {})
         agent_block = ""
         if agent_context:
@@ -1175,7 +1177,23 @@ class Agent:
         out; the legacy backend path has no deadline of its own to align
         (Hermes absorption 5c).
         """
+        from .chat_cloud_history import (
+            build_cloud_prompt,
+            cloud_dispatch,
+            cloud_prompt,
+            tool_turn,
+            web_turn_active,
+        )
         from .llm.job_selection import selected_window
+        from .llm.request_context import current_session
+        projection = None
+        if web_turn_active():
+            projection = cloud_prompt(getattr(self, "llm_router", None), backend, model, self.id, current_session())
+        dispatch = None
+        if projection is not None:
+            # Only constructed user-approved input reaches this backend, including on retries.
+            prompt, dispatch = projection
+            prompt = build_cloud_prompt(self, prompt)
         system = self.model_system_prompt(backend, model, system)
         from . import trajectory
         trajectory.note_system(system)
@@ -1229,17 +1247,18 @@ class Agent:
             check = getattr(getattr(self, "llm_router", None), "check_data_handling", None)
             if callable(check):
                 budget["before_model_call"] = lambda: check(backend, model)
-            response = await runtime.run(
-                agent_id=self.id,
-                backend=backend,
-                model=model,
-                prompt=prompt,
-                system=system,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                event_sink=self._tool_event_sink(),
-                **budget,
-            )
+            with tool_turn(dispatch):
+                response = await runtime.run(
+                    agent_id=self.id,
+                    backend=backend,
+                    model=model,
+                    prompt=prompt,
+                    system=system,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    event_sink=self._tool_event_sink(),
+                    **budget,
+                )
             if on_token is not None and (response or "").strip():
                 emitted = on_token(response)
                 if inspect.isawaitable(emitted):
@@ -1266,7 +1285,7 @@ class Agent:
         async def send(*, request_check=None):
             if request_check is not None:
                 check_final_request(prompt)
-            with physical_request_scope(guard, request_check=request_check):
+            with cloud_dispatch(dispatch), physical_request_scope(guard, request_check=request_check):
                 if guard:
                     guard()
                 return await generate(model=model, prompt=prompt, system=system, max_tokens=max_tokens,

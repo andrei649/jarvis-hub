@@ -128,6 +128,16 @@ async def test_actual_accepted_http_dispatch_correlates_provider_usage_and_exact
 
 
 @pytest.mark.asyncio
+async def test_chatgpt_plan_receipt_never_prices_tokens_at_api_rates():
+    with turn_usage_scope() as collector:
+        await _send("chatgpt-plan", url="https://api.openai.com/v1/responses", model="gpt-4.1")
+        value = collector.snapshot()
+    assert (value["provider"], value["model"], value["api_calls"]) == ("chatgpt-plan", "gpt-4.1", 1)
+    assert value["usage_basis"] == "provider_complete"
+    assert value["cost_basis"] == "unknown" and value["estimated_cost_usd"] is None
+
+
+@pytest.mark.asyncio
 async def test_retry_without_first_usage_makes_totals_unknown():
     with turn_usage_scope() as collector:
         client = llm_async_client("openrouter", transport=httpx.MockTransport(

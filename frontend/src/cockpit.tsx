@@ -33,6 +33,8 @@ import { onOwnerSession } from './api/owner-session';
 import { obsidianOpenUri } from '../../apps/jarvis-os/public/js/obsidian-source.js';
 import { LABEL } from './theme/type';
 import { isLocalOnlyAgent } from './signals/agents-policy';
+import { apiPost } from './api/client';
+import { cloudHistoryPreview, type CloudHistoryPreview } from './cloud-history';
 import type { TabTurn } from './signals/types';
 import { fmt, plural } from './frame/strings';
 import { TalkMenu } from './home/talk/TalkMenu';
@@ -511,7 +513,68 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
   const typedLength = Array.from(val.trim()).length;
   const limit = draft.enabled ? MAX_IMAGE_PROMPT : MAX_MESSAGE;
   const tooLong = !blenderMode && typedLength > limit;
+  // This review belongs to one draft, recipient and retained session. A changed scope cannot
+  // inherit its preview, even if a response to an older preview arrives later.
+  const cloudScope = JSON.stringify([agent, sessionId, val.trim(), demo, selectedTurn]);
+  const cloudScopeNow = useRef(cloudScope);
+  cloudScopeNow.current = cloudScope;
+  const [cloudReview, setCloudReview] = useState<{ scope: string; message: string; preview: CloudHistoryPreview } | null>(null);
+  const [cloudReviewBusy, setCloudReviewBusy] = useState(false);
+  const [cloudReviewError, setCloudReviewError] = useState('');
+  const [cloudSending, setCloudSending] = useState(false);
+  const cloudReviewButton = useRef<HTMLButtonElement>(null);
+  const cloudCancelButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => onOwnerSession(() => { cloudScopeNow.current = ''; setCloudReview(null); }), []);
+  const cloudEligible = !demo && selectedTurn && !isLocalOnlyAgent(agent) && !!sessionId && !command &&
+    !draft.enabled && !vault.selected.length && !officeActive && !boardInUse && !currentHistory && !blenderMode;
+  const visibleCloudReview = cloudEligible && cloudReview?.scope === cloudScope ? cloudReview : null;
+  useLayoutEffect(() => {
+    if (!visibleCloudReview) return;
+    cloudCancelButton.current?.focus();
+    return () => {
+      const trigger = cloudReviewButton.current;
+      if (trigger?.isConnected) trigger.focus();
+      else composerInput.current?.focus();
+    };
+  }, [visibleCloudReview]);
+  useLayoutEffect(() => {
+    if (cloudReview && !visibleCloudReview) setCloudReview(null);
+    setCloudReviewError('');
+  }, [cloudScope, cloudEligible]);
+  const reviewCloudHistory = async () => {
+    if (!cloudEligible || !val.trim() || cloudReviewBusy || cloudSending || turnActive || tooLong || recipientStatus !== 'ready' || switchPending) return;
+    const scope = cloudScope, message = val.trim();
+    setCloudReviewBusy(true); setCloudReviewError('');
+    try {
+      const result = cloudHistoryPreview(await apiPost('/api/chat/cloud-history/preview',
+        { session_id: sessionId, agent, message }, { admin: true }), sessionId, agent);
+      if (cloudScopeNow.current !== scope) return;
+      if (!result) throw new Error('invalid preview');
+      setCloudReview({ scope, message, preview: result });
+    } catch {
+      if (cloudScopeNow.current === scope) setCloudReviewError(lang === 'ro'
+        ? 'Istoricul nu poate fi revizuit acum. Ciorna este păstrată.'
+        : 'Earlier turns cannot be reviewed now. Your draft is kept.');
+    } finally { setCloudReviewBusy(false); }
+  };
+  const sendCloudHistory = async () => {
+    const review = visibleCloudReview;
+    if (!review || cloudSending || turnActive || review.message !== val.trim() || tooLong || recipientStatus !== 'ready' || switchPending) return;
+    setCloudReview(null); setCloudSending(true);
+    try {
+      const accepted = await onSubmit(review.message, undefined, undefined, directReply,
+        { cloudHistory: review.preview, reviewedMessage: review.message, awaitAdmission: true });
+      if (accepted !== false && cloudScopeNow.current === review.scope) {
+        vault.clear(); setDirectReplyScope(''); setVal(''); setSentCount(n => n + 1);
+      } else if (cloudScopeNow.current === review.scope) {
+        setCloudReviewError(lang === 'ro' ? 'Trimiterea a fost refuzată. Ciorna este păstrată.' : 'Send was refused. Your draft is kept.');
+      }
+    } catch {
+      if (cloudScopeNow.current === review.scope) setCloudReviewError(lang === 'ro' ? 'Trimiterea a fost refuzată. Ciorna este păstrată.' : 'Send was refused. Your draft is kept.');
+    } finally { setCloudSending(false); }
+  };
   const submit=()=>{
+    if (visibleCloudReview || cloudSending) return;
     if (recipientStatus !== 'ready' || switchPending) return;
     if (officeSending || vault.busy || boardResult.busy || boardResult.reviewing || skillWarning) return;
     if (tooLong) return;
@@ -696,6 +759,25 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
   return (
     <div className={`n-composer-wrap n-composer-wrap--${variant}`} data-composer-root="" data-composer-variant={variant}
       style={{position:'relative',display:'flex',flexDirection:'column',minHeight:0,flexShrink:1}} onPaste={boardInUse || currentHistory || officeActive ? undefined : draft.onPaste} onDrop={boardInUse || currentHistory || officeActive ? event => event.preventDefault() : draft.onDrop} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}}>
+      {cloudEligible && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 6 }}>
+        {lang === 'ro' ? 'Se trimite doar mesajul curent. Verifică destinația înainte de a include istoricul.'
+          : 'Current message only. Check the destination before including history.'}{' '}
+        <button ref={cloudReviewButton} type="button" className="tool-btn" disabled={!val.trim() || cloudReviewBusy || cloudSending || turnActive || tooLong}
+          onClick={() => { void reviewCloudHistory(); }}>{lang === 'ro' ? 'Revizuiește mesajele anterioare' : 'Review earlier turns'}</button>
+        {cloudReviewBusy && <span role="status">{lang === 'ro' ? 'Se verifică destinația…' : 'Checking destination…'}</span>}
+        {cloudReviewError && <span role="alert">{cloudReviewError}</span>}
+      </div>}
+      {visibleCloudReview && <div className="pal-scrim" onClick={() => setCloudReview(null)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setCloudReview(null); } }}>
+        <div className="pal" role="dialog" aria-modal="true" aria-label={lang === 'ro' ? 'Trimite mesajele anterioare' : 'Send earlier turns'}
+          onClick={event => event.stopPropagation()} style={{ width: 'min(440px,92vw)' }}>
+          <div style={{ padding: 18 }}>
+            <p>{lang === 'ro' ? 'Mesajele anterioare din această conversație vor fi trimise la' : 'Earlier turns from this chat will be sent to'} <b>{visibleCloudReview.preview.provider} / {visibleCloudReview.preview.model}</b>.</p>
+            <p>{lang === 'ro' ? 'Această alegere se aplică doar mesajului curent.' : 'This choice applies only to this message.'}</p>
+            <button ref={cloudCancelButton} type="button" className="tool-btn" onClick={() => setCloudReview(null)}>{lang === 'ro' ? 'Anulează' : 'Cancel'}</button>{' '}
+            <button type="button" className="tool-btn" onClick={() => { void sendCloudHistory(); }}>{lang === 'ro' ? 'Include și trimite' : 'Include and send'}</button>
+          </div>
+        </div>
+      </div>}
       {showImages && <ComposerImages draft={draft} disabled={!!currentHistory}/>}
       {officeSending
         ? <p role="status" id={officeSendingId}>{lang === 'ro' ? 'Se trimit pasajele selectate…' : 'Sending selected passages…'}</p>

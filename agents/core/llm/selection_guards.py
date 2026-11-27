@@ -161,7 +161,8 @@ def register(guard: Guard) -> Guard:
 
 @register
 def cost_guard(choice: Choice) -> Finding | None:
-    if not choice.model:
+    if not choice.model or choice.provider == "chatgpt-plan":
+        # A name in the API price table does not price usage through a ChatGPT plan.
         return None
     if _current_signed_choice(choice):
         # The static table describes built-in billing only. Selection already

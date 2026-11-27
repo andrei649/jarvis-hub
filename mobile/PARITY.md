@@ -1,5 +1,9 @@
 # Mobile ⇄ Browser parity ledger
 
+The desktop command palette returns keyboard focus to its opener when the selected
+command leaves focus on the page background. Closing the app cancels a pending
+focus change. Mobile: frozen, 2026-11-25.
+
 The **bridge** that keeps the iOS/Android apps (`mobile/`) in sync with the browser HUD.
 Both clients talk to the **same** HTTP API (`agents/web.py`), so "feature parity" is mostly a
 question of *which hub surfaces the mobile app has caught up to*.
@@ -16,6 +20,13 @@ Desktop owners can also match a phrase from a completed reply to a saved fact an
 The desktop Work → Projects demo shows a read-only sample board and project activity.
 Mobile: frozen by the 2026-11-25 owner decision.
 
+On desktop, open Console → Start → Integrations to connect a ChatGPT plan,
+list the models visible to that account and confirm which one handles cloud chat.
+Ledger remembers the selection after reload and shows the model on its reply.
+This uses the local hub at `127.0.0.1` and a browser sign-in specifically for
+Nerva. Native account setup and plan-model selection are deferred under the
+2026-11-25 mobile freeze.
+
 Browser Chat, Cockpit and native Chat can search retained message text via
 `POST /sessions/search`. On mobile, **History → Search messages** opens an
 owner search. **Review source** reads the exact saved turn. **Continue this
@@ -24,6 +35,11 @@ In web Chat, Cockpit and native Chat, the owner can also quote a passage in the
 current conversation. Native Chat offers **Use passage in next message** after
 review. Sending rechecks the saved text and attaches a citation to the question.
 A recipient that may use a cloud model requires explicit consent.
+
+Ledger sends the current message to the selected cloud model by default. To include
+earlier turns from this conversation, the owner reviews the provider and model and
+confirms that send. Mobile uses the same current-message default. Its history
+confirmation UI is deferred under the owner's mobile freeze of 2026-11-25.
 
 The browser HUD can download a completed reply as a Word document and individual
 tables as Excel workbooks through `POST /api/canvas/export`. The native apps

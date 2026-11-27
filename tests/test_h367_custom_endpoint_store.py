@@ -12,6 +12,29 @@ def store(tmp_path, monkeypatch):
     return settings_db.DB_PATH
 
 
+def test_builtin_router_requires_both_choices_empty_without_signed_leases(store, monkeypatch):
+    from contextlib import closing
+
+    from agents.core.llm import custom_endpoints as custom
+    from agents.core.llm.provider_selection import SelectionInvalid
+    from agents.core.llm.providers import selection_gates
+
+    monkeypatch.setattr(selection_gates, "fcntl", None)
+    assert custom.read_router_choice().active_key is None
+    with pytest.raises(selection_gates.SelectionUnavailable):
+        custom.read_choice()
+    with closing(settings_db.get_conn()) as conn, conn:
+        conn.execute("UPDATE signed_provider_selection SET record_json='invalid'")
+    with pytest.raises(SelectionInvalid):
+        custom.read_router_choice()
+    with closing(settings_db.get_conn()) as conn, conn:
+        conn.execute("UPDATE signed_provider_selection SET record_json=NULL")
+        conn.execute("UPDATE custom_endpoint_choice SET active_key='one', config_revision=1, "
+                     "credential_generation=0, consent_proof=?", ("1" * 64,))
+    with pytest.raises(selection_gates.SelectionUnavailable):
+        custom.read_router_choice()
+
+
 def test_named_records_survive_reopen_and_rename_preserves_identity(store):
     from agents.core.llm import custom_endpoints as custom
 

@@ -9887,6 +9887,20 @@ chain-of-thought leak / mid-sentence truncation fixed. Kill-switch:
 
 ## ORIZONT 18 — Aplicații Native iOS/Android & Paritate cu Browser (P2–P3) — 21/30
 
+Ledger cloud chat (finish-line item 1, 2026-11-26) sends earlier turns from the
+selected chat only after the owner reviews the destination and confirms that send.
+The native composer uses the current-message default. Its review UI stays in
+the deferred mobile scope recorded in `mobile/PARITY.md`.
+
+Finish-line item 1, 2026-11-26. Desktop acceptance for the ChatGPT plan
+connection starts in Ledger Integrations. The owner authorizes Nerva in the
+browser, refreshes the connection, and chooses a visible model by its provider
+slug. The packaged HUD retained the choice after reload. On Windows and Linux,
+the chat routes sent the current message to a synthetic ChatGPT endpoint and
+included earlier user and assistant turns only after confirmation. Both routes
+recorded the model that handled the response. The remaining acceptance requires
+a real local turn and a reply from a model included in the owner's ChatGPT plan.
+
 > Client mobil nativ (Expo SDK 56 / RN 0.85) sub `mobile/`, peste **același API HTTP** (`agents/web.py`)
 > ca HUD-ul browser — niciun backend nou. Fundația livrată în **PR #161**. Restul = paritate progresivă
 > cu HUD-ul + infrastructura de build/release.

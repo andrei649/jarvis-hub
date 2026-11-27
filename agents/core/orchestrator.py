@@ -4236,6 +4236,7 @@ class Orchestrator:
                     if callable(data_check):
                         data_check(backend, model, route_name, actual_use=False)
                     if isinstance(backend, GeminiBackend):
+                        from .chat_cloud_history import web_turn_active
                         # One immutable lease owns both this generation and any
                         # cache lookup/create decision made for it.
                         lease = backend.acquire_lease()
@@ -4245,6 +4246,7 @@ class Orchestrator:
                         )
                         if (
                             self.context_cache is not None
+                            and not web_turn_active()
                             and history_parts
                             and self.security is not None
                             and not isinstance(getattr(backend, 'profile', None), AdmittedProviderProfile)
@@ -5345,6 +5347,8 @@ class Orchestrator:
         """
         from .context_refs import attached_block
 
+        from .chat_cloud_history import remember_current_inputs
+        remember_current_inputs(agent_id, text, plugin_block, runtime_block)
         attachments = attached_block()   # H579: this turn's @file: section, never stored with the message
         if attachments:
             text = f"{text}\n\n{attachments}"

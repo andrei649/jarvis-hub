@@ -411,6 +411,13 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
                                 "grok-4.5": ("low", "medium", "high")},
     ),
     ProviderProfile(
+        id="chatgpt-plan", display_name="ChatGPT plan", backend_kind="chatgpt-plan",
+        api_mode="responses", auth_type="oauth", default_base_url="https://api.openai.com/v1",
+        capabilities=frozenset({"chat", "streaming", "cloud"}),
+        supports_health_check=False, supports_model_listing=False,
+        data_policy_note="ChatGPT plan controls apply to the connected account and workspace",
+    ),
+    ProviderProfile(
         id="openai-responses", display_name="OpenAI Responses (API key, GPT-4.1)",
         api_mode="responses",
         backend_kind="openai-responses", auth_type="bearer", auth_env="OPENAI_API_KEY",
@@ -464,7 +471,17 @@ def list_profiles() -> list[ProviderProfile]:
 
 
 def provider_catalog(environ: Mapping[str, str] | None = None) -> list[dict]:
-    return DEFAULT_REGISTRY.catalog(environ=environ)
+    rows = DEFAULT_REGISTRY.catalog(environ=environ)
+    if environ is None:
+        from agents.core import chatgpt_connection
+
+        plan = next(row for row in rows if row["id"] == "chatgpt-plan")
+        try:
+            connected = chatgpt_connection.status()["connected"]
+        except chatgpt_connection.ConnectionError:
+            connected = False
+        plan["configured"] = plan["auth"]["configured"] = connected
+    return rows
 
 
 def custom_provider_registry() -> ProviderRegistry:

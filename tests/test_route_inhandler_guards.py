@@ -205,6 +205,32 @@ def _probe_oauth_callback(client, monkeypatch, tmp_path):
     return denied, allowed
 
 
+def _probe_chatgpt_callback(client, monkeypatch, tmp_path):
+    from agents.core import chatgpt_connection as account
+    from agents.core.routers.chatgpt_plan import CALLBACK, _cookie
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "profile"))
+    monkeypatch.setenv("JARVIS_KEY_DIR", str(tmp_path / "keys"))
+    http = TestClient(client.app, base_url="http://127.0.0.1:46783", client=("127.0.0.1", 41024))
+    binding = "local-browser-fixture"
+    state = account.start("http://127.0.0.1:46783" + CALLBACK, binding)["state"]
+    params = {"state": state, "code": "synthetic-authorization-code", "client_id": "oaiapp_fixture"}
+    exchanges = []
+
+    async def token(method, endpoint, generation, **kwargs):
+        assert (method, endpoint, kwargs["data"]["code"]) == ("POST", account.TOKEN, params["code"])
+        exchanges.append(endpoint)
+        raise account.ConnectionError("reauthorization_required", 409)
+
+    monkeypatch.setattr(account, "_json", token)
+    denied = http.get(CALLBACK, params=params)
+    assert not exchanges
+    http.cookies.set(_cookie(state), binding, domain="127.0.0.1", path=CALLBACK)
+    allowed = http.get(CALLBACK, params=params)
+    assert exchanges == [account.TOKEN] and allowed.status_code == 409
+    return denied, allowed
+
+
 def _probe_mcp_oauth_callback(client, monkeypatch, tmp_path):
     """G9 / H692: a waiting MCP sign-in redeemed with its binding cookie vs without it."""
     from agents.core.mcp import oauth_client as oc
@@ -382,6 +408,7 @@ HTTP_PROBES = {
     "POST /api/mcp/server/rpc": (_probe_mcp_rpc, {401}),
     "POST /api/oauth/callback": (_probe_oauth_callback, {400}),
     "GET /api/oauth/mcp/callback": (_probe_mcp_oauth_callback, {403}),
+    "GET /api/oauth/chatgpt/callback": (_probe_chatgpt_callback, {403}),
     "POST /api/widget/{token}/message": (_probe_widget_message, {404}),
     "GET /api/widget/{token}": (_probe_widget_snippet, {404}),
     "GET /api/widget/{token}/config": (_probe_widget_config, {404}),

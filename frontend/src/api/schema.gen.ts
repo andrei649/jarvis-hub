@@ -9103,6 +9103,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/chatgpt-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connection Status */
+        get: operations["connection_status_api_admin_chatgpt_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/chatgpt-plan/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect */
+        post: operations["connect_api_admin_chatgpt_plan_connect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/oauth/chatgpt/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Finish */
+        get: operations["finish_api_oauth_chatgpt_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/chatgpt-plan/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Models */
+        get: operations["models_api_admin_chatgpt_plan_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/chatgpt-plan/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select For Chat
+         * @description Choose a visible plan model for ordinary chat, after the usual settings consent.
+         */
+        post: operations["select_for_chat_api_admin_chatgpt_plan_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/chatgpt-plan/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disconnect */
+        post: operations["disconnect_api_admin_chatgpt_plan_disconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/brain": {
         parameters: {
             query?: never;
@@ -13515,6 +13620,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/cloud-history/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Cloud History */
+        post: operations["preview_cloud_history_api_chat_cloud_history_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/resolve": {
         parameters: {
             query?: never;
@@ -17786,6 +17908,21 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** ChatChoice */
+        ChatChoice: {
+            /** Model */
+            model: string;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
+        };
         /** ChatNoteBody */
         ChatNoteBody: {
             /** Targetid */
@@ -17850,6 +17987,7 @@ export interface components {
              * @default false
              */
             allow_board_cloud: boolean;
+            cloud_history?: components["schemas"]["HistoryChoice"] | null;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -18706,6 +18844,19 @@ export interface components {
              * @default false
              */
             confirm: boolean;
+        };
+        /** HistoryChoice */
+        HistoryChoice: {
+            /** Session Id */
+            session_id: string;
+            /** Agent */
+            agent: string;
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Revision */
+            revision: string;
         };
         /** HistoryReference */
         HistoryReference: {
@@ -19742,6 +19893,15 @@ export interface components {
              */
             operation: "run" | "pause" | "resume" | "pin" | "unpin" | "adopt" | "restore" | "archive" | "prune" | "backup" | "rollback" | "purge";
             args?: components["schemas"]["CuratorArgs"];
+        };
+        /** PreviewRequest */
+        PreviewRequest: {
+            /** Session Id */
+            session_id: string;
+            /** Agent */
+            agent: string;
+            /** Message */
+            message: string;
         };
         /** ProcedureBody */
         ProcedureBody: {
@@ -36300,6 +36460,139 @@ export interface operations {
             };
         };
     };
+    connection_status_api_admin_chatgpt_plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    connect_api_admin_chatgpt_plan_connect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    finish_api_oauth_chatgpt_callback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+        };
+    };
+    models_api_admin_chatgpt_plan_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    select_for_chat_api_admin_chatgpt_plan_select_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatChoice"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_api_admin_chatgpt_plan_disconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     brain_page_brain_get: {
         parameters: {
             query?: never;
@@ -42342,6 +42635,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_cloud_history_api_chat_cloud_history_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryChoice"];
                 };
             };
             /** @description Validation Error */
