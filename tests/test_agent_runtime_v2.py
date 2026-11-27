@@ -2675,20 +2675,18 @@ async def test_h399_unregistering_a_tool_forgets_its_parallel_safety():
 @pytest.mark.asyncio
 async def test_h399_unsafe_tools_run_alone_while_safe_neighbours_overlap():
     server = ToolRPCServer()
-    active = 0
+    readers = asyncio.Barrier(2)
     timeline = []
-    overlaps = {}
 
     async def handler(args):
-        nonlocal active
-        active += 1
-        overlaps[args["value"]] = max(overlaps.get(args["value"], 0), active)
-        timeline.append(("start", args["value"]))
-        await asyncio.sleep(0.02)
-        overlaps[args["value"]] = max(overlaps[args["value"]], active)
-        timeline.append(("end", args["value"]))
-        active -= 1
-        return {"value": args["value"]}
+        value = args["value"]
+        timeline.append(("start", value))
+        if value in {"r1", "r2"}:
+            await readers.wait()
+        else:
+            await asyncio.sleep(0)
+        timeline.append(("end", value))
+        return {"value": value}
 
     server.register_tool("read", handler)
     server.register_tool("write", handler, parallel_safe=False)
@@ -2708,8 +2706,8 @@ async def test_h399_unsafe_tools_run_alone_while_safe_neighbours_overlap():
     assert answer == "done"
     # The two leading reads overlap; each write is alone; the trailing read waits
     # for the writes (a barrier, not a reorder).
-    assert overlaps["r1"] == 2 and overlaps["r2"] == 2
-    assert overlaps["w1"] == 1 and overlaps["w2"] == 1 and overlaps["r3"] == 1
+    assert max(timeline.index(("start", read)) for read in ("r1", "r2")) < min(
+        timeline.index(("end", read)) for read in ("r1", "r2"))
     assert timeline.index(("start", "w1")) > max(
         timeline.index(("end", "r1")), timeline.index(("end", "r2")))
     assert timeline.index(("start", "w2")) > timeline.index(("end", "w1"))
@@ -2717,6 +2715,8 @@ async def test_h399_unsafe_tools_run_alone_while_safe_neighbours_overlap():
     # Observations still come back in provider order.
     tool_messages = backend.calls[1]["messages"][-5:]
     assert [message["tool_call_id"] for message in tool_messages] == ["r1", "r2", "w1", "w2", "r3"]
+    assert all(json.loads(message["content"])["result"]["value"] == message["tool_call_id"]
+               for message in tool_messages)
     planned = [event for event in events if event["event"] == "tool_batch_planned"]
     assert len(planned) == 1
     assert planned[0]["concurrent_calls"] == 3
