@@ -253,3 +253,64 @@ def test_the_pack_now_has_production_importers():
 
     assert "agents/core/routers/multimodal.py" in importers
     assert "agents/core/autonomy_coordinator.py" in importers
+
+
+async def test_run_rechecks_action_kernel_and_emits_audit_entries():
+    """0.25 execution-time Action-Kernel recheck + audit-log entry."""
+    from agents.core.kernel import Decision, Verdict
+
+    drv = NullDesktopDriver()
+    events = []
+
+    class FakeAudit:
+        def log(self, event, payload):
+            events.append((event, payload))
+
+    def kernel(action):
+        assert action.kind == "desktop.control"
+        if action.payload["action"] == "lock_screen":
+            return Decision(Verdict.DENY, reason="policy_locked")
+        if action.payload["action"] == "screenshot":
+            return Decision(Verdict.QUEUE, reason="review_screen")
+        return Decision(Verdict.GRANT)
+
+    dc = DesktopControl(GovernedDesktop(driver=drv), kernel=kernel, audit=FakeAudit())
+    out = await dc.run(
+        [
+            plan_launch("mspaint"),           # refused at allowlist
+            plan_os_action("lock_screen"),    # denied by Action Kernel
+            plan_os_action("screenshot"),     # QUEUE on read-only -> blocked without approver
+            plan_launch("browser"),           # GRANT -> still requires approver -> blocked when None
+        ],
+        approver=None,
+    )
+    by_action = {r["action"]: r["status"] for r in out["ran"]}
+    assert len(out["refused"]) == 1
+    assert by_action["lock_screen"] == "denied"
+    assert by_action["screenshot"] == "blocked"
+    assert by_action["launch"] == "blocked"
+    assert drv.calls == []
+    assert any(ev == "desktop.control.refused" for ev, _ in events)
+    assert any(ev == "desktop.control.denied" and p["reason"] == "policy_locked" for ev, p in events)
+
+    # With explicit approver=True, GRANT + QUEUE steps execute and audit records "ran"
+    events.clear()
+    ok = await dc.run(
+        [plan_os_action("screenshot"), plan_launch("terminal")],
+        approver=lambda a, args: True,
+    )
+    assert [r["status"] for r in ok["ran"]] == ["ran", "ran"]
+    assert [c["action"] for c in drv.calls] == ["screenshot", "launch"]
+    assert [p["status"] for ev, p in events if ev == "desktop.control.step"] == ["ran", "ran"]
+
+
+async def test_run_fails_closed_when_kernel_raises():
+    drv = NullDesktopDriver()
+
+    def broken_kernel(_action):
+        raise RuntimeError("kernel down")
+
+    dc = DesktopControl(GovernedDesktop(driver=drv), kernel=broken_kernel)
+    out = await dc.run([plan_os_action("screenshot")], approver=lambda a, args: True)
+    assert out["ran"] == [{"action": "screenshot", "status": "denied", "reason": "kernel_error"}]
+    assert drv.calls == []

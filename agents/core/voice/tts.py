@@ -23,6 +23,7 @@ a command sends the text), and availability reports say so.
 import asyncio
 import logging
 import re
+import sys
 import tempfile
 from pathlib import Path
 from typing import AsyncIterator, Callable, Optional
@@ -122,6 +123,24 @@ def voice_persona_consent_granted(consent_getter: Optional[Callable[[], bool]] =
         return False
 
 
+_PEER_TTS_MODULE = sys.modules.get(
+    "core.voice.tts" if __name__ == "agents.core.voice.tts" else "agents.core.voice.tts"
+)
+_CONSENT_STATE: dict[str, Optional[dict[str, object]]] = (
+    getattr(_PEER_TTS_MODULE, "_CONSENT_STATE", None) or {"last": None}
+)
+
+
+def _record_last_consent_status(status: Optional[dict[str, object]]) -> None:
+    _CONSENT_STATE["last"] = dict(status) if isinstance(status, dict) else None
+
+
+def last_persona_consent_status() -> Optional[dict[str, object]]:
+    """Return a copy of the most recent persona/cloned-voice check on this process, if any."""
+    last = _CONSENT_STATE.get("last")
+    return dict(last) if isinstance(last, dict) else None
+
+
 def voice_persona_consent_status(
     consent_getter: Optional[Callable[[], bool]] = None,
 ) -> dict[str, object]:
@@ -211,6 +230,7 @@ class TTSEngine:
             "setting": f"{PERSONA_VOICE_CONSENT_CATEGORY}.{PERSONA_VOICE_CONSENT_KEY}",
             "message": None if granted else PERSONA_VOICE_CONSENT_MESSAGE,
         }
+        _record_last_consent_status(self.last_consent_status)
         if not granted:
             logger.warning(
                 "Blocked cloned/persona voice %r without owner consent; using %r",
@@ -252,6 +272,7 @@ class TTSEngine:
             "fallback_voice": None,
             "message": None,
         }
+        _record_last_consent_status(self.last_consent_status)
 
         if is_persona_or_cloned_voice(v) and not self._persona_voice_allowed(v, lang):
             v = self._safe_default_voice(lang)

@@ -613,6 +613,64 @@ export function VaultPanel() {
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [note, setNote] = useState('');
+  const [vaultQuery, setVaultQuery] = useState('');
+  const [vaultHits, setVaultHits] = useState<any[]>([]);
+  const [searchingVault, setSearchingVault] = useState(false);
+  const [vaultSearchErr, setVaultSearchErr] = useState('');
+  const [openedNote, setOpenedNote] = useState<any>(null);
+  const [capTitle, setCapTitle] = useState('');
+  const [capBody, setCapBody] = useState('');
+  const [capLinks, setCapLinks] = useState('');
+  const [capSaving, setCapSaving] = useState(false);
+  const [capStatus, setCapStatus] = useState('');
+
+  async function searchObsidian() {
+    const q = vaultQuery.trim();
+    if (!q) return;
+    setSearchingVault(true); setVaultSearchErr(''); setOpenedNote(null);
+    try {
+      const res: any = await apiGet('/api/os/brain/retrieve?q=' + encodeURIComponent(q));
+      setVaultHits(Array.isArray(res?.attachments) ? res.attachments : []);
+    } catch {
+      setVaultHits([]);
+      setVaultSearchErr('Could not search the Obsidian vault.');
+    } finally { setSearchingVault(false); }
+  }
+
+  async function inspectNote(relPath: string) {
+    setVaultSearchErr('');
+    try {
+      const q = vaultQuery.trim();
+      const params = 'relPath=' + encodeURIComponent(relPath) + (q ? '&q=' + encodeURIComponent(q) : '');
+      const res: any = await apiGet('/api/os/brain/note?' + params);
+      if (res && res.ok !== false) setOpenedNote({ relPath, ...res });
+      else setVaultSearchErr(res?.error || 'Could not open note.');
+    } catch {
+      setVaultSearchErr('Could not open note.');
+    }
+  }
+
+  async function captureInbox() {
+    if (!capTitle.trim() && !capBody.trim()) return;
+    setCapSaving(true); setCapStatus('');
+    try {
+      const links = capLinks.split(',').map((s) => s.trim()).filter(Boolean);
+      const res: any = await apiPost('/api/os/brain/capture', {
+        title: capTitle.trim(),
+        content: capBody,
+        links,
+      });
+      if (res && res.ok !== false) {
+        setCapStatus(`Saved ${res.relPath || 'note'}`);
+        setCapTitle(''); setCapBody(''); setCapLinks('');
+        index.reload();
+      } else {
+        setCapStatus(res?.error || 'Could not capture note.');
+      }
+    } catch {
+      setCapStatus('Could not capture note.');
+    } finally { setCapSaving(false); }
+  }
 
   const putB64 = (dataB64, itemName, kind) => act('/api/vault', { name: itemName, kind, data_base64: dataB64 }, () => { setNote('stored'); reload(); });
   const storeText = () => {
@@ -652,9 +710,62 @@ export function VaultPanel() {
         <p>{index.d.vaultAvailable ? `${index.d.vaultPath} · ${index.d.indexReady === false ? 'index unavailable' : index.d.indexedNotes + ' indexed notes'}` : 'Vault disconnected'}</p>
         <p>{Array.isArray(index.d.excludedZones) ? index.d.excludedZones.length : index.d.excludedZones || 0} excluded zones · {index.d.skippedHardlinks || 0} hard links skipped</p>
         <p>{index.d.lastIndexedAt ? `Last indexed ${index.d.lastIndexedAt}` : 'Awaiting first index'} · Memory Copilot {index.d.copilotConnected ? 'connected' : 'offline'}</p>
-        {index.d.vaultAvailable && <button className="tool-btn" disabled={syncing} onClick={reindex}>{syncing ? 'Indexing…' : 'Reindex vault'}</button>}
+        {index.d.secondBrain && <p style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>
+          Local MCP {index.d.secondBrain.mcpConfigured ? 'ready' : 'unset'} · AI KB FTS {index.d.secondBrain.aiKbConfigured ? 'ready' : 'unset'}
+        </p>}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+          {index.d.vaultAvailable && <button className="tool-btn" disabled={syncing} onClick={reindex}>{syncing ? 'Indexing…' : 'Reindex vault'}</button>}
+          <a className="tool-btn" href={internalLink('/os/')}>Open /os/</a>
+        </div>
         {syncError && <p role="alert">{syncError}</p>}
       </div>}
+    </Card><Card title="SECOND BRAIN · NOTES & INBOX" live={asLive(index.d, index.d?.vaultAvailable)} onReload={index.reload}>
+      {!index.d?.vaultAvailable ? (
+        <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)' }}>Connect an Obsidian vault (`NERVA_OS_VAULT_PATH`) to search notes or capture into your inbox.</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input value={vaultQuery} onChange={(ev) => setVaultQuery(ev.target.value)} placeholder="Search vault notes…" style={{ ...inpS, flex: 1 }} />
+            <button className="tool-btn" disabled={searchingVault || !vaultQuery.trim()} onClick={searchObsidian}>{searchingVault ? 'Searching…' : 'Search vault'}</button>
+          </div>
+          {vaultSearchErr && <div role="alert" style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--red)', marginTop: 6 }}>{vaultSearchErr}</div>}
+          {vaultHits.map((hit, idx) => (
+            <Row key={`${hit.name || 'hit'}-${idx}`}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: 'var(--accent-light)', fontSize: 'var(--n-fs-meta)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hit.name}</div>
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hit.text}</div>
+              </div>
+              <button className="tool-btn" onClick={() => inspectNote(hit.name)}>Inspect note</button>
+            </Row>
+          ))}
+          {openedNote && (
+            <div style={{ marginTop: 8, padding: 8, border: '1px solid var(--line)', borderRadius: 4 }}>
+              <div style={{ fontWeight: 600 }}>{openedNote.title || openedNote.relPath}</div>
+              {Array.isArray(openedNote.tags) && openedNote.tags.length > 0 && (
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>Tags: {openedNote.tags.join(', ')}</div>
+              )}
+              {Array.isArray(openedNote.wikilinks) && openedNote.wikilinks.length > 0 && (
+                <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 2 }}>Links: {openedNote.wikilinks.join(', ')}</div>
+              )}
+              <pre style={{ whiteSpace: 'pre-wrap', fontSize: 'var(--n-fs-meta)', marginTop: 6, maxHeight: 180, overflow: 'auto' }}>{openedNote.body}</pre>
+            </div>
+          )}
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginBottom: 4 }}>
+              {index.d.captureTarget ? `Inbox target: ${index.d.inboxFolder || 'configured'}` : (index.d.captureUnavailableReason || 'Configure an existing allowed vault inbox, then refresh.')}
+            </div>
+            <input value={capTitle} onChange={(ev) => setCapTitle(ev.target.value)} placeholder="Note title" disabled={!index.d.captureTarget} style={{ ...inpS, width: '100%', marginBottom: 6 }} />
+            <textarea value={capBody} onChange={(ev) => setCapBody(ev.target.value)} placeholder="Markdown note for vault inbox…" disabled={!index.d.captureTarget} style={{ ...taS, minHeight: 50 }} />
+            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+              <input value={capLinks} onChange={(ev) => setCapLinks(ev.target.value)} placeholder="Wikilinks (comma-separated)" disabled={!index.d.captureTarget} style={{ ...inpS, flex: 1 }} />
+              <button className="tool-btn" disabled={!index.d.captureTarget || capSaving || (!capTitle.trim() && !capBody.trim())} onClick={captureInbox}>
+                {capSaving ? 'Capturing…' : 'Capture to inbox'}
+              </button>
+            </div>
+            {capStatus && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>{capStatus}</div>}
+          </div>
+        </>
+      )}
     </Card><Card title="VAULT" live={asLive(d)} sub={d ? `${stats.items || 0} items · ${Math.round((stats.bytes || 0) / 1024)} KB` : null} onReload={reload}>
       <State e={e} loading={loading} n={items.length} />
       {items.slice(0, 10).map((it) => (

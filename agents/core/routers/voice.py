@@ -283,10 +283,15 @@ def _probe_voice_engines() -> dict:
     """Import the optional voice stacks and report what is present. BLOCKING."""
     from core.voice.stt import HAS_WHISPER
     try:
-        from core.voice.tts import HAS_EDGE, voice_persona_consent_status
+        from core.voice.tts import (
+            HAS_EDGE,
+            last_persona_consent_status,
+            voice_persona_consent_status,
+        )
     except Exception:
         HAS_EDGE = False
         voice_persona_consent_status = None
+        last_persona_consent_status = None
     try:
         from core.voice.tts import HAS_KOKORO
     except Exception:
@@ -298,6 +303,7 @@ def _probe_voice_engines() -> dict:
         # Kept as a callable, not a value: consent is revocable, so it must be
         # read fresh on every request even though the import result is cached.
         "consent_fn": voice_persona_consent_status,
+        "last_consent_fn": last_persona_consent_status,
     }
 
 
@@ -323,6 +329,7 @@ async def voice_capabilities():
     has_edge = engines["has_edge"]
     has_kokoro = engines["has_kokoro"]
     consent_fn = engines["consent_fn"]
+    last_consent_fn = engines.get("last_consent_fn")
     xtts = bool(os.getenv("XTTS_SERVER_URL"))
     eleven = bool(os.getenv("ELEVENLABS_API_KEY"))
     fish = bool(os.getenv("FISH_AUDIO_API_KEY"))
@@ -348,6 +355,7 @@ async def voice_capabilities():
             if consent_fn else
             {"required": True, "granted": False, "allowed": False, "message": "voice consent status unavailable"}
         ),
+        "last_consent_status": last_consent_fn() if callable(last_consent_fn) else None,
         "providers": {
             "stt": ("faster-whisper" if has_whisper and local["stt_mode"] != "command"
                     else (stt_selector if stt_command and local["stt_mode"] != "whisper" else None)),

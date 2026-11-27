@@ -145,3 +145,23 @@ def test_persona_module_surfaces_voice_consent_status():
     assert status["granted"] is False
     assert "owner consent" in status["message"]
     assert voice_persona_consent_status(consent_getter=lambda: True)["granted"] is True
+
+
+def test_voice_capabilities_route_surfaces_last_persona_consent_status(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core.voice.tts import last_persona_consent_status
+
+    engine, _ = _engine(consent=False)
+    _run(engine.speak("hello", voice="xtts:andrei", lang="ro"))
+    recorded = last_persona_consent_status()
+    assert recorded is not None
+    assert recorded["requested_voice"] == "xtts:andrei"
+    assert recorded["fallback_voice"] == "ro-RO-EmilNeural"
+    assert recorded["allowed"] is False
+
+    body = TestClient(web.app).get("/api/voice/capabilities").json()
+    assert body["persona_voice"]["setting"] == "voice.persona_voice_consent"
+    assert body["last_consent_status"]["requested_voice"] == "xtts:andrei"
+    assert body["last_consent_status"]["fallback_voice"] == "ro-RO-EmilNeural"

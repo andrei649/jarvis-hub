@@ -730,11 +730,13 @@ canonical note in Obsidian. For an indexed, readable source, the composer uses
 `/api/os/brain/note` with the search question to open the matching part of
 a long note. It checks the text and its position again before sending. During review
 the sender can include the relative note path as text in the saved message.
-`/api/os/status`, `/api/os/brain` and `POST /api/os/brain/capture` still have callers only in
-`apps/jarvis-os/public/js/api.js`, so the gate labels those routes
-`HUD_GAP:jarvis-os`. Native Chat also uses `/api/os/brain/retrieve` to review and
+Console → Memory → Vault (`VaultPanel`) now calls `/api/os/status`, `/api/os/brain/reindex`,
+`/api/os/brain/retrieve`, `/api/os/brain/note` and `POST /api/os/brain/capture` directly from HUD V2
+with Second Brain readiness badges and an `Open /os/` link, while `/api/os/brain` (the 3D galaxy) and
+`POST /api/os/workshop/edit` remain in the standalone `/os` client (`HUD_GAP:jarvis-os`).
+Native Chat also uses `/api/os/brain/retrieve` to review and
 recheck excerpts before sending them with a question. Vault graph navigation,
-passage selection and inbox capture remain open on mobile (BACKLOG H18.38).
+passage selection and inbox capture remain frozen on mobile per 2026-11-25 decision (BACKLOG H18.38).
 
 Standalone AI Connections and its default-off cloud chat consent are confined to
 the standalone server. Hub `/os` hides those settings and uses the hub's separate

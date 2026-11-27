@@ -23,10 +23,12 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 const apiGet = vi.fn();
 const apiPost = vi.fn();
+const apiPut = vi.fn();
 vi.mock('../api/client', () => ({
   apiGet: (...a: any[]) => apiGet(...a),
   apiPost: (...a: any[]) => apiPost(...a),
-  apiPut: vi.fn(), apiPatch: vi.fn(), apiDelete: vi.fn(),
+  apiPut: (...a: any[]) => apiPut(...a),
+  apiPatch: vi.fn(), apiDelete: vi.fn(),
   actionFailures: () => [], onActionFailure: () => () => {}, clearActionFailures: vi.fn(),
 }));
 
@@ -34,6 +36,7 @@ import { SupportVoicePanel } from './support-voice';
 
 const BUNDLE = '/api/support/bundle';
 const WYOMING = '/api/voice/wyoming';
+const VOICE_CAPS = '/api/voice/capabilities';
 
 const META = { python: '3.12.3', platform: 'linux', generated_at: '2026-09-01T10:00:00+00:00' };
 const POSTURE = {
@@ -59,10 +62,11 @@ const wyoming = (over: any = {}) => ({
 });
 
 /** Route the two reads; `b` and `w` may be a value or a rejection. */
-function serve(b: any, w: any = wyoming()) {
+function serve(b: any, w: any = wyoming(), c: any = {}) {
   apiGet.mockImplementation((path: string) => {
     if (path === BUNDLE || path.startsWith(BUNDLE + '?')) return b instanceof Error ? Promise.reject(b) : Promise.resolve(b);
     if (path === WYOMING) return w instanceof Error ? Promise.reject(w) : Promise.resolve(w);
+    if (path === VOICE_CAPS) return c instanceof Error ? Promise.reject(c) : Promise.resolve(c);
     return Promise.resolve({});
   });
 }
@@ -70,6 +74,7 @@ function serve(b: any, w: any = wyoming()) {
 beforeEach(() => {
   apiGet.mockReset();
   apiPost.mockReset();
+  apiPut.mockReset();
 });
 
 describe('SUPPORT BUNDLE · per-section availability', () => {
@@ -288,5 +293,49 @@ describe('WYOMING VOICE SATELLITE', () => {
     expect(screen.queryByText(/no Wyoming server is listening/)).toBeNull();
     // and nothing is invented in the empty note's place
     expect(screen.queryByText(/all good|nothing to report|healthy/i)).toBeNull();
+  });
+});
+
+describe('VOICE PERSONA & CONSENT', () => {
+  it('renders persona consent state, last synthesis check, and owner consent action', async () => {
+    apiPut.mockResolvedValue({ updated: 1 });
+    serve(bundle(), wyoming(), {
+      stt: true,
+      tts: true,
+      tts_local: true,
+      local_only: true,
+      persona_voice: {
+        required: true,
+        granted: false,
+        allowed: false,
+        setting: 'voice.persona_voice_consent',
+        message: 'Cloned voice playback requires owner consent.',
+      },
+      last_consent_status: {
+        required: true,
+        granted: false,
+        allowed: false,
+        requested_voice: 'xtts:andrei',
+        fallback_voice: 'ro-RO-EmilNeural',
+      },
+    });
+    render(<SupportVoicePanel />);
+
+    await screen.findByText('withheld · fail-closed');
+    screen.getByText('Cloned voice playback requires owner consent.');
+    screen.getByText('local-only enforced');
+    screen.getByText('local TTS ready');
+    screen.getByText('blocked → fallback');
+    screen.getByText('req xtts:andrei');
+    screen.getByText('fallback ro-RO-EmilNeural');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Grant persona consent' }));
+    await waitFor(() => {
+      expect(apiPut).toHaveBeenCalledWith(
+        '/api/admin/settings/voice',
+        { values: { persona_voice_consent: true } },
+        { admin: true },
+      );
+    });
   });
 });

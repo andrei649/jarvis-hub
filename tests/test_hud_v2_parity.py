@@ -45,14 +45,18 @@ RULES = [
     # below reads frontend/src/workspace like any other client.
     ("/api/workspace", "workspace"),
     ("/workspace", "workspace"),
-    # The HUD text composer offers scoped note retrieval; the /os graph and
-    # remaining note/capture controls stay in the separate browser page.
+    # The HUD text composer and Console → Memory → Vault offer scoped note retrieval,
+    # note inspection, live status/reindex and inbox capture; the 3D galaxy/workshop canvas stays in /os.
+    ("/api/os/status", "memory"),
+    ("/api/os/brain/reindex", "memory"),
+    ("/api/os/brain/capture", "memory"),
+    ("/api/os/brain/chat-note", "cockpit"),
     ("/api/os/brain/retrieve", "cockpit"),
     ("/api/os/brain/note", "cockpit"),
     ("/api/kanban/board-note/preview", "cockpit"),
     ("/api/os/workshop/project", "cockpit"),  # GET project and projects; saving stays in /os.
-    # Separate /os client exists, but HUD V2 has no native entry/control for
-    # the rest: docs/design/HUD_V2_REMAINING.md and mobile/PARITY.md.
+    # Separate /os client owns the 3D galaxy (/api/os/brain) and live 3D workshop editor:
+    # docs/design/HUD_V2_REMAINING.md and mobile/PARITY.md.
     ("/api/os/", "HUD_GAP:jarvis-os"),
     ("/os", "HUD_GAP:jarvis-os"),
     # machine-facing — intentionally not a HUD surface
@@ -319,19 +323,24 @@ def test_core_surfaces_each_cover_a_route():
 
 
 def test_jarvis_os_is_an_explicit_native_hud_and_mobile_gap():
-    """The HUD offers scoped note and project reads. The editor lives in /os."""
+    """The HUD offers vault status/search/note/capture and project reads; the 3D galaxy/workshop editor lives in /os."""
     routes = {p for p in _routes() if p.startswith("/api/os/") or p in {"/os", "/os/{path:path}"}}
     assert len(routes) >= 7
-    notes = {"/api/os/brain/retrieve", "/api/os/brain/note"}
+    notes = {"/api/os/brain/retrieve", "/api/os/brain/note", "/api/os/brain/chat-note"}
     assert notes <= routes and all(_classify(path) == "cockpit" for path in notes)
+    memory_os = {"/api/os/status", "/api/os/brain/reindex", "/api/os/brain/capture"}
+    assert memory_os <= routes and all(_classify(path) == "memory" for path in memory_os)
     projects = {"/api/os/workshop/projects", "/api/os/workshop/project"}
     assert projects <= routes and all(_classify(path) == "cockpit" for path in projects)
     picker = (REPO / "frontend/src/workshop-projects.tsx").read_text(encoding="utf-8")
     assert all(path in picker for path in projects)
-    assert {_classify(p) for p in routes - projects - notes} == {"HUD_GAP:jarvis-os"}
+    gap_src = GAP.read_text(encoding="utf-8")
+    for path in ("/api/os/status", "/api/os/brain/reindex", "/api/os/brain/retrieve", "/api/os/brain/note", "/api/os/brain/capture"):
+        assert path in gap_src
+    assert {_classify(p) for p in routes - projects - notes - memory_os} == {"HUD_GAP:jarvis-os"}
     lookup = (REPO / "frontend/src/composer-vault.tsx").read_text(encoding="utf-8")
     cockpit = (REPO / "frontend/src/cockpit.tsx").read_text(encoding="utf-8")
-    assert all(path in lookup for path in notes) and "apiFetchOnce(" in lookup
+    assert all(path in lookup for path in {"/api/os/brain/retrieve", "/api/os/brain/note"}) and "apiFetchOnce(" in lookup
     assert "./composer-vault" in cockpit and "<VaultNoteReview draft={vault}/>" in cockpit
     for file in ("docs/design/HUD_V2_REMAINING.md", "mobile/PARITY.md"):
         doc = (REPO / file).read_text(encoding="utf-8")

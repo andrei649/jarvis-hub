@@ -3,9 +3,9 @@
   "horizon_totals": {
     "blocked": 1,
     "delivered": 0,
-    "done": 289,
-    "open": 24,
-    "open_or_blocked": 25,
+    "done": 291,
+    "open": 22,
+    "open_or_blocked": 23,
     "total": 314
   },
   "horizons": {
@@ -96,8 +96,8 @@
     "H22": {
       "blocked": 0,
       "delivered": 0,
-      "done": 9,
-      "open": 3,
+      "done": 10,
+      "open": 2,
       "total": 12
     },
     "H23": {
@@ -159,8 +159,8 @@
     "H34": {
       "blocked": 0,
       "delivered": 0,
-      "done": 6,
-      "open": 1,
+      "done": 7,
+      "open": 0,
       "total": 7
     },
     "H5": {
@@ -224,8 +224,8 @@
   ],
   "routes": 940,
   "tests": {
-    "backend": 37284,
-    "frontend": 5022,
+    "backend": 37287,
+    "frontend": 5025,
     "mobile": 522
   },
   "version": "1.0.0"

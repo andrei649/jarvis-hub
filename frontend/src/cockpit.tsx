@@ -659,9 +659,10 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
       draft.clear();setVal('');setSentCount(n=>n+1);return;}
     if(!val.trim())return;if((directReply ? onSubmit(val.trim(), undefined, undefined, true) : onSubmit(val.trim()))===false)return;vault.clear();setDirectReplyScope('');setVal('');setSentCount(n=>n+1);
   };
-  const showPill = voice && (voice.active || voice.error);
+  const showPill = voice && (voice.active || voice.error || voice.status === 'interrupted');
   const label = voice && voice.error ? voice.error
-    : voice && voice.status==='listening' ? 'listening…'
+    : voice && voice.status==='interrupted' ? 'interrupted — listening…'
+    : voice && voice.status==='listening' ? (voice.bargeInterrupted ? 'barge-in interrupted · listening…' : 'listening…')
     : voice && voice.status==='transcribing' ? 'transcribing…'
     : voice && voice.status==='speaking' ? 'speaking…' : 'voice on';
   const row = (lbl,node) => (

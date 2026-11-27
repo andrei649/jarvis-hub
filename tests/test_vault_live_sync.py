@@ -36,11 +36,22 @@ def library(tmp_path, monkeypatch):
 
 
 def test_live_status_and_reindex(library, monkeypatch):
-    monkeypatch.setattr(second_brain, "health", lambda: {"connected": True})
+    monkeypatch.setattr(second_brain, "health", lambda: {
+        "connected": True,
+        "mcp_configured": True,
+        "vault_fts_configured": False,
+        "ai_kb_fts_configured": True,
+    })
     client = TestClient(app)
     summary = client.get("/api/os/status").json()
     assert summary["vaultPath"] == library.name and summary["indexedNotes"] == 1
     assert summary["indexReady"] and summary["copilotConnected"] and summary["lastIndexedAt"]
+    assert summary["secondBrain"] == {
+        "connected": True,
+        "mcpConfigured": True,
+        "vaultFtsConfigured": False,
+        "aiKbConfigured": True,
+    }
     assert summary["skippedHardlinks"] == 0 and summary["excludedZones"]
     (library / "later.md").write_text("new cobalt note", encoding="utf-8")
     result = client.post("/api/os/brain/reindex").json()
