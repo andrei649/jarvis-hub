@@ -575,6 +575,7 @@
   "POST /api/canvas/blender-preview": "admin",
   "POST /api/canvas/clear": "user",
   "POST /api/canvas/export": "user",
+  "POST /api/canvas/office-edit": "user",
   "POST /api/canvas/office-preview": "user",
   "POST /api/canvas/post": "user",
   "POST /api/canvas/{el_id}/pin": "user",

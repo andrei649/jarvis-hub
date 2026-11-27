@@ -569,6 +569,7 @@
   "POST /api/canvas/blender-preview": "canvas_blender_preview_api_canvas_blender_preview_post",
   "POST /api/canvas/clear": "canvas_clear_api_canvas_clear_post",
   "POST /api/canvas/export": "canvas_export_api_canvas_export_post",
+  "POST /api/canvas/office-edit": "canvas_office_edit_api_canvas_office_edit_post",
   "POST /api/canvas/office-preview": "canvas_office_preview_api_canvas_office_preview_post",
   "POST /api/canvas/post": "canvas_post_api_canvas_post_post",
   "POST /api/canvas/{el_id}/pin": "canvas_pin_api_canvas__el_id__pin_post",

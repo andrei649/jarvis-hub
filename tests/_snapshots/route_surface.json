@@ -571,6 +571,7 @@
   "POST /api/canvas/blender-preview",
   "POST /api/canvas/clear",
   "POST /api/canvas/export",
+  "POST /api/canvas/office-edit",
   "POST /api/canvas/office-preview",
   "POST /api/canvas/post",
   "POST /api/canvas/{el_id}/pin",
