@@ -62,7 +62,7 @@ export function TalkRegister(props: TalkRegisterProps) {
   const conversation = (
     <Conversation messages={talk.messages} thinking={talk.thinking} onStop={talk.onStop} onProv={talk.onProv}
       onArtifactSaved={talk.onArtifactSaved} exportAllowed={talk.exportAllowed} messageActionsAllowed={talk.messageActionsAllowed}
-      messageScope={talk.messageScope} lang={talk.lang} t={talk.t}
+      messageScope={talk.messageScope} sessionId={talk.sessionId} agent={agent} lang={talk.lang} t={talk.t}
       variant={variant} turns={turns} agents={roster} outcome={talk.outcome ?? null} outcomeTurnId={talk.outcomeTurnId}
       power={talk.power} awaitingAnswer={awaitingAnswer} />
   );

@@ -20681,6 +20681,7 @@ export interface components {
             store: "memory" | "user";
             /** Value */
             value: string;
+            source?: components["schemas"]["TimelineEntrySource"] | null;
         };
         /**
          * TimelineEntryEdit
@@ -20690,6 +20691,20 @@ export interface components {
         TimelineEntryEdit: {
             /** Value */
             value: string;
+        };
+        /**
+         * TimelineEntrySource
+         * @description A selected native chat turn, verified again at save time.
+         */
+        TimelineEntrySource: {
+            /** Session Id */
+            session_id: string;
+            /** Turn */
+            turn: number;
+            /** Revision */
+            revision: string;
+            /** Excerpt */
+            excerpt: string;
         };
         /** ToolRPCCallBody */
         ToolRPCCallBody: {
@@ -39240,6 +39255,7 @@ export interface operations {
             query?: {
                 store?: ("facts" | "memory" | "user" | "skill") | null;
                 limit?: number;
+                references?: boolean;
             };
             header?: never;
             path?: never;
@@ -39302,7 +39318,9 @@ export interface operations {
     };
     dashboard_today_entry_api_dashboard_today_entries__entry_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                references?: boolean;
+            };
             header?: never;
             path: {
                 entry_id: string;

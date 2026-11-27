@@ -28,6 +28,7 @@ import json
 import logging
 import math
 import os
+import re
 import threading
 import time
 from collections.abc import Iterator
@@ -535,12 +536,47 @@ class CoreMemory(JsonStore):
         #: H046 review — when each fact entered the ring, by :meth:`_fact_key` (the record
         #: of a ring with no file; a ring with one keeps it beside it).
         self._added: dict[str, float] = {}
+        # Verified chat receipts live with the facts in the atomic ring file. A
+        # digest key avoids repeating fact text; ordinary facts have no receipt.
+        self._sources: dict[str, dict] = {}
         super().__init__(path)
         self._baseline()
         self._strict_boot()
 
     def _serialize(self):
-        return {"facts": self._facts[-self.cap:]}
+        facts = self._facts[-self.cap:]
+        sources = {self._fact_key(fact): self._sources[fact] for fact in facts if fact in self._sources}
+        return {"facts": facts, **({"sources": sources} if sources else {})}
+
+    @staticmethod
+    def _valid_source(source: object) -> bool:
+        from agents.core.validation import is_valid_session_id
+
+        return (type(source) is dict and set(source) == {"session_id", "turn", "revision", "role"}
+                and type(source["session_id"]) is str and is_valid_session_id(source["session_id"])
+                and type(source["turn"]) is int and source["turn"] >= 0
+                and type(source["revision"]) is str
+                and re.fullmatch(r"[0-9a-f]{64}", source["revision"]) is not None
+                and source["role"] in ("user", "assistant"))
+
+    def _sources_from(self, raw: object, facts: list[str]) -> dict[str, dict] | None:
+        if not isinstance(raw, dict) or "sources" not in raw:
+            return {}
+        rows = raw["sources"]
+        keys = {self._fact_key(fact): fact for fact in facts}
+        if (type(rows) is not dict or any(key not in keys or not self._valid_source(source)
+                                           for key, source in rows.items())):
+            return None
+        return {keys[key]: dict(source) for key, source in rows.items()}
+
+    def source_for(self, fact: str) -> dict | None:
+        with self._lock:
+            source = self._sources.get(fact) if fact in self._facts else None
+            return dict(source) if source is not None else None
+
+    def source_map(self) -> dict[str, dict]:
+        with self._lock:
+            return {fact: dict(source) for fact, source in self._sources.items() if fact in self._facts}
 
     def digest_path(self) -> "Path | None":
         """H423 — the sidecar holding the sha256 of the bytes this ring last wrote, so a
@@ -637,6 +673,7 @@ class CoreMemory(JsonStore):
             logger.warning("core memory: when the facts of %s were added could not be worked out",
                            self.path, exc_info=True)
             added = None
+        self._sources = {fact: source for fact, source in self._sources.items() if fact in self._facts}
         super()._save()
         if added is not None:
             self._added = added
@@ -697,6 +734,8 @@ class CoreMemory(JsonStore):
             seen.add(fact)
         if len(cleaned) > self.cap:
             return [], f"it holds {len(cleaned)} facts, over its cap of {self.cap}"
+        if self._sources_from(raw, cleaned) is None:
+            return [], "it holds invalid fact source metadata"
         return cleaned, None
 
     def _keep_copy(self, data: bytes, digest: str) -> Path:
@@ -731,6 +770,7 @@ class CoreMemory(JsonStore):
             data = path.read_bytes()
         except FileNotFoundError:
             self._facts = []             # no file: an empty ring
+            self._sources = {}
             self.has_good_copy = True
             return None
         except OSError as exc:
@@ -740,6 +780,7 @@ class CoreMemory(JsonStore):
         facts, problem = self._strict_facts(data)
         if recorded == digest and problem is None:
             self._facts = facts          # a Nerva save, maybe another process's
+            self._sources = self._sources_from(json.loads(data), facts) or {}
             self.has_good_copy = True
             return None
         # No digest yet (a ring saved before H423) is taken as a baseline when the file
@@ -747,7 +788,12 @@ class CoreMemory(JsonStore):
         bak = self._keep_copy(data, digest) if (recorded is not None or problem is not None) else None
         if problem is not None:
             raise CoreMemoryDrift(path, bak, problem)
+        raw = json.loads(data)
+        if isinstance(raw, dict) and raw.get("sources"):
+            raise CoreMemoryDrift(path, bak, "source metadata needs a matching Nerva digest")
         self._facts = facts
+        # A hand edit or an unrecorded legacy file cannot attest a source.
+        self._sources = {}
         self.has_good_copy = True
         try:
             self._write_digest(digest)
@@ -812,6 +858,8 @@ class CoreMemory(JsonStore):
                                self.path, problem)
                 return problem
             self._facts = facts
+            trusted = data is not None and self._recorded_digest() == hashlib.sha256(data).hexdigest()
+            self._sources = (self._sources_from(json.loads(data), facts) or {}) if trusted else {}
             self.has_good_copy = True
             return None
 
@@ -834,8 +882,11 @@ class CoreMemory(JsonStore):
         with self._lock:
             if problem is None:
                 self._facts = facts
+                self._sources = (self._sources_from(json.loads(data), facts) or {}) if (
+                    self._recorded_digest() == hashlib.sha256(data).hexdigest()) else {}
                 return
             self._facts = []
+            self._sources = {}
             self.has_good_copy = False
         logger.warning("core memory: %s cannot be read back (%s); no facts are taken from it until "
                        "the owner fixes the file", self.path, problem)
@@ -860,6 +911,7 @@ class CoreMemory(JsonStore):
     def _deserialize(self, raw) -> None:
         facts = raw.get("facts", []) if isinstance(raw, dict) else raw
         self._facts = []
+        self._sources = {}
         if not isinstance(facts, list):
             return
         for fact in facts:
@@ -867,6 +919,7 @@ class CoreMemory(JsonStore):
             if f and f not in self._facts:
                 self._facts.append(f)
         self._facts = self._facts[-self.cap:]
+        self._sources = self._sources_from(raw, self._facts) or {}
 
     def chars(self, facts: "list[str] | None" = None) -> int:
         """H422 — the characters *facts* (default: the ring) hold as stored
@@ -919,11 +972,13 @@ class CoreMemory(JsonStore):
                 if refused is not None:
                     raise refused
                 facts = [*self._facts, f]
-            previous, self._facts = self._facts, facts
+            previous, previous_sources = self._facts, self._sources.copy()
+            self._facts = facts
             try:
                 self._save()
             except Exception:
                 self._facts = previous   # a ring that could not be saved did not change
+                self._sources = previous_sources
                 raise
             return True
 
@@ -931,7 +986,8 @@ class CoreMemory(JsonStore):
         with self._lock:
             return list(self._facts)
 
-    def compare_and_set(self, expected: "list[str]", facts: "list[str]") -> bool:
+    def compare_and_set(self, expected: "list[str]", facts: "list[str]", *,
+                        sources: "dict[str, dict] | None" = None) -> bool:
         """H314 — replace the whole ring with *facts*, only if it still holds *expected*.
 
         The model's ``memory`` tool computes a new ring from one it read; a forget (or
@@ -944,17 +1000,25 @@ class CoreMemory(JsonStore):
         cleaned = [str(f).strip() for f in facts if str(f or "").strip()]
         if len(cleaned) > self.cap or len(set(cleaned)) != len(cleaned):
             raise ValueError("a core ring holds at most `cap` distinct facts")
+        if sources is not None and (type(sources) is not dict or
+                                    any(fact not in cleaned or not self._valid_source(source)
+                                        for fact, source in sources.items())):
+            raise ValueError("invalid fact source metadata")
         with self.locked(), self._lock:
             bak = self._sync_locked()
             if bak is not None:
                 raise CoreMemoryDrift(self.path, bak, None)
             if self._facts != list(expected):
                 return False
-            previous, self._facts = self._facts, cleaned
+            previous, previous_sources = self._facts, self._sources.copy()
+            self._facts = cleaned
+            self._sources = ({fact: dict(source) for fact, source in sources.items()} if sources is not None
+                             else {fact: source for fact, source in previous_sources.items() if fact in cleaned})
             try:
                 self._save()
             except Exception:
                 self._facts = previous   # a ring that could not be saved did not change
+                self._sources = previous_sources
                 raise
             return True
 
@@ -980,6 +1044,7 @@ class CoreMemory(JsonStore):
                 self._sync_locked()
             count = len(self._facts)
             self._facts = []
+            self._sources = {}
             self._save()
             self.has_good_copy = True
             if self.path is not None:
