@@ -2231,6 +2231,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/os/brain/reindex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Os Reindex
+         * @description Reconcile on-disk changes using the same safe index as chat and the graph.
+         */
+        post: operations["os_reindex_api_os_brain_reindex_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/os/brain": {
         parameters: {
             query?: never;
@@ -25058,6 +25078,26 @@ export interface operations {
             };
         };
     };
+    os_reindex_api_os_brain_reindex_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     os_brain_api_os_brain_get: {
         parameters: {
             query?: {
@@ -25095,6 +25135,7 @@ export interface operations {
                 relPath?: string;
                 targetId?: string | null;
                 q?: string;
+                local_only?: boolean;
             };
             header?: never;
             path?: never;

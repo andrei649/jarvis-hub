@@ -19,6 +19,8 @@ from agents.core.llm.providers import ProviderProfile
 from agents.core.llm.providers.admission_contract import provider_sandbox_profile
 from agents.core.llm.providers.packages import ProviderPackageError, ProviderPackageStore
 
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX provider package store")
+
 
 @pytest.fixture(autouse=True)
 def _kernel_on(monkeypatch):

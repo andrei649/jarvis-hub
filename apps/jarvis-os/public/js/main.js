@@ -53,6 +53,12 @@ class JarvisOSApp {
     // Hydrate real Second Brain & AI status from server immediately
     this.loadServerBrain(false);
     this.refreshAIStatus(false);
+    if (HUB) setInterval(() => {
+      if (!document.hidden && !this._checkingVault) {
+        this._checkingVault = true;
+        this.refreshAIStatus().finally(() => { this._checkingVault = false; });
+      }
+    }, 4000);
   }
 
   /* =========================================================
@@ -60,7 +66,11 @@ class JarvisOSApp {
      ========================================================= */
   async loadServerBrain(reindex = false) {
     try {
-      const res = await apiGet(`/brain${reindex ? "?reindex=1" : ""}`);
+      if (reindex && HUB) {
+        const sync = await apiPost("/brain/reindex", {});
+        if (!sync.ok) throw new Error("Vault reindex failed");
+      }
+      const res = await apiGet(`/brain${reindex && !HUB ? "?reindex=1" : ""}`);
       const data = await res.json();
       if (data && data.ok) {
         if (data.mode === "demo_550" || !Array.isArray(data.nodes)) {
@@ -84,6 +94,7 @@ class JarvisOSApp {
         }
       }
     } catch (_) {
+      if (reindex) document.getElementById("vault-status-msg").textContent = "Could not confirm the index update.";
       this._populateSidebarHubsAndFilters();
     }
   }
@@ -277,6 +288,20 @@ class JarvisOSApp {
       document.getElementById("cfg-cloud-consent").checked = st.cloudConsent === true;
       document.getElementById("cfg-vault-mode").value = st.vaultMode || "andrei_plus_nerva";
       document.getElementById("cfg-vault-path").value = st.vaultPath || "";
+      if (HUB && Number.isInteger(st.indexedNotes)) {
+        const info = document.getElementById("vault-live-status");
+        if (this._vaultIndexedAt && st.lastIndexedAt !== this._vaultIndexedAt) await this.loadServerBrain();
+        this._vaultIndexedAt = st.lastIndexedAt;
+        document.getElementById("vault-sync-now").hidden = !st.vaultAvailable;
+        const excluded = Array.isArray(st.excludedZones) ? st.excludedZones.length : st.excludedZones;
+        info.hidden = false;
+        info.textContent = [
+          st.vaultAvailable ? `${st.vaultPath} · ${st.indexReady ? st.indexedNotes + " indexed notes" : "index unavailable"}` : "Vault disconnected",
+          `${excluded || 0} excluded zones`, `${st.skippedHardlinks || 0} hard links skipped`,
+          st.lastIndexedAt ? `Last indexed ${st.lastIndexedAt}` : "Awaiting first index",
+          `Memory Copilot ${st.copilotConnected ? "connected" : "offline"}`,
+        ].join(" · ");
+      }
       if (st.inboxFolder) document.getElementById("inbox-capture-msg").textContent = `Saves new notes to ${st.inboxFolder}/`;
       document.getElementById("cfg-nerva-path").value = st.nervaPath || "";
       document.getElementById("cfg-ollama-url").value = st.ollamaUrl || "http://127.0.0.1:11434";
@@ -1031,6 +1056,12 @@ class JarvisOSApp {
 
     document.getElementById("cfg-save-btn").addEventListener("click", () => saveAllSettings("cfg-status-msg"));
     document.getElementById("btn-save-vault").addEventListener("click", () => saveAllSettings("vault-status-msg"));
+    const syncNow = document.getElementById("vault-sync-now");
+    syncNow.addEventListener("click", async () => {
+      syncNow.disabled = true;
+      try { await this.loadServerBrain(true); await this.refreshAIStatus(); }
+      finally { syncNow.disabled = false; }
+    });
 
     // Quick capture into the configured inbox.
     document.getElementById("btn-capture-inbox").addEventListener("click", async () => {

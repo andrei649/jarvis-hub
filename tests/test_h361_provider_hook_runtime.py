@@ -16,6 +16,8 @@ from agents.core.llm.providers.admission_contract import provider_sandbox_profil
 from agents.core.llm.providers.hook_runtime import ProviderHookRuntime, ProviderHookRuntimeError
 from agents.core.llm.providers.packages import ProviderPackageStore
 
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX provider package store")
+
 IMAGE = "python@sha256:" + "a" * 64
 HOOKS = (
     "prepare_messages",

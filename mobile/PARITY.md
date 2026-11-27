@@ -4,6 +4,10 @@ The desktop command palette returns keyboard focus to its opener when the select
 command leaves focus on the page background. Closing the app cancels a pending
 focus change. Mobile: frozen, 2026-11-25.
 
+The Obsidian index status and manual reindex controls are available in the web
+Console under Vault and in the OS vault settings. Native chat uses the same hub
+index. Index administration is currently a desktop web feature.
+
 The **bridge** that keeps the iOS/Android apps (`mobile/`) in sync with the browser HUD.
 Both clients talk to the **same** HTTP API (`agents/web.py`), so "feature parity" is mostly a
 question of *which hub surfaces the mobile app has caught up to*.

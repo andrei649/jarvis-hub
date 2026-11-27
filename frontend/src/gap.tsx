@@ -591,6 +591,22 @@ export function NoteDocsPanel() {
    plaintext, mirroring the router's own no-leak contract. */
 export function VaultPanel() {
   const { d, e, loading, reload } = useApi('/api/vault');
+  const index = useApi('/api/os/status');
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (!document.hidden) index.reload(); }, 4000);
+    return () => window.clearInterval(timer);
+  }, [index.reload]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState('');
+  async function reindex() {
+    setSyncing(true); setSyncError('');
+    try {
+      await apiPost('/api/os/brain/reindex', {});
+      index.reload();
+    } catch {
+      setSyncError('Could not update the index.');
+    } finally { setSyncing(false); }
+  }
   const items = arr(d, 'items');
   const stats = (d && d.stats) || {};
   const [name, setName] = useState('');
@@ -630,7 +646,16 @@ export function VaultPanel() {
   const del = (id) => apiDelete('/api/vault/' + encodeURIComponent(id)).then(reload).catch(() => {});
 
   return (
-    <Card title="VAULT" live={asLive(d)} sub={d ? `${stats.items || 0} items · ${Math.round((stats.bytes || 0) / 1024)} KB` : null} onReload={reload}>
+    <><Card title="OBSIDIAN" live={asLive(index.d, index.d?.vaultAvailable)} onReload={index.reload}>
+      <State e={index.e} loading={index.loading} n={index.d ? 1 : 0}/>
+      {index.d && <div>
+        <p>{index.d.vaultAvailable ? `${index.d.vaultPath} · ${index.d.indexReady === false ? 'index unavailable' : index.d.indexedNotes + ' indexed notes'}` : 'Vault disconnected'}</p>
+        <p>{Array.isArray(index.d.excludedZones) ? index.d.excludedZones.length : index.d.excludedZones || 0} excluded zones · {index.d.skippedHardlinks || 0} hard links skipped</p>
+        <p>{index.d.lastIndexedAt ? `Last indexed ${index.d.lastIndexedAt}` : 'Awaiting first index'} · Memory Copilot {index.d.copilotConnected ? 'connected' : 'offline'}</p>
+        {index.d.vaultAvailable && <button className="tool-btn" disabled={syncing} onClick={reindex}>{syncing ? 'Indexing…' : 'Reindex vault'}</button>}
+        {syncError && <p role="alert">{syncError}</p>}
+      </div>}
+    </Card><Card title="VAULT" live={asLive(d)} sub={d ? `${stats.items || 0} items · ${Math.round((stats.bytes || 0) / 1024)} KB` : null} onReload={reload}>
       <State e={e} loading={loading} n={items.length} />
       {items.slice(0, 10).map((it) => (
         <Row key={it.id}>
@@ -652,7 +677,7 @@ export function VaultPanel() {
       </div>
       {note && <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>{note}</div>}
       <div style={{ fontSize: 'var(--n-fs-meta)', color: 'var(--ink-2)', marginTop: 6 }}>encrypted at rest · included in your own data export, erased on forget</div>
-    </Card>
+    </Card></>
   );
 }
 

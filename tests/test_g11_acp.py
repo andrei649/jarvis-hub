@@ -549,9 +549,14 @@ def test_paths_are_confined(tmp_path):
     for bad in ("../x", "/etc/passwd", "a\x00b", "", "x" * 5000):
         with pytest.raises(AcpPathError):
             confine(root, bad)
-    (tmp_path / "link").symlink_to(tmp_path.parent)
-    with pytest.raises(AcpPathError):
-        confine(root, "link/escape.txt")
+    try:
+        (tmp_path / "link").symlink_to(tmp_path.parent)
+    except OSError as exc:
+        if os.name != "nt" or getattr(exc, "winerror", None) != 1314:
+            raise
+    else:
+        with pytest.raises(AcpPathError):
+            confine(root, "link/escape.txt")
     for bad_root in ("relative", "/", str(tmp_path / "missing")):
         with pytest.raises(AcpPathError):
             session_root(bad_root)
@@ -1050,15 +1055,21 @@ def test_review_token_file_must_be_private(tmp_path):
 
     token = tmp_path / "token"
     token.write_text("s3cret-token\n")
-    token.chmod(0o644)
-    with pytest.raises(ValueError):
-        nerva.read_token_file(str(token))
-    token.chmod(0o600)
+    if os.name == "posix":
+        token.chmod(0o644)
+        with pytest.raises(ValueError):
+            nerva.read_token_file(str(token))
+        token.chmod(0o600)
     assert nerva.read_token_file(str(token)) == "s3cret-token"
     link = tmp_path / "link"
-    link.symlink_to(token)
-    with pytest.raises(ValueError):
-        nerva.read_token_file(str(link))
+    try:
+        link.symlink_to(token)
+    except OSError as exc:
+        if os.name != "nt" or getattr(exc, "winerror", None) != 1314:
+            raise
+    else:
+        with pytest.raises(ValueError):
+            nerva.read_token_file(str(link))
 
     class Client:
         base_url = "http://127.0.0.1:8080"

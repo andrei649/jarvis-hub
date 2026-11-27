@@ -4,6 +4,7 @@ DNS and HTTP are synthetic; no provider or Docker service is contacted.
 """
 import asyncio
 import json
+import os
 import ssl
 from datetime import UTC, datetime, timedelta, timezone
 
@@ -17,6 +18,8 @@ from cryptography.x509.oid import NameOID
 from agents.core.llm.providers.hook_runtime import ProviderHookRuntimeError
 from tests.test_h361_admitted_native_bridge import setup_backend
 from tests.test_h361_provider_install_service import owner
+
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='POSIX provider package store')
 
 CASE = ('openrouter', 'openai-compatible', 'chat_completions',
         'https://synthetic.invalid/v1', 'synthetic-model')

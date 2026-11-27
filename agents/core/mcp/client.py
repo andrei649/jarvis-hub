@@ -382,6 +382,7 @@ def cwd_secret_files(cwd: "str | None" = None) -> list[str]:
 
 def stdio_env_baseline(
     environ: dict | None = None, overrides: dict | None = None,
+    *, include_extra: bool = True,
 ) -> dict[str, str]:
     """Allow-listed environment for a stdio MCP subprocess plus explicit *overrides*.
 
@@ -398,7 +399,7 @@ def stdio_env_baseline(
     from the H502 default flip without reaching for the global off switch.
     """
     source = os.environ if environ is None else environ
-    extra_allowed = (
+    extra_allowed = frozenset() if not include_extra else (
         stdio_env_extra_allowed()
         if environ is None
         else stdio_env_extra_allowed(resolve_spellings(source, STDIO_ENV_ALLOW_FLAG)[0])

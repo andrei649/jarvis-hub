@@ -2703,7 +2703,12 @@
   2026-11-25** ([finish line](docs/decisions/2026-11-25-nerva-finish-line.md)): the goal is no longer
   all 697 rows equivalent. The ledger is a reference; a row is worked only when one of the nine
   finish-line items needs it, 233 partial rows in twelve areas are frozen as they are, and this row
-  closes when every finish-line item has its acceptance test. State on 2026-11-25: 187 equivalent,
+  closes when every finish-line item has its acceptance test. **Checkpoint 2026-11-27**
+  ([status](docs/FINISH_LINE_STATUS.md)): items 2, 3, 4, 5, 6 and 7 pass end to end on Windows
+  (including all 18 governed standard-Chrome runtime tests), item 9 integrates the Ledger/Workspace
+  and Windows repairs onto `main`, and items 1 and 8 pass their synthetic/protocol/Blender suites while
+  awaiting only the owner-account and open-app checks in [OWNER_TASKS.md](docs/OWNER_TASKS.md#finish-line-owner-inputs).
+  State on 2026-11-25: 187 equivalent,
   474 partial, 36 excluded. The text below is the earlier sprint record, kept as history.
   This was the owner-prioritized sprint; all 697 rows were accepted, with no scope exclusions.
   Reassess inherited judgments, finish the full accepted
@@ -5014,7 +5019,7 @@ No live provider or Docker acceptance is inferred.
   was Telegram/web/email; HA-4i-comms below extends it. Regression coverage: `tests/test_nerva_send.py` (25 cases),
   plus the existing CLI and Safe Comms suites (64 passed combined). Native UI plugin injection
   remains an explicit **skip** in the inventory; it is not included in the SDK work above.
-  Remaining (recounted 2026-10-26): Slack/Discord streaming edits are not shipped — `slack.py:473` uses `chat_update` only for approval cards, Discord has no edit path; HUD desktop mode, agent-side plugin SDK, kernel sessions and local image generation are tracked in the progress notes above.
+  Remaining (recounted 2026-11-27): Slack and Discord channels were retired on 2026-11-25 per `docs/decisions/2026-11-25-nerva-finish-line.md`; extensions and Tauri/kernel parity rows outside the nine finish-line items are frozen; only owner-host ComfyUI live image generation proof (`DRA-29`, `docs/OWNER_TASKS.md`) remains open.
 
   **2026-09-09 — Slack/Discord governed reply foundation shipped (HA-4i-comms).** Paired inbound
   messages persist in the same inbox as other channels; rooms and Slack subthreads have
@@ -5038,7 +5043,7 @@ No live provider or Docker acceptance is inferred.
   acknowledgment never implies processing or delivery. Stop closes the socket and cancels
   pending dispatch. Bot-token-only hosts keep manual ingress; no new route or send bypass.
   HUD and mobile consume the existing inbox. Setup and explicit live-test limits:
-  [`docs/SLACK_SETUP.md`](docs/SLACK_SETUP.md). Regressions use fake SDK lifecycle/events
+  `docs/SLACK_SETUP.md` (retired 2026-11-25). Regressions use fake SDK lifecycle/events
   and the real gateway/pairing/inbox. Fifty-one new cases include a native SDK 3.44.1
   offline parser/callback/cleanup smoke; Slack/front-door checks passed with that SDK,
   along with inbox/session/render, route/OpenAPI and app lifecycle checks. The real
@@ -5362,8 +5367,8 @@ absorbed them, not as independently shipped work.
   them gated this guard), the `agents.public.yaml` roster overlay is a separate change with a different
   blast radius, and the pre-existing documented residual stands — a bind host passed only as a raw
   uvicorn CLI flag is still invisible to the app.
-- [ ] 🟡 **DRA-08 — B7 Hermes v3 Phases 3/5/6 (sandbox file-RPC exec, gateway session keys, cron job store)
-  has no build home in any cluster.** Item at index 43 ('B7 — Hermes v3 Phases 3/5/6 live wiring') is an
+- [x] **DRA-08 — B7 Hermes v3 Phases 3/5/6 (sandbox file-RPC exec, gateway session keys, cron job store)
+  has no build home in any cluster.** **Closed / superseded 2026-11-25:** Phases 3 and 5 shipped on `main`, non-Telegram messaging channels were removed per `docs/decisions/2026-11-25-nerva-finish-line.md`, and the gateway area (including Phase 6) is frozen outside the nine finish-line items. Item at index 43 ('B7 — Hermes v3 Phases 3/5/6 live wiring') is an
   L-size, three-part build: (1) Phase 3 — give ToolRPCSandboxRuntime a real production pull behind the
   governed execute_code path; (2) Phase 5 — consume SessionSource/build_session_key/DeliveryRouter from the
   live channel pat… *(evidence: `BACKLOG.md:1126, agents/core/tool_rpc_runtime.py:104,
@@ -8137,8 +8142,8 @@ modal changes. Every one was inside `FirstRunGate`.
   Remaining: owner action — Google OAuth credentials and consent.
 - [ ] Spotify OAuth → real playback control
   Remaining: owner action — Spotify OAuth credentials.
-- [ ] Install engines: `faster-whisper` (STT), `edge-tts`/`kokoro` (TTS), `playwright` (browser operator), `beautifulsoup4` (DDG search), `discord.py`/`slack_sdk` (Discord/Slack channels — adapters exist, SDKs not in base requirements)
-  Remaining: owner action — install the listed engines on the host.
+- [ ] Install engines: `faster-whisper` (STT), `edge-tts`/`kokoro` (TTS), `playwright` (browser operator), `beautifulsoup4` (DDG search)
+  Remaining: owner action — install the listed optional engines on the host (Discord and Slack channel adapters retired 2026-11-25).
 - [x] **Retired 2026-11-25 — Home Assistant house control.** The owner removed the house integration in [#1390](https://github.com/andrei649/jarvis-hub/pull/1390). Its LAN setup task is closed.
 - [x] **Retired 2026-11-25 — Frigate camera input.** The same change removed camera intelligence and its Frigate adapter. Its hardware and consent setup task is closed.
 - [ ] Flip cognition master posture + a local LLM → the reflect-and-rewrite learn loop
@@ -8185,10 +8190,7 @@ modal changes. Every one was inside `FirstRunGate`.
   (DRA-20).
 - [ ] Media / desktop / node actuators (owner-wired host seams)
   Remaining: owner-wired host seams (media/desktop/node actuators) need the owner's host.
-- [ ] `agents/vision`, `agents/argus` — real implementation (currently persona markdown, zero code).
-  Argus's SOUL was completed 2026-08-18 (Scope/Rules/Dependencies/Memory/Channels — it had 4 of the
-  roster's 9 sections); the code gap below it is unchanged.
-  Remaining: no code exists under `agents/vision` or `agents/argus` (SOUL/HEARTBEAT only) — a real implementation slice, not yet scoped.
+- [x] **Retired / frozen 2026-11-25 — Argus removed and Vision deferred.** The owner removed `agents/argus` with Worldview (`docs/decisions/2026-11-25-nerva-finish-line.md`); `agents/vision` stays persona-only and frozen outside the nine finish-line items.
 - [x] **Retired 2026-11-25 — Hestia house reads and proposals.** The owner removed Hestia, the house router and its implementation in [#1390](https://github.com/andrei649/jarvis-hub/pull/1390).
 - [x] **HUD seed roster is 3 agents behind the backend.** `frontend/src/data.ts` hardcodes 15 agents
   (`AGENTS`, `GLYPHS`, `COLLAB`, `DOSSIER`, routing keywords) — it never gained **howard** or **argus**,

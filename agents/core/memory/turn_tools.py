@@ -20,11 +20,46 @@ _TERMINAL = frozenset({"tool_result", "tool_failed"})
 _CURRENT: ContextVar[list[str] | None] = ContextVar("nerva_turn_tools", default=None)
 
 
+class _PrivateFlag:
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value = False
+
+
+_PRIVATE: ContextVar[_PrivateFlag | None] = ContextVar("nerva_turn_private_memory", default=None)
+
+
 def begin() -> list[str]:
     """Start collecting for the turn now arriving; returns the (empty) collection."""
     names: list[str] = []
     _CURRENT.set(names)
+    _PRIVATE.set(_PrivateFlag())
     return names
+
+
+def end() -> None:
+    """Close this context's collection after a turn or test finishes."""
+    _CURRENT.set(None)
+    _PRIVATE.set(None)
+
+
+def active() -> bool:
+    return _CURRENT.get() is not None
+
+
+def mark_private() -> bool:
+    """Pin a raw-memory turn independently of the capped recap names."""
+    flag = _PRIVATE.get()
+    if not active() or flag is None:
+        return False
+    flag.value = True
+    return True
+
+
+def private() -> bool:
+    flag = _PRIVATE.get()
+    return active() and flag is not None and flag.value
 
 
 def note(event: object) -> None:

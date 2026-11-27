@@ -66,6 +66,15 @@ def _file_logging_config():
     return path, max_mb * 1024 * 1024, backups
 
 
+def _omit_vault_query(record: logging.LogRecord) -> bool:
+    args = record.args
+    if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
+        path, query, _ = args[2].partition("?")
+        if query and "/api/os/" in path:
+            record.args = (*args[:2], path, *args[3:])
+    return True
+
+
 def _install_redaction() -> None:
     """H495: put the secret redactor on every handler this process owns.
 
@@ -79,6 +88,8 @@ def _install_redaction() -> None:
     redaction is bad, but a process that cannot log at all is worse — and the
     failure is announced rather than silent.
     """
+    # Vault search terms and note paths are private even when secret scanning is off.
+    logging.getLogger("uvicorn.access").addFilter(_omit_vault_query)
     try:
         from .security.log_redaction import install_log_redaction_everywhere
         install_log_redaction_everywhere()

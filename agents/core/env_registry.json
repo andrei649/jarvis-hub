@@ -1939,10 +1939,49 @@
    "type": "text",
    "default": null,
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
+  },
+  "NERVA_OS_INBOX_SUBDIR": {
+   "aliases": [
+    "JARVIS_OS_INBOX_SUBDIR"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_OS_INDEX_DB": {
+   "aliases": [
+    "JARVIS_OS_INDEX_DB"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_OS_MASK_VAULT_PATH": {
+   "aliases": [
+    "JARVIS_OS_MASK_VAULT_PATH"
+   ],
+   "namespace": "hub",
+   "type": "flag",
+   "default": false,
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
   },
   "NERVA_OS_PROJECT_INDEX": {
    "aliases": [
@@ -1952,10 +1991,10 @@
    "type": "flag",
    "default": false,
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_PROJECT_INDEX_PATH": {
    "aliases": [
@@ -1963,12 +2002,12 @@
    ],
    "namespace": "hub",
    "type": "path",
-   "default": "(computed)",
+   "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_PROJECT_INDEX_SCHEMA": {
    "aliases": [
@@ -1976,12 +2015,12 @@
    ],
    "namespace": "hub",
    "type": "text",
-   "default": "(computed)",
+   "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_PROJECT_REGISTER_DIR": {
    "aliases": [
@@ -1989,12 +2028,12 @@
    ],
    "namespace": "hub",
    "type": "path",
-   "default": "(computed)",
+   "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_REPOSITORY_DOCS": {
    "aliases": [
@@ -2017,10 +2056,10 @@
    "type": "text",
    "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_OS_VAULT_INBOX": {
    "aliases": [
@@ -2029,7 +2068,7 @@
    "namespace": "hub",
    "type": "text",
    "default": "(computed)",
-   "default_varies": false,
+   "default_varies": true,
    "section": "",
    "purpose": "",
    "required_when": "",
@@ -2043,10 +2082,36 @@
    "type": "text",
    "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
+  },
+  "NERVA_OS_VAULT_MAP_PATH": {
+   "aliases": [
+    "JARVIS_OS_VAULT_MAP_PATH"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
+  },
+  "NERVA_OS_VAULT_MAP_SCHEMA": {
+   "aliases": [
+    "JARVIS_OS_VAULT_MAP_SCHEMA"
+   ],
+   "namespace": "hub",
+   "type": "text",
+   "default": "",
+   "default_varies": false,
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
+   "required_when": "",
+   "doc": ".env.example"
   },
   "NERVA_OS_VAULT_PATH": {
    "aliases": [
@@ -2054,12 +2119,12 @@
    ],
    "namespace": "hub",
    "type": "path",
-   "default": null,
+   "default": "",
    "default_varies": false,
-   "section": "",
-   "purpose": "",
+   "section": "Governance & hardening (all default OFF; ADV-117)",
+   "purpose": "Optional local Obsidian integration. Use absolute paths in the ignored .env. Scope lists use semicolon-separated paths relative to the vault.",
    "required_when": "",
-   "doc": ""
+   "doc": ".env.example"
   },
   "NERVA_PASSIVE_CAPTURE": {
    "aliases": [

@@ -812,6 +812,10 @@ class HybridRouter(LLMRouter):
                 "explicit DeepInfra main route is unavailable")
         if route not in ("local-moa", "hybrid-moa"):
             self._enforce_approved_models(agent_id, model, route)
+        from agents.core.memory.second_brain import private_context_active, strict_loopback_backend
+
+        if private_context_active() and not strict_loopback_backend(agent_id, backend, route):
+            raise LocalBackendUnavailableError("Private memory requires a loopback local model")
         return backend, model, route
 
     def _enforce_cloud_only_route(self, agent_id, backend, route):

@@ -21,6 +21,7 @@ const HUB_ROUTES = {
   "/brain": "/api/os/brain",
   "/brain/note": "/api/os/brain/note",
   "/brain/retrieve": "/api/os/brain/retrieve",
+  "/brain/reindex": "/api/os/brain/reindex",
   "/brain/capture": "/api/os/brain/capture",
   "/workshop/edit": "/api/os/workshop/edit",
   "/workshop/projects": "/api/os/workshop/projects",

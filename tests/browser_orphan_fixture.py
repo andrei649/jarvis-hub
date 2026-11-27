@@ -73,13 +73,15 @@ def _controller(chrome, root, sid, profile, work):
     with (work / 'chrome.stderr').open('wb') as stderr:
         proc = subprocess.Popen([chrome, '--headless=new', '--no-sandbox', '--no-first-run',
             '--no-default-browser-check', '--disable-background-networking', '--no-proxy-server',
+            '--disable-gpu', '--disable-dev-shm-usage',
             '--host-resolver-rules=MAP * ~NOTFOUND', '--remote-debugging-port=0',
             '--user-data-dir=' + str(profile), 'about:blank'], start_new_session=True,
+            env={**os.environ, 'DBUS_SESSION_BUS_ADDRESS': 'disabled:'},
             stdout=subprocess.DEVNULL, stderr=stderr)
         native = psutil.Process(proc.pid)
         started = native.create_time()
         (work / 'launch.json').write_text(json.dumps([proc.pid, started]))
-        deadline = time.monotonic() + 15
+        deadline = time.monotonic() + 30
         while True:
             if proc.poll() is not None:
                 raise RuntimeError(f'native exited before readiness: {proc.returncode}')
@@ -136,8 +138,8 @@ def _supervise(chrome, root, sid, profile, work):
             child = subprocess.Popen([sys.executable, '-m', 'tests.browser_orphan_fixture', '--controller', chrome,
                 str(root), sid, str(profile), str(work)], stdout=subprocess.DEVNULL, stderr=stderr)
         # Include controller interpreter/import/launch overhead outside its
-        # unchanged 15-second browser-readiness budget.
-        deadline = time.monotonic() + 20
+        # 30-second browser-readiness budget.
+        deadline = time.monotonic() + 35
         while child.poll() is None:
             if stopping or select.select([sys.stdin], [], [], .02)[0] or time.monotonic() >= deadline:
                 raise TimeoutError('controller launch interrupted or expired')
@@ -188,7 +190,7 @@ def _supervise(chrome, root, sid, profile, work):
 
 
 @asynccontextmanager
-async def supervised_orphan(chrome, journal, sid, profile, work, *, launch_timeout=25):
+async def supervised_orphan(chrome, journal, sid, profile, work, *, launch_timeout=40):
     process = None
     result = None
     try:

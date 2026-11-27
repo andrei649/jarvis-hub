@@ -14,6 +14,8 @@ from agents.core.llm.providers import ProviderProfile
 from agents.core.llm.providers.packages import ProviderPackageError
 from tests.test_h361_provider_hook_runtime import IMAGE, SimulatedSealedRunner
 
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='POSIX provider package store')
+
 
 @pytest.fixture
 def service(tmp_path, monkeypatch):

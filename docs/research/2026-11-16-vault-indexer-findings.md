@@ -2,7 +2,35 @@
 
 **Date:** 2026-11-16
 **Scope:** `apps/jarvis-os/server.py`, `apps/jarvis-os/vault_fs.py` and `agents/core/routers/jarvis_os.py` as introduced by PR #1370. First checked at head `93ddc93`, re-checked at `8a513d5`; line numbers refer to `8a513d5`.
-**Status:** findings for review. No code is changed by this document.
+**Status:** the observations below describe the original indexer. The current hub
+maintains a local SQLite FTS5 index and watches the configured vault for changes.
+
+## Using the local integration
+
+Configure the vault root, allowed and excluded relative paths, native index
+paths and schemas, and an existing inbox in the private `.env`. The generic
+keys are in `.env.example`. Start the hub normally. In the OS vault settings
+or the HUD Vault console, check the note count, skipped hard links, last index
+time and Memory Copilot connection. **Reindex vault** reconciles changes immediately.
+
+The local index contains eligible Markdown text and Canvas metadata. A native
+map can describe a much larger inventory, including excluded zones. The default
+reader and the model-facing search omit restricted bodies. A direct loopback
+owner can request a restricted Markdown note in an allowed zone with
+`local_only=true`. Searches and graph navigation preserve the same folder policy.
+
+In the owner's local web chat, ask “Ce proiecte sunt de terminat acum?” to
+read the native priority queue directly. For a deeper search, choose a
+local-only agent such as Frigga with its memory tools enabled. A loopback model
+can search the scoped vault, the configured AI knowledge base and the fixed
+Memory Copilot search tool. Raw memory results stay out of saved transcripts
+and training trajectories.
+
+Optional external builders operate on a temporary copy of permitted inputs.
+Their derived SQLite file is published in the hub's private runtime directory
+after the builder reports zero unmasked names and SQLite passes an integrity
+check. The source vault and external archive databases retain their existing
+files. The hub's own FTS index works independently of this option.
 
 ## Why this exists
 

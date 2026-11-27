@@ -22,6 +22,8 @@ from tests.test_h361_provider_install_kernel import _bind_real_kernel
 from tests.test_h361_provider_install_routes import HEADERS, client
 from tests.test_h361_provider_install_service import owner, service
 
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='POSIX provider package store')
+
 
 @pytest.fixture
 def selected_store(tmp_path, monkeypatch):

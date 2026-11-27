@@ -250,7 +250,8 @@ async def test_signed_owner_approval_runs_chromium_once_and_cleans_profile(brows
     assert rig.page.state['clicked'] == 1
     assert rig.page.state['hosts'] and set(rig.page.state['hosts']) == {f'fixture.browser.test:{rig.page.port}'}
     assert isinstance(rig.runtime.last_profile, Path)
-    assert rig.runtime.last_profile.parent == Path(tempfile.gettempdir())
+    from agents.core.browser_profile import _root
+    assert rig.runtime.last_profile.parent == _root()
     assert rig.runtime.last_profile.name.startswith('nerva-browser-')
     assert not rig.runtime.last_profile.exists()
     assert rig.runtime.last_browser_identity is not None

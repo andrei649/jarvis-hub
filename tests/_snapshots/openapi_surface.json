@@ -731,6 +731,7 @@
   "POST /api/oracle/sync": "oracle_sync_api_oracle_sync_post",
   "POST /api/os/brain/capture": "os_brain_capture_api_os_brain_capture_post",
   "POST /api/os/brain/chat-note": "os_brain_chat_note_api_os_brain_chat_note_post",
+  "POST /api/os/brain/reindex": "os_reindex_api_os_brain_reindex_post",
   "POST /api/os/workshop/edit": "os_workshop_edit_api_os_workshop_edit_post",
   "POST /api/os/workshop/projects": "os_workshop_project_save_api_os_workshop_projects_post",
   "POST /api/osint/brief": "osint_brief_api_osint_brief_post",

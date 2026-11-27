@@ -756,9 +756,14 @@ async def lifespan(application: FastAPI):
     # is off; NERVA_WORKSPACE_SCHEDULER=0 keeps it from starting at all).
     from agents.core.workspace import scheduler as workspace_scheduler
     workspace_scheduler.start_background()
+    from agents.core.memory import vault_sync
+    vault_stop = asyncio.Event()
+    vault_worker = asyncio.create_task(vault_sync.watch(vault_stop), name="vault-live-index")
     # H283: systemd's READY/STOPPING are not sent from here — uvicorn binds the port
     # only after this startup returns; serve.py's NotifyingServer sends them.
     yield
+    vault_stop.set()
+    await vault_worker
     # H161: the clean-shutdown mark first — a later step that hangs must not make this
     # stop look like an out-of-memory kill to the next start.
     resource_pressure.monitor().stop()
@@ -1875,6 +1880,8 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
                 message = prefix + message
         from agents.core import session_titles
         from agents.core.llm.request_context import reasoning_scope
+        from agents.core.memory.second_brain import local_project_view
+        from agents.core.routers._deps import direct_local_owner
         principal_token = bind_turn_principal(_web_principal(request))
         attached_token = context_refs.bind_attached(expansion)
         words_token = session_titles.bind_own_words(message, req.message)   # H413: titled from these
@@ -1890,7 +1897,7 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
         from agents.core.lifecycle_budget import WARMUP
         warming = WARMUP.warming
         try:
-            with reasoning_scope(req.reasoning):
+            with reasoning_scope(req.reasoning), local_project_view(direct_local_owner(request)):
                 async with _turn_lease(orch, req.session_id, side_question=side_question) as acquired:
                     if not acquired:
                         return ChatResponse(reply=TURN_BUSY_REPLY, history_source_used=False if verified_history else None,
@@ -1961,7 +1968,7 @@ _CHAT_STREAM_PING_SECONDS = 15.0
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
                              attached=None, own_words=None, pending_actor=None, pending_current=None, refused=None,
                              tool_events=False, turn_id=None, pending_poll=False, pending_owner=None, board_sources=None,
-                             disclosure=None):
+                             disclosure=None, local_projects=False):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -2054,6 +2061,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         # is bound here for the same reason.
         from agents.core import context_refs, session_titles
         from agents.core.llm.request_context import reasoning_scope
+        from agents.core.memory.second_brain import local_project_view
         from agents.core.session_transition import open_session_transition, reset_session_transition
 
         transition_sink, transition_token = open_session_transition()
@@ -2095,7 +2103,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 # audited it); it ends here, without waiting for the running turn's lease.
                 await end(refused)
                 return
-            with reasoning_scope(reasoning):
+            with reasoning_scope(reasoning), local_project_view(local_projects):
                 from agents.core.commands import side_question_command_name
                 async with _turn_lease(orch, session_id,
                                        side_question=side_question_command_name(own_words or message) is not None) as acquired:
@@ -2269,6 +2277,7 @@ async def chat_stream(req: ChatRequest, request: Request):
             message = prefix + message
     from agents.core import turn_interrupts
     from agents.core.routers.chat_pending import http_actor, http_owner
+    from agents.core.routers._deps import direct_local_owner
     actor = http_actor(request)
     # H223: `nerva chat -i` asks for the POST /chat question path (GET /chat/pending, which
     # also carries the owner's secret prompts) instead of in-stream clarify events.
@@ -2280,7 +2289,8 @@ async def chat_stream(req: ChatRequest, request: Request):
                            pending_current=lambda: actor is not None and http_actor(request) == actor,
                            refused=refused, tool_events=req.tool_events,
                            turn_id=turn_interrupts.turn_id_from(request.headers.get(turn_interrupts.TURN_ID_HEADER)),
-                           pending_poll=pending_poll, pending_owner=lambda: http_owner(request)),
+                           pending_poll=pending_poll, pending_owner=lambda: http_owner(request),
+                           local_projects=direct_local_owner(request)),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

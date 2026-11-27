@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -343,14 +344,15 @@ def test_windows_paths_translate_only_under_wsl_and_stay_confined(tmp_path, monk
     assert translate("//wsl.localhost/Ubuntu/home/me", wsl=True) == "/home/me"
     assert translate("C:\\src", wsl=False) == "C:\\src"
     assert translate("/home/me", wsl=True) == "/home/me"
-    monkeypatch.setattr(paths, "translate", lambda raw, wsl=None: translate(raw, wsl=True))
-    share = "\\\\wsl$\\Ubuntu" + str(tmp_path).replace("/", "\\")
-    assert session_root(share) == tmp_path.resolve()
-    assert confine(tmp_path, share + "\\a.txt") == tmp_path.resolve() / "a.txt"
-    with pytest.raises(AcpPathError):
-        confine(tmp_path, "C:\\Windows\\system32")                        # translated, then confined
-    with pytest.raises(AcpPathError):
-        confine(tmp_path, share + "\\..\\..\\etc\\passwd")
+    if os.name != "nt":
+        monkeypatch.setattr(paths, "translate", lambda raw, wsl=None: translate(raw, wsl=True))
+        share = "\\\\wsl$\\Ubuntu" + str(tmp_path).replace("/", "\\")
+        assert session_root(share) == tmp_path.resolve()
+        assert confine(tmp_path, share + "\\a.txt") == tmp_path.resolve() / "a.txt"
+        with pytest.raises(AcpPathError):
+            confine(tmp_path, "C:\\Windows\\system32")                        # translated, then confined
+        with pytest.raises(AcpPathError):
+            confine(tmp_path, share + "\\..\\..\\etc\\passwd")
 
 
 def test_nerva_acp_version_prints_and_exits():

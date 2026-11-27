@@ -940,6 +940,10 @@ was added. HUD/API chat paths retain their current lifecycle; gateway validation
 does not claim new browser or native controls, live adapter acceptance, or mobile
 device verification.
 
+The Vault console displays the connected Obsidian vault, note count, exclusions,
+skipped hard links, last index time and local Memory Copilot availability.
+Reindex refreshes the same incremental index used by chat.
+
 H227 inspector (2026-10-04): the existing Inspector panel now shows the resolved
 model/route and distinguishes unresolved base, legacy and withheld previews.
 Refresh replaces stale route/prompt details. Its estimate is a fixed empty-turn

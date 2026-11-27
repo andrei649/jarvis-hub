@@ -355,6 +355,13 @@ def _store_blob(server: str, data_b64: Any, mime: Any, *, root: Path | None = No
     path = folder / f"{digest[:32]}.{ext}"
     if path.exists():
         os.utime(path)
+    elif os.name == "nt":
+        from agents.core.persistence.private_file import atomic_private_write
+
+        try:
+            atomic_private_write(path, lambda stage: stage.write_bytes(raw), exclusive=True)
+        except FileExistsError:
+            os.utime(path)
     else:
         fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "wb") as handle:

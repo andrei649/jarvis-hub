@@ -28,6 +28,8 @@ from agents.core.llm.providers.native_transport import (
 )
 from agents.core.llm.providers.packages import ProviderPackageError, ProviderPackageStore
 from agents.core.llm.providers.selected_runtime import AUTH_MARKER, construction_scope
+
+pytestmark = pytest.mark.skipif(os.name != 'posix', reason='POSIX provider package store')
 from agents.core.llm.quota import ProviderRateLimited
 from agents.core.observability.egress_monitor import EgressMonitor
 from agents.core.turn_usage import turn_usage_scope

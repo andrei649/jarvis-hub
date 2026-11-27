@@ -407,14 +407,22 @@ def test_a_closed_pipe_is_a_normal_end_not_a_crash(script: str, args: list[str])
     would be an injection seam for no benefit, and `head` closing its end is what
     the tool has to survive either way.
     """
+    import shutil
+
+    reader_cmd = (
+        ["head", "-3"]
+        if shutil.which("head")
+        else [sys.executable, "-c", "import sys; [sys.stdout.write(sys.stdin.readline()) for _ in range(3)]"]
+    )
     tool = subprocess.Popen(  # nosec B603 — fixed interpreter and script path
         [sys.executable, str(REPO / "scripts" / script), *args],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", cwd=REPO,
     )
     head = subprocess.Popen(  # nosec B603 B607 — fixed argv
-        ["head", "-3"], stdin=tool.stdout, stdout=subprocess.DEVNULL, text=True,
+        reader_cmd, stdin=tool.stdout, stdout=subprocess.DEVNULL, text=True, encoding="utf-8",
     )
     tool.stdout.close()  # only `head` holds the read end, so its exit closes the pipe
+    tool.stdout = None
     head.wait()
     stderr = tool.communicate()[1]
     assert tool.returncode == 0, stderr

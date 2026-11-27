@@ -150,16 +150,25 @@ def test_a_hand_written_or_hermes_file_loads_and_a_broken_one_is_named(tmp_path)
     _write(tmp_path, "huge.yaml", "name: Huge\nskills: [a]\n# " + "x" * bundles.MAX_FILE_BYTES + "\n")
     _write(tmp_path, "loud.yaml", "name: Loud\nskills: [a]\ninstruction: \"x\\u0007\"\n")
     _write(tmp_path, "notes.txt", "name: Not a bundle\nskills: [a]\n")
-    os.symlink(_dir(tmp_path) / "focus.yml", _dir(tmp_path) / "link.yaml")
+    has_symlink = True
+    try:
+        os.symlink(_dir(tmp_path) / "focus.yml", _dir(tmp_path) / "link.yaml")
+    except OSError as exc:
+        if sys.platform != "win32" or getattr(exc, "winerror", None) != 1314:
+            raise
+        has_symlink = False
     rows, skipped = bundles.snapshot()
     assert [(b.name, b.slug, b.skills, b.description, b.instruction) for b in rows] == [
         ("blank_name", "blank-name", ("b",), "", ""),
         ("Deep Focus", "deep-focus", ("Spotify", "notes"), "quiet hours", "lights low"),
         ("nameless", "nameless", ("a",), "", "")]
     reasons = {p["file"]: p["reason"] for p in skipped}
-    assert reasons == {"broken.yaml": "invalid_yaml", "list.yaml": "invalid_yaml", "empty.yaml": "no_skills",
-                       "symbols.yaml": "bad_name", "twin.yaml": "duplicate", "huge.yaml": "too_large",
-                       "loud.yaml": "bad_instruction", "link.yaml": "not_a_file"}
+    expected = {"broken.yaml": "invalid_yaml", "list.yaml": "invalid_yaml", "empty.yaml": "no_skills",
+                "symbols.yaml": "bad_name", "twin.yaml": "duplicate", "huge.yaml": "too_large",
+                "loud.yaml": "bad_instruction"}
+    if has_symlink:
+        expected["link.yaml"] = "not_a_file"
+    assert reasons == expected
     assert all(p["detail"] for p in skipped)
 
 
@@ -306,17 +315,28 @@ def test_a_path_member_never_traverses_out_of_the_skills_folder(tmp_path):
     weather = _folder(shipped / "weather", "Weather Intel")
     outside = _folder(tmp_path / "elsewhere" / "weather", "Elsewhere")
     escape_target = _folder(tmp_path / "outside" / "esc", "Escape")
-    os.symlink(tmp_path / "outside" / "esc", shipped / "escape")         # a folder linked in from outside
-    os.symlink(shipped / "weather", shipped / "alias")                    # a link inside the folder
+    has_symlink = True
+    try:
+        os.symlink(tmp_path / "outside" / "esc", shipped / "escape")         # a folder linked in from outside
+        os.symlink(shipped / "weather", shipped / "alias")                    # a link inside the folder
+    except OSError as exc:
+        if sys.platform != "win32" or getattr(exc, "winerror", None) != 1314:
+            raise
+        has_symlink = False
     escaped = type(escape_target)(name="Escape", path=shipped / "escape")  # discovery loads it as linked
-    loaded = [weather, outside, escaped]
-    for member in ("../skills/weather", "./weather", "weather/./", "weather/..", "a//b", "weather\\",
-                   str(shipped) + "/../skills/weather", str(shipped) + "/./weather",
-                   str(tmp_path / "elsewhere" / "weather"), "/etc/passwd", "/", "escape/",
-                   str(shipped / "escape"), str(shipped / "alias"), "weather/\0"):
+    loaded = [weather, outside, *([escaped] if has_symlink else [])]
+    outside_members = ["../skills/weather", "./weather", "weather/./", "weather/..", "a//b",
+                       str(shipped) + "/../skills/weather", str(shipped) + "/./weather",
+                       str(tmp_path / "elsewhere" / "weather"), "/etc/passwd", "/", "weather/\0"]
+    if os.sep != "\\":
+        outside_members.append("weather\\")
+    if has_symlink:
+        outside_members.extend(["escape/", str(shipped / "escape"), str(shipped / "alias")])
+    for member in outside_members:
         assert bundles.find_member(loaded, member) == (None, bundles.PATH_OUTSIDE), member
     # The skill linked in is still the installed skill its name or folder names, as before.
-    assert bundles.find_member(loaded, "escape") == (escaped, "")
+    if has_symlink:
+        assert bundles.find_member(loaded, "escape") == (escaped, "")
     assert bundles.resolve(["../skills/weather", "weather/"], loaded) == ([weather], ["../skills/weather"])
 
 
@@ -336,11 +356,18 @@ def test_a_hermes_path_names_the_skill_imported_from_exactly_that_path(tmp_path)
     linked = _folder(owner / "linked", "linked")
     (tmp_path / "rec.json").write_text('{"source_install": "hermes", "source_path": "'
                                        + str(hermes / "dev" / "linked" / "SKILL.md") + '"}', encoding="utf-8")
-    os.symlink(tmp_path / "rec.json", owner / "linked" / "manifest.json")    # a record that is a link
-    loaded = [maps, notes, forged, other, linked]
+    has_symlink = True
+    try:
+        os.symlink(tmp_path / "rec.json", owner / "linked" / "manifest.json")    # a record that is a link
+    except OSError as exc:
+        if sys.platform != "win32" or getattr(exc, "winerror", None) != 1314:
+            raise
+        has_symlink = False
+    loaded = [maps, notes, forged, other, *([linked] if has_symlink else [])]
     assert bundles.hermes_path(maps) == ("productivity", "maps")
     assert bundles.hermes_path(notes) == ("apple", "apple-notes")
-    assert [bundles.hermes_path(s) for s in (forged, other, linked)] == [None, None, None]
+    assert [bundles.hermes_path(s) for s in (forged, other, *([linked] if has_symlink else []))] == (
+        [None, None, None] if has_symlink else [None, None])
     for member in ("productivity/maps", "productivity/maps/"):
         assert bundles.find_member(loaded, member) == (maps, ""), member
     assert bundles.find_member(loaded, "apple/apple-notes") == (notes, "")

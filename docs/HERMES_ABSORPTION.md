@@ -464,7 +464,7 @@ camerei primește propriul thread; un subfir existent își păstrează ținta. 
 de send și nicio schimbare la aprobări. Fără app token, punctul manual existent rămâne.
 Identitatea verificată a botului fixează workspace-ul acceptat; pairing-ul folosește
 `TEAM_ID:USER_ID`, deci aprobările vechi pe user simplu nu se transferă implicit.
-Configurare și limite: [`SLACK_SETUP.md`](SLACK_SETUP.md). Aceleași API-uri de inbox
+Configurare și limite: `SLACK_SETUP.md` (retras 2026-11-25). Aceleași API-uri de inbox
 servesc HUD și mobil. Testele folosesc SDK fals și componentele reale de pairing/inbox;
 un test suplimentar verifică parserul, callback-ul și închiderea SDK-ului real 3.44.1
 cu rețeaua simulată. Conectarea la un workspace și livrarea pe conturi reale rămân neprobate.

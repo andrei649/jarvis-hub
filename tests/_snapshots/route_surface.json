@@ -733,6 +733,7 @@
   "POST /api/oracle/sync",
   "POST /api/os/brain/capture",
   "POST /api/os/brain/chat-note",
+  "POST /api/os/brain/reindex",
   "POST /api/os/workshop/edit",
   "POST /api/os/workshop/projects",
   "POST /api/osint/brief",

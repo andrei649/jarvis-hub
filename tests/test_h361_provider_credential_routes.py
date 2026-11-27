@@ -1,7 +1,11 @@
 """Owner-only API keeps signed credential values out of responses and errors."""
 import asyncio
-import fcntl
 import os
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 import httpx
 import pytest
@@ -9,6 +13,8 @@ import pytest
 from tests.test_h361_provider_credentials import active
 from tests.test_h361_provider_install_routes import HEADERS, client
 from tests.test_h361_provider_install_service import owner, service
+
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX provider package store")
 
 PATH = "/api/admin/llm/provider-credentials"
 
@@ -59,6 +65,7 @@ def test_disabled_flag_refuses_without_envelope(client, service, tmp_path, monke
         assert not list((svc.root / "credentials").glob("*.enc"))
 
 
+@pytest.mark.skipif(fcntl is None, reason="POSIX flock")
 @pytest.mark.asyncio
 async def test_cancelled_route_drains_started_credential_write(client, service, tmp_path):
     from agents import web

@@ -136,9 +136,12 @@ def _create_windows(path: Path) -> None:
     kernel.CreateDirectoryW.argtypes = (w.LPCWSTR, ctypes.POINTER(SecurityAttributes))
     kernel.CreateDirectoryW.restype = w.BOOL
     kernel.LocalFree.argtypes = (ctypes.c_void_p,)
+    from agents.core.checkpoint_windows_fs import WindowsHistoryFs
+
     descriptor = ctypes.c_void_p()
+    sid = WindowsHistoryFs().api._current_sid()
     # Protected inheritable DACL: Chrome's descendants stay private too.
-    sddl = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)"
+    sddl = f"O:{sid}D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;{sid})"
     if not advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW(
             sddl, 1, ctypes.byref(descriptor), None):
         raise ctypes.WinError(ctypes.get_last_error())
@@ -327,7 +330,15 @@ def remove_owned_profile(raw: str | Path, identity: dict | None = None) -> bool:
         return False
     try:
         if os.name == "nt":
-            return _remove_windows(path, identity)
+            import time
+
+            for attempt in range(20):
+                try:
+                    return _remove_windows(path, identity)
+                except OSError as exc:
+                    if getattr(exc, "winerror", None) not in (5, 32, 145) or attempt == 19:
+                        return False
+                    time.sleep(0.05)
         shutil.rmtree(path)
         return True
     except OSError:

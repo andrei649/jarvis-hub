@@ -6799,6 +6799,12 @@ def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
 def read_token_file(path: str) -> str:
     """The admin token from *path* (G11): a regular file of this user's, not a link, not
     readable or writable by group or others (on POSIX), at most 4 KiB, one token."""
+    try:
+        linfo = os.lstat(path)
+    except OSError as exc:
+        raise ValueError(f"cannot open it ({exc.strerror or 'error'}; a link is refused)") from None
+    if stat.S_ISLNK(linfo.st_mode) or getattr(linfo, "st_file_attributes", 0) & 0x400:
+        raise ValueError("cannot open it (a link is refused)")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(path, flags)

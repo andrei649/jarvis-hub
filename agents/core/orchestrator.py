@@ -2968,6 +2968,19 @@ class Orchestrator:
             self.session_id = base
             return "Conversation change unavailable; the previous conversation remains selected."
 
+    async def _second_brain_project_reply(self, text: str, channel: str, agent_override: str | None):
+        """A bounded project answer from the validated register, before any cloud route."""
+        if channel != "web" or agent_override not in (None, "jarvis") or current_principal().admin is not True:
+            return None
+        from .memory.second_brain import local_project_view_allowed, project_reply
+
+        reply = await asyncio.to_thread(project_reply, text)
+        if reply is not None:
+            if not local_project_view_allowed():
+                await self.memory.add_turn(self.session_id, "assistant", reply, agent_id="second_brain")
+            record_turn_completion("command")
+        return reply
+
     async def _channel_turn(
         self, text: str, channel: str, *, observe_only: bool, draft=None,
     ) -> Optional[str]:
@@ -3653,10 +3666,13 @@ class Orchestrator:
             _TURN_TITLE.reset(title_token)
             if titles:
                 self._start_title_upgrades(titles)
-            if read_untrusted:
-                await Orchestrator._note_turn_taint(self, session_id, taint_reason)
-            elif read_unproven:
-                await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
+            try:
+                if read_untrusted:
+                    await Orchestrator._note_turn_taint(self, session_id, taint_reason)
+                elif read_unproven:
+                    await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
+            finally:
+                turn_tools.end()
 
     async def _handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                             session_id: str = None) -> str:
@@ -3749,6 +3765,10 @@ class Orchestrator:
                     self.last_cognition = self._control_cognition(llm_ctl[0])
                     record_turn_completion("command")
                     return reply
+
+        project_reply = await self._second_brain_project_reply(text, channel, agent_override)
+        if project_reply is not None:
+            return project_reply
 
         t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
@@ -3975,10 +3995,13 @@ class Orchestrator:
             _TURN_TITLE.reset(title_token)
             if titles:
                 self._start_title_upgrades(titles)
-            if read_untrusted:
-                await Orchestrator._note_turn_taint(self, session_id, taint_reason)
-            elif read_unproven:
-                await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
+            try:
+                if read_untrusted:
+                    await Orchestrator._note_turn_taint(self, session_id, taint_reason)
+                elif read_unproven:
+                    await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
+            finally:
+                turn_tools.end()
 
     async def _handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                    agent_override: str = None, session_id: str = None) -> str:
@@ -4091,6 +4114,14 @@ class Orchestrator:
                     self.last_cognition = self._control_cognition(llm_ctl[0])
                     return reply
 
+        project_reply = await self._second_brain_project_reply(text, channel, agent_override)
+        if project_reply is not None:
+            if on_token:
+                emitted = on_token(project_reply)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            return project_reply
+
         t_c0 = time.perf_counter()
         intent = await self.router.classify(text, self.agents)
         t_classify = int((time.perf_counter() - t_c0) * 1000)
@@ -4198,6 +4229,10 @@ class Orchestrator:
                         backend, router_model, route_name = prepared.backend, prepared.model, prepared.route
                     else:
                         backend, router_model, route_name = self.llm_router.select_backend(agent_id, prompt)
+                    from .memory.second_brain import private_context_active, strict_loopback_backend
+
+                    if private_context_active() and not strict_loopback_backend(agent_id, backend, route_name):
+                        raise LocalBackendUnavailableError("Private memory requires a loopback local model")
                     if router_model:
                         model = router_model
                     prepare_system = getattr(agent, "model_system_prompt", None)
@@ -5383,6 +5418,20 @@ class Orchestrator:
             block = (block or "").strip()
             if block:
                 parts.append(block)
+        from .llm.hybrid_router import LOCAL_ONLY_AGENTS
+        if (agent_id in LOCAL_ONLY_AGENTS and current_principal().admin is True
+                and current_principal().channel == "web" and turn_tools.active()):
+            from .memory.second_brain import recall_context
+
+            second_brain_block = await asyncio.to_thread(
+                recall_context, text, local_only=lambda: True)
+            if second_brain_block:
+                from . import trajectory
+
+                turn_tools.mark_private()
+                trajectory.suppress_current()
+                turn_tools.note({"event": "tool_result", "tool": "search_second_brain"})
+                parts.append(second_brain_block)
         outcome_block = self._chat_outcome_block() if freeze_core else ""
         if outcome_block:
             parts.append(outcome_block)
@@ -6170,6 +6219,12 @@ class Orchestrator:
                 k: (strip_egress_memory_fences(v) if isinstance(v, str) else v)
                 for k, v in responses.items()
             }
+        from .memory.second_brain import private_context_active
+
+        if private_context_active():
+            # A raw-derived answer is shown only in this owner turn; it cannot enter
+            # chat history, embeddings, checkpoints, logs, reviews or later cloud prompts.
+            return
         untrusted = _turn_is_untrusted()
         if untrusted:
             # H443: the conversation leaves the clean list before this reply is stored in
@@ -7031,6 +7086,10 @@ class Orchestrator:
             if prepared is not None:
                 enriched_text = plan.prompts[agent_id][2]
                 route_name, model = prepared.route, prepared.model
+                from .memory.second_brain import private_context_active, strict_loopback_backend
+
+                if private_context_active() and not strict_loopback_backend(agent_id, prepared.backend, route_name):
+                    raise LocalBackendUnavailableError("Private memory requires a loopback local model")
             else:
                 enriched_text = await self._build_agent_turn_text(
                     agent_id,

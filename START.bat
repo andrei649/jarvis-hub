@@ -41,6 +41,7 @@ REM RB-2: a NERVA_HUD you set is left alone (a JARVIS_HUD default beside it woul
 if not defined JARVIS_HUD if not defined NERVA_HUD set "JARVIS_HUD=v2"
 echo Starting the server on http://127.0.0.1:8080  ^(loopback only^)
 echo Command Center: http://127.0.0.1:8080/v2   ^(legacy HUD at /v1^)
+echo Vault and Memory Copilot status follows after serve.py loads the local .env.
 echo Admin:        http://127.0.0.1:8080/admin
 echo.
 echo (Keep this window open. Close it to stop the server.)
@@ -56,4 +57,3 @@ echo The server has stopped.
 pause >nul
 endlocal
 exit /b
-

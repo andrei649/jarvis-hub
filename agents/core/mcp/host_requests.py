@@ -221,8 +221,12 @@ class SamplingBudget:
         """``(day, used)`` from the file; None when there is none; False when unreadable."""
         import json
         import os
+        import stat
 
         try:
+            linfo = os.lstat(str(self._path))
+            if stat.S_ISLNK(linfo.st_mode) or getattr(linfo, "st_file_attributes", 0) & 0x400:
+                return False
             fd = os.open(str(self._path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         except FileNotFoundError:
             return None
@@ -263,10 +267,8 @@ class SamplingBudget:
         through a link. Small and synchronous (a few hundred bytes)."""
         if self._path is None:
             return
-        import contextlib
         import json
         import os
-        import secrets
         from pathlib import Path
 
         path = Path(self._path)
@@ -284,19 +286,17 @@ class SamplingBudget:
             except ImportError:  # pragma: no cover - not POSIX
                 lock_fd = None
             row = self._read_file()
+            if row is False:
+                return
             ours = dim.used - getattr(self, "_synced", 0.0)
             if isinstance(row, tuple) and row[0] == self._day:
                 dim.used = max(0.0, row[1] + ours)
-            tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(6)}.tmp")
-            fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow, 0o600)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    json.dump({"day": self._day, "used": dim.used}, handle)
-                os.replace(tmp, path)
-            except BaseException:
-                with contextlib.suppress(OSError):
-                    tmp.unlink()
-                raise
+            from agents.core.persistence.private_file import atomic_private_write
+
+            atomic_private_write(
+                path,
+                lambda stage: stage.write_text(json.dumps({"day": self._day, "used": dim.used}), encoding="utf-8"),
+            )
             self._synced = dim.used
         except OSError:
             logger.warning("MCP sampling budget not saved", exc_info=True)

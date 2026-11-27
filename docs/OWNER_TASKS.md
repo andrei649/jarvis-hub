@@ -13,12 +13,21 @@
 
 ## Finish-line owner inputs
 
-2026-11-26. Use a disposable Nerva profile and synthetic content for both tests. The [finish-line status](FINISH_LINE_STATUS.md) tracks the results.
+Updated 2026-11-27 on integrated `main`. Use a disposable Nerva profile (`JARVIS_PROFILE=finish-check`) and synthetic content for live checks. Full verification details live in [FINISH_LINE_STATUS.md](FINISH_LINE_STATUS.md).
 
-- **Item 1, local and cloud routing.** On 2026-11-26 the owner chose ChatGPT and required explicit confirmation per send for earlier turns. In a disposable profile running the routing draft, open Ledger → Console → Integrations, connect ChatGPT, refresh the connection and display the available models. Check in ChatGPT usage settings that the test fits the account's included allowance. Choose the model in Nerva and confirm its exact name. In a new synthetic chat, send one turn locally, send only the second message to ChatGPT, then explicitly confirm sharing earlier turns on the third send. Verify each reply's model receipt. [Plan routing and tests](https://github.com/andrei649/jarvis-hub/pull/1426) · [ChatGPT usage settings](https://chatgpt.com/settings/usage)
-- **Item 6, Windows browser choice (owner decision, 2026-11-26).** Keep standard Chrome as the Windows operator browser. The owner declined a separate Chrome for Testing option. The Windows acceptance remains open. [Pinned controller and native result](https://github.com/andrei649/jarvis-hub/pull/1421)
-- **Item 8, professional tools.** Godot 4.7.2, Unity, Photoshop and Blender were found on Windows. Blender already passed. For Godot, the proposed optional MIT bridge exposes a read-only scene-tree tool through Nerva's existing client. Its installation in a disposable project awaits owner approval. For Photoshop, choose an installed local bridge that can list layers. For Figma Desktop, the official local server needs the desktop app and an eligible existing Dev or Full seat. When a bridge is available, open a synthetic project, give a child object a unique name, check the name in the app, then run that tool's test using the guide. [Test and configuration guide](https://github.com/andrei649/jarvis-hub/blob/3738da3f/docs/professional-tool-smoke.md) · [Proposed Godot bridge](https://github.com/Noa3/GodotMCP/tree/d2e541c0c23dd350c37297ef962a43aaf256c33a) · [Figma Desktop prerequisites](https://developers.figma.com/docs/figma-mcp-server/local-server-installation/)
-- **Item 9, Ledger on green main.** For the Workspace journey, integrate #1398, #1403, its child #1408, and #1417. Regenerate the Workspace bundle from the combined source if hashed assets conflict. For Windows, the startup repair is #1393. Queue, ACP and MCP fixture repairs are #1395, #1396 and #1397. Both ACP follow-ups (#1415 and #1416) build on #1396. Integrate #1409 before #1416. The combined HUD sources passed all 5,006 tests on Linux. The Windows index-permission check also passed with #1393. Check the CI, HUD E2E and Smoke Test workflows on the new main SHA. Keep item 9 open until all three report success. [Latest verification and known Windows failures](FINISH_LINE_STATUS.md#open-ci-findings-for-item-9)
+- [ ] **Item 1 — live ChatGPT account turn pair (local → cloud → cloud with history consent).**
+  All routing, receipt, history-omission and local-note isolation tests pass synthetically on Windows and Linux. To complete the live account check:
+  1. Start the hub in a disposable profile (`$env:JARVIS_PROFILE="finish-check"; .\START.bat` or `python serve.py`) and open Ledger → **Console → Integrations**.
+  2. Connect **ChatGPT**, click **Refresh**, verify in [ChatGPT usage settings](https://chatgpt.com/settings/usage) that a short test fits your included plan allowance, and select an included ChatGPT model.
+  3. Open a new chat: send turn 1 on an installed **local** Ollama model and confirm the local model receipt on the reply.
+  4. Switch the chat picker to the selected **ChatGPT** model and send turn 2 **without** ticking history sharing — confirm the reply receipt names the ChatGPT model and that turn 1 was not sent.
+  5. Send turn 3 on **ChatGPT** **with** the per-send history confirmation ticked — confirm it recalls turn 1 and displays the ChatGPT model receipt.
+- [x] **Item 6 — Windows governed browser on standard Chrome (done 2026-11-27).** Standard Google Chrome `158.0.8127.37` passed all 18 native governed Chromium runtime tests (`tests/test_browser_chromium_runtime.py`, including `test_session_snapshot_ref_survives_separate_owner_approved_call`) on Windows after the UAC split-token SDDL owner and Crashpad cleanup fix in `agents/core/browser_profile.py`.
+- [ ] **Item 8 — optional live MCP read against an open Godot, Photoshop or Figma session.**
+  Blender's native roundtrip already passed on Windows, as did HUD PSD/Godot exports and local MCP responder tests. Whenever you want to exercise a live editor bridge:
+  1. Follow [`docs/professional-tool-smoke.md`](professional-tool-smoke.md) in a disposable synthetic project (for Godot 4.7.2, an optional read-only scene-tree bridge; for Photoshop, your chosen local layer-listing bridge; for Figma Desktop, the local MCP server with an eligible seat).
+  2. Name one synthetic child node/layer uniquely in the open app and run the corresponding read-only smoke command from [`docs/professional-tool-smoke.md`](professional-tool-smoke.md) to confirm Nerva's MCP client reads that exact marker.
+- [x] **Item 9 — Ledger HUD, removals and finish-line stack integrated onto `main` (2026-11-27).** Worldview/Argus removal, non-Telegram messaging removal, `#1392`–`#1426`, incremental Obsidian vault live memory, regenerated `v2` + `workspace` bundles, and Windows/Ubuntu CI fixes are integrated onto `main`.
 
 ## Editable Photoshop export
 
@@ -114,10 +123,10 @@
   - [ ] **Remaining, needs you (re-measured offline 2026-09-02; the 2026-07-07 re-audit and its
     #634 fixes — frontend `undici`, worldview/mcp `hono` ×5 + `esbuild` — are history):**
     `npm audit --omit=dev` today: **frontend 0** · root `package-lock` (HUD-test tree) **5 (2 high)**
-    · **worldview 3 high** · **worldview/mcp 5 (2 high)** · **mobile 21–22 (10–11 high)**; Python
-    `requirements.lock` clean (`pip-audit`). The worldview, worldview/mcp and root trees are all
-    `fixAvailable` and are being fixed by the 2026-09-02 dependency audit wave (engineering, not
-    you). Still yours: (a) **mobile/** — the Expo SDK chain. The gate was *tested* 2026-07-07: a
+    · *(worldview and worldview/mcp trees removed 2026-11-25)* · **mobile 21–22 (10–11 high, frozen 2026-11-25)**; Python
+    `requirements.lock` clean (`pip-audit`). The root tree is
+    `fixAvailable` (engineering, not
+    you). Still yours: (a) **mobile/** — the Expo SDK chain (frozen until after desktop finish line per `docs/decisions/2026-11-25-nerva-finish-line.md`). The gate was *tested* 2026-07-07: a
     non-forced `npm audit fix` bump broke `tsc` in the audio path (`expo-audio`
     AudioPlayer.addListener), so it truly needs the SDK upgrade + real-device validation;
     (b) **read GitHub's own Dependabot count** — the figures above are offline measurements, the

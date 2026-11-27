@@ -25,6 +25,19 @@ function mockFetch(routes) {
 }
 
 describe('VaultPanel — the encrypted blob vault is live', () => {
+  it('shows the live Obsidian index and refreshes its status after reindexing', async () => {
+    const fn = mockFetch({
+      '/api/os/status': { vaultAvailable: true, vaultPath: 'Library', indexedNotes: 3,
+        skippedHardlinks: 2, excludedZones: ['Archive'], lastIndexedAt: '2030-01-01', copilotConnected: true },
+      '/api/os/brain/reindex': { ok: true },
+    });
+    render(<VaultPanel />);
+    expect(await screen.findByText('Library · 3 indexed notes')).toBeTruthy();
+    expect(screen.getByText(/Memory Copilot connected/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Reindex vault' }));
+    await waitFor(() => expect(fn.mock.calls.filter(([url]) => url === '/api/os/status')).toHaveLength(2));
+    expect(fn.mock.calls.some(([url, init]) => url === '/api/os/brain/reindex' && init.method === 'POST')).toBe(true);
+  });
   it('GETs /api/vault and renders items + stats without leaking content', async () => {
     const fn = mockFetch({
       '/api/vault': {

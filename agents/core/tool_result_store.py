@@ -97,7 +97,14 @@ READ_TOOL = "file_read"
 #: H315 — `todo` answers with the whole plan the model must follow, and its store bounds
 #: that answer below the smallest per-result budget (todo_tool.MAX_PLAN_BYTES), so it
 #: is never spilled or cut, not even once the turn's own allowance is spent.
-PINNED_THRESHOLDS: dict[str, float] = {READ_TOOL: math.inf, "todo": math.inf}
+PINNED_THRESHOLDS: dict[str, float] = {
+    READ_TOOL: math.inf, "todo": math.inf,
+    # These results are bounded at their source and may contain private memory;
+    # a spill would persist the raw bytes outside the ephemeral owner turn.
+    "search_second_brain": math.inf,
+    "search_private_memory": math.inf,
+    "search_ai_knowledge": math.inf,
+}
 
 #: Bridged MCP tools share one default: their sizes are a third party's decision, so
 #: they get a tighter allowance than first-party tools rather than the global one.
@@ -395,19 +402,19 @@ class ToolResultStore:
         raw = body.encode("utf-8")
         digest = hashlib.sha256(raw).hexdigest()
         reference = _spill_name(tool, digest, "json")
-        temporary = None
         try:
+            from .persistence.private_file import atomic_private_write
+
             self.root.mkdir(parents=True, exist_ok=True)
             target = self.root / reference
-            with tempfile.NamedTemporaryFile(
-                mode="wb", dir=self.root, prefix=f".{_safe_tool_name(tool)}-",
-                suffix=".tmp", delete=False,
-            ) as handle:
-                temporary = Path(handle.name)
-                handle.write(raw)
-                handle.flush()
-                os.fsync(handle.fileno())
-            temporary.replace(target)
+
+            def _write_stage(stage: Path) -> None:
+                with stage.open("wb") as handle:
+                    handle.write(raw)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+
+            atomic_private_write(target, _write_stage)
             # Stamp the file from the store's own clock rather than leaving it to
             # the filesystem. Retention compares against this clock, so letting the
             # two disagree would make the injected clock decorative and the age
@@ -415,8 +422,6 @@ class ToolResultStore:
             written = self._clock()
             os.utime(target, (written, written))
         except OSError:
-            if temporary is not None:
-                self._unlink(temporary)
             logger.warning("tool result spill failed; falling back to truncation",
                            exc_info=True)
             return None
@@ -449,11 +454,22 @@ class ToolResultStore:
         """
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            handle = tempfile.NamedTemporaryFile(  # noqa: SIM115 — StreamSpill owns close/discard.
-                mode="wb", dir=self.root, prefix=f".{_safe_tool_name(tool)}-",
-                suffix=".part", delete=False,
-            )
-            temporary = Path(handle.name)
+            if os.name == "nt":
+                from .persistence.private_file import _allocate, _close_windows_handle
+
+                temporary, raw_handle = _allocate(self.root / f"{_safe_tool_name(tool)}.part")
+                _close_windows_handle(raw_handle)
+                try:
+                    handle = temporary.open("wb")  # noqa: SIM115 — StreamSpill owns close/discard.
+                except BaseException:
+                    self._unlink(temporary)
+                    raise
+            else:
+                handle = tempfile.NamedTemporaryFile(  # noqa: SIM115 — StreamSpill owns close/discard.
+                    mode="wb", dir=self.root, prefix=f".{_safe_tool_name(tool)}-",
+                    suffix=".part", delete=False,
+                )
+                temporary = Path(handle.name)
         except OSError:
             logger.warning("tool result stream spill could not be opened; "
                            "falling back to truncation", exc_info=True)

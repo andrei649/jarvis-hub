@@ -799,9 +799,14 @@ def test_required_nullable_property_keeps_null_admissible():
 
 
 def _stdio_server(tools: list[dict], calls: list | None = None) -> MCPServer:
-    """A real stdio MCPServer (a live ``sleep`` child) whose JSON-RPC answers in-process,
+    """A real stdio MCPServer (a live child) whose JSON-RPC answers in-process,
     so ``connect()`` runs its own spawn → initialize → tools/list path."""
-    srv = MCPServer("docs", command="sleep 30", trust="full")
+    import shlex
+    import sys
+    from pathlib import Path
+
+    fake = Path(__file__).resolve().parent / "fixtures" / "mcp_fake_server.py"
+    srv = MCPServer("docs", command=shlex.join([sys.executable, str(fake), "full"]), trust="full")
 
     async def fake_send(message):
         if message["method"] == "initialize":

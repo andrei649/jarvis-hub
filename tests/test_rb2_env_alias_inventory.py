@@ -41,6 +41,8 @@ NOT_VARIABLES = {
     # variables of a CI workflow, set and read inside .github/workflows only
     "JARVIS_EVAL_CACHE_PREFIX", "JARVIS_EVAL_CI_SMALL_MODEL", "JARVIS_EVAL_CI_SMALL_MODEL_ID",
     "JARVIS_NEO4J_LIVE",
+    # retired 2026-11-25 messaging names kept only in code_env scrubbing or STATUS.md history
+    "JARVIS_SMS_AUTH_TOKEN", "JARVIS_WEBHOOK_CHANNELS",
 }
 # Prefix tokens (a name cut at an underscore in prose or a prefix tuple) that are not families.
 NOT_FAMILIES = {"JARVIS_AUX_"}       # mobile/PARITY.md writes "JARVIS_AUX_*" for the AUX_* variables

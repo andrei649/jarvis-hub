@@ -737,6 +737,7 @@
   "POST /api/oracle/sync": "admin",
   "POST /api/os/brain/capture": "user",
   "POST /api/os/brain/chat-note": "user",
+  "POST /api/os/brain/reindex": "user",
   "POST /api/os/workshop/edit": "user",
   "POST /api/os/workshop/projects": "user",
   "POST /api/osint/brief": "user",
