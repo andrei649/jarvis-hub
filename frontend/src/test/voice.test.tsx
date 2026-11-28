@@ -490,6 +490,62 @@ describe('useVoice state machine', () => {
       }
     });
 
+    it('preserves the microphone lease across standby-to-active wake-word handoff until active capture finishes', async () => {
+      let latestRec: any = null;
+      let resolveStt: (value: any) => void = () => {};
+      const sttPending = new Promise((resolve) => {
+        resolveStt = resolve;
+      });
+      let micStopCalls = 0;
+
+      class HandOffSpeechRecognition {
+        continuous = false;
+        interimResults = false;
+        lang = '';
+        onresult: any = null;
+        onerror: any = null;
+        onend: any = null;
+        start = vi.fn(() => { latestRec = this; });
+        stop = vi.fn();
+      }
+      Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: HandOffSpeechRecognition });
+      try {
+        global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.endsWith('/api/voice/capabilities')) return jsonResponse({ stt: true, tts: true });
+          if (url.endsWith('/api/voice/mic/arm')) return jsonResponse({ ok: true });
+          if (url.endsWith('/api/voice/mic/stop')) {
+            micStopCalls += 1;
+            return jsonResponse({ ok: true });
+          }
+          if (url.includes('/api/voice/stt')) return sttPending as any;
+          return jsonResponse({});
+        }) as any;
+
+        const view = render(<VoiceHarness opts={{ wakeWord: true, mode: 'ptt', onTurn: vi.fn(async () => '') }} />);
+        await waitFor(() => expect(latestRec).not.toBeNull());
+
+        await act(async () => {
+          latestRec.onresult?.({
+            resultIndex: 0,
+            results: [[{ transcript: 'Hey Jarvis' }]],
+          });
+        });
+
+        await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('transcribing'));
+        expect(micStopCalls).toBe(0);
+
+        await act(async () => {
+          resolveStt(jsonResponse({ text: '[silence]' }));
+        });
+        await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('off'));
+        expect(micStopCalls).toBeGreaterThanOrEqual(1);
+        view.unmount();
+      } finally {
+        delete (window as any).SpeechRecognition;
+      }
+    });
+
     it('refuses to start wake-word SpeechRecognition when the hub denies the microphone lease', async () => {
       let started = false;
       class GuardedSpeechRecognition {

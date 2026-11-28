@@ -249,6 +249,72 @@ async def test_turn_steer_delivers_both_between_tools_and_on_late_final_round():
 
 
 @pytest.mark.asyncio
+async def test_late_steer_at_iteration_limit_preserves_completed_answer():
+    from tests.test_h388_guidance_runtime import setup_runtime
+
+    # Case 1: max_iterations=1 -> budget.remaining == 0 when the final answer lands;
+    # a late /steer must NOT discard the completed answer for a safety-limit notice.
+    runtime_single = setup_runtime()
+    runtime_single._max_iterations = lambda: 1
+
+    class SingleRoundBackend:
+        supports_tools = True
+
+        async def generate_tool_turn(self, *, model, messages, tools, max_tokens, temperature):
+            status, _ = steer_http("actor-cap", "late steer at cap", session_id="sess-cap-1")
+            assert status == "queued"
+            return ToolTurn(content="Completed single-round answer.", tool_calls=[])
+
+    with track_turn_steer(session_id="sess-cap-1", actor="actor-cap", owner=True) as entry:
+        reply_1 = await runtime_single.run(
+            agent_id="jarvis",
+            backend=SingleRoundBackend(),
+            model="gpt-5",
+            prompt="answer directly",
+            system="AUTHORITY",
+            max_tokens=128,
+            temperature=0.1,
+        )
+        # Because budget.remaining == 0, the late steer remains unconsumed rather than silently dropped.
+        assert len(entry.channel.peek()) == 1
+    assert reply_1 == "Completed single-round answer."
+
+    # Case 2: max_iterations=2 -> late steer triggers round 2, which calls a tool and hits
+    # the iteration ceiling; steer_held preserves the completed round-1 draft.
+    runtime_two = setup_runtime()
+    runtime_two._max_iterations = lambda: 2
+
+    class TwoRoundToolExhaustBackend:
+        supports_tools = True
+
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_tool_turn(self, *, model, messages, tools, max_tokens, temperature):
+            self.calls += 1
+            if self.calls == 1:
+                status, _ = steer_http("actor-cap2", "check one extra tool", session_id="sess-cap-2")
+                assert status == "queued"
+                return ToolTurn(content="Completed draft before tool budget exhaustion.", tool_calls=[])
+            return ToolTurn(
+                content="",
+                tool_calls=[ToolCall(id="call_extra", name="echo", arguments={"n": 2})],
+            )
+
+    with track_turn_steer(session_id="sess-cap-2", actor="actor-cap2", owner=True):
+        reply_2 = await runtime_two.run(
+            agent_id="jarvis",
+            backend=TwoRoundToolExhaustBackend(),
+            model="gpt-5",
+            prompt="summarize and verify",
+            system="AUTHORITY",
+            max_tokens=128,
+            temperature=0.1,
+        )
+    assert reply_2 == "Completed draft before tool budget exhaustion."
+
+
+@pytest.mark.asyncio
 async def test_steer_command_and_http_route_isolate_credentials_and_never_approve():
     from agents import web
 
@@ -540,3 +606,61 @@ async def test_xml_entity_expansion_fails_closed_in_structured_documents(tmp_pat
     tools = FileTools(FileScope([tmp_path]))
     res = await tools.read_file({"path": str(xxe_xlsx)})
     assert res["ok"] is False and res["reason"] == "extraction_failed"
+
+
+def test_xlsx_and_ods_shared_string_amplification_respect_first_sheet_byte_budget(tmp_path):
+    from agents.core.document_formats import extract_structured_document
+
+    amplified_xlsx = tmp_path / "amplified.xlsx"
+    payload = "X" * 4096
+    rows_xml = "".join(
+        f'<row r="{r}"><c r="A{r}" t="s"><v>0</v></c><c r="B{r}" t="s"><v>0</v></c></row>'
+        for r in range(1, 401)
+    )
+    with zipfile.ZipFile(amplified_xlsx, "w") as zf:
+        zf.writestr(
+            "xl/sharedStrings.xml",
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f"<si><t>{payload}</t></si></sst>",
+        )
+        zf.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f"<sheetData>{rows_xml}</sheetData></worksheet>",
+        )
+
+    xlsx_ext = extract_structured_document(".xlsx", amplified_xlsx, max_text_bytes=180)
+    assert xlsx_ext is not None
+    assert xlsx_ext.stopped == "text_limit"
+    xlsx_text = "\n".join(xlsx_ext.pages)
+    assert "## Sheet:" in xlsx_text
+    assert len(xlsx_text.encode("utf-8")) <= 180
+
+    amplified_ods = tmp_path / "amplified.ods"
+    ods_rows = "".join(
+        "<table:table-row>"
+        f'<table:table-cell table:number-columns-repeated="32"><text:p>{"Y" * 512}</text:p></table:table-cell>'
+        "</table:table-row>"
+        for _ in range(100)
+    )
+    with zipfile.ZipFile(amplified_ods, "w") as zf:
+        zf.writestr(
+            "content.xml",
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<office:document-content '
+            'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+            'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+            'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0">'
+            '<office:body><office:spreadsheet><table:table table:name="Huge">'
+            f"{ods_rows}"
+            "</table:table></office:spreadsheet></office:body></office:document-content>",
+        )
+
+    ods_ext = extract_structured_document(".ods", amplified_ods, max_text_bytes=180)
+    assert ods_ext is not None
+    assert ods_ext.stopped == "text_limit"
+    ods_text = "\n".join(ods_ext.pages)
+    assert "## Sheet: Huge" in ods_text
+    assert len(ods_text.encode("utf-8")) <= 180

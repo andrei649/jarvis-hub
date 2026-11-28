@@ -1273,7 +1273,7 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("btw", "ask a side question about this conversation; nothing is added to it",
                                    _btw, usage="<question>"))
     registry.register(SlashCommand("steer", "send mid-turn guidance to a running turn in this conversation",
-                                   _steer, tier=ADMIN, usage="<instruction>", requires_args=True))
+                                   _steer, tier=ADMIN, usage="<instruction>"))
     registry.register(SlashCommand("usage", "cloud provider quota left, and any 429 hold", _usage, tier=ADMIN))
     registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason|off]"))
     registry.register(SlashCommand("stop", "engage the emergency stop; in-flight work still finishes", _pause,

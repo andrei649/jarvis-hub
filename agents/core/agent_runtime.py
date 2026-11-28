@@ -927,6 +927,7 @@ class AgentToolRuntime:
         output_risks: dict[int, ToolOutputRisk] = {}
         guardian_stopped = False
         verify_held: str | None = None   # G5: the answer a verify-on-stop nudge held back
+        steer_held: str | None = None    # H395: completed draft held across a late-steer continuation
 
         # H298 — what this turn has already put in the window, and how big that window
         # is. One cap cannot express the first: five results at 40% of the limit each
@@ -1105,9 +1106,10 @@ class AgentToolRuntime:
                     # H395: if the user sent a mid-turn /steer while this final model round
                     # was in flight, do not drop it on exit — append the draft + steer and
                     # run one more round (when budget remains) so the answer reflects it.
-                    if not guardian_stopped:
+                    if not guardian_stopped and budget.remaining > 0:
                         late_steer = prepare_steering_rows(agent_id)
                         if late_steer.rows:
+                            steer_held = turn.content
                             assistant_draft = {"role": "assistant", "content": turn.content}
                             messages.append(assistant_draft)
                             trajectory.note_message(assistant_draft)
@@ -1290,9 +1292,10 @@ class AgentToolRuntime:
                         restated[name] = f"script:{scripts_run}"
             if any(result.get("reason") == "approval_required" for result, _ in observations):
                 reply = _approval_reply(result for result, _ in observations)
-                if verify_held is not None:
-                    # G5: the nudged round queued a check; the answer it held still stands.
-                    reply = f"{verify_held}\n\n{reply}"
+                held = verify_held if verify_held is not None else steer_held
+                if held is not None:
+                    # G5 / H395: the nudged or steered round queued a check; the held answer still stands.
+                    reply = f"{held}\n\n{reply}"
                 return ToolLoopResult(reply, ToolLoopExitReason.APPROVAL_REQUIRED)
             from .approval_outcomes import _has_active_denial_breaker
             if any(result.get('reason') == 'guardian_denied' and _has_active_denial_breaker(result)
@@ -1319,9 +1322,10 @@ class AgentToolRuntime:
                 return ToolLoopResult(_FAILURE_REPLY if failing else _REPEAT_REPLY,
                                       ToolLoopExitReason.FAILING_TOOL if failing else ToolLoopExitReason.REPEATED_CALL)
 
-        if verify_held is not None:
-            # G5: the budget ran out after a verify-on-stop nudge; the held answer stands.
-            return ToolLoopResult(verify_held, ToolLoopExitReason.MODEL_RESPONSE)
+        held = verify_held if verify_held is not None else steer_held
+        if held is not None:
+            # G5 / H395: the budget ran out after a verify-on-stop nudge or late-steer round; the held answer stands.
+            return ToolLoopResult(held, ToolLoopExitReason.MODEL_RESPONSE)
         await self._emit(
             event_sink,
             {

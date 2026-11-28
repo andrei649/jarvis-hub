@@ -499,6 +499,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     releaseStream(); setStat('off'); setLevel(0);
   }, []);
   const stopRef = useRef(stop); stopRef.current = stop;
+  const startRef = useRef(start); startRef.current = start;
 
   /** Take the microphone from the surface that holds it on this device (H247). */
   const takeOver = useCallback(() => start({ takeOver: true }), [start]);
@@ -518,15 +519,18 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     let standbyRenew: any = null;
     let rec: any = null;
 
-    const dropStandbyLease = () => {
+    const dropStandbyLease = (transferToActive = false) => {
       if (standbyRenew) { clearInterval(standbyRenew); standbyRenew = null; }
-      if (standbyLeased) { standbyLeased = false; releaseMic(); }
+      if (standbyLeased) {
+        standbyLeased = false;
+        if (!transferToActive && !activeRef.current && !leasedRef.current) releaseMic();
+      }
     };
 
     void (async () => {
       const lease = await armMic(false);
-      if (!alive || activeRef.current || micMutedRef.current) {
-        if (lease.ok) releaseMic();
+      if (!alive || activeRef.current || leasedRef.current || micMutedRef.current) {
+        if (lease.ok && !activeRef.current && !leasedRef.current) releaseMic();
         return;
       }
       if (lease.ok === false) {
@@ -574,8 +578,8 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
                 rec.onend = null;
                 rec.stop();
               } catch { /* ignore */ }
-              dropStandbyLease();
-              void start(hit.remainder ? { initialTranscript: hit.remainder } : undefined);
+              dropStandbyLease(true);
+              void startRef.current(hit.remainder ? { initialTranscript: hit.remainder } : undefined);
               return;
             }
           }
@@ -612,7 +616,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
       }
       dropStandbyLease();
     };
-  }, [wakeWord, active, micMuted, lang, start]);
+  }, [wakeWord, active, micMuted, lang]);
 
   useEffect(() => () => { startGenRef.current++; activeRef.current = false; if (cancelSpeakRef.current) cancelSpeakRef.current(); releaseStream(); }, []);
 

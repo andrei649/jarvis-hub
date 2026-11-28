@@ -26,13 +26,14 @@ import json
 import posixpath
 import re
 import time
-import zipfile
 from collections.abc import Callable
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, BinaryIO
 
 from defusedxml.ElementTree import fromstring as _parse_xml
+
+from .archive_safe import ArchiveLimits, ArchiveRejected, ZipMemberReader
 
 type XmlNode = Any
 
@@ -43,13 +44,15 @@ MAX_XML_CHARS = 25_000_000
 MAX_NOTEBOOK_CELLS = 5_000
 MAX_ODS_REPEAT = 64
 
+_DOC_ZIP_LIMITS = ArchiveLimits(max_members=MAX_ZIP_ENTRIES, max_bytes=MAX_ZIP_TOTAL_BYTES)
+
 STDLIB_DOC_EXTS = frozenset({".xlsx", ".ods", ".odt", ".ipynb", ".epub", ".rtf"})
 
 _XML_ENTITY_RE = re.compile(rb"<!\s*(?:ENTITY|DOCTYPE)\b", re.IGNORECASE)
 _CELL_REF_RE = re.compile(r"^([A-Za-z]+)\d+$")
 
 
-class _ArchiveSafetyError(ValueError):
+class _ArchiveSafetyError(ArchiveRejected):
     """Raised when a ZIP/XML container exceeds safety bounds."""
 
 
@@ -65,47 +68,8 @@ def _safe_xml(raw: bytes) -> XmlNode:
     return _parse_xml(raw)
 
 
-class _BudgetedZip:
-    """Chunk-metered ZIP reader that caps entry count, per-entry size, and total uncompressed bytes."""
-
-    def __init__(self, source: Path | BinaryIO) -> None:
-        self._zf = zipfile.ZipFile(str(source) if isinstance(source, Path) else source, "r")
-        infos = self._zf.infolist()
-        if len(infos) > MAX_ZIP_ENTRIES:
-            self._zf.close()
-            raise _ArchiveSafetyError("too_many_zip_entries")
-        self._names = {info.filename for info in infos}
-        self._total_read = 0
-
-    def __enter__(self) -> _BudgetedZip:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        self._zf.close()
-
-    def has(self, name: str) -> bool:
-        return name in self._names
-
-    def names(self) -> list[str]:
-        return sorted(self._names)
-
-    def read(self, name: str, *, limit: int = MAX_ZIP_MEMBER_BYTES) -> bytes:
-        info = self._zf.getinfo(name)
-        if info.file_size > limit:
-            raise _ArchiveSafetyError("zip_member_too_large")
-        chunks: list[bytes] = []
-        member_read = 0
-        with self._zf.open(info, "r") as handle:
-            while True:
-                piece = handle.read(65536)
-                if not piece:
-                    break
-                member_read += len(piece)
-                self._total_read += len(piece)
-                if member_read > limit or self._total_read > MAX_ZIP_TOTAL_BYTES:
-                    raise _ArchiveSafetyError("zip_uncompressed_limit")
-                chunks.append(piece)
-        return b"".join(chunks)
+def _open_doc_zip(source: Path | BinaryIO) -> ZipMemberReader:
+    return ZipMemberReader(source, limits=_DOC_ZIP_LIMITS, max_member_bytes=MAX_ZIP_MEMBER_BYTES)
 
 
 def _read_stream_bytes(source: Path | BinaryIO, limit: int = 50_000_000) -> bytes:
@@ -132,19 +96,107 @@ def _col_index(cell_ref: str) -> int | None:
     return idx - 1
 
 
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    if max_bytes <= 0:
+        return ""
+    raw = text.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return text
+    return raw[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _format_single_row(row: list[str], *, is_header: bool) -> list[str]:
+    trimmed = list(row)
+    while trimmed and not trimmed[-1]:
+        trimmed.pop()
+    if not any(trimmed):
+        return []
+    escaped = [cell.replace("\n", " ").replace("|", "\\|").strip() for cell in trimmed]
+    lines = ["| " + " | ".join(escaped) + " |"]
+    if is_header:
+        lines.append("| " + " | ".join("---" for _ in escaped) + " |")
+    return lines
+
+
 def _format_table_rows(rows: list[list[str]]) -> list[str]:
     lines: list[str] = []
-    for r_idx, row in enumerate(rows):
-        trimmed = list(row)
-        while trimmed and not trimmed[-1]:
-            trimmed.pop()
-        if not any(trimmed):
-            continue
-        escaped = [cell.replace("\n", " ").replace("|", "\\|").strip() for cell in trimmed]
-        lines.append("| " + " | ".join(escaped) + " |")
-        if r_idx == 0:
-            lines.append("| " + " | ".join("---" for _ in escaped) + " |")
+    header = True
+    for row in rows:
+        formatted = _format_single_row(row, is_header=header)
+        if formatted:
+            lines.extend(formatted)
+            header = False
     return lines
+
+
+def _append_sheet_stream(
+    pages: list[str],
+    *,
+    title: str,
+    rows_iter: Any,
+    used: int,
+    max_text_bytes: int,
+    started: float,
+    max_seconds: float,
+    clock: Callable[[], float],
+) -> tuple[int, int, str | None]:
+    """Stream formatted rows of one spreadsheet tab under strict byte & wall-clock caps."""
+    if clock() - started > max_seconds:
+        return used, 0, "time_limit"
+    sep_bytes = 1 if pages else 0
+    header = f"## Sheet: {title}"
+    header_bytes = len(header.encode("utf-8"))
+    if used + sep_bytes + header_bytes > max_text_bytes:
+        if not pages and max_text_bytes > 0:
+            clipped = _truncate_utf8(header, max_text_bytes)
+            if clipped:
+                pages.append(clipped)
+                used += len(clipped.encode("utf-8"))
+        return used, 0, "text_limit"
+
+    sheet_lines = [header]
+    sheet_bytes = sep_bytes + header_bytes
+    sheet_rows = 0
+    stopped: str | None = None
+
+    for cells in rows_iter:
+        if clock() - started > max_seconds:
+            stopped = "time_limit"
+            break
+        rendered_lines = _format_single_row(cells, is_header=(sheet_rows == 0))
+        if not rendered_lines:
+            continue
+        for line in rendered_lines:
+            line_bytes = 1 + len(line.encode("utf-8"))
+            if used + sheet_bytes + line_bytes > max_text_bytes:
+                avail = max_text_bytes - (used + sheet_bytes) - 1
+                if not pages and sheet_rows == 0 and avail > 0:
+                    clipped = _truncate_utf8(line, avail)
+                    if clipped:
+                        sheet_lines.append(clipped)
+                        sheet_bytes += 1 + len(clipped.encode("utf-8"))
+                        sheet_rows = 1
+                stopped = "text_limit"
+                break
+            sheet_lines.append(line)
+            sheet_bytes += line_bytes
+        if stopped is not None:
+            break
+        sheet_rows += 1
+
+    if sheet_rows == 0 and stopped is None:
+        empty_line = "(empty sheet)"
+        empty_bytes = 1 + len(empty_line.encode("utf-8"))
+        if used + sheet_bytes + empty_bytes <= max_text_bytes:
+            sheet_lines.append(empty_line)
+            sheet_bytes += empty_bytes
+        else:
+            stopped = "text_limit"
+
+    if stopped is None or sheet_rows > 0 or not pages:
+        pages.append("\n".join(sheet_lines))
+        used += sheet_bytes
+    return used, sheet_rows, stopped
 
 
 def _extract_xlsx(
@@ -157,7 +209,8 @@ def _extract_xlsx(
     from .local_docs import DocumentExtraction
 
     started = clock()
-    with _BudgetedZip(source) as archive:
+    cell_cap = max(64, max_text_bytes + 1)
+    with _open_doc_zip(source) as archive:
         shared: list[str] = []
         if archive.has("xl/sharedStrings.xml"):
             sst = _safe_xml(archive.read("xl/sharedStrings.xml"))
@@ -169,7 +222,7 @@ def _extract_xlsx(
                     for node in si.iter()
                     if _local_name(node.tag) == "t" and node.text
                 ]
-                shared.append("".join(parts))
+                shared.append(_truncate_utf8("".join(parts), cell_cap))
 
         rels: dict[str, str] = {}
         if archive.has("xl/_rels/workbook.xml.rels"):
@@ -206,16 +259,13 @@ def _extract_xlsx(
         used = 0
         row_total = 0
         stopped: str | None = None
-        for title, sheet_path in sheets:
-            if pages and clock() - started > max_seconds:
-                stopped = "time_limit"
-                break
-            root = _safe_xml(archive.read(sheet_path))
-            sheet_rows: list[list[str]] = []
+
+        def iter_xlsx_rows(root: XmlNode):
             for elem in root.iter():
                 if _local_name(elem.tag) != "row":
                     continue
                 cells: list[str] = []
+                row_bytes = 0
                 for cell in elem:
                     if _local_name(cell.tag) != "c":
                         continue
@@ -224,8 +274,11 @@ def _extract_xlsx(
                     col = _col_index(ref) if ref else None
                     val = ""
                     if c_type == "inlineStr":
-                        val = "".join(
-                            n.text or "" for n in cell.iter() if _local_name(n.tag) == "t" and n.text
+                        val = _truncate_utf8(
+                            "".join(
+                                n.text or "" for n in cell.iter() if _local_name(n.tag) == "t" and n.text
+                            ),
+                            cell_cap,
                         )
                     else:
                         v_node = next((n for n in cell if _local_name(n.tag) == "v"), None)
@@ -236,24 +289,37 @@ def _extract_xlsx(
                         elif c_type == "b":
                             val = "TRUE" if raw_v == "1" else ("FALSE" if raw_v == "0" else raw_v)
                         else:
-                            val = raw_v
+                            val = _truncate_utf8(raw_v, cell_cap)
                     if col is not None and 0 <= col < 512:
                         while len(cells) <= col:
                             cells.append("")
                         cells[col] = val
                     else:
                         cells.append(val)
+                    row_bytes += len(val.encode("utf-8")) + 3
+                    if row_bytes > max_text_bytes + 256:
+                        break
                 if any(c.strip() for c in cells):
-                    sheet_rows.append(cells)
-            row_total += len(sheet_rows)
-            rendered_rows = _format_table_rows(sheet_rows)
-            body = f"## Sheet: {title}\n" + ("\n".join(rendered_rows) if rendered_rows else "(empty sheet)")
-            size = len(body.encode("utf-8")) + (1 if pages else 0)
-            if pages and used + size > max_text_bytes:
-                stopped = "text_limit"
+                    yield cells
+
+        for title, sheet_path in sheets:
+            if clock() - started > max_seconds:
+                stopped = "time_limit"
                 break
-            used += size
-            pages.append(body)
+            root = _safe_xml(archive.read(sheet_path))
+            used, added_rows, stopped = _append_sheet_stream(
+                pages,
+                title=title,
+                rows_iter=iter_xlsx_rows(root),
+                used=used,
+                max_text_bytes=max_text_bytes,
+                started=started,
+                max_seconds=max_seconds,
+                clock=clock,
+            )
+            row_total += added_rows
+            if stopped is not None:
+                break
 
     return DocumentExtraction(
         pages=pages,
@@ -293,12 +359,13 @@ def _odf_inline_text(elem: XmlNode) -> str:
     return "".join(parts).strip()
 
 
-def _odf_table_rows(table_elem: XmlNode) -> list[list[str]]:
-    rows: list[list[str]] = []
+def _odf_iter_table_rows(table_elem: XmlNode, *, max_row_bytes: int = 32_000_000):
+    cell_cap = max(64, max_row_bytes + 1)
     for child in table_elem.iter():
         if _local_name(child.tag) != "table-row":
             continue
         row: list[str] = []
+        row_bytes = 0
         for cell in child:
             if _local_name(cell.tag) not in ("table-cell", "covered-table-cell"):
                 continue
@@ -307,19 +374,28 @@ def _odf_table_rows(table_elem: XmlNode) -> list[list[str]]:
                 "1",
             )
             repeat = int(repeat_raw) if str(repeat_raw).isdigit() else 1
-            text = "\n".join(
-                t for p in cell if _local_name(p.tag) in ("p", "h") and (t := _odf_inline_text(p))
+            text = _truncate_utf8(
+                "\n".join(
+                    t for p in cell if _local_name(p.tag) in ("p", "h") and (t := _odf_inline_text(p))
+                ),
+                cell_cap,
             )
             # LibreOffice writes trailing empty cells with repeat=1024; cap repeats tightly.
             copies = 1 if not text else min(MAX_ODS_REPEAT, max(1, repeat))
             if not text and repeat <= MAX_ODS_REPEAT:
                 copies = max(1, repeat)
-            row.extend([text] * copies)
+            cell_bytes = len(text.encode("utf-8")) + 3
+            for _ in range(copies):
+                row.append(text)
+                row_bytes += cell_bytes
+                if text and row_bytes > max_row_bytes + 256:
+                    break
+            if text and row_bytes > max_row_bytes + 256:
+                break
         while row and not row[-1]:
             row.pop()
         if any(row):
-            rows.append(row)
-    return rows
+            yield row
 
 
 def _extract_odf(
@@ -333,7 +409,7 @@ def _extract_odf(
     from .local_docs import DocumentExtraction
 
     started = clock()
-    with _BudgetedZip(source) as archive:
+    with _open_doc_zip(source) as archive:
         if not archive.has("content.xml"):
             return None
         root = _safe_xml(archive.read("content.xml"))
@@ -345,20 +421,23 @@ def _extract_odf(
         row_total = 0
         stopped: str | None = None
         for idx, tbl in enumerate(tables, 1):
-            if pages and clock() - started > max_seconds:
+            if clock() - started > max_seconds:
                 stopped = "time_limit"
                 break
             tname = next((v for k, v in tbl.attrib.items() if _local_name(k) == "name"), f"Sheet {idx}")
-            rows = _odf_table_rows(tbl)
-            row_total += len(rows)
-            rendered = _format_table_rows(rows)
-            body = f"## Sheet: {tname}\n" + ("\n".join(rendered) if rendered else "(empty sheet)")
-            size = len(body.encode("utf-8")) + (1 if pages else 0)
-            if pages and used + size > max_text_bytes:
-                stopped = "text_limit"
+            used, added_rows, stopped = _append_sheet_stream(
+                pages,
+                title=tname,
+                rows_iter=_odf_iter_table_rows(tbl, max_row_bytes=max_text_bytes),
+                used=used,
+                max_text_bytes=max_text_bytes,
+                started=started,
+                max_seconds=max_seconds,
+                clock=clock,
+            )
+            row_total += added_rows
+            if stopped is not None:
                 break
-            used += size
-            pages.append(body)
         return DocumentExtraction(
             pages=pages,
             units_total=len(tables),
@@ -369,8 +448,34 @@ def _extract_odf(
         )
 
     body_el = next((el for el in root.iter() if _local_name(el.tag) == "text"), root)
-    units: list[str] = []
+    kept: list[str] = []
+    used = 0
+    units_total = 0
     table_count = 0
+    stopped = None
+
+    def push_block(block: str) -> bool:
+        nonlocal used, stopped, units_total
+        units_total += 1
+        if stopped is not None:
+            return False
+        if clock() - started > max_seconds:
+            stopped = "time_limit"
+            return False
+        sep = 1 if kept else 0
+        size = len(block.encode("utf-8")) + sep
+        if used + size > max_text_bytes:
+            avail = max_text_bytes - used - sep
+            if not kept and avail > 0:
+                clipped = _truncate_utf8(block, avail)
+                if clipped:
+                    kept.append(clipped)
+                    used += len(clipped.encode("utf-8"))
+            stopped = "text_limit"
+            return False
+        used += size
+        kept.append(block)
+        return True
 
     def collect_blocks(container: XmlNode) -> None:
         nonlocal table_count
@@ -379,32 +484,26 @@ def _extract_odf(
             if lname in ("h", "p"):
                 line = _odf_inline_text(child)
                 if line:
-                    units.append(line)
+                    push_block(line)
             elif lname == "table":
-                rows = _odf_table_rows(child)
-                if rows:
-                    table_count += 1
-                    units.extend(_format_table_rows(rows))
+                saw_row = False
+                header = True
+                for row in _odf_iter_table_rows(child, max_row_bytes=max_text_bytes):
+                    if not saw_row:
+                        table_count += 1
+                        saw_row = True
+                    for formatted in _format_single_row(row, is_header=header):
+                        push_block(formatted)
+                    header = False
+                    if stopped is not None:
+                        break
             elif lname in ("list", "list-item", "section"):
                 collect_blocks(child)
 
     collect_blocks(body_el)
-    kept: list[str] = []
-    used = 0
-    stopped = None
-    for block in units:
-        if kept and clock() - started > max_seconds:
-            stopped = "time_limit"
-            break
-        size = len(block.encode("utf-8")) + (1 if kept else 0)
-        if kept and used + size > max_text_bytes:
-            stopped = "text_limit"
-            break
-        used += size
-        kept.append(block)
     return DocumentExtraction(
         pages=["\n".join(kept)],
-        units_total=len(units),
+        units_total=units_total,
         units_read=len(kept),
         stopped=stopped,
         unit="block",
@@ -451,7 +550,7 @@ def _extract_ipynb(
     visual_outputs = 0
 
     for idx, cell in enumerate(cells, 1):
-        if kept and clock() - started > max_seconds:
+        if clock() - started > max_seconds:
             stopped = "time_limit"
             break
         if not isinstance(cell, dict):
@@ -494,8 +593,15 @@ def _extract_ipynb(
         block = "\n\n".join(parts)
         if not block:
             continue
-        size = len(block.encode("utf-8")) + (2 if kept else 0)
-        if kept and used + size > max_text_bytes:
+        sep = 2 if kept else 0
+        size = len(block.encode("utf-8")) + sep
+        if used + size > max_text_bytes:
+            avail = max_text_bytes - used - sep
+            if not kept and avail > 0:
+                clipped = _truncate_utf8(block, avail)
+                if clipped:
+                    kept.append(clipped)
+                    used += len(clipped.encode("utf-8"))
             stopped = "text_limit"
             break
         used += size
@@ -562,7 +668,7 @@ def _extract_epub(
     from .local_docs import DocumentExtraction
 
     started = clock()
-    with _BudgetedZip(source) as archive:
+    with _open_doc_zip(source) as archive:
         if not archive.has("META-INF/container.xml"):
             return None
         container = _safe_xml(archive.read("META-INF/container.xml"))
@@ -607,7 +713,7 @@ def _extract_epub(
         used = 0
         stopped: str | None = None
         for ch_path in chapters:
-            if pages and clock() - started > max_seconds:
+            if clock() - started > max_seconds:
                 stopped = "time_limit"
                 break
             raw_html = archive.read(ch_path).decode("utf-8", errors="replace")
@@ -617,8 +723,15 @@ def _extract_epub(
             chapter_text = parser.text()
             if not chapter_text:
                 continue
-            size = len(chapter_text.encode("utf-8")) + (2 if pages else 0)
-            if pages and used + size > max_text_bytes:
+            sep = 2 if pages else 0
+            size = len(chapter_text.encode("utf-8")) + sep
+            if used + size > max_text_bytes:
+                avail = max_text_bytes - used - sep
+                if not pages and avail > 0:
+                    clipped = _truncate_utf8(chapter_text, avail)
+                    if clipped:
+                        pages.append(clipped)
+                        used += len(clipped.encode("utf-8"))
                 stopped = "text_limit"
                 break
             used += size
@@ -671,7 +784,13 @@ def _extract_rtf(
         if not piece:
             return True
         size = len(piece.encode("utf-8"))
-        if out and used + size > max_text_bytes:
+        if used + size > max_text_bytes:
+            avail = max_text_bytes - used
+            if avail > 0:
+                clipped = _truncate_utf8(piece, avail)
+                if clipped:
+                    out.append(clipped)
+                    used += len(clipped.encode("utf-8"))
             stopped = "text_limit"
             return False
         used += size
@@ -679,7 +798,7 @@ def _extract_rtf(
         return True
 
     while i < n:
-        if (i & 0xFFF) == 0 and out and clock() - started > max_seconds:
+        if (i & 0xFFF) == 0 and clock() - started > max_seconds:
             stopped = "time_limit"
             break
         ch = text_in[i]
