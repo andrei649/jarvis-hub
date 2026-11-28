@@ -1,4 +1,5 @@
 import { TextInput, Text } from '../components/ThemedText';
+import { MemoryOwnerPanels } from '../components/MemoryOwnerPanels';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -795,6 +796,8 @@ export function MemoryScreen({ onGoToSettings }: { onGoToSettings: () => void })
           )}
 
           <NotesCard notes={notes} />
+
+          <MemoryOwnerPanels onGoToSettings={onGoToSettings} />
 
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Turns</Text>

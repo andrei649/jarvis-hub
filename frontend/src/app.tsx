@@ -196,8 +196,8 @@ function App({ floating = false }: {
   // backend data + honest empty states; ON → fills the seeded demo corpus.
   const [demo, setDemo] = useDemoMode();
   // Voice preferences (persisted): mode = hands-free | ptt; tts = server | browser | off;
-  // lang = auto | ro | en; barge = off | on (experimental talk-over interrupt)
-  const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
+  // lang = auto | ro | en; barge = off | on (experimental talk-over interrupt); wake = off | on
+  const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off', wake: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
   const setVoice = (patch) => setVoiceCfg((c) => ({ ...c, ...patch }));
 
   // The document is titled in the owner's language (nav/routes pageTitle).
@@ -920,7 +920,7 @@ function App({ floating = false }: {
     return true;
   },[runTurn,runVision,thinking,activeId,agents,demo,recipientReady,clearRecipient]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
-  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: (text:string)=>runTurn(text,'voice') });
+  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', wakeWord: voiceCfg.wake === 'on', onTurn: (text:string)=>runTurn(text,'voice') });
   useListeningIndicator(demo, voice.active);   // H222: the tray says when Nerva is listening
   voiceRef.current = voice;
 

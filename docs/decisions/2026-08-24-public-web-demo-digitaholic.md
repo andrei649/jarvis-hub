@@ -18,8 +18,12 @@
 > `NERVA_PUBLIC_PROFILE` and returns 0 without touching the graph. It was placed **inside
 > `seed_graph()`** rather than at the `MemoryManager.__init__` call site named below, so no present
 > or future caller can re-open the exposure; the default (flag unset) is unchanged. Evidence:
-> `tests/test_public_profile_seed_gate.py` (+8). Nothing else in this spec is built: no roster
-> overlay, no container, no deployment, and the four owner calls are still open.
+> `tests/test_public_profile_seed_gate.py` (+8). **Update 2026-11-28:** the malformed-flag boot guard
+> (`boot_guards.assert_parseable_posture_flags`, `tests/test_public_profile_boot_guard.py`) and the
+> R2 roster-overlay slice (`agents/_system/agents.public.yaml`, loaded by `JarvisConfig` whenever
+> `NERVA_PUBLIC_PROFILE` is enabled; `tests/test_public_profile_roster_overlay.py`, +5) are now
+> delivered too. Only the R3 internet-facing container deployment and owner calls 3–4 (cloud LLM
+> provider/key and container host) remain open.
 
 ## The question
 

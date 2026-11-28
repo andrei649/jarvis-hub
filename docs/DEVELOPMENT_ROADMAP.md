@@ -128,9 +128,10 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
   do-not-rebuild in the plan artifacts; fix the one stale `PARITY.md` phrase.
 - ~~DRA-49: fix the misleading kernel-test docstring~~ **done** — `tests/test_kernel_authorize.py`
   now points at the shipped K3 loop-breaker/budget and K4 syscall waves and their own test files
-  instead of a deferred K3; DRA-46: correct `NERVA_VISION.md`'s now-false "never executes" claim;
-  GAP-7/8: restate the Hermes verdict + re-baseline pillar percentages in `NERVA_VISION.md`
-  (both still open — `NERVA_VISION.md` is untouched).
+  instead of a deferred K3; ~~DRA-46: correct `NERVA_VISION.md`'s now-false "never executes" claim~~
+  **done** (`NERVA_VISION.md` §4 P3 + GAP-9 item 16/17);
+  ~~GAP-7/8: restate the Hermes verdict + re-baseline pillar percentages in `NERVA_VISION.md`~~
+  **done** (`NERVA_VISION.md` §4/§8 + GAP-8 re-baseline evidence block).
 - DRA-48: ✅ done — the dead `agents/_system/` installer stub (and its `WEEK-1.md` sibling) are
   deleted; the repo's live installer is the root `install.sh` (guard: `tests/test_dead_installer_stub.py`).
 
@@ -197,7 +198,7 @@ The local Kanban CLI/chat/backend integration now has browser HUD consumers acro
 (`AutonomyControlPanel`), and the signed-provider installation/credential/selection routes
 (`ProviderPackagesPanel`), bringing `UNCALLED_BACKLOG` down to the 8 documented design-refusal
 and duplicate-alias routes (`41 -> 8`); explicit 503/409 refusals remain visible where backend
-Nerva adapters are unbound, and native Kanban controls (`H18.34`) remain open. On 2026-11-14, 13 earlier routes left the punch list (`54 -> 41`) with live
+Nerva adapters are unbound, and native Kanban controls (`H18.34`) now ship in `mobile/src/components/KanbanBoardCard.tsx`. On 2026-11-14, 13 earlier routes left the punch list (`54 -> 41`) with live
 HUD consumers (`OAuthPanel` Nous Portal status/start/poll/logout, `SubAgentsPanel` transcript/result/claim,
 `A2AInboxPanel` outbound peer send, `MCPPanel` elicitation answer, `ChannelDeliveriesPanel` dead-target clear,
 and `JobsPanel` run history, completion ack and KV notepad keys); native mobile controls remain tracked separately,
@@ -252,11 +253,11 @@ deleting entries from the punch list; prioritize by user value:
 Real code, still AI-doable without owner hardware:
 
 - ~~DRA-07/14 — the fail-closed malformed-`NERVA_PUBLIC_PROFILE` **boot guard**
-  (`boot_guards.py:enforce_boot_posture`)~~ **done** — `assert_parseable_posture_flags` refuses to
-  start on an unrecognized spelling of a parse-critical flag, from both documented entry points
-  (`tests/test_public_profile_boot_guard.py`). **The second half is still open:** the
-  `agents.public.yaml` roster overlay — no such file exists in the tree, so the public demo still
-  has no explicit agent allowlist.
+  (`boot_guards.py:enforce_boot_posture`) and `agents.public.yaml` roster overlay~~ **done** —
+  `assert_parseable_posture_flags` refuses to start on an unrecognized spelling of a parse-critical
+  flag from both documented entry points (`tests/test_public_profile_boot_guard.py`), and
+  `JarvisConfig` overlays `agents/_system/agents.public.yaml` (`jarvis`, `athena`, `veronica`,
+  `vision` — zero `LOCAL_ONLY_AGENTS`, no owner roster merge; `tests/test_public_profile_roster_overlay.py`).
 - ~~DRA-05/10 — the governed **OSINT enrichment plugin** scaffold (injectable client, consumes
   `suggest_pivots` output, taint-visible, write-back approval-gated)~~ **done** —
   `agents/core/plugins/osint_enrich.py` implements the `PivotLookupClient` seam with keyless

@@ -2,6 +2,7 @@ import { Text } from './ThemedText';
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { ChatMessage, SaveState } from '../chat/types';
+import { recallLines } from '../chat/turnOutcome';
 import { Markdown } from '../markdown/Markdown';
 import { useThemeStyles, type Theme } from '../theme';
 
@@ -46,6 +47,8 @@ export function MessageBubble({
   const modelCalls = !isUser && !message.pending && !message.error && message.text.length > 0
     ? message.modelCalls : undefined;
   const activity = !isUser && message.completed && !message.pending && !message.error ? message.toolActivity : undefined;
+  const recalls = !isUser && message.completed && !message.pending && !message.error && message.recall?.length
+    ? recallLines(message.recall) : [];
 
   return (
     <View style={[styles.row, isUser ? styles.rowUser : styles.rowAssistant]}>
@@ -60,6 +63,13 @@ export function MessageBubble({
         {isUser && message.historySource && <Text style={styles.modelCall}>
           {`Chat source: ${message.historySource.session_id} · message ${message.historySource.turn + 1} · ${message.historySource.role}`}
         </Text>}
+        {recalls.length > 0 && (
+          <View style={styles.recallList} accessibilityLabel="Memory recall">
+            {recalls.map((line, idx) => (
+              <Text key={`${idx}-${line}`} style={styles.modelCall}>{line}</Text>
+            ))}
+          </View>
+        )}
         {activity && <Text style={styles.modelCall}>
           Agent tool calls recorded: {activity.executed ?? 'unknown'}
           {activity.proposed > 0 ? ` · Proposed: ${activity.proposed}` : ''}
@@ -149,6 +159,7 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
     borderBottomLeftRadius: 4,
   },
   userText: { color: theme.text, fontSize: 15, lineHeight: 21 },
+  recallList: { marginTop: 6, gap: 2 },
   modelCalls: { borderTopWidth: 1, borderTopColor: theme.border, marginTop: 10, paddingTop: 7, gap: 3 },
   modelCallsTitle: { color: theme.textDim, fontSize: 11, fontWeight: '600' },
   modelCall: { color: theme.textDim, fontSize: 12, lineHeight: 17, flexShrink: 1 },

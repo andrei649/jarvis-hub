@@ -79,42 +79,65 @@ class JarvisConfig:
         self._load()
 
     def _load(self):
-        if not self.path.exists():
+        from .env_config import env_flag
+
+        public_profile = env_flag("NERVA_PUBLIC_PROFILE") and self.path.name == "agents.yaml"
+        target_path = self.path.with_name("agents.public.yaml") if public_profile else self.path
+
+        if not target_path.exists():
             if self._has_good_config:
-                report_unreadable(self.path, FileNotFoundError(str(self.path)))
+                report_unreadable(target_path, FileNotFoundError(str(target_path)))
                 return
-            raise FileNotFoundError(f"Config not found: {self.path}")
+            raise FileNotFoundError(f"Config not found: {target_path}")
 
         try:
-            with open(self.path, "r", encoding="utf-8") as f:
+            with open(target_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
             if not isinstance(data, dict):
-                raise ValueError("agents.yaml must contain a mapping")
+                raise ValueError(f"{target_path.name} must contain a mapping")
             agent_rows = data.get("agents", {})
-            if not isinstance(agent_rows, dict):
-                raise ValueError("agents must contain a mapping")
+            if not isinstance(agent_rows, dict) or (public_profile and not agent_rows):
+                raise ValueError("agents must contain a non-empty mapping" if public_profile else "agents must contain a mapping")
             for agent_id, agent_data in agent_rows.items():
                 if not isinstance(agent_data, dict):
                     raise ValueError(f"agent {agent_id!r} must contain a mapping")
-            # H202: the owner's roster (agents they created, renamed or retired) lies over
-            # the shipped registry; an unreadable roster is reported and leaves it alone.
-            from .agent_roster import merge_rows
+            if public_profile:
+                from .llm.hybrid_router import LOCAL_ONLY_AGENTS
+
+                forbidden = sorted(
+                    agent_id
+                    for agent_id, agent_data in agent_rows.items()
+                    if agent_id in LOCAL_ONLY_AGENTS
+                    or agent_data.get("llm_policy") == "local"
+                    or agent_data.get("channel") == "local-only"
+                )
+                if forbidden:
+                    raise ValueError(
+                        f"agents.public.yaml must not expose local-only agents: {', '.join(forbidden)}"
+                    )
+                merged_rows = agent_rows
+            else:
+                # H202: the owner's roster (agents they created, renamed or retired) lies over
+                # the shipped registry; an unreadable roster is reported and leaves it alone.
+                from .agent_roster import merge_rows
+
+                merged_rows = merge_rows(agent_rows)
             agents = {}
-            for agent_id, agent_data in merge_rows(agent_rows).items():
+            for agent_id, agent_data in merged_rows.items():
                 agents[agent_id] = AgentConfig({**agent_data, "id": agent_id})
             for section in ("general", "plugins", "bench"):
                 if not isinstance(data.get(section, {}) or {}, dict):
                     raise ValueError(f"{section} must contain a mapping")
         except (OSError, UnicodeError, yaml.YAMLError, AttributeError, TypeError, ValueError) as exc:
-            report_unreadable(self.path, exc)
+            report_unreadable(target_path, exc)
             if self._has_good_config:
                 return
-            raise RuntimeError(f"Config {self.path} is unreadable; refusing startup") from exc
+            raise RuntimeError(f"Config {target_path} is unreadable; refusing startup") from exc
 
         self.agents = agents
         self.general = data.get("general", {}) or {}
         self.plugins = data.get("plugins", {}) or {}
-        self.bench = data.get("bench", {}) or {}
+        self.bench = {} if public_profile else (data.get("bench", {}) or {})
         self._has_good_config = True
 
     def get_promotion_rules(self) -> dict:
