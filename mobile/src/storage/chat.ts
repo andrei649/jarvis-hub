@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ChatMessage } from '../chat/types';
 import { modelCalls } from '../api/modelCallProvenance';
-import { toolActivity } from '../chat/turnOutcome';
+import { toolActivity, turnRecalls } from '../chat/turnOutcome';
 import { projectSavedChatNote } from '../api/chatNote';
 import { historySourceReceipt } from '../api/sessionTranscript';
 
@@ -36,6 +36,7 @@ function settledMessages(value: unknown, includeReceipts = false): ChatMessage[]
       const calls = nativeReply ? modelCalls(m.modelCalls) : [];
       const savedNote = completed ? projectSavedChatNote(m.savedNote) : null;
       const activity = completed && m.agent !== 'system' ? toolActivity(m.toolActivity) : undefined;
+      const recall = completed && m.agent !== 'system' ? turnRecalls(m.recall) : null;
       const source = includeReceipts && m.role === 'user'
         && !Object.prototype.hasOwnProperty.call(m, 'foreign_origin')
         && !Object.prototype.hasOwnProperty.call(m, 'tainted')
@@ -45,6 +46,7 @@ function settledMessages(value: unknown, includeReceipts = false): ChatMessage[]
         ...(m.error === true ? { error: true } : {}),
         ...(completed ? { completed: true as const } : {}),
         ...(activity ? { toolActivity: activity } : {}),
+        ...(recall ? { recall } : {}),
         ...(calls.length ? { modelCalls: calls } : {}),
         ...(savedNote ? { savedNote } : {}),
         ...(source ? { historySource: source } : {}) };

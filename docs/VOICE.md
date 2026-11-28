@@ -67,8 +67,8 @@ Push-to-talk mode runs one pass of the same flow per mic tap.
 
 ### Frontend hook (`frontend/src/voice.ts`)
 
-`useVoice({ lang, mode, ttsSource, micMuted, barge, onTurn })` →
-`{ supported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak }`.
+`useVoice({ lang, mode, ttsSource, micMuted, barge, wakeWord, onTurn })` →
+`{ supported, wakeSupported, caps, status, error, transcript, level, active, start, stop, toggle, speak, cancelSpeak }`.
 
 - **Capture + VAD:** `getUserMedia({audio:{echoCancellation,noiseSuppression,autoGainControl}})`,
   an `AnalyserNode` computes mic RMS. `recordUtterance()` stops on trailing silence
@@ -93,6 +93,7 @@ Edited via the ⚙ popover next to the mic (`cockpit.tsx: InputBar`):
 | `tts` | `server` \| `browser` \| `off` | `server` | `server` = the `/tts` chain (your **cloned** voice *only if XTTS is configured*, else edge); `browser` = local `speechSynthesis`. |
 | `lang` | `auto` \| `ro` \| `en` | `auto` | `auto` follows the HUD language. |
 | `barge` | `off` \| `on` | `off` | Experimental talk-over interrupt. |
+| `wake` | `off` \| `on` | `off` | Opt-in browser `SpeechRecognition` standby for `"hey jarvis"` / `"hey nerva"`. |
 
 The mic respects `JARVIS_MIC_MUTED` (surfaced via `/api/trust/status` → `trust.mic`): when the
 physical/soft mute is on, the loop won't start.
@@ -192,8 +193,12 @@ never touched.
 
 - **Barge-in tuning** — `BARGE_RMS` / `BARGE_MS` in `voice.ts` need on-device calibration vs. your
   room + speakers so the assistant doesn't interrupt itself. Currently opt-in/default-off.
-- **Browser wake-word** ("hey jarvis" with no click) — needs a JS wake-word lib (Porcupine,
-  licensed) or a cloud hop; not yet implemented. Path A's `openwakeword` is server-only.
+- **Browser wake-word** ("hey jarvis" / "hey nerva" with no click) — **opt-in browser standby landed**
+  (H5.16): `voice.ts` runs standard `SpeechRecognition` / `webkitSpeechRecognition` standby ONLY when
+  `hud.voice.wake === 'on'` (default `'off'`), while the loop is idle and unmuted, with zero third-party
+  SDKs. Browsers without `SpeechRecognition` surface `wakeSupported: false` honestly in the voice popover,
+  and Chromium/WebKit speech engines may route standby recognition through browser-vendor speech services
+  (unlike Path A's fully offline server-side `openwakeword`).
 - **Sentence-level TTS streaming** — **server side landed** (H5.16): `POST /tts/stream` +
   `core/voice/sentence_stream.py` split a reply into sentences and synthesize/emit each as it's
   ready (opt-in via `voice.sentence_streaming`, default off). **Browser wiring landed too**:

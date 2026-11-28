@@ -763,6 +763,96 @@ def extract_zip_bytes(data: bytes, dest: Path, *,
         return _extract_zip(zf, dest, limits)
 
 
+class ZipMemberReader:
+    """Bounded in-memory ZIP member reader for container formats (.xlsx, .ods, .odt, .epub).
+
+    Pre-scans all entries with :func:`_zip_kind` and :func:`normalize_member` (refusing
+    symlinks, special entries, encrypted members, traversal names, and declared-size bombs)
+    without writing anything to disk, and meters uncompressed bytes while streaming each
+    requested member.
+    """
+
+    def __init__(
+        self,
+        source: Path | BinaryIO,
+        *,
+        limits: ArchiveLimits,
+        max_member_bytes: int | None = None,
+    ) -> None:
+        self._limits = limits
+        self._max_member_bytes = (
+            limits.max_bytes if max_member_bytes is None else min(int(max_member_bytes), limits.max_bytes)
+        )
+        self._total_read = 0
+        try:
+            zf = zipfile.ZipFile(str(source) if isinstance(source, Path) else source, "r")
+        except (*_CORRUPT, ValueError, OSError) as exc:
+            raise ArchiveRejected(f"archive is corrupt or not a zip: {exc}") from exc
+        try:
+            infos = zf.infolist()
+            if len(infos) > limits.max_members:
+                raise ArchiveRejected(f"archive has more than {limits.max_members} members")
+            declared = 0
+            by_name: dict[str, zipfile.ZipInfo] = {}
+            for info in infos:
+                kind = _zip_kind(info)
+                parts = normalize_member(info.filename, allow_root=(kind == "dir"))
+                if kind == "file" and parts:
+                    declared += max(0, int(info.file_size))
+                    if declared > limits.max_bytes:
+                        raise ArchiveRejected(
+                            f"archive expands past {limits.max_bytes} bytes (the configured bytes cap)"
+                        )
+                    canonical = "/".join(parts)
+                    by_name[canonical] = info
+            self._zf = zf
+            self._by_name = by_name
+        except BaseException:
+            zf.close()
+            raise
+
+    def __enter__(self) -> ZipMemberReader:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._zf.close()
+
+    def has(self, name: str) -> bool:
+        try:
+            key = "/".join(normalize_member(name))
+        except ArchiveRejected:
+            return False
+        return key in self._by_name
+
+    def names(self) -> list[str]:
+        return sorted(self._by_name)
+
+    def read(self, name: str, *, limit: int | None = None) -> bytes:
+        key = "/".join(normalize_member(name))
+        info = self._by_name.get(key)
+        if info is None:
+            raise ArchiveRejected(f"missing zip member: {_show(name)}")
+        cap = self._max_member_bytes if limit is None else min(int(limit), self._limits.max_bytes)
+        if info.file_size > cap:
+            raise ArchiveRejected(f"zip member exceeds {cap} bytes: {_show(name)}")
+        chunks: list[bytes] = []
+        member_read = 0
+        try:
+            with self._zf.open(info, "r") as handle:
+                while True:
+                    piece = handle.read(65536)
+                    if not piece:
+                        break
+                    member_read += len(piece)
+                    self._total_read += len(piece)
+                    if member_read > cap or self._total_read > self._limits.max_bytes:
+                        raise ArchiveRejected(f"zip stream exceeded byte cap reading {_show(name)}")
+                    chunks.append(piece)
+        except _CORRUPT as exc:
+            raise ArchiveRejected(f"archive is corrupt or truncated: {exc}") from exc
+        return b"".join(chunks)
+
+
 # ── producing side ─────────────────────────────────────────────────
 @contextmanager
 def atomic_write(path: Path, *, mode: int = 0o600) -> Iterator[BinaryIO]:

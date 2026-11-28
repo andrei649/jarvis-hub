@@ -746,6 +746,10 @@ class Agent:
         reported as failed-open, as a kept persona is (review-H670b nit 2)."""
         identity_moved = self._refresh_identity()
         out = self._refresh_persona()
+        if out.changed or identity_moved:
+            from .prompt_tiers import PROMPT_MEMO
+
+            PROMPT_MEMO.invalidate(self.id)
         if not out.changed:
             from .session_refresh import PromptRefresh
 

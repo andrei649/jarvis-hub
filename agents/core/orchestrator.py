@@ -3614,7 +3614,18 @@ class Orchestrator:
             cache.move_to_end(sid)
             if len(cache) > 128:
                 cache.popitem(last=False)
-            with compaction_scope(state):
+            from . import turn_steer
+            from .commands import preappend_command_name
+
+            steer_scope = (
+                nullcontext()
+                if preappend_command_name(text) is not None
+                else turn_steer.track_turn_steer(
+                    session_id=sid or "default",
+                    owner=current_principal().admin is True,
+                )
+            )
+            with compaction_scope(state), steer_scope:
                 reply = await self._handle_input(text, channel, agent_override, session_id)
             settle_agent_turn()
             if _TURN_CHAT_OUTCOMES.get() is not None:
@@ -3705,6 +3716,9 @@ class Orchestrator:
             self.last_cognition = self._command_cognition(outcome)
             record_turn_completion("command")
             return outcome.reply
+        from . import turn_steer
+
+        turn_steer.update_session_id(self.session_id)
         from .session_continuation import prepare_continuation_turn
         from .security.rag_guard import strip_ingress_memory_fences
 
@@ -3943,7 +3957,18 @@ class Orchestrator:
             cache.move_to_end(sid)
             if len(cache) > 128:
                 cache.popitem(last=False)
-            with compaction_scope(state):
+            from . import turn_steer
+            from .commands import preappend_command_name
+
+            steer_scope = (
+                nullcontext()
+                if preappend_command_name(text) is not None
+                else turn_steer.track_turn_steer(
+                    session_id=sid or "default",
+                    owner=current_principal().admin is True,
+                )
+            )
+            with compaction_scope(state), steer_scope:
                 reply = await self._handle_input_stream(text, channel, on_token, agent_override, session_id)
             settle_agent_turn()
             if _TURN_CHAT_OUTCOMES.get() is not None:
@@ -4041,6 +4066,9 @@ class Orchestrator:
                     await emitted
             self.last_cognition = self._command_cognition(outcome)
             return outcome.reply
+        from . import turn_steer
+
+        turn_steer.update_session_id(self.session_id)
         from .session_continuation import prepare_continuation_turn
         from .security.rag_guard import strip_ingress_memory_fences
 

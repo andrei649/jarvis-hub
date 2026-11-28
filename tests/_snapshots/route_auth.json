@@ -892,6 +892,7 @@
   "POST /chat": "user",
   "POST /chat/interrupt": "user",
   "POST /chat/pending/{prompt_id}/answer": "user",
+  "POST /chat/steer": "user",
   "POST /chat/stream": "user",
   "POST /heartbeat/{agent_id}/run": "admin",
   "POST /heartbeat/{agent_id}/start": "admin",

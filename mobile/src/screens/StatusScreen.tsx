@@ -1,4 +1,5 @@
 import { Text } from '../components/ThemedText';
+import { AgentRosterCard } from '../components/AgentRosterCard';
 import { TaskMediationCard } from '../components/TaskMediationCard';
 import { DeliveryReceipts } from '../components/DeliveryReceipts';
 import { ExtensionInspection } from '../components/ExtensionInspection';
@@ -446,6 +447,7 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
       </Card>
       <DeliveryReceipts />
       <ExtensionInspection />
+      <AgentRosterCard onGoToSettings={onGoToSettings} />
     </ScrollView>
   );
 }

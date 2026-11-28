@@ -504,19 +504,27 @@ class AgentToolRuntime:
         from .conversation_clock import active_clock, render_snapshot
         from .kanban.context import current_context as current_kanban_context
         from .operating_guidance import build_operating_guidance
-        from .operating_prompt import OperatingPrompt, original_prompt
+        from .operating_prompt import TieredSystemPrompt, original_prompt
+        from .prompt_tiers import (
+            PROMPT_MEMO,
+            guidance_signature_from,
+            runtime_identity_digest,
+            strip_clock_lines,
+        )
         from .steering import steering_available
 
         frame = active_clock()
-        base = render_snapshot(original_prompt(base), frame.snapshot if frame is not None else None)
+        raw_base = render_snapshot(original_prompt(base), frame.snapshot if frame is not None else None)
+        unclocked_base, start_line, today_line = strip_clock_lines(raw_base)
         if self._guidance_context is None:
-            return base
+            return raw_base
         try:
             context = self._guidance_context(agent_id)
             if context is None:
-                return base
+                return raw_base
+            offered_names = tuple(row["name"] for row in metadata)
             capabilities = frozenset({"parallel_tool_calls", *(
-                "tool:" + row["name"] for row in metadata)})
+                "tool:" + name for name in offered_names)})
             environment = context.get("environment")
             facts = context.get("execution_context")
             if (callable(facts) and "tool:terminal_run" in capabilities
@@ -529,21 +537,57 @@ class AgentToolRuntime:
             assigned_task = (board_context.task_id if board_context is not None
                              and board_context.profile == agent_id
                              and board_context.can_mutate and not board_context.delegated else None)
-            guidance = build_operating_guidance(
-                model=model, surface=context.get("surface", ""),
-                enabled=context.get("enabled"), capabilities=capabilities,
+            steer_on = steering_available(agent_id)
+            provider_id = getattr(getattr(backend, "profile", None), "id", "")
+            surface = context.get("surface", "")
+            enabled_cfg = context.get("enabled")
+            platform_overrides = context.get("platform_overrides")
+            profile_name = context.get("profile")
+            coding = _coding_block(metadata, model)
+            sig = guidance_signature_from(
+                enabled=enabled_cfg,
                 environment=environment,
-                platform_overrides=context.get("platform_overrides"),
-                profile=context.get("profile"),
-                steer_available=steering_available(agent_id),
+                platform_overrides=platform_overrides,
+                profile=profile_name,
+                steer_available=steer_on,
                 kanban_task=assigned_task,
-                provider=getattr(getattr(backend, "profile", None), "id", ""),
-                coding=_coding_block(metadata, model),
+                coding=coding,
             )
+            digest = runtime_identity_digest(
+                agent_id=agent_id,
+                base_authority=unclocked_base,
+                model=model,
+                provider=provider_id,
+                surface=surface,
+                offered_tools=offered_names,
+                guidance_signature=sig,
+            )
+            stable = PROMPT_MEMO.get(agent_id, digest)
+            if stable is None:
+                guidance = build_operating_guidance(
+                    model=model, surface=surface,
+                    enabled=enabled_cfg, capabilities=capabilities,
+                    environment=environment,
+                    platform_overrides=platform_overrides,
+                    profile=profile_name,
+                    steer_available=steer_on,
+                    kanban_task=assigned_task,
+                    provider=provider_id,
+                    coding=coding,
+                )
+                stable = "\n\n".join(part for part in (unclocked_base, guidance) if part)
+                PROMPT_MEMO.put(agent_id, digest, stable)
         except Exception:
             logger.warning("optional operating guidance could not be built; tool profile unchanged")
-            return base
-        return OperatingPrompt("\n\n".join(part for part in (base, guidance) if part), base=base, model=model)
+            return raw_base
+        return TieredSystemPrompt(
+            stable=stable,
+            base=raw_base,
+            model=model,
+            context=start_line,
+            volatile=today_line,
+            identity_digest=digest,
+        )
 
     def prepare_system(self, base: str, *, backend: Any, model: str,
                        agent_id: str, allow_tools: bool = True) -> str:
@@ -883,6 +927,7 @@ class AgentToolRuntime:
         output_risks: dict[int, ToolOutputRisk] = {}
         guardian_stopped = False
         verify_held: str | None = None   # G5: the answer a verify-on-stop nudge held back
+        steer_held: str | None = None    # H395: completed draft held across a late-steer continuation
 
         # H298 — what this turn has already put in the window, and how big that window
         # is. One cap cannot express the first: five results at 40% of the limit each
@@ -901,9 +946,18 @@ class AgentToolRuntime:
         while budget.consume():
             from .steering import prepare_steering_rows
             steering = prepare_steering_rows(agent_id)
-            messages.extend(steering.rows)
-            for row in steering.rows:
-                trajectory.note_message(row)
+            if steering.rows:
+                messages.extend(steering.rows)
+                for row in steering.rows:
+                    trajectory.note_message(row)
+                await self._emit(
+                    event_sink,
+                    {
+                        "event": "tool_loop_steered",
+                        "agent_id": _bounded_identity(agent_id),
+                        "count": len(steering.rows),
+                    },
+                )
             folds_before = len(compacted)
             if (known_window is not None or len(messages) > 2) and not await self._compact_context(
                 messages,
@@ -1049,6 +1103,29 @@ class AgentToolRuntime:
                         or is_backend_failure_reply(turn.content.lstrip())):
                     record_agent_observation(agent_id, 'failed')
                 else:
+                    # H395: if the user sent a mid-turn /steer while this final model round
+                    # was in flight, do not drop it on exit — append the draft + steer and
+                    # run one more round (when budget remains) so the answer reflects it.
+                    if not guardian_stopped and budget.remaining > 0:
+                        late_steer = prepare_steering_rows(agent_id)
+                        if late_steer.rows:
+                            steer_held = turn.content
+                            assistant_draft = {"role": "assistant", "content": turn.content}
+                            messages.append(assistant_draft)
+                            trajectory.note_message(assistant_draft)
+                            messages.extend(late_steer.rows)
+                            for row in late_steer.rows:
+                                trajectory.note_message(row)
+                            late_steer.acknowledge()
+                            await self._emit(
+                                event_sink,
+                                {
+                                    "event": "tool_loop_steered",
+                                    "agent_id": _bounded_identity(agent_id),
+                                    "count": len(late_steer.rows),
+                                },
+                            )
+                            continue
                     # G5 verify-on-stop (H405): edited code with no fresh passing check
                     # gets one nudge and one more round; the answer is held as fallback.
                     # Not after a guardian stop (the model has no tools to verify with).
@@ -1215,9 +1292,10 @@ class AgentToolRuntime:
                         restated[name] = f"script:{scripts_run}"
             if any(result.get("reason") == "approval_required" for result, _ in observations):
                 reply = _approval_reply(result for result, _ in observations)
-                if verify_held is not None:
-                    # G5: the nudged round queued a check; the answer it held still stands.
-                    reply = f"{verify_held}\n\n{reply}"
+                held = verify_held if verify_held is not None else steer_held
+                if held is not None:
+                    # G5 / H395: the nudged or steered round queued a check; the held answer still stands.
+                    reply = f"{held}\n\n{reply}"
                 return ToolLoopResult(reply, ToolLoopExitReason.APPROVAL_REQUIRED)
             from .approval_outcomes import _has_active_denial_breaker
             if any(result.get('reason') == 'guardian_denied' and _has_active_denial_breaker(result)
@@ -1244,9 +1322,10 @@ class AgentToolRuntime:
                 return ToolLoopResult(_FAILURE_REPLY if failing else _REPEAT_REPLY,
                                       ToolLoopExitReason.FAILING_TOOL if failing else ToolLoopExitReason.REPEATED_CALL)
 
-        if verify_held is not None:
-            # G5: the budget ran out after a verify-on-stop nudge; the held answer stands.
-            return ToolLoopResult(verify_held, ToolLoopExitReason.MODEL_RESPONSE)
+        held = verify_held if verify_held is not None else steer_held
+        if held is not None:
+            # G5 / H395: the budget ran out after a verify-on-stop nudge or late-steer round; the held answer stands.
+            return ToolLoopResult(held, ToolLoopExitReason.MODEL_RESPONSE)
         await self._emit(
             event_sink,
             {

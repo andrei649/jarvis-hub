@@ -1,4 +1,5 @@
 import { Text } from '../components/ThemedText';
+import { KanbanBoardCard } from '../components/KanbanBoardCard';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError, fetchTasks, type HubTask } from '../api/client';
@@ -127,6 +128,8 @@ export function TasksScreen({ onGoToSettings }: { onGoToSettings: () => void }) 
         <CountPill label="waiting" value={counts.waiting} color={theme.warn} />
         <CountPill label="done" value={counts.done} color={theme.ok} />
       </View>
+
+      <KanbanBoardCard onGoToSettings={onGoToSettings} />
 
       {error && (
         <View style={styles.errorBox}>

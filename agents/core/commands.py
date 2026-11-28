@@ -61,7 +61,7 @@ _TELEGRAM_NAME = re.compile(r"^[a-z0-9_]{1,32}$")
 _TELEGRAM_USERNAME = re.compile(r"[A-Za-z0-9_]{5,32}\Z")
 TELEGRAM_MENU_MAX = 100
 
-_NERVA_SPECIAL = frozenset({"new", "reset", "undo", "btw", "checkpoints", "rollback", "bundle"})
+_NERVA_SPECIAL = frozenset({"new", "reset", "undo", "btw", "steer", "checkpoints", "rollback", "bundle"})
 
 
 def telegram_menu(commands) -> list[dict]:
@@ -103,9 +103,9 @@ def checkpoint_command_name(text: str) -> str | None:
 
 
 def side_question_command_name(text: str) -> str | None:
-    """Identify a raw ``/btw`` side question (H414); recognition grants no authority."""
+    """Identify a raw ``/btw`` side question or ``/steer`` mid-turn guidance (H414/H395); recognition grants no authority."""
     name = _raw_command_name(text)
-    return name if name == "btw" else None
+    return name if name in {"btw", "steer"} else None
 
 
 def preappend_command_name(text: str) -> str | None:
@@ -809,6 +809,31 @@ def _charge_btw(session_id: str, usage: dict) -> None:
         logger.debug("/btw usage not recorded", exc_info=True)
 
 
+def _steer(ctx: CommandContext) -> str:
+    """H395 — deliver mid-turn course-correction to the owner's active turn in this session.
+
+    Runs on the pre-append side-command lane so sending ``/steer`` while a turn holds the
+    session lease neither blocks behind it nor interrupts running work. Never grants an
+    ``ActionKernel`` approval.
+    """
+    from .turn_steer import MAX_STEER_CHARS, steer_owner_session
+
+    if not ctx.principal.admin:
+        return "/steer is an owner command — send it from the owner's channel or with an admin token."
+    instruction = " ".join((ctx.args or "").split())[:MAX_STEER_CHARS]
+    if not instruction:
+        return ("Usage: /steer <instruction> — guide a running turn in this conversation "
+                "without stopping it (never approves pending actions).")
+    session = str(getattr(ctx.orch, "session_id", "") or "default")
+    status, pending = steer_owner_session(session, instruction)
+    if status == "queued":
+        return (f"Delivered mid-turn guidance to the running turn ({pending} queued for the next step). "
+                "Pending approvals still require your explicit decision.")
+    if status == "queue_full":
+        return "The running turn's steering inbox is full (32 messages waiting); wait for the next step."
+    return "No turn is running in this conversation right now; send your message directly."
+
+
 async def _recap(ctx: CommandContext) -> str:
     """H441 — Hermes' ``/recap``: this conversation's last exchanges, rendered from the
     stored turns with no model call; tools a reply used show as a count. ``/recap 20``
@@ -1247,6 +1272,8 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("recap", "this conversation's last exchanges, with no model call", _recap, usage="[exchanges]"))
     registry.register(SlashCommand("btw", "ask a side question about this conversation; nothing is added to it",
                                    _btw, usage="<question>"))
+    registry.register(SlashCommand("steer", "send mid-turn guidance to a running turn in this conversation",
+                                   _steer, tier=ADMIN, usage="<instruction>"))
     registry.register(SlashCommand("usage", "cloud provider quota left, and any 429 hold", _usage, tier=ADMIN))
     registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason|off]"))
     registry.register(SlashCommand("stop", "engage the emergency stop; in-flight work still finishes", _pause,

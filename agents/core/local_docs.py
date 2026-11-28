@@ -25,7 +25,7 @@ from typing import Any, Awaitable, BinaryIO, Callable, Iterator, Optional
 logger = logging.getLogger("jarvis.local_docs")
 
 TEXT_EXTS = {".md", ".markdown", ".txt", ".text", ".rst"}
-DOC_EXTS = {".pdf", ".docx"}
+DOC_EXTS = {".pdf", ".docx", ".xlsx", ".ods", ".odt", ".ipynb", ".epub", ".rtf"}
 SUPPORTED_EXTS = TEXT_EXTS | DOC_EXTS
 
 # remember: ``async (text, metadata) -> Optional[str]``
@@ -558,11 +558,13 @@ def extract_text(path: Path) -> Optional[str]:
         pages = extract_pdf_pages(path)
         return "\n".join(pages) if pages is not None else None
     if ext == ".docx":
-        try:
-            import docx  # type: ignore
-            return "\n".join(p.text for p in docx.Document(str(path)).paragraphs)
-        except Exception:
-            return None
+        extracted = extract_docx_document(path)
+        return extracted.text if extracted is not None else None
+    if ext in {".xlsx", ".ods", ".odt", ".ipynb", ".epub", ".rtf"}:
+        from .document_formats import extract_structured_document
+
+        extracted = extract_structured_document(ext, path)
+        return extracted.text if extracted is not None else None
     return None
 
 

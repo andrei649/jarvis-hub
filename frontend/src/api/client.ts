@@ -88,11 +88,12 @@ async function request(
   method: string,
   path: string,
   body?: unknown,
-  opts: ReadOptions & { signal?: AbortSignal; _retried?: boolean } = {},
+  opts: ReadOptions & { signal?: AbortSignal; headers?: Record<string, string>; _retried?: boolean } = {},
 ): Promise<Response> {
   // Awaited only when needed: on loopback the fetch still starts synchronously.
   if (needsOwnerSession(method)) await loadOwnerSession();
-  const init: RequestInit = { method, headers: buildHeaders(opts.admin, method), signal: opts.signal, credentials: 'same-origin',
+  const mergedHeaders: Record<string, string> = { ...buildHeaders(opts.admin, method), ...(opts.headers || {}) };
+  const init: RequestInit = { method, headers: mergedHeaders, signal: opts.signal, credentials: 'same-origin',
     cache: opts.cache, redirect: opts.redirect };
   if (body !== undefined) {
     (init.headers as Record<string, string>)['Content-Type'] = 'application/json';
@@ -345,7 +346,7 @@ export async function postStream(
   path: string,
   body: unknown,
   onEvent: (evt: any) => void,
-  opts: { admin?: boolean; signal?: AbortSignal } = {},
+  opts: { admin?: boolean; signal?: AbortSignal; headers?: Record<string, string> } = {},
 ): Promise<void> {
   const res = await request('POST', path, body, opts);
   if (!res.ok) await failMutation('POST', path, res);

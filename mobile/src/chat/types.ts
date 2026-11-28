@@ -1,5 +1,5 @@
 import type { ModelCall } from '../api/modelCallProvenance';
-import type { ToolActivity } from './turnOutcome';
+import type { ToolActivity, TurnRecall } from './turnOutcome';
 import type { ChatNoteReceipt, ChatNoteTarget } from '../api/chatNote';
 import type { HistorySourceReceipt } from '../api/sessionTranscript';
 
@@ -21,6 +21,8 @@ export type ChatMessage = {
   /** measured provider/model API calls attributed to this completed assistant reply */
   modelCalls?: ModelCall[];
   toolActivity?: ToolActivity;
+  /** H18.36 / H430: validated per-provider recall counts for this completed assistant reply (never spoken) */
+  recall?: TurnRecall[];
 };
 
 /** Save-to-artifacts control states (explicit save only — never automatic). */

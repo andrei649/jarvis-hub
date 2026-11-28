@@ -1,4 +1,5 @@
 import { Text } from '../components/ThemedText';
+import { SkillBundlesCard } from '../components/SkillBundlesCard';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { ApiError, fetchSkills, type HubSkill } from '../api/client';
@@ -94,6 +95,8 @@ export function SkillsScreen({ onGoToSettings }: { onGoToSettings: () => void })
           <Text style={styles.summaryLabel}>agents</Text>
         </View>
       </View>
+
+      <SkillBundlesCard onGoToSettings={onGoToSettings} />
 
       {error && (
         <View style={styles.errorBox}>

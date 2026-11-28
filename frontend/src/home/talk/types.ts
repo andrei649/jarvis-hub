@@ -110,6 +110,8 @@ export interface InputBarProps {
   readonly inspectBlend?: React.RefObject<((file: File) => boolean) | null>;
   readonly turnActive?: boolean;
   readonly canContinue?: () => boolean;
+  /** H395: deliver mid-turn guidance to the active turn without stopping it (`POST /chat/steer`). */
+  readonly onSteer?: (text: string) => Promise<boolean>;
 }
 
 /** home: Home's conversation register · chat: /v2/chat at full width · floating: the 420 × 620

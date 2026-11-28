@@ -196,8 +196,8 @@ function App({ floating = false }: {
   // backend data + honest empty states; ON → fills the seeded demo corpus.
   const [demo, setDemo] = useDemoMode();
   // Voice preferences (persisted): mode = hands-free | ptt; tts = server | browser | off;
-  // lang = auto | ro | en; barge = off | on (experimental talk-over interrupt)
-  const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
+  // lang = auto | ro | en; barge = off | on (experimental talk-over interrupt); wake = off | on
+  const [voiceCfg, setVoiceCfg] = useState(() => { const d = { mode: 'hands-free', tts: 'server', lang: 'auto', barge: 'off', wake: 'off' }; try { return { ...d, ...JSON.parse(localStorage.getItem('hud.voice') || '{}') }; } catch { return d; } });
   const setVoice = (patch) => setVoiceCfg((c) => ({ ...c, ...patch }));
 
   // The document is titled in the owner's language (nav/routes pageTitle).
@@ -578,7 +578,7 @@ function App({ floating = false }: {
   const timers = useRef([]);
   const turnBusy=useRef(false), turnEpoch=useRef(0);
   const abortRef = useRef<AbortController|null>(null); // vision turn
-  const textTurns=useRef(new Map<number,{controller:AbortController;settle:(text:string)=>void}>());
+  const textTurns=useRef(new Map<number,{controller:AbortController;settle:(text:string)=>void;wireTurnId:string}>());
   // A state copy of the in-flight turns (textTurns is a ref), so the pages re-render; the agent
   // asked and the time are kept from the moment the reply bubble is reserved.
   const [inflight, setInflight] = useState<readonly { turnId: number; agent: string; askedAt: number }[]>([]);
@@ -629,6 +629,13 @@ function App({ floating = false }: {
     setCurrentOutcome(null);
     timers.current.forEach(clearTimeout); timers.current = [];
     const ctl = new AbortController();
+    const wireBytes = new Uint8Array(16);
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      crypto.getRandomValues(wireBytes);
+    } else {
+      for (let i = 0; i < 16; i++) wireBytes[i] = Math.floor(Math.random() * 256);
+    }
+    const wireTurnId = Array.from(wireBytes, (b) => b.toString(16).padStart(2, '0')).join('');
     let streamed='', closed=false, referenceReported=false, admitted=false, boardReported=false, boardAccepted=false;
     const reportReference = (ok: boolean) => { if (history && !referenceReported) { referenceReported=true; history.onResult(ok); } };
     const reportBoard = (ok: boolean) => { if (board && !boardReported) { boardReported=true; board.onFinished(ok); } };
@@ -644,7 +651,7 @@ function App({ floating = false }: {
       if(textTurns.current.size===0 && !turnBusy.current)setThinking(null);
       resolve(reply);
     };
-    textTurns.current.set(id,{controller:ctl,settle});
+    textTurns.current.set(id,{controller:ctl,settle,wireTurnId});
     // Reserve the reply bubble now: a queued request may emit start after a newer one.
     // Phase B stamps (home/talk/types.ts ReplyStamps, epoch ms): _askedAt here, _startedAt on the
     // first `start` frame, _firstTokenAt on the first `token` frame.
@@ -744,7 +751,7 @@ function App({ floating = false }: {
         if (notes.length) setMessages((m) => [...m, ...notes]);
         settle(finalText);
       }
-    }, { signal: ctl.signal, admin: !!history || !!board || !!cloudHistory }).then(() => {
+    }, { signal: ctl.signal, admin: !!history || !!board || !!cloudHistory, headers: { 'X-Nerva-Turn-Id': wireTurnId } }).then(() => {
       // EOF without an end frame must still release the composer and voice promise.
       reportReference(false);
       settle(streamed);
@@ -920,7 +927,7 @@ function App({ floating = false }: {
     return true;
   },[runTurn,runVision,thinking,activeId,agents,demo,recipientReady,clearRecipient]);
   // Hands-free voice loop: mic → local Whisper → runTurn → speak the reply, repeat.
-  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', onTurn: (text:string)=>runTurn(text,'voice') });
+  const voice = useVoice({ lang: voiceCfg.lang === 'auto' ? lang : voiceCfg.lang, mode: voiceCfg.mode, ttsSource: voiceCfg.tts, micMuted: trust.mic === 'off', barge: voiceCfg.barge === 'on', wakeWord: voiceCfg.wake === 'on', onTurn: (text:string)=>runTurn(text,'voice') });
   useListeningIndicator(demo, voice.active);   // H222: the tray says when Nerva is listening
   voiceRef.current = voice;
 
@@ -1125,6 +1132,31 @@ function App({ floating = false }: {
     </AppearanceProvider>
   );
 
+  const steerTurn = useCallback(async (text: string): Promise<boolean> => {
+    const trimmed = text.trim();
+    if (demo || !trimmed || textTurns.current.size === 0) return false;
+    const entries = Array.from(textTurns.current.values());
+    const activeTurn = textTurns.current.get(latestTextTurn.current)
+      ?? entries[entries.length - 1];
+    if (!activeTurn?.wireTurnId && !sessionId.current) return false;
+    try {
+      const res: any = await apiPost('/chat/steer', {
+        message: trimmed,
+        ...(activeTurn?.wireTurnId ? { turn_id: activeTurn.wireTurnId } : {}),
+        ...(sessionId.current ? { session_id: sessionId.current } : {}),
+      });
+      if (res?.ok !== true) return false;
+      setMessages((m) => [...m, {
+        role: 'user',
+        text: `[Steer] ${trimmed}`,
+        ts: fmtTimeShort(new Date()),
+      }]);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [demo]);
+
   // What App owns for the conversation, handed to the pages as `talk` (home/talk/types.ts).
   const talkInput = (): TalkInput => ({
     messages, thinking, onStop: stopTurn, onProv: setProvModal, onArtifactSaved: demo ? undefined : bumpArtifacts,
@@ -1133,7 +1165,7 @@ function App({ floating = false }: {
     motion, demo, agent: activeId, agents, recipientStatus, sessionId: activeSessionId || '', selectedTurn: !demo,
     outcome: currentOutcome, power, projectForChat, onProjectReviewed: () => setProjectForChat(null),
     boardResultForChat, onBoardResultReviewed: () => setBoardResultForChat(null), inspectBlend,
-    turnActive: !!thinking, canContinue: canContinueHistory, onSelectAgent: selectChatAgent,
+    turnActive: !!thinking, canContinue: canContinueHistory, onSteer: demo ? undefined : steerTurn, onSelectAgent: selectChatAgent,
     recipientSwitch: liveSwitch, onRecipientSwitch: askRecipientSwitch, recipientRefusal: recipientNotice,
     recipientHold, recipientSwitchDropped: liveDropped, onRecipientSwitchDropped: () => setSwitchDropped(null),
   });

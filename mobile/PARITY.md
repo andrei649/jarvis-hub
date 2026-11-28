@@ -1,12 +1,20 @@
 # Mobile ⇄ Browser parity ledger
 
+**Mid-turn turn steering (2026-11-28, mobile: frozen).** Desktop HUD (`InputBar`
+**Steer** button), CLI (`nerva chat -i` `/steer`), and owner slash commands
+(`/steer`) can deliver mid-turn guidance to an active chat turn via
+`POST /chat/steer` without stopping it. Mobile Chat inherits the `/steer` slash
+command on the hub; a dedicated mobile composer Steer button is deferred under
+the 2026-11-25 mobile freeze.
+
 The desktop command palette returns keyboard focus to its opener when the selected
 command leaves focus on the page background. Closing the app cancels a pending
 focus change. Mobile: frozen, 2026-11-25.
 
 The Obsidian index status and manual reindex controls are available in the web
-Console under Vault and in the OS vault settings. Native chat uses the same hub
-index. Index administration is currently a desktop web feature.
+Console under Vault, in the OS vault settings, and on mobile under Memory →
+Governance & ANDREI OS (`MemoryOwnerPanels.tsx`). Native chat uses the same hub
+index; physical-device acceptance remains open.
 
 The **bridge** that keeps the iOS/Android apps (`mobile/`) in sync with the browser HUD.
 Both clients talk to the **same** HTTP API (`agents/web.py`), so "feature parity" is mostly a
@@ -84,14 +92,15 @@ Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not
 
 | Surface | API | Separate browser `/os/` | Native HUD V2 | Native mobile | Task |
 |---|---|---|---|---|---|
-| 3D workshop, local model edits, saved versions and professional exports | `POST /api/os/workshop/edit`, `GET/POST /api/os/workshop/projects`, `GET /api/os/workshop/project` | Robot, house and miniature with named vault versions and GLB download. The house exports SVG or a JSX script that creates an editable floor plan in desktop Illustrator. | Artifacts reopens versions, chat reviews their state and task comments can link them | ⬜ native scene editor, project picker and export actions remain open | H18.38 |
-| ANDREI OS vault status, graph, note inspection, retrieval and inbox capture | `GET /api/os/status`, `GET /api/os/brain`, `GET /api/os/brain/note`, `GET /api/os/brain/retrieve`, `POST /api/os/brain/capture`, `POST /api/os/brain/chat-note` | ✅ graph, source links and capture | Console → Memory → Vault (`VaultPanel`) exposes live Obsidian/Second Brain status, manual reindex, direct `/os/` navigation, vault note search, note inspection and inbox capture; the text composer attaches reviewed passages and saves completed replies into the vault inbox (3D graph stays in `/os/`). | Chat attaches matching excerpts from across a note, saves completed replies to the vault inbox and reopens saved notes. Mobile: frozen, 2026-11-25. | H18.38 |
+| 3D workshop, local model edits, saved versions and professional exports | `POST /api/os/workshop/edit`, `GET/POST /api/os/workshop/projects`, `GET /api/os/workshop/project` | Robot, house and miniature with named vault versions and GLB download. The house exports SVG or a JSX script that creates an editable floor plan in desktop Illustrator. | Artifacts reopens versions, chat reviews their state and task comments can link them | ✅ project list + parameter inspection (`MemoryOwnerPanels.tsx`); 3D scene editor & GLB/Illustrator exports intentionally browser `/os/` only | H18.38 |
+| ANDREI OS vault status, graph, note inspection, retrieval and inbox capture | `GET /api/os/status`, `GET /api/os/brain`, `GET /api/os/brain/note`, `GET /api/os/brain/retrieve`, `POST /api/os/brain/capture`, `POST /api/os/brain/chat-note`, `POST /api/os/brain/reindex` | ✅ graph, source links and capture | Console → Memory → Vault (`VaultPanel`) exposes live Obsidian/Second Brain status, manual reindex, direct `/os/` navigation, vault note search, note inspection and inbox capture; the text composer attaches reviewed passages and saves completed replies into the vault inbox (3D graph stays in `/os/`). | ✅ live `/api/os/status` + manual `/api/os/brain/reindex` (`MemoryOwnerPanels.tsx`), plus chat excerpt attach, vault inbox chat-note save and saved-note reopen (3D graph stays in `/os/`). | H18.38 |
 | Standalone provider keys, cloud chat consent and local vault paths | Standalone `/api/config`, `/api/status`, `/api/chat` | ✅ standalone Settings; hub hides AI Connections | ➖ standalone-only settings | ➖ standalone-only settings | Intentional standalone-only scope |
 
-The `/os/` page calling hub routes is browser integration evidence, not HUD V2 or
-native mobile parity. Hub chat uses its separate `/chat`; the standalone consent
-repair neither changes nor demonstrates a bypass of that policy. H18.38 remains
-open; no physical device or native client acceptance is claimed.
+Post-Desktop-Finish-Line native mobile closure (2026-11-28): `H18.34`–`H18.38` now ship in `mobile/src/`:
+- **H18.34 + H462 (`KanbanBoardCard.tsx` in Tasks):** board selector, column card rollups, active worker PIDs, governed `POST /api/autonomy/kanban/dispatch`, and approval-gated `POST /api/company/goals` intake (`kanbanAndGoals.test.ts`).
+- **H18.35 + H18.37 + H18.38 (`MemoryOwnerPanels.tsx` in Memory, `SkillBundlesCard.tsx` in Skills, `AgentRosterCard.tsx` in Status):** curated memory budgets/switch/typed-`"RESET"` reset (`H422`), skill bundle CRUD + approval-gated bundle switch (`H026`), owner agent roster create/rename/typed-id retire/restore (`H202`), today learned entries list/edit/forget (`H046`), and ANDREI OS vault status, reindex, and workshop project inspection (`ownerControls.test.ts`).
+- **H18.36 (`turnOutcome.ts`, `conversation.ts`, `MessageBubble.tsx`):** validated `nerva.recall-status.v1` per-provider recall lines rendered under completed native assistant replies and never read aloud by TTS (`recallIndicator.test.ts`).
+No physical Android/iOS device or live-Hub runtime proof is claimed by Jest/Vitest; device acceptance remains on `docs/OWNER_TASKS.md`.
 
 SEC-B6 local source candidate (2026-11-03): twelve owner-content reads now require
 user credentials: `GET /api/oracle/status`, `GET /agents`, the three
