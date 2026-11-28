@@ -489,5 +489,38 @@ describe('useVoice state machine', () => {
         delete (window as any).SpeechRecognition;
       }
     });
+
+    it('refuses to start wake-word SpeechRecognition when the hub denies the microphone lease', async () => {
+      let started = false;
+      class GuardedSpeechRecognition {
+        continuous = false;
+        interimResults = false;
+        lang = '';
+        onresult: any = null;
+        onerror: any = null;
+        onend: any = null;
+        start = vi.fn(() => { started = true; });
+        stop = vi.fn();
+      }
+      Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: GuardedSpeechRecognition });
+      try {
+        global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.endsWith('/api/voice/capabilities')) return jsonResponse({ stt: true, tts: true });
+          if (url.endsWith('/api/voice/mic/arm')) {
+            return jsonResponse({ ok: false, code: 'mic_busy', holder: 'desktop-tray', error: 'Microphone busy' }, { status: 409 });
+          }
+          return jsonResponse({});
+        }) as any;
+
+        const states: any[] = [];
+        const view = render(<VoiceHarness opts={{ wakeWord: true }} onState={(st) => states.push(st)} />);
+        await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('error'));
+        expect(started).toBe(false);
+        view.unmount();
+      } finally {
+        delete (window as any).SpeechRecognition;
+      }
+    });
   });
 });

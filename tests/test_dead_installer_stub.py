@@ -16,9 +16,11 @@ _INACTIVE_MARKERS = ("not yet active", "disabled until", "still wip")
 
 def test_agents_system_holds_only_the_live_roster_file():
     names = sorted(p.name for p in (REPO / "agents/_system").iterdir() if p.is_file())
-    assert names == ["agents.yaml"], (
-        f"agents/_system/ should hold only the roster the code loads; found {names}"
+    assert names == ["agents.public.yaml", "agents.yaml"], (
+        f"agents/_system/ should hold only the roster files JarvisConfig loads; found {names}"
     )
+    loader = (REPO / "agents/core/config.py").read_text(encoding="utf-8")
+    assert "agents.yaml" in loader and "agents.public.yaml" in loader
 
 
 def test_no_shipped_shell_script_advertises_itself_as_inactive():

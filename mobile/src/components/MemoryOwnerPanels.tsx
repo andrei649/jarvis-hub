@@ -5,6 +5,7 @@ import {
   deleteLearnedEntry,
   editLearnedEntry,
   fetchLearnedEntries,
+  fetchLearnedEntryDetail,
   fetchMemoryGovernance,
   fetchOsStatus,
   fetchOsWorkshopProject,
@@ -144,8 +145,8 @@ function ScopedMemoryOwnerPanels({
     setNotice(null);
     setError(null);
     try {
-      const next = await setMemorySwitch(config, !gov.enabled);
-      setNotice(`Automatic memory ${next.enabled ? 'enabled' : 'disabled'}.`);
+      const next = await setMemorySwitch(config, !gov.switch);
+      setNotice(`Owner memory switch ${next.switch ? 'enabled' : 'disabled'}.`);
       loadTab('governance');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to toggle memory switch');
@@ -166,6 +167,31 @@ function ScopedMemoryOwnerPanels({
       loadTab('governance');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Memory reset failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const beginEntryEdit = async (item: LearnedEntryItem) => {
+    if (busy) return;
+    setNotice(null);
+    setError(null);
+    if (item.store !== 'skill') {
+      setEditingId(item.id);
+      setEditingValue(item.value);
+      return;
+    }
+    setBusy(true);
+    try {
+      const detail = await fetchLearnedEntryDetail(config, item.id);
+      if (detail.pendingReview || !detail.content) {
+        setError(detail.contentWithheld || 'Quarantined or unreadable skill cannot be edited inline.');
+        return;
+      }
+      setEditingId(item.id);
+      setEditingValue(detail.content);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load full SKILL.md for editing');
     } finally {
       setBusy(false);
     }
@@ -273,13 +299,13 @@ function ScopedMemoryOwnerPanels({
               {gov ? (
                 <>
                   <Text style={styles.line}>
-                    Curated memory: {gov.enabled ? 'ON' : 'OFF'} · MEMORY.md {gov.memory.chars}/{gov.memory.max_chars} chars ({gov.memory.entries}) · USER.md {gov.user.chars}/{gov.user.max_chars} chars ({gov.user.entries})
+                    Curated memory: {gov.enabled ? 'ON' : 'OFF'} (owner switch: {gov.switch ? 'ON' : 'OFF'}) · MEMORY.md {gov.memory.chars}/{gov.memory.max_chars} chars ({gov.memory.entries}) · USER.md {gov.user.chars}/{gov.user.max_chars} chars ({gov.user.entries})
                   </Text>
                   {hasAdmin ? (
                     <>
                       <Pressable style={styles.button} disabled={busy} onPress={() => void toggleMemorySwitch()}>
                         <Text style={styles.buttonText}>
-                          {gov.enabled ? 'Turn curated memory OFF' : 'Turn curated memory ON'}
+                          {gov.switch ? 'Turn owner memory switch OFF' : 'Turn owner memory switch ON'}
                         </Text>
                       </Pressable>
                       <View style={styles.tabs}>
@@ -337,6 +363,7 @@ function ScopedMemoryOwnerPanels({
                         <TextInput
                           value={editingValue}
                           onChangeText={setEditingValue}
+                          multiline={item.store === 'skill'}
                           style={styles.input}
                         />
                         <Pressable style={styles.button} onPress={() => void saveEntryEdit(item.id)}>
@@ -348,15 +375,15 @@ function ScopedMemoryOwnerPanels({
                     )}
                     {hasAdmin ? (
                       <View style={styles.row}>
-                        <Pressable
-                          style={styles.button}
-                          onPress={() => {
-                            setEditingId(item.id);
-                            setEditingValue(item.value);
-                          }}
-                        >
-                          <Text style={styles.buttonText}>Edit</Text>
-                        </Pressable>
+                        {!item.pendingReview ? (
+                          <Pressable
+                            style={styles.button}
+                            disabled={busy}
+                            onPress={() => void beginEntryEdit(item)}
+                          >
+                            <Text style={styles.buttonText}>Edit</Text>
+                          </Pressable>
+                        ) : null}
                         <Pressable style={styles.dangerBtn} onPress={() => void removeEntry(item.id)}>
                           <Text style={styles.dangerBtnText}>Forget</Text>
                         </Pressable>

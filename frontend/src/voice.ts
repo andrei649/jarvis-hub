@@ -506,50 +506,100 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const toggle = useCallback(() => { if (activeRef.current) stop(); else start(); }, [start, stop]);
 
   // H5.16: opt-in browser wake-word standby ("hey jarvis" / "hey nerva"). Default off;
-  // runs only while the main voice loop is idle and unmuted, using standard browser
-  // SpeechRecognition when available (zero third-party wake-word SDK).
+  // runs only while the main voice loop is idle and unmuted, acquiring and renewing the
+  // H247 hub microphone lease before opening SpeechRecognition standby.
   useEffect(() => {
     if (!wakeWord || active || micMuted) return;
     const SpeechRec = getSpeechRecognitionCtor();
     if (!SpeechRec) return;
     let alive = true;
     let triggered = false;
+    let standbyLeased = false;
+    let standbyRenew: any = null;
     let rec: any = null;
-    try {
-      rec = new SpeechRec();
-      rec.continuous = true;
-      rec.interimResults = false;
-      rec.lang = lang === 'ro' ? 'ro-RO' : 'en-US';
-      rec.onresult = (ev: any) => {
-        if (!alive || triggered || activeRef.current || micMutedRef.current) return;
-        const results = ev && ev.results ? ev.results : [];
-        const from = typeof ev?.resultIndex === 'number' ? ev.resultIndex : 0;
-        for (let i = from; i < results.length; i++) {
-          const alt = results[i] && results[i][0];
-          const hit = matchWakePhrase(alt && alt.transcript);
-          if (hit.triggered) {
-            triggered = true;
-            try { rec.stop(); } catch { /* ignore */ }
-            void start(hit.remainder ? { initialTranscript: hit.remainder } : undefined);
-            return;
-          }
-        }
-      };
-      rec.onerror = (ev: any) => {
-        const code = ev && ev.error;
-        if (code === 'not-allowed' || code === 'service-not-allowed') {
+
+    const dropStandbyLease = () => {
+      if (standbyRenew) { clearInterval(standbyRenew); standbyRenew = null; }
+      if (standbyLeased) { standbyLeased = false; releaseMic(); }
+    };
+
+    void (async () => {
+      const lease = await armMic(false);
+      if (!alive || activeRef.current || micMutedRef.current) {
+        if (lease.ok) releaseMic();
+        return;
+      }
+      if (lease.ok === false) {
+        setError(lease.message);
+        setMicHolder(lease.code === 'mic_busy' ? (lease.holder || null) : null);
+        setStat('error');
+        return;
+      }
+      standbyLeased = true;
+      setError(null);
+      setMicHolder(null);
+      standbyRenew = setInterval(async () => {
+        const again = await armMic(false);
+        if (again.ok === false && alive && !triggered && !activeRef.current) {
           alive = false;
-          setError('Wake-word microphone permission denied');
+          if (standbyRenew) { clearInterval(standbyRenew); standbyRenew = null; }
+          standbyLeased = false;
+          try {
+            if (rec) {
+              rec.onend = null;
+              rec.stop();
+            }
+          } catch { /* ignore */ }
+          setError(again.code === 'mic_busy' ? `The microphone was taken by ${again.holder}.` : again.message);
+          setMicHolder(again.code === 'mic_busy' ? (again.holder || null) : null);
           setStat('error');
         }
-      };
-      rec.onend = () => {
-        if (alive && !triggered && !activeRef.current && !micMutedRef.current) {
-          try { rec.start(); } catch { /* browser throttled standby restart */ }
-        }
-      };
-      rec.start();
-    } catch { /* SpeechRecognition unavailable or blocked */ }
+      }, RENEW_MS);
+
+      try {
+        rec = new SpeechRec();
+        rec.continuous = true;
+        rec.interimResults = false;
+        rec.lang = lang === 'ro' ? 'ro-RO' : 'en-US';
+        rec.onresult = (ev: any) => {
+          if (!alive || triggered || activeRef.current || micMutedRef.current) return;
+          const results = ev && ev.results ? ev.results : [];
+          const from = typeof ev?.resultIndex === 'number' ? ev.resultIndex : 0;
+          for (let i = from; i < results.length; i++) {
+            const alt = results[i] && results[i][0];
+            const hit = matchWakePhrase(alt && alt.transcript);
+            if (hit.triggered) {
+              triggered = true;
+              try {
+                rec.onend = null;
+                rec.stop();
+              } catch { /* ignore */ }
+              dropStandbyLease();
+              void start(hit.remainder ? { initialTranscript: hit.remainder } : undefined);
+              return;
+            }
+          }
+        };
+        rec.onerror = (ev: any) => {
+          const code = ev && ev.error;
+          if (code === 'not-allowed' || code === 'service-not-allowed') {
+            alive = false;
+            dropStandbyLease();
+            setError('Wake-word microphone permission denied');
+            setStat('error');
+          }
+        };
+        rec.onend = () => {
+          if (alive && !triggered && standbyLeased && !activeRef.current && !micMutedRef.current) {
+            try { rec.start(); } catch { /* browser throttled standby restart */ }
+          }
+        };
+        rec.start();
+      } catch {
+        dropStandbyLease();
+      }
+    })();
+
     return () => {
       alive = false;
       if (rec) {
@@ -560,6 +610,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
           rec.stop();
         } catch { /* ignore */ }
       }
+      dropStandbyLease();
     };
   }, [wakeWord, active, micMuted, lang, start]);
 

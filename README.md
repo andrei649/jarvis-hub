@@ -92,7 +92,7 @@ support: [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md); tester-level answers:
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **37,337** · frontend **5,031** · mobile **534**. Route surface: **940**.
+Generated test matrix: backend **37,337** · frontend **5,032** · mobile **535**. Route surface: **940**.
 <!-- project-status:run:end -->
 
 **One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
@@ -416,7 +416,7 @@ Details: [`apps/jarvis-os/README.md`](apps/jarvis-os/README.md).
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **37,337** · frontend **5,031** · mobile **534** · **940** routes · **16** active agents · open release gates: **A1, A3, A4, A6** · backlog: **308 done · 6 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `99ed5746caf4`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **37,337** · frontend **5,032** · mobile **535** · **940** routes · **16** active agents · open release gates: **A1, A3, A4, A6** · backlog: **308 done · 6 open or blocked of 314 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `99ed5746caf4`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 16 specialist agents (incl. **Howard**, the emerging digital twin; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

@@ -87,7 +87,7 @@ function parseBudget(raw: unknown): MemoryStoreBudget {
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.trunc(v) : 0);
   return {
     chars: num(raw.chars),
-    max_chars: num(raw.max_chars),
+    max_chars: num(raw.char_budget !== undefined ? raw.char_budget : raw.max_chars),
     entries: num(raw.entries),
   };
 }
@@ -111,13 +111,21 @@ export async function fetchMemoryGovernance(
   };
 }
 
-export async function setMemorySwitch(config: ServerConfig, enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> {
+export async function setMemorySwitch(
+  config: ServerConfig,
+  enabled: boolean,
+): Promise<{ ok: boolean; switch: boolean; enabled: boolean }> {
   const raw = await governedJson<unknown>(config, 'POST', '/api/memory/switch', {
     admin: true,
     body: { enabled },
   });
   if (!isRecord(raw)) throw new ApiError('Invalid memory switch response');
-  return { ok: raw.ok !== false, enabled: typeof raw.enabled === 'boolean' ? raw.enabled : enabled };
+  const nextSwitch = typeof raw.switch === 'boolean' ? raw.switch : enabled;
+  return {
+    ok: raw.ok !== false,
+    switch: nextSwitch,
+    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : nextSwitch,
+  };
 }
 
 export type MemoryResetTarget = 'all' | 'memory' | 'user';
@@ -451,6 +459,34 @@ export async function fetchLearnedEntries(
   };
 }
 
+export type LearnedEntryDetail = LearnedEntryItem & {
+  content: string | null;
+  contentWithheld: string | null;
+};
+
+export async function fetchLearnedEntryDetail(
+  config: ServerConfig,
+  entryId: string,
+  signal?: AbortSignal,
+): Promise<LearnedEntryDetail> {
+  const id = entryId.trim();
+  if (!id) throw new ApiError('Entry ID is required', 400);
+  const raw = await governedJson<unknown>(
+    config,
+    'GET',
+    `/api/dashboard/today/entries/${encodeURIComponent(id)}`,
+    { signal },
+  );
+  const entryObj = isRecord(raw) && isRecord(raw.entry) ? raw.entry : null;
+  const base = parseLearnedEntry(entryObj);
+  if (!entryObj || !base) throw new ApiError('Invalid learned entry detail response');
+  return {
+    ...base,
+    content: typeof entryObj.content === 'string' ? entryObj.content : null,
+    contentWithheld: typeof entryObj.content_withheld === 'string' ? entryObj.content_withheld : null,
+  };
+}
+
 export async function editLearnedEntry(
   config: ServerConfig,
   entryId: string,
@@ -581,8 +617,15 @@ export async function fetchOsWorkshopProject(
     throw new ApiError(isRecord(raw) && typeof raw.error === 'string' ? raw.error : 'Workshop project unavailable');
   }
   const project = isRecord(raw.project) ? raw.project : {};
-  const params = isRecord(project.params) ? project.params : project;
-  const keys = Object.keys(params);
+  const state = isRecord(project.state)
+    ? project.state
+    : isRecord(project.params)
+      ? project.params
+      : {};
+  const keys = Object.keys(state);
+  const summary = typeof raw.summary === 'string' && raw.summary.trim()
+    ? raw.summary.trim()
+    : keys.slice(0, 6).join(', ');
   return {
     path: typeof raw.path === 'string' ? raw.path : trimmed,
     title: typeof raw.title === 'string' && raw.title.trim()
@@ -592,6 +635,6 @@ export async function fetchOsWorkshopProject(
         : trimmed,
     view: typeof project.view === 'string' ? project.view : 'workshop',
     paramCount: keys.length,
-    summary: keys.slice(0, 6).join(', '),
+    summary,
   };
 }

@@ -6,6 +6,7 @@ import {
   editLearnedEntry,
   fetchAgentRoster,
   fetchLearnedEntries,
+  fetchLearnedEntryDetail,
   fetchMemoryGovernance,
   fetchOsStatus,
   fetchOsWorkshopProject,
@@ -41,30 +42,33 @@ describe('H18.35 / H18.37 / H18.38 native owner controls and ANDREI OS parity', 
     jest.restoreAllMocks();
   });
 
-  test('H422 memory governance reads ring budgets, toggles switch, and enforces literal RESET confirmation', async () => {
+  test('H422 memory governance reads char_budget, separates owner switch from effective enabled, and enforces literal RESET', async () => {
     const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
     mockFetch
       .mockResolvedValueOnce(
         jsonRes({
           available: true,
-          enabled: true,
+          enabled: false,
           switch: true,
           block_max_chars: 4000,
           stores: {
-            memory: { chars: 420, max_chars: 2200, entries: 5 },
-            user: { chars: 180, max_chars: 1375, entries: 2 },
+            memory: { chars: 420, char_budget: 2200, entries: 5 },
+            user: { chars: 180, char_budget: 1375, entries: 2 },
           },
         }),
       )
-      .mockResolvedValueOnce(jsonRes({ ok: true, enabled: false }))
+      .mockResolvedValueOnce(jsonRes({ ok: true, switch: false, enabled: false }))
       .mockResolvedValueOnce(jsonRes({ ok: true, cleared: ['memory', 'user'] }));
     (globalThis as any).fetch = mockFetch;
 
     const status = await fetchMemoryGovernance(cfg);
+    expect(status.enabled).toBe(false);
+    expect(status.switch).toBe(true);
     expect(status.memory).toEqual({ chars: 420, max_chars: 2200, entries: 5 });
     expect(status.user).toEqual({ chars: 180, max_chars: 1375, entries: 2 });
 
     const toggled = await setMemorySwitch(cfg, false);
+    expect(toggled.switch).toBe(false);
     expect(toggled.enabled).toBe(false);
 
     await expect(resetCuratedMemory(cfg, 'all', 'reset')).rejects.toThrow(/Type RESET in capitals/);
@@ -148,38 +152,52 @@ describe('H18.35 / H18.37 / H18.38 native owner controls and ANDREI OS parity', 
     expect(restored.status).toBe('active');
   });
 
-  test('H046 today learned entries list, edit, and forget', async () => {
+  test('H046 today learned entries list, fetch full skill SKILL.md detail, edit, and forget', async () => {
     const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
     mockFetch
       .mockResolvedValueOnce(
         jsonRes({
-          entries: [{ id: 'memory:abc123', store: 'memory', value: 'Prefers concise status reports' }],
+          entries: [{ id: 'skill:brief', store: 'skill', value: 'Short description' }],
           total: 1,
-          counts: { memory: 1 },
+          counts: { skill: 1 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonRes({
+          entry: {
+            id: 'skill:brief',
+            store: 'skill',
+            value: 'Short description',
+            content: '---\nname: brief\n---\nFull SKILL.md body\n',
+            pending_review: false,
+          },
         }),
       )
       .mockResolvedValueOnce(
         jsonRes({
           ok: true,
           changed: true,
-          entry: { id: 'memory:def456', store: 'memory', value: 'Prefers concise Romanian reports' },
+          entry: { id: 'skill:brief', store: 'skill', value: 'Updated description' },
         }),
       )
-      .mockResolvedValueOnce(jsonRes({ ok: true, deleted: 'memory:def456' }));
+      .mockResolvedValueOnce(jsonRes({ ok: true, deleted: 'skill:brief' }));
     (globalThis as any).fetch = mockFetch;
 
     const list = await fetchLearnedEntries(cfg);
     expect(list.entries).toHaveLength(1);
 
-    const edited = await editLearnedEntry(cfg, 'memory:abc123', 'Prefers concise Romanian reports');
-    expect(edited.changed).toBe(true);
-    expect(edited.entry?.id).toBe('memory:def456');
+    const detail = await fetchLearnedEntryDetail(cfg, 'skill:brief');
+    expect(detail.content).toContain('Full SKILL.md body');
 
-    const removed = await deleteLearnedEntry(cfg, 'memory:def456');
-    expect(removed.deleted).toBe('memory:def456');
+    const edited = await editLearnedEntry(cfg, 'skill:brief', detail.content!);
+    expect(edited.changed).toBe(true);
+    expect(edited.entry?.id).toBe('skill:brief');
+
+    const removed = await deleteLearnedEntry(cfg, 'skill:brief');
+    expect(removed.deleted).toBe('skill:brief');
   });
 
-  test('H18.38 ANDREI OS status, vault reindex, and workshop project inspection', async () => {
+  test('H18.38 ANDREI OS status, vault reindex, and workshop project state inspection', async () => {
     const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
     mockFetch
       .mockResolvedValueOnce(
@@ -207,7 +225,13 @@ describe('H18.35 / H18.37 / H18.38 native owner controls and ANDREI OS parity', 
           ok: true,
           path: 'workshop/robot-arm.json',
           title: 'Robot Arm',
-          project: { view: 'robot', params: { shoulderDeg: 35, gripOpen: true } },
+          summary: 'Robot · shoulderDeg 35, gripOpen true',
+          project: {
+            version: 1,
+            view: 'robot',
+            camera: { zoom: 1.2 },
+            state: { shoulderDeg: 35, gripOpen: true },
+          },
         }),
       );
     (globalThis as any).fetch = mockFetch;
@@ -224,6 +248,6 @@ describe('H18.35 / H18.37 / H18.38 native owner controls and ANDREI OS parity', 
 
     const detail = await fetchOsWorkshopProject(cfg, 'workshop/robot-arm.json');
     expect(detail.paramCount).toBe(2);
-    expect(detail.summary).toContain('shoulderDeg');
+    expect(detail.summary).toBe('Robot · shoulderDeg 35, gripOpen true');
   });
 });

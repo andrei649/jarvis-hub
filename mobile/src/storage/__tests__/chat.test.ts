@@ -161,3 +161,32 @@ test('invalid or oversized recovery prompts are omitted without changing the leg
   const legacyShape = JSON.parse(jest.mocked(AsyncStorage.setItem).mock.calls.at(-1)![1]);
   expect(legacyShape).not.toHaveProperty('recoveryPrompt');
 });
+
+test('scoped storage preserves validated recall receipts for completed native replies across restarts', async () => {
+  const recall = [{
+    schema: 'nerva.recall-status.v1' as const,
+    provider: 'long_term_memory' as const,
+    basis: 'this_turn' as const,
+    recalled: 2,
+    withheld: { rejected_taint: 1 },
+    untrusted: 0,
+  }];
+  await saveConversation('owner', {
+    sessionId: 'chat',
+    messages: [
+      { id: 'ok', role: 'assistant', completed: true, text: 'Answer', recall },
+      { id: 'uncompleted', role: 'assistant', text: 'Draft', recall },
+      { id: 'foreign', role: 'assistant', completed: true, text: 'Imported', foreign_origin: 'codex', recall } as any,
+      { id: 'bad', role: 'assistant', completed: true, text: 'Leak', recall: [{ ...recall[0], leaked: 'secret-text' }] } as any,
+    ],
+  });
+  const raw = jest.mocked(AsyncStorage.setItem).mock.calls.at(-1)![1];
+  expect(raw).not.toContain('secret-text');
+  jest.mocked(AsyncStorage.getItem).mockResolvedValueOnce(raw);
+  expect((await loadConversation('owner')).messages.map(m => m.recall)).toEqual([
+    recall,
+    undefined,
+    undefined,
+    undefined,
+  ]);
+});
