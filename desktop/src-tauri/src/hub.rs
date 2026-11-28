@@ -401,7 +401,7 @@ fn stop(record: &Record, mut child: Option<&mut Child>) {
     hard_stop(record, &mut child);
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::net::TcpListener;
