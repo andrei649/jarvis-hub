@@ -763,8 +763,22 @@ def _same_kind(original: Any, text: str) -> Any:
     """``text`` as the same kind of prompt as ``original`` (an ``OperatingPrompt`` keeps its base)."""
     if text == original:
         return original
-    from ..operating_prompt import OperatingPrompt
+    from ..operating_prompt import OperatingPrompt, TieredSystemPrompt
 
+    if isinstance(original, TieredSystemPrompt):
+        from ..prompt_tiers import split_pruned_notice, strip_clock_lines
+
+        without_notice, notice = split_pruned_notice(text)
+        _body, start_line, today_line = strip_clock_lines(without_notice)
+        volatile = "\n\n".join(part for part in (today_line, notice) if part)
+        return TieredSystemPrompt(
+            stable=original.stable_tier,
+            base=original.base,
+            model=original.model,
+            context=start_line or original.context_tier,
+            volatile=volatile,
+            identity_digest=original.identity_digest,
+        )
     if isinstance(original, OperatingPrompt):
         return OperatingPrompt(text, base=original.base, model=original.model)
     return text

@@ -72,7 +72,7 @@ export function TalkRegister(props: TalkRegisterProps) {
       recipientStatus={talk.recipientStatus} sessionId={talk.sessionId} selectedTurn={talk.selectedTurn} outcome={talk.outcome}
       power={talk.power} projectForChat={talk.projectForChat} onProjectReviewed={talk.onProjectReviewed}
       boardResultForChat={talk.boardResultForChat} onBoardResultReviewed={talk.onBoardResultReviewed} inspectBlend={talk.inspectBlend}
-      turnActive={turnActive} canContinue={talk.canContinue}
+      turnActive={turnActive} canContinue={talk.canContinue} onSteer={talk.onSteer}
       onSelectAgent={onSelectAgent} approvalMode={mode} variant={variant} openHistory={openHistory}
       recipientSwitch={talk.recipientSwitch} onRecipientSwitch={talk.onRecipientSwitch}
       recipientRefusal={talk.recipientRefusal} recipientHold={talk.recipientHold}

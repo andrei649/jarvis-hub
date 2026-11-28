@@ -211,7 +211,11 @@ class ChannelSessionLifecycle:
         denied = await judge(text) if callable(judge) else None
         if denied is not None:
             return denied.reply
-        none_yet = "There is no conversation here to ask about yet."
+        none_yet = (
+            "No turn is running in this conversation right now; send your message directly."
+            if side_question_command_name(text) == "steer"
+            else "There is no conversation here to ask about yet."
+        )
         state = self.store.state(base)
         default = self.orch._session_id_default
         selected = self.orch._channel_sessions.get(base)

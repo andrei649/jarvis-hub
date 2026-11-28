@@ -1913,13 +1913,23 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
                             str(req.session_id or getattr(orch, "session_id", None) or ""))
                         # H224: the caller (and only the caller's credential) can stop this
                         # turn with POST /chat/interrupt; it then ends with a reply.
-                        from agents.core import turn_interrupts
+                        from agents.core import turn_interrupts, turn_steer
                         from agents.core import turn_notices as turn_notices_mod
+                        from agents.core.commands import preappend_command_name
                         from agents.core.routers.chat_pending import http_actor
+                        actor_id = http_actor(request)
+                        turn_hdr = request.headers.get(turn_interrupts.TURN_ID_HEADER)
+                        steer_ctx = (nullcontext() if preappend_command_name(message) is not None
+                                     else turn_steer.track_turn_steer(
+                                         session_id=req.session_id or getattr(orch, "session_id", None),
+                                         actor=actor_id,
+                                         turn_id=turn_hdr,
+                                         owner=_web_principal(request).admin is True,
+                                     ))
                         try:
-                            with turn_interrupts.track(http_actor(request),
+                            with turn_interrupts.track(actor_id,
                                                        req.session_id or getattr(orch, "session_id", None),
-                                                       request.headers.get(turn_interrupts.TURN_ID_HEADER)) as live:
+                                                       turn_hdr) as live, steer_ctx:
                                 try:
                                     reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
                                                                    **({"session_id": req.session_id} if req.session_id is not None else {}))
@@ -2129,12 +2139,20 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                         from agents.core import code_interruptions
                         conversation_token = code_interruptions.bind_conversation(
                             str(session_id or getattr(orch, "session_id", None) or ""))
-                        from agents.core import turn_interrupts
+                        from agents.core import turn_interrupts, turn_steer
                         from agents.core import turn_notices as turn_notices_mod
+                        from agents.core.commands import preappend_command_name
+                        steer_ctx = (nullcontext() if preappend_command_name(own_words or message) is not None
+                                     else turn_steer.track_turn_steer(
+                                         session_id=bound_session,
+                                         actor=pending_actor,
+                                         turn_id=turn_id,
+                                         owner=bool(principal and principal.admin),
+                                     ))
                         try:
                             # H223/H224: POST /chat/interrupt stops this streamed turn too,
                             # for the credential that started it and the turn it names.
-                            with turn_interrupts.track(pending_actor, bound_session, turn_id) as live:
+                            with turn_interrupts.track(pending_actor, bound_session, turn_id) as live, steer_ctx:
                                 try:
                                     full = await orch.handle_input_stream(
                                         message, channel="web", on_token=on_token, agent_override=agent_override,

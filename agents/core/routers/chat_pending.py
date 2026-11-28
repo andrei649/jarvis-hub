@@ -173,3 +173,47 @@ async def interrupt_turn(request: Request, body: TurnInterrupt):
                             headers={"Cache-Control": "no-store"})
     stopped = interrupt(http_actor(request), body.session_id, body.turn_id)
     return JSONResponse({"ok": True, "interrupted": stopped}, headers={"Cache-Control": "no-store"})
+
+
+class TurnSteer(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    message: str = Field(min_length=1, max_length=4000, description=
+        "Mid-turn guidance delivered to the running turn after the current step; never grants an approval.")
+    session_id: str | None = Field(default=None, max_length=128, description=
+        "Steer the caller's running turn in this conversation.")
+    turn_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$", description=
+        "Steer the caller's running turn sent with this X-Nerva-Turn-Id header.")
+
+    @model_validator(mode="after")
+    def valid_steer(self):
+        if not self.message.strip():
+            raise ValueError("nonempty message required")
+        if self.session_id is None and self.turn_id is None:
+            raise ValueError("name the turn to steer: session_id or turn_id")
+        return self
+
+
+@router.post("/chat/steer", dependencies=[Depends(user_guard)])
+async def steer_turn(request: Request, body: TurnSteer):
+    """H395 — deliver mid-turn guidance to the caller's own running chat turn.
+
+    Scoped to ``http_actor(request)`` plus ``session_id`` or ``turn_id``; another
+    credential's turn is never visible or steerable. Delivered messages are wrapped as
+    out-of-band user guidance with ``can_approve=False`` so steering never grants an
+    ``ActionKernel`` approval.
+    """
+    from ..session_continuation import is_valid_session_id
+    from ..turn_steer import steer_http
+
+    if body.session_id is not None and not is_valid_session_id(body.session_id):
+        return JSONResponse({"error": "invalid_session_id"}, status_code=422,
+                            headers={"Cache-Control": "no-store"})
+    status, pending = steer_http(
+        http_actor(request), body.message, session_id=body.session_id, turn_id=body.turn_id,
+    )
+    code = {"queued": 200, "queue_full": 409, "invalid": 422, "no_active_turn": 404}[status]
+    return JSONResponse(
+        {"ok": status == "queued", "status": status, "pending": pending},
+        status_code=code,
+        headers={"Cache-Control": "no-store"},
+    )

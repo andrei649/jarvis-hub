@@ -308,6 +308,7 @@ def test_the_default_registry_names_the_first_wave(monkeypatch, tmp_path):
         "worktree", "review", "delegations",   # G18 (H474, H404, H401): owner commands
         "pet", "hatch", "skin",        # H214/H238/H590/H052/H591: Petdex, Hatch-a-Pet & CLI skins (owner)
         "commands",                    # H079: paginated, caller-filtered discovery
+        "steer",                       # H395: mid-turn owner guidance
     }
     # H058: a guest sees /help and /whoami until the owner allows more; allowed everything
     # a non-owner may be allowed, it sees the user tier, never an owner command.

@@ -859,6 +859,42 @@ class Repl:
         self.say(f"model: {card_safe((reply or {}).get('active') or chosen[0])[:120]}")
 
     # turns ------------------------------------------------------------------
+    def steer_inflight(self, message: str) -> bool:
+        """H395: deliver mid-turn guidance to the running CLI turn via POST /chat/steer."""
+        from .client import HubError
+
+        cleaned = message.strip()
+        if not cleaned:
+            self.say("usage: /steer <instruction>")
+            return True
+        with self._lock:
+            turn = dict(self.inflight) if self.inflight else None
+        if turn is None:
+            return False
+        if turn.get("kind") == "vision":
+            self.say("an image turn cannot be steered mid-flight; wait for it to finish")
+            return True
+        body = {key: turn[key] for key in ("session_id", "turn_id") if turn.get(key)}
+        if not body:
+            self.say("this turn cannot be steered yet (the hub has not named its conversation)")
+            return True
+        body["message"] = cleaned
+        try:
+            reply = self.ctx.client().post("/chat/steer", body)
+        except HubError as exc:
+            if exc.status == 404:
+                self.say("(nothing to steer: the turn had already finished)")
+            elif exc.status == 409:
+                self.say("(the running turn's steering inbox is full; wait for the next step)")
+            elif exc.status in (401, 403):
+                self.say("this terminal's credential cannot steer the turn")
+            else:
+                self.say(f"the turn was not steered (HTTP {exc.status})")
+            return True
+        pending = reply.get("pending", 1) if isinstance(reply, dict) else 1
+        self.say(f"(mid-turn guidance delivered; {pending} queued for the next step)")
+        return True
+
     def submit(self, text: str) -> None:
         from .nerva import CHAT_MAX_CHARS
 
@@ -866,6 +902,13 @@ class Repl:
             self.say(f"not sent: {len(text):,} characters, and one turn carries up to {CHAT_MAX_CHARS:,}")
             self._prefill = text
             return
+        stripped = text.strip()
+        head, _, rest = stripped.partition(" ")
+        if head.lower() == "/steer" and self.running:
+            if self.history_file is not None:
+                append_history(self.history_file, text)
+            if self.steer_inflight(rest):
+                return
         if self.history_file is not None:
             append_history(self.history_file, text)
             if self._rl is not None and not keep_out_of_history(text):

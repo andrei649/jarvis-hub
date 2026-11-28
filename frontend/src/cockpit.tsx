@@ -391,7 +391,7 @@ function Seg({ cur, opts, on }) {
                     Dismiss; without them the composer says it of the To's own question
    `outcome` and `power` stay in the props (InputBarProps) and are not drawn here: the turn's
    outcome lines are its reply's "Turn details" (Conversation). */
-function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, lang='en', demo=false, agent='jarvis', agents=[], recipientStatus='ready', sessionId='', selectedTurn=false, projectForChat, onProjectReviewed, boardResultForChat, onBoardResultReviewed, inspectBlend, turnActive=false, canContinue, onSelectAgent, approvalMode, variant='home', openHistory, recipientSwitch, onRecipientSwitch, recipientRefusal = null, recipientHold = null, recipientSwitchDropped, onRecipientSwitchDropped }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; lang?: string; demo?: boolean; agent?: string; agents?: ChatAgent[]; recipientStatus?: 'ready' | 'checking' | 'choose'; sessionId?: string; selectedTurn?: boolean; outcome?: TurnOutcome | null; power?: PowerState; projectForChat?: WorkshopRef | null; onProjectReviewed?: () => void; boardResultForChat?: BoardResultRef | null; onBoardResultReviewed?: () => void; inspectBlend?: React.RefObject<((file: File) => boolean) | null>; turnActive?: boolean; canContinue?: () => boolean; onSelectAgent?: (id: string) => void; approvalMode?: ApprovalModeInput | null; variant?: TalkVariant; openHistory?: React.MutableRefObject<((opener: HTMLElement) => boolean) | null>; recipientSwitch?: RecipientSwitch | null; onRecipientSwitch?: (id: string | null) => void; recipientRefusal?: RecipientRefusal | null; recipientHold?: RecipientHold | null; recipientSwitchDropped?: RecipientSwitchDropped | null; onRecipientSwitchDropped?: () => void }) {
+function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, t, lang='en', demo=false, agent='jarvis', agents=[], recipientStatus='ready', sessionId='', selectedTurn=false, projectForChat, onProjectReviewed, boardResultForChat, onBoardResultReviewed, inspectBlend, turnActive=false, canContinue, onSteer, onSelectAgent, approvalMode, variant='home', openHistory, recipientSwitch, onRecipientSwitch, recipientRefusal = null, recipientHold = null, recipientSwitchDropped, onRecipientSwitchDropped }: { onSubmit?: any; mic?: any; setMic?: any; voice?: any; cfg?: any; onCfg?: any; micMuted?: any; motion?: any; t?: any; lang?: string; demo?: boolean; agent?: string; agents?: ChatAgent[]; recipientStatus?: 'ready' | 'checking' | 'choose'; sessionId?: string; selectedTurn?: boolean; outcome?: TurnOutcome | null; power?: PowerState; projectForChat?: WorkshopRef | null; onProjectReviewed?: () => void; boardResultForChat?: BoardResultRef | null; onBoardResultReviewed?: () => void; inspectBlend?: React.RefObject<((file: File) => boolean) | null>; turnActive?: boolean; canContinue?: () => boolean; onSteer?: (text: string) => Promise<boolean>; onSelectAgent?: (id: string) => void; approvalMode?: ApprovalModeInput | null; variant?: TalkVariant; openHistory?: React.MutableRefObject<((opener: HTMLElement) => boolean) | null>; recipientSwitch?: RecipientSwitch | null; onRecipientSwitch?: (id: string | null) => void; recipientRefusal?: RecipientRefusal | null; recipientHold?: RecipientHold | null; recipientSwitchDropped?: RecipientSwitchDropped | null; onRecipientSwitchDropped?: () => void }) {
   const [val,setVal]=useState('');
   const [blenderMode, setBlenderMode] = useState(false);
   const blenderRequest = blenderMode && val.trim() ? blenderMeshRequest(val) : '';
@@ -754,6 +754,24 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
     e.preventDefault();
     submit();
   };
+  const [steeringBusy, setSteeringBusy] = useState(false);
+  const canSteer = !!onSteer && turnActive && !demo && recipientStatus === 'ready' && !switchPending
+    && !!val.trim() && !command && !tooLong && !blenderMode && !draft.enabled && !officeActive
+    && !boardInUse && !vault.selected.length && !currentHistory && !visibleCloudReview;
+  const steerActiveTurn = async () => {
+    if (!canSteer || steeringBusy || !onSteer) return;
+    const text = val.trim();
+    setSteeringBusy(true);
+    try {
+      const ok = await onSteer(text);
+      if (ok) {
+        setVal('');
+        setSentCount(n => n + 1);
+      }
+    } finally {
+      setSteeringBusy(false);
+    }
+  };
   const closeOptions = () => { setOptionsOpen(false); optionsButton.current?.focus(); };
   const closeAttach = () => { setAttachOpen(false); attachButton.current?.focus(); };
   const chevron = <svg className="n-composer__chev-sm" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.5 6l4.5 4.5L12.5 6" /></svg>;
@@ -952,6 +970,14 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
           <span className="n-composer__keys" title={s.keysTitle}>
             <span><code>/</code> {s.keysCommands}</span><span><code>@</code> {s.keysFiles}</span>
           </span>
+          {canSteer && (
+            <button type="button" className="n-btn n-composer__steer" data-composer-steer=""
+              disabled={steeringBusy}
+              title={lang === 'ro' ? 'Trimite îndrumare turei active fără a o opri' : 'Deliver mid-turn guidance to the running turn without stopping it'}
+              onClick={() => { void steerActiveTurn(); }}>
+              {lang === 'ro' ? 'Ghidează' : 'Steer'}
+            </button>
+          )}
           <button type="button" className={'n-btn n-composer__send' + (ready ? ' n-btn--primary' : '')} data-composer-send=""
             aria-describedby={describedBy} disabled={sendDisabled} onClick={submit}>{sendLabel}</button>
         </div>

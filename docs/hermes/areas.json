@@ -1230,7 +1230,8 @@
         "tests/test_tool_rpc_h297_envelope.py",
         "tests/test_tool_surface.py",
         "tests/test_web_tools.py",
-        "tests/test_websearch.py"
+        "tests/test_websearch.py",
+        "tests/test_modern_harness_upgrades.py"
       ]
     },
     {
@@ -1640,7 +1641,8 @@
         "tests/test_tool_result_store.py",
         "tests/test_tool_result_taint.py",
         "tests/test_turn_status_readout.py",
-        "tests/test_web_tools.py"
+        "tests/test_web_tools.py",
+        "tests/test_modern_harness_upgrades.py"
       ]
     },
     {

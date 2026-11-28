@@ -199,7 +199,16 @@ MAX_LIST_ENTRIES = 2000
 # refusal names the missing parser instead of handing the model a page of replacement
 # characters. ``raw=true`` still returns the bytes.
 DOCUMENT_SUFFIXES = frozenset(DOC_EXTS)
-_DOCUMENT_PARSERS = {".pdf": "pypdf", ".docx": "docx"}
+_DOCUMENT_PARSERS: dict[str, str | None] = {
+    ".pdf": "pypdf",
+    ".docx": "docx",
+    ".xlsx": None,
+    ".ods": None,
+    ".odt": None,
+    ".ipynb": None,
+    ".epub": None,
+    ".rtf": None,
+}
 # H297 — an image inside the roots is read as the image itself: a ToolContent result
 # (a one-line summary plus the image part), which a model whose tool results carry
 # images sees as a picture and any other model reads as its descriptor. Bytes that do
@@ -1804,9 +1813,11 @@ class FileTools:
 def _parser_available(suffix: str) -> bool:
     import importlib.util
 
-    module = _DOCUMENT_PARSERS.get(suffix)
-    if module is None:
+    if suffix not in _DOCUMENT_PARSERS:
         return False
+    module = _DOCUMENT_PARSERS[suffix]
+    if module is None:
+        return True
     try:
         return importlib.util.find_spec(module) is not None
     except (ImportError, ValueError):
@@ -2270,8 +2281,14 @@ def _docx_annotations(counts: Mapping[str, int]) -> dict[str, Any]:
 def _parse_document(suffix: str, data: bytes, target: Path) -> _ParsedDocument | None:
     stream = io.BytesIO(data)
     stream.name = str(target)  # type: ignore[attr-defined]  # what a parser error names
-    extract = extract_pdf_document if suffix == ".pdf" else extract_docx_document
-    result = extract(stream)
+    if suffix == ".pdf":
+        result = extract_pdf_document(stream)
+    elif suffix == ".docx":
+        result = extract_docx_document(stream)
+    else:
+        from .document_formats import extract_structured_document
+
+        result = extract_structured_document(suffix, stream)
     if not isinstance(result, DocumentExtraction):
         return None
     annotations: dict[str, Any] = {}
@@ -2292,8 +2309,21 @@ def _parse_document(suffix: str, data: bytes, target: Path) -> _ParsedDocument |
                 "ranges": ranges["ranges"],
                 "omitted_range_count": ranges["omitted_range_count"],
             }
-    else:
+    elif suffix == ".docx":
         annotations.update(_docx_annotations(result.content_counts))
+    elif result.content_counts:
+        parts = {k: int(v) for k, v in result.content_counts.items() if k != "images" and v}
+        if parts:
+            annotations["document_parts"] = parts
+        if result.content_counts.get("images"):
+            annotations["visual_content"] = {
+                "reason": f"{suffix.lstrip('.')}_images",
+                "detail": (
+                    "This document contains embedded image outputs. file_read returns "
+                    "only the text and code cells without binary image payloads."
+                ),
+                "images": int(result.content_counts["images"]),
+            }
     if result.stopped is not None:
         limit = ("the extracted-text ceiling" if result.stopped == "text_limit"
                  else "the extraction time budget")

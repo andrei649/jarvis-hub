@@ -180,13 +180,23 @@ CACHE_BREAKPOINT = {"type": "ephemeral"}
 
 
 def cache_marked_system(system: str) -> list[dict[str, Any]]:
-    """The system prompt as one cacheable block.
+    """The system prompt as cacheable prefix block(s) with an H386 volatile boundary.
 
-    A string `system` cannot carry a breakpoint, so it becomes a single text block
-    with the mark on it. The system prompt is the largest thing that does not change
-    between the turns of a session — re-sending it uncached on every tool-loop
-    iteration is the bill this row is about.
+    When ``system`` carries no volatile tail (same-day clock, no pruned-skill notice),
+    it renders as a single ``ephemeral`` block — preserving the exact 1-breakpoint wire
+    shape. When a volatile tail is present (cross-midnight rebuild date or compaction
+    pruned-skill notice), the stable + session-context prefix carries ``cache_control``
+    and the volatile tail follows as a second uncached text block so volatile updates
+    never invalidate the cached system prefix.
     """
+    from ..prompt_tiers import split_system_cache_boundary
+
+    prefix, volatile = split_system_cache_boundary(system)
+    if prefix and volatile:
+        return [
+            {"type": "text", "text": prefix, "cache_control": dict(CACHE_BREAKPOINT)},
+            {"type": "text", "text": volatile},
+        ]
     return [{"type": "text", "text": str(system or ""), "cache_control": dict(CACHE_BREAKPOINT)}]
 
 

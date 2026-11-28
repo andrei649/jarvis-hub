@@ -565,6 +565,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/steer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Steer Turn
+         * @description H395 — deliver mid-turn guidance to the caller's own running chat turn.
+         *
+         *     Scoped to ``http_actor(request)`` plus ``session_id`` or ``turn_id``; another
+         *     credential's turn is never visible or steerable. Delivered messages are wrapped as
+         *     out-of-band user guidance with ``can_approve=False`` so steering never grants an
+         *     ``ActionKernel`` approval.
+         */
+        post: operations["steer_turn_chat_steer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/help/docs": {
         parameters: {
             query?: never;
@@ -21034,6 +21059,24 @@ export interface components {
             /** Untrusted */
             untrusted: number;
         };
+        /** TurnSteer */
+        TurnSteer: {
+            /**
+             * Message
+             * @description Mid-turn guidance delivered to the running turn after the current step; never grants an approval.
+             */
+            message: string;
+            /**
+             * Session Id
+             * @description Steer the caller's running turn in this conversation.
+             */
+            session_id?: string | null;
+            /**
+             * Turn Id
+             * @description Steer the caller's running turn sent with this X-Nerva-Turn-Id header.
+             */
+            turn_id?: string | null;
+        };
         /** TurnToolAccounting */
         TurnToolAccounting: {
             /** Proposed */
@@ -22270,6 +22313,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TurnInterrupt"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    steer_turn_chat_steer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnSteer"];
             };
         };
         responses: {

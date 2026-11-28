@@ -1125,6 +1125,26 @@ function App({ floating = false }: {
     </AppearanceProvider>
   );
 
+  const steerTurn = useCallback(async (text: string): Promise<boolean> => {
+    const trimmed = text.trim();
+    if (demo || !trimmed || textTurns.current.size === 0) return false;
+    try {
+      const res: any = await apiPost('/chat/steer', {
+        session_id: sessionId.current || 'default',
+        message: trimmed,
+      });
+      if (res?.ok !== true) return false;
+      setMessages((m) => [...m, {
+        role: 'user',
+        text: `[Steer] ${trimmed}`,
+        ts: fmtTimeShort(new Date()),
+      }]);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [demo]);
+
   // What App owns for the conversation, handed to the pages as `talk` (home/talk/types.ts).
   const talkInput = (): TalkInput => ({
     messages, thinking, onStop: stopTurn, onProv: setProvModal, onArtifactSaved: demo ? undefined : bumpArtifacts,
@@ -1133,7 +1153,7 @@ function App({ floating = false }: {
     motion, demo, agent: activeId, agents, recipientStatus, sessionId: activeSessionId || '', selectedTurn: !demo,
     outcome: currentOutcome, power, projectForChat, onProjectReviewed: () => setProjectForChat(null),
     boardResultForChat, onBoardResultReviewed: () => setBoardResultForChat(null), inspectBlend,
-    turnActive: !!thinking, canContinue: canContinueHistory, onSelectAgent: selectChatAgent,
+    turnActive: !!thinking, canContinue: canContinueHistory, onSteer: demo ? undefined : steerTurn, onSelectAgent: selectChatAgent,
     recipientSwitch: liveSwitch, onRecipientSwitch: askRecipientSwitch, recipientRefusal: recipientNotice,
     recipientHold, recipientSwitchDropped: liveDropped, onRecipientSwitchDropped: () => setSwitchDropped(null),
   });

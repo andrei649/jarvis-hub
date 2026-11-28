@@ -1,5 +1,12 @@
 # Mobile ⇄ Browser parity ledger
 
+**Mid-turn turn steering (2026-11-28, mobile: frozen).** Desktop HUD (`InputBar`
+**Steer** button), CLI (`nerva chat -i` `/steer`), and owner slash commands
+(`/steer`) can deliver mid-turn guidance to an active chat turn via
+`POST /chat/steer` without stopping it. Mobile Chat inherits the `/steer` slash
+command on the hub; a dedicated mobile composer Steer button is deferred under
+the 2026-11-25 mobile freeze.
+
 The desktop command palette returns keyboard focus to its opener when the selected
 command leaves focus on the page background. Closing the app cancels a pending
 focus change. Mobile: frozen, 2026-11-25.
