@@ -480,11 +480,17 @@ mod tests {
         assert!(resolve(Some(Path::new("relative/dir")), &[], false, &exists).is_err());
     }
 
+    fn abs(suffix: &str) -> String {
+        let prefix = if cfg!(windows) { "C:" } else { "" };
+        format!("{prefix}{suffix}")
+    }
+
     #[test]
     fn the_dir_file_holds_one_absolute_path() {
+        let good = abs("/src/nerva");
         assert_eq!(
-            parse_dir_file(" /src/nerva \n"),
-            Ok(PathBuf::from("/src/nerva"))
+            parse_dir_file(&format!(" {good} \n")),
+            Ok(PathBuf::from(&good))
         );
         for bad in ["", "relative", "/a\n/b", "/a\0"] {
             assert!(parse_dir_file(bad).is_err(), "{bad:?}");
@@ -568,44 +574,42 @@ mod tests {
 
     #[test]
     fn an_explicit_directory_wins_and_must_be_a_checkout() {
-        let exists = fs(&[
-            "/a/serve.py",
-            "/a/agents/web.py",
-            "/a/.venv/bin/python",
-            "/b/serve.py",
-            "/b/agents/web.py",
-            "/b/.venv/bin/python",
-        ]);
-        let got = resolve(
-            Some(Path::new("/b")),
-            &[PathBuf::from("/a/x")],
-            false,
-            &exists,
-        )
-        .unwrap();
-        assert_eq!(got.dir, PathBuf::from("/b"));
-        let err = resolve(
-            Some(Path::new("/c")),
-            &[PathBuf::from("/a/x")],
-            false,
-            &exists,
-        )
-        .unwrap_err();
+        let paths = [
+            abs("/a/serve.py"),
+            abs("/a/agents/web.py"),
+            abs("/a/.venv/bin/python"),
+            abs("/b/serve.py"),
+            abs("/b/agents/web.py"),
+            abs("/b/.venv/bin/python"),
+        ];
+        let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
+        let exists = fs(&refs);
+        let b = PathBuf::from(abs("/b"));
+        let c = PathBuf::from(abs("/c"));
+        let ax = PathBuf::from(abs("/a/x"));
+        let got = resolve(Some(&b), &[ax.clone()], false, &exists).unwrap();
+        assert_eq!(got.dir, b);
+        let err = resolve(Some(&c), &[ax], false, &exists).unwrap_err();
         assert!(err.contains(ENV_DIR));
     }
 
     #[test]
     fn no_venv_means_no_guessing_a_system_python() {
-        let exists = fs(&["/a/serve.py", "/a/agents/web.py"]);
-        let err = resolve(Some(Path::new("/a")), &[], false, &exists).unwrap_err();
+        let a = PathBuf::from(abs("/a"));
+        let p1 = [abs("/a/serve.py"), abs("/a/agents/web.py")];
+        let r1: Vec<&str> = p1.iter().map(String::as_str).collect();
+        let exists = fs(&r1);
+        let err = resolve(Some(&a), &[], false, &exists).unwrap_err();
         assert!(err.contains("install.sh"));
-        let exists = fs(&[
-            "/a/serve.py",
-            "/a/agents/web.py",
-            "/a/.venv/Scripts/python.exe",
-        ]);
-        assert!(resolve(Some(Path::new("/a")), &[], true, &exists).is_ok());
-        assert!(resolve(None, &[PathBuf::from("/nowhere")], false, &fs(&[])).is_err());
+        let p2 = [
+            abs("/a/serve.py"),
+            abs("/a/agents/web.py"),
+            abs("/a/.venv/Scripts/python.exe"),
+        ];
+        let r2: Vec<&str> = p2.iter().map(String::as_str).collect();
+        let exists = fs(&r2);
+        assert!(resolve(Some(&a), &[], true, &exists).is_ok());
+        assert!(resolve(None, &[PathBuf::from(abs("/nowhere"))], false, &fs(&[])).is_err());
     }
 
     fn record() -> Record {
