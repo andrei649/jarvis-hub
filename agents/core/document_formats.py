@@ -30,12 +30,11 @@ import zipfile
 from collections.abc import Callable
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO
+from typing import Any, BinaryIO
 
 from defusedxml.ElementTree import fromstring as _parse_xml
 
-if TYPE_CHECKING:
-    from xml.etree.ElementTree import Element
+type XmlNode = Any
 
 MAX_ZIP_ENTRIES = 4_096
 MAX_ZIP_MEMBER_BYTES = 25_000_000
@@ -58,7 +57,7 @@ def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
 
-def _safe_xml(raw: bytes) -> Element:
+def _safe_xml(raw: bytes) -> XmlNode:
     if len(raw) > MAX_XML_CHARS:
         raise _ArchiveSafetyError("xml_too_large")
     if _XML_ENTITY_RE.search(raw[:65536]) or _XML_ENTITY_RE.search(raw):
@@ -266,10 +265,10 @@ def _extract_xlsx(
     )
 
 
-def _odf_inline_text(elem: Element) -> str:
+def _odf_inline_text(elem: XmlNode) -> str:
     parts: list[str] = []
 
-    def walk(node: Element) -> None:
+    def walk(node: XmlNode) -> None:
         lname = _local_name(node.tag)
         if lname == "s":
             count_raw = next((v for k, v in node.attrib.items() if _local_name(k) == "c"), "1")
@@ -294,7 +293,7 @@ def _odf_inline_text(elem: Element) -> str:
     return "".join(parts).strip()
 
 
-def _odf_table_rows(table_elem: Element) -> list[list[str]]:
+def _odf_table_rows(table_elem: XmlNode) -> list[list[str]]:
     rows: list[list[str]] = []
     for child in table_elem.iter():
         if _local_name(child.tag) != "table-row":
@@ -373,7 +372,7 @@ def _extract_odf(
     units: list[str] = []
     table_count = 0
 
-    def collect_blocks(container: Element) -> None:
+    def collect_blocks(container: XmlNode) -> None:
         nonlocal table_count
         for child in container:
             lname = _local_name(child.tag)
