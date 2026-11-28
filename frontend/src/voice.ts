@@ -40,6 +40,21 @@ export function isSttSentinel(text: unknown): boolean {
   return t.endsWith(']') && (t.startsWith('[STT error') || t.startsWith('[STT unavailable'));
 }
 
+/** Match an opt-in browser wake phrase ("hey jarvis", "jarvis", "hey nerva", "nerva")
+    and extract any trailing command spoken in the same breath (H5.16). */
+export function matchWakePhrase(transcript: unknown): { triggered: boolean; remainder: string } {
+  if (typeof transcript !== 'string') return { triggered: false, remainder: '' };
+  const m = transcript.trim().match(/\b(?:hey\s+|ok\s+|salut\s+)?(?:jarvis|nerva)\b[\s,.:;!?-]*(.*)$/i);
+  if (!m) return { triggered: false, remainder: '' };
+  return { triggered: true, remainder: (m[1] || '').trim() };
+}
+
+function getSpeechRecognitionCtor(): (new () => any) | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as any;
+  return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
 function browserSpeak(text, lang, cancelled) {
   return new Promise((resolve) => {
     try {
@@ -54,10 +69,11 @@ function browserSpeak(text, lang, cancelled) {
   });
 }
 
-export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server', micMuted = false, barge = false, onTurn }: { lang?: string; mode?: string; ttsSource?: string; micMuted?: boolean; barge?: boolean; onTurn?: (...args: any[]) => any } = {}) {
+export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server', micMuted = false, barge = false, wakeWord = false, onTurn }: { lang?: string; mode?: string; ttsSource?: string; micMuted?: boolean; barge?: boolean; wakeWord?: boolean; onTurn?: (...args: any[]) => any } = {}) {
   const supported = typeof navigator !== 'undefined'
     && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
     && typeof window !== 'undefined' && 'MediaRecorder' in window;
+  const wakeSupported = Boolean(getSpeechRecognitionCtor());
 
   const [caps, setCaps] = useState(null);
   const [status, setStatus] = useState('off');  // off | idle | listening | transcribing | speaking | interrupted | error
@@ -398,9 +414,11 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
     };
   }, []);
 
-  async function loop() {
+  async function loop(initialTranscript?: string) {
+    let seeded = typeof initialTranscript === 'string' ? initialTranscript.trim() : '';
     while (activeRef.current) {
-      const text = await listenOnce();
+      const text = seeded ? seeded : await listenOnce();
+      seeded = '';
       if (!activeRef.current) break;
       if (text) {
         setTranscript(text);
@@ -470,7 +488,8 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
         setMicHolder(again.code === 'mic_busy' ? (again.holder || null) : null); setStat('error');
       }
     }, RENEW_MS);
-    loop();
+    const initialTranscript = opts && typeof opts.initialTranscript === 'string' ? opts.initialTranscript : '';
+    loop(initialTranscript);
   }, [supported, caps]);
 
   const stop = useCallback(() => {
@@ -486,7 +505,65 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
 
   const toggle = useCallback(() => { if (activeRef.current) stop(); else start(); }, [start, stop]);
 
+  // H5.16: opt-in browser wake-word standby ("hey jarvis" / "hey nerva"). Default off;
+  // runs only while the main voice loop is idle and unmuted, using standard browser
+  // SpeechRecognition when available (zero third-party wake-word SDK).
+  useEffect(() => {
+    if (!wakeWord || active || micMuted) return;
+    const SpeechRec = getSpeechRecognitionCtor();
+    if (!SpeechRec) return;
+    let alive = true;
+    let triggered = false;
+    let rec: any = null;
+    try {
+      rec = new SpeechRec();
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.lang = lang === 'ro' ? 'ro-RO' : 'en-US';
+      rec.onresult = (ev: any) => {
+        if (!alive || triggered || activeRef.current || micMutedRef.current) return;
+        const results = ev && ev.results ? ev.results : [];
+        const from = typeof ev?.resultIndex === 'number' ? ev.resultIndex : 0;
+        for (let i = from; i < results.length; i++) {
+          const alt = results[i] && results[i][0];
+          const hit = matchWakePhrase(alt && alt.transcript);
+          if (hit.triggered) {
+            triggered = true;
+            try { rec.stop(); } catch { /* ignore */ }
+            void start(hit.remainder ? { initialTranscript: hit.remainder } : undefined);
+            return;
+          }
+        }
+      };
+      rec.onerror = (ev: any) => {
+        const code = ev && ev.error;
+        if (code === 'not-allowed' || code === 'service-not-allowed') {
+          alive = false;
+          setError('Wake-word microphone permission denied');
+          setStat('error');
+        }
+      };
+      rec.onend = () => {
+        if (alive && !triggered && !activeRef.current && !micMutedRef.current) {
+          try { rec.start(); } catch { /* browser throttled standby restart */ }
+        }
+      };
+      rec.start();
+    } catch { /* SpeechRecognition unavailable or blocked */ }
+    return () => {
+      alive = false;
+      if (rec) {
+        try {
+          rec.onresult = null;
+          rec.onerror = null;
+          rec.onend = null;
+          rec.stop();
+        } catch { /* ignore */ }
+      }
+    };
+  }, [wakeWord, active, micMuted, lang, start]);
+
   useEffect(() => () => { startGenRef.current++; activeRef.current = false; if (cancelSpeakRef.current) cancelSpeakRef.current(); releaseStream(); }, []);
 
-  return { supported, caps, status, error, transcript, level, active, bargeInterrupted, start, stop, toggle, speak, cancelSpeak, pushSpeakDelta, micHolder, takeOver };
+  return { supported, wakeSupported, caps, status, error, transcript, level, active, bargeInterrupted, start, stop, toggle, speak, cancelSpeak, pushSpeakDelta, micHolder, takeOver };
 }

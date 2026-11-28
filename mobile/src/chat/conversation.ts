@@ -3,7 +3,7 @@ import { resumeSession, streamChat, validVaultExcerpts, type HistoryTurn, type S
 import { loadConversation, saveConversation, type SavedConversation } from '../storage/chat';
 import type { ServerConfig } from '../storage/settings';
 import type { ChatMessage } from './types';
-import { toolActivity, type TurnOutcome } from './turnOutcome';
+import { toolActivity, turnRecalls, type TurnOutcome } from './turnOutcome';
 import { modelCalls } from '../api/modelCallProvenance';
 import { projectSavedChatNote } from '../api/chatNote';
 import { historyRequiresCloudConsent, historySourceReceipt, validHistoryReference, type HistorySelection } from '../api/sessionTranscript';
@@ -28,12 +28,14 @@ function visibleTurns(turns: HistoryTurn[]): ChatMessage[] {
       const completed = nativeReply && !!t.content.trim() && t.agent_id !== 'system'
         && !(visible[index - 1]?.role === 'user' && visible[index - 1].content.trimStart().startsWith('/'));
       const activity = completed ? toolActivity(t.tool_activity) : undefined;
+      const recall = completed ? turnRecalls((t as Record<string, unknown>).recall) : null;
       const source = t.role === 'user' && !Object.prototype.hasOwnProperty.call(t, 'foreign_origin')
         && !Object.prototype.hasOwnProperty.call(t, 'tainted') ? historySourceReceipt(t.history_source) : null;
       return { id: nextId(), role: t.role as ChatMessage['role'], text: t.content,
         ...(typeof t.agent_id === 'string' ? { agent: t.agent_id } : {}),
         ...(completed ? { completed: true as const } : {}),
         ...(activity ? { toolActivity: activity } : {}),
+        ...(recall ? { recall } : {}),
         ...(calls.length ? { modelCalls: calls } : {}),
         ...(source ? { historySource: source } : {}) };
     });
@@ -247,7 +249,8 @@ export class Conversation {
           ? { ...m, text: displayedFull || m.text, pending: false,
             ...(!text.startsWith('/') && !unconfirmedRecovery && m.agent !== 'system'
               && (!!full.trim() || (validId(sessionId) && !!m.text.trim())) ? { completed: true as const,
-                ...(outcome?.tools ? { toolActivity: outcome.tools } : {}) } : {}),
+                ...(outcome?.tools ? { toolActivity: outcome.tools } : {}),
+                ...(outcome?.recall?.length ? { recall: outcome.recall } : {}) } : {}),
             ...(calls.length ? { modelCalls: calls } : {}) } : m);
         this.publish({ sending: false, sessionId: nextSessionId,
           messages: rollover ? messages.filter(m => m.id === botId) : messages,

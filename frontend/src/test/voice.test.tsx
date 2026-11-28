@@ -7,12 +7,12 @@
 */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { useEffect } from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 vi.mock('../api/ttsStream', () => ({ streamTts: vi.fn() }));
 
 import { streamTts } from '../api/ttsStream';
-import { useVoice } from '../voice';
+import { matchWakePhrase, useVoice } from '../voice';
 
 function jsonResponse(data: any, opts: any = {}) {
   const status = opts.status ?? 200;
@@ -436,6 +436,58 @@ describe('useVoice state machine', () => {
 
       fireEvent.click(screen.getByText('stop'));
       await waitFor(() => expect(screen.getByTestId('barge').textContent).toBe('false'));
+    });
+
+    it('matches wake phrases cleanly and activates the voice loop when opt-in wakeWord hears Hey Jarvis', async () => {
+      expect(matchWakePhrase('random background chatter')).toEqual({ triggered: false, remainder: '' });
+      expect(matchWakePhrase('Hey Jarvis')).toEqual({ triggered: true, remainder: '' });
+      expect(matchWakePhrase('hey nerva, check morning tasks')).toEqual({
+        triggered: true,
+        remainder: 'check morning tasks',
+      });
+
+      let latestRec: any = null;
+      const stopSpy = vi.fn();
+      class FakeSpeechRecognition {
+        continuous = false;
+        interimResults = false;
+        lang = '';
+        onresult: any = null;
+        onerror: any = null;
+        onend: any = null;
+        start = vi.fn(() => { latestRec = this; });
+        stop = stopSpy;
+      }
+      Object.defineProperty(window, 'SpeechRecognition', { configurable: true, value: FakeSpeechRecognition });
+      try {
+        global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.endsWith('/api/voice/capabilities')) return jsonResponse({ stt: true, tts: true });
+          if (url.endsWith('/api/voice/mic/arm')) return jsonResponse({ ok: true });
+          if (url.endsWith('/api/voice/mic/stop')) return jsonResponse({ ok: true });
+          if (url.includes('/api/voice/stt')) return jsonResponse({ text: '[silence]' });
+          if (url.endsWith('/tts')) return jsonResponse({});
+          return jsonResponse({});
+        }) as any;
+
+        const onTurn = vi.fn(async () => '');
+        const view = render(<VoiceHarness opts={{ wakeWord: true, mode: 'ptt', onTurn }} />);
+        await waitFor(() => expect(latestRec).not.toBeNull());
+        expect(latestRec.continuous).toBe(true);
+
+        await act(async () => {
+          latestRec.onresult?.({
+            resultIndex: 0,
+            results: [[{ transcript: 'Hey Jarvis summarize today' }]],
+          });
+        });
+
+        await waitFor(() => expect(onTurn).toHaveBeenCalledWith('summarize today'));
+        expect(stopSpy).toHaveBeenCalled();
+        view.unmount();
+      } finally {
+        delete (window as any).SpeechRecognition;
+      }
     });
   });
 });

@@ -938,6 +938,10 @@ function InputBar({ onSubmit, mic, setMic, voice, cfg, onCfg, micMuted, motion, 
                 {row('LANG', <Seg cur={cfg.lang} opts={[{v:'auto',l:'AUTO'},{v:'ro',l:'RO'},{v:'en',l:'EN'}]} on={(v)=>onCfg({lang:v})} />)}
                 {row('BARGE-IN', <Seg cur={cfg.barge||'off'} opts={[{v:'off',l:'OFF'},{v:'on',l:'ON'}]} on={(v)=>onCfg({barge:v})} />)}
                 {cfg.barge==='on' && <div style={{marginTop:4,color:'var(--ink-2)',fontSize:'var(--n-fs-meta)'}}>experimental — talk over the reply to interrupt; needs echo cancellation</div>}
+                {row('WAKE WORD', <Seg cur={cfg.wake||'off'} opts={[{v:'off',l:'OFF'},{v:'on',l:'ON'}]} on={(v)=>onCfg({wake:v})} />)}
+                {cfg.wake==='on' && (voice && voice.wakeSupported===false
+                  ? <div style={{marginTop:4,color:'var(--amber)',fontSize:'var(--n-fs-meta)'}}>browser SpeechRecognition not available in this browser</div>
+                  : <div style={{marginTop:4,color:'var(--ink-2)',fontSize:'var(--n-fs-meta)'}}>opt-in standby for "hey jarvis" / "hey nerva" via browser SpeechRecognition</div>)}
                 {voice && voice.caps && voice.caps.stt===false && <div style={{marginTop:6,color:'var(--amber)',fontSize:'var(--n-fs-meta)'}}>local STT not installed — pip install faster-whisper</div>}
                 <MicLeases />
               </div>}

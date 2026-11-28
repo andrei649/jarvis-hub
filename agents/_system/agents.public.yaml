@@ -1,0 +1,64 @@
+# Public Web Demo Agent Roster Overlay (NERVA_PUBLIC_PROFILE=1)
+# Spec: docs/decisions/2026-08-24-public-web-demo-digitaholic.md (H23.30 R2 / DRA-07)
+#
+# Loaded by JarvisConfig instead of the personal 16-agent registry whenever
+# NERVA_PUBLIC_PROFILE is enabled. Keeps only the minimal cloud-capable demo
+# loop (no LOCAL_ONLY_AGENTS, no personal/external-transmit plugins, no
+# background heartbeats, no bench promotion rules, and no owner roster merge).
+
+jarvis:
+  name: "Jarvis Hub (Public Demo)"
+  version: "0.5.0-beta"
+  architecture: "pure-python-plugin"
+  cardinality_cap: 4
+
+agents:
+  jarvis:
+    name: Jarvis
+    archetype: Prime Orchestrator
+    status: active
+    tier: command
+    channel: web-dashboard
+    heartbeat: "no"
+    llm_policy: cloud
+    plugins: [cloud-llm]
+
+  athena:
+    name: Athena
+    archetype: External Strategist
+    status: active
+    tier: business
+    channel: web-dashboard
+    heartbeat: "no"
+    llm_policy: cloud
+    plugins: [cloud-llm]
+
+  veronica:
+    name: Veronica
+    archetype: Content Plus Comms
+    status: active
+    tier: business
+    channel: web-dashboard
+    heartbeat: "no"
+    llm_policy: cloud
+    plugins: [cloud-llm]
+
+  vision:
+    name: Vision
+    archetype: Deep Research + OSINT
+    status: active
+    tier: business
+    channel: web-dashboard
+    heartbeat: "no"
+    llm_policy: claude
+    plugins: [cloud-llm, websearch]
+
+bench: {}
+
+plugins:
+  cloud-llm:
+    description: "Cloud LLM routing (Anthropic / Gemini / OpenAI-compatible)"
+    type: "llm-router"
+  websearch:
+    description: "Governed public web search"
+    type: "api"
