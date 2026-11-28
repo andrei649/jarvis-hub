@@ -989,19 +989,124 @@ def unsubscribe_home(task_id: str, platform: str, board: str | None = None):
 @router.get("/tasks/{task_id}/log")
 def task_log(task_id: str, tail: int | None = None, board: str | None = None):
     _scope()
-    _unavailable("worker log access")
+    with _conn(board) as (_slug, conn):
+        _task(conn, task_id)
+        runs = conn.execute(
+            "SELECT id, profile, status, outcome, started_at, ended_at, summary, error "
+            "FROM task_runs WHERE task_id = ? ORDER BY id",
+            (task_id,),
+        ).fetchall()
+        events = conn.execute(
+            "SELECT id, kind, payload, created_at FROM task_events WHERE task_id = ? ORDER BY id",
+            (task_id,),
+        ).fetchall()
+        lines: list[str] = []
+        for ev in events:
+            lines.append(f"[event #{ev['id']}] {ev['kind']} · {ev['payload'] or ''}".rstrip(" ·"))
+        for r in runs:
+            state = r["outcome"] or r["status"] or "unknown"
+            lines.append(f"[run #{r['id']}] profile={r['profile'] or 'worker'} state={state}")
+            if r["summary"]:
+                lines.append(f"  summary: {r['summary']}")
+            if r["error"]:
+                lines.append(f"  error: {r['error']}")
+        cap = max(1, min(500, int(tail))) if tail is not None else 500
+        bounded = lines[-cap:]
+        content = "\n".join(bounded)
+        return {
+            "exists": bool(bounded),
+            "size_bytes": len(content.encode("utf-8")),
+            "content": content,
+            "truncated": len(bounded) < len(lines),
+        }
 
 
 @router.get("/runs/{run_id}/inspect")
 def inspect_run(run_id: int, board: str | None = None):
-    _scope()
-    _unavailable("worker process inspection")
+    owner = _scope()
+    with _conn(board) as (_slug, conn):
+        run = _run(conn, run_id)
+        from .dispatcher import _probe_attempt_receipt
+        from .upstream import kanban_db_dispatch as kbd
+
+        row = conn.execute(
+            "SELECT id, task_id, status, outcome, ended_at, worker_pid, worker_started_at, "
+            "claim_lock, summary, error FROM task_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        if row is None or row["ended_at"] is not None or row["status"] != "running":
+            return {
+                "run_id": run.id,
+                "worker_pid": run.worker_pid,
+                "alive": False,
+                "state": (row["outcome"] or row["status"]) if row else run.status,
+                "detail": (row["summary"] or row["error"] or "run ended") if row else "run ended",
+            }
+        alive = False
+        detail = "no active worker receipt"
+        if row["worker_pid"] is not None:
+            alive = (
+                kbd._pid_alive(row["worker_pid"])
+                and (
+                    row["worker_started_at"] == kbd.UNVERIFIED_WORKER_FINGERPRINT
+                    or not kbd._pid_recycled(row["worker_pid"], row["worker_started_at"])
+                )
+            )
+            detail = "worker process running" if alive else "worker process exited"
+        elif (row["claim_lock"] or "").startswith("nerva:"):
+            try:
+                record = conn.execute(
+                    "SELECT id, task_id, run_id, state, recovery_dev, recovery_ino, recovery_pid "
+                    "FROM nerva_dispatches WHERE run_id = ? ORDER BY id DESC LIMIT 1",
+                    (run_id,),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                record = None
+            if (
+                record is not None
+                and record["task_id"] == row["task_id"]
+                and row["claim_lock"] == "nerva:" + record["id"]
+            ):
+                with _probe_attempt_receipt(owner.home, record, observer=True) as status:
+                    alive = status == "held"
+                    detail = (
+                        "in-process Nerva worker active"
+                        if alive
+                        else "attempt receipt released; recoverable"
+                    )
+        return {
+            "run_id": run.id,
+            "worker_pid": run.worker_pid,
+            "alive": alive,
+            "state": "running" if alive else "interrupted",
+            "detail": detail,
+        }
 
 
 @router.post("/runs/{run_id}/terminate")
-def terminate_run(run_id: int, payload: ReasonBody, board: str | None = None):
-    _scope(mutate=True)
-    _unavailable("worker process termination")
+async def terminate_run(run_id: int, payload: ReasonBody, board: str | None = None):
+    owner = _scope(mutate=True)
+    with _conn(board, mutate=True) as (slug, conn):
+        run = _run(conn, run_id)
+        if run.ended_at is not None or run.status != "running":
+            raise _error(409, "This run has already ended.")
+    with kanban_scope(replace(owner, board=slug)):
+        result = await _dispatch_adapter().recover_interrupted(
+            run.task_id,
+            board=slug,
+            expected_run_id=run.id,
+            reason=payload.reason or "terminated from HUD",
+        )
+    if result.get("ok"):
+        return {"ok": True, "run_id": run.id, "status": result.get("status", "terminated")}
+    reason = result.get("reason")
+    if reason == "active_attempt":
+        raise _error(409, "This worker is still active.")
+    if reason == "owner_required":
+        raise _error(403, "Termination requires the owner of this board.")
+    if reason == "governed_worker_unavailable":
+        _unavailable("governed worker termination")
+    raise _error(409, "This run could not be terminated. Refresh its run history.")
 
 
 @router.post("/tasks/{task_id}/reclaim")

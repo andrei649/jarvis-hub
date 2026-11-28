@@ -191,3 +191,55 @@ def test_off_compatibility_and_hold_refusal(make_queue):
     with pytest.raises(TaskQueueError, match="mediation hold"):
         hold.enqueue("jarvis", "research", "Research", {"query": "harbor"})
     assert hold.list() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "payload"),
+    [
+        ("note", {"title": "Daily note", "content": "Shipped cleanly"}),
+        ("summarize", {"text": "Long memo"}),
+        ("restart_service", {"service": "hub"}),
+    ],
+)
+async def test_ordinary_task_kinds_classify_and_execute_under_enforce_mediation(
+    make_queue, monkeypatch, kind, payload
+):
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "1")
+    queue, signer = make_queue("enforce")
+    assert classify(kind) is Mediation.KERNEL
+    assert queue.classify_mediation(kind) is True
+    assert classify(f"{kind}.extra") is None
+
+    worker, kernel_calls = _worker(queue, signer, Verdict.GRANT)
+    executed = []
+
+    async def fake_handler(task):
+        executed.append((task.kind, dict(task.payload)))
+        return {"status": "ok", "kind": task.kind}
+
+    executor = TaskExecutor(execution_guard=worker.execution_allowed).register(
+        kind, fake_handler
+    )
+    worker.executor = executor.execute
+
+    with pytest.raises(TaskQueueError, match="requires mediation"):
+        queue.enqueue("jarvis", kind, f"Run {kind}", payload)
+
+    task = await worker.submit(
+        "jarvis", kind, f"Run {kind}", payload, attention_mode="none"
+    )
+    assert len(kernel_calls) == 1
+    assert kernel_calls[0].kind == kind
+    assert task.mediation_receipt["kind"] == kind
+    assert task.mediation_receipt["verdict"] == Verdict.GRANT.value
+    assert await executor.execute(task) == {
+        "status": "refused",
+        "reason": "mediation_execution_context_required",
+    }
+    assert executed == []
+
+    summary = await worker.tick()
+    assert summary["done"] == 1
+    assert queue.get(task.id).status == TaskStatus.DONE.value
+    assert executed == [(kind, payload)]

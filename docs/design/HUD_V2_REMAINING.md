@@ -1016,9 +1016,7 @@ retain explicit HTTP 503/409 refusals in the HUD until their Nerva adapters land
 
 Kanban client route gaps:
 
-- `/api/kanban/runs/{run_id}/inspect`
-- `/api/kanban/runs/{run_id}/terminate`
-- `/api/kanban/tasks/{task_id}/log`
+None — `/api/kanban/runs/{run_id}/inspect`, `/api/kanban/runs/{run_id}/terminate` and `/api/kanban/tasks/{task_id}/log` are backed by durable run/event state and wired into `TaskDrawer` (2026-11-27).
 
 H011 checkpoints (2026-10-04): authenticated owner status/list and exact
 maintenance previews now use typed `/checkpoints` and bare `/rollback` through

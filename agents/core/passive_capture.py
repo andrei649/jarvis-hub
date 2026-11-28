@@ -121,6 +121,61 @@ class PassiveCapture(JsonStore):
             self._save()
         return {"captured": True, "id": rec["id"], "redacted": was_redacted, "triples": triples}
 
+    def sync_transcript(
+        self,
+        transcript: str,
+        *,
+        source: str = "",
+        surface: str = "files",
+    ) -> dict:
+        """0.26 — sync a meeting/voice transcript into the redacted capture inbox.
+
+        Uses an existing opt-in surface (default ``files``) so ``SURFACES`` and mobile
+        export contracts remain stable; nothing is stored unless ``JARVIS_PASSIVE_CAPTURE``
+        and *surface* are both enabled, and secrets are redacted before KG/store persistence.
+        """
+        if surface not in SURFACES:
+            raise ValueError(f"unknown surface: {surface}")
+        if not self.surface_enabled(surface):
+            return {"captured": False, "reason": "disabled", "surface": surface}
+        text = (transcript or "").strip()
+        if not text:
+            return {"captured": False, "reason": "empty", "surface": surface}
+
+        redacted = self._scanner.redact(text) if self._scanner else text
+        was_redacted = redacted != text
+        label = (source or "transcript").strip()[:200]
+
+        triples = 0
+        if self._kg is not None:
+            try:
+                triples = self._kg.ingest(redacted, source="capture:transcript")
+            except Exception:
+                logger.warning("capture transcript KG ingest failed", exc_info=True)
+
+        rec = {
+            "id": secrets.token_urlsafe(8),
+            "surface": surface,
+            "kind": "transcript",
+            "source": label,
+            "preview": redacted[:_PREVIEW_LEN],
+            "redacted": was_redacted,
+            "triples": triples,
+            "created_at": time.time(),
+        }
+        with self._lock:
+            self._records.append(rec)
+            del self._records[:-_MAX_RECORDS]
+            self._save()
+        return {
+            "captured": True,
+            "id": rec["id"],
+            "surface": surface,
+            "kind": "transcript",
+            "redacted": was_redacted,
+            "triples": triples,
+        }
+
     # ── inspect / forget ──────────────────────────────────────────────────────
 
     def list(self, surface: Optional[str] = None) -> list[dict]:

@@ -4,7 +4,7 @@ import { TaskDrawer } from './panels/kanban/drawer';
 import * as api from './panels/kanban/api';
 import type { KanbanTaskDetail } from './panels/kanban/types';
 
-vi.mock('./panels/kanban/api', () => ({ fetchTask: vi.fn(), fetchLog: vi.fn(), fetchRun: vi.fn(), reclaimTask: vi.fn(), patchTask: vi.fn(), addComment: vi.fn(), uploadAttachment: vi.fn(), downloadAttachment: vi.fn(), deleteTask: vi.fn() }));
+vi.mock('./panels/kanban/api', () => ({ fetchTask: vi.fn(), fetchLog: vi.fn(), fetchRun: vi.fn(), inspectRun: vi.fn(), terminateRun: vi.fn(), reclaimTask: vi.fn(), patchTask: vi.fn(), addComment: vi.fn(), uploadAttachment: vi.fn(), downloadAttachment: vi.fn(), deleteTask: vi.fn() }));
 const detail: KanbanTaskDetail = {
   task: { id: 't_1', title: 'Inspect queue', status: 'triage', body: '**Goal:** diagnose', priority: 2, workspace_kind: 'dir', workspace_path: '/repo' },
   comments: [{ id: 2, author: 'owner', body: 'Existing note', created_at: 1 }], events: [{ id: 4, kind: 'status', payload: {status:'triage'}, created_at: 1 }],
@@ -226,5 +226,30 @@ describe('Kanban task drawer', () => {
     expect(await screen.findByText('Worker result was already saved; history refreshed.')).toBeTruthy();
     expect(screen.getByText('Saved result')).toBeTruthy();
     expect(screen.queryByText(/task held for review/i)).toBeNull();
+  });
+
+  it('loads task log on demand and inspects or terminates an active run', async () => {
+    vi.mocked(api.fetchTask).mockResolvedValue({
+      ...detail,
+      task: { ...detail.task, status: 'running', current_run_id: 77, recoverable_run_id: 77 },
+      runs: [{ id: 77, profile: 'jarvis', status: 'running', started_at: 100, ended_at: null }],
+    });
+    vi.mocked(api.fetchLog).mockResolvedValue({ exists: true, content: '[run #77] profile=jarvis state=running' });
+    vi.mocked(api.inspectRun).mockResolvedValue({ run_id: 77, alive: true, state: 'running', detail: 'in-process Nerva worker active' });
+    vi.mocked(api.terminateRun).mockResolvedValue({ ok: true });
+
+    render(<TaskDrawer {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Task log' }));
+    expect(await screen.findByText('[run #77] profile=jarvis state=running')).toBeTruthy();
+    expect(api.fetchLog).toHaveBeenCalledWith('alpha', 't_1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect run' }));
+    expect(await screen.findByText(/in-process Nerva worker active/)).toBeTruthy();
+    expect(api.inspectRun).toHaveBeenCalledWith('alpha', 77);
+
+    fireEvent.change(screen.getByLabelText('Worker action reason'), { target: { value: 'owner stop' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Terminate run' }));
+    await waitFor(() => expect(api.terminateRun).toHaveBeenCalledWith('alpha', 77, 'owner stop'));
+    expect(await screen.findByText('Run #77 terminated.')).toBeTruthy();
   });
 });
