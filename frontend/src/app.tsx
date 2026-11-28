@@ -1135,8 +1135,9 @@ function App({ floating = false }: {
   const steerTurn = useCallback(async (text: string): Promise<boolean> => {
     const trimmed = text.trim();
     if (demo || !trimmed || textTurns.current.size === 0) return false;
+    const entries = Array.from(textTurns.current.values());
     const activeTurn = textTurns.current.get(latestTextTurn.current)
-      ?? Array.from(textTurns.current.values()).at(-1);
+      ?? entries[entries.length - 1];
     if (!activeTurn?.wireTurnId && !sessionId.current) return false;
     try {
       const res: any = await apiPost('/chat/steer', {
